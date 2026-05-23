@@ -179,12 +179,12 @@
 
   const buildConnectivityTestPayload = ({ baseUrl, model }) => {
     const normalizedModel = normalizeText(model);
-    const payload = {
+    return {
       model: normalizedModel,
       messages: [
         {
           role: 'system',
-          content: 'Reply with exactly: hello world. Do not include reasoning, explanations, or any other text.',
+          content: 'Reply with exactly: hello world',
         },
         {
           role: 'user',
@@ -192,10 +192,8 @@
         },
       ],
       temperature: 0,
+      max_tokens: 256,
     };
-    const maxTokens = resolveMaxOutputTokens({ baseUrl, model: normalizedModel });
-    payload.max_tokens = maxTokens || 256;
-    return payload;
   };
 
   return {

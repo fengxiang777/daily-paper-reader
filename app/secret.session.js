@@ -337,7 +337,7 @@
       messages: [
         {
           role: 'system',
-          content: 'Reply with exactly: hello world. Do not include reasoning, explanations, or any other text.',
+          content: 'Reply with exactly: hello world',
         },
         {
           role: 'user',
@@ -386,7 +386,7 @@
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
     const results = [];
 
     try {

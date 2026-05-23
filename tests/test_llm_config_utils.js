@@ -224,14 +224,11 @@ function testBuildConnectivityTestPayload() {
     {
       model: 'deepseek-v4-pro',
       messages: [
-        {
-          role: 'system',
-          content: 'Reply with exactly: hello world. Do not include reasoning, explanations, or any other text.',
-        },
+        { role: 'system', content: 'Reply with exactly: hello world' },
         { role: 'user', content: 'hello world' },
       ],
       temperature: 0,
-      max_tokens: 393216,
+      max_tokens: 256,
     },
   );
 
@@ -243,14 +240,11 @@ function testBuildConnectivityTestPayload() {
     {
       model: 'deepseek-v4-flash',
       messages: [
-        {
-          role: 'system',
-          content: 'Reply with exactly: hello world. Do not include reasoning, explanations, or any other text.',
-        },
+        { role: 'system', content: 'Reply with exactly: hello world' },
         { role: 'user', content: 'hello world' },
       ],
       temperature: 0,
-      max_tokens: 393216,
+      max_tokens: 256,
     },
   );
 
