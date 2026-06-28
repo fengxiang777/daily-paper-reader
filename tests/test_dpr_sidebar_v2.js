@@ -548,8 +548,11 @@ function testSidebarStickyHierarchyCssContract() {
   assert.ok(/--dpr-sidebar-sticky-mask-bg:\s*var\(--dpr-sidebar-surface\)/i.test(rootRule));
   assert.ok(/--dpr-sidebar-sticky-mask-bleed:\s*8px/i.test(rootRule));
   assert.ok(/--dpr-sidebar-sticky-panel-top:\s*0px/i.test(rootRule));
-  assert.ok(/--dpr-sidebar-sticky-axis-top:\s*34px/i.test(rootRule));
-  assert.ok(/--dpr-sidebar-sticky-section-top:\s*72px/i.test(rootRule));
+  assert.ok(/--dpr-sidebar-sticky-axis-top:\s*36px/i.test(rootRule));
+  assert.ok(/--dpr-sidebar-sticky-section-top:\s*74px/i.test(rootRule));
+
+  const panelHeaderBaseRule = cssRule(css, '.dpr-sidebar-panel-header');
+  assert.ok(/padding:\s*8px 14px/i.test(panelHeaderBaseRule));
 
   const panelHeaderRule = cssRule(css, '.dpr-sidebar-panel.is-expanded > .dpr-sidebar-panel-header');
   assert.ok(/position:\s*sticky/i.test(panelHeaderRule));
@@ -585,7 +588,7 @@ function testSidebarStickyHierarchyCssContract() {
 
   const panelHeaderMaskRule = cssRule(css, '.dpr-sidebar-panel.is-expanded > .dpr-sidebar-panel-header::before');
   assert.ok(/content:\s*""/i.test(panelHeaderMaskRule));
-  assert.ok(/inset:\s*0/i.test(panelHeaderMaskRule));
+  assert.ok(/inset:\s*calc\(var\(--dpr-sidebar-sticky-mask-bleed\) \* -1\) 0 0 0/i.test(panelHeaderMaskRule));
   assert.ok(/background:\s*var\(--dpr-sidebar-sticky-mask-bg\)/i.test(panelHeaderMaskRule));
   assert.ok(/z-index:\s*-1/i.test(panelHeaderMaskRule));
 

@@ -256,7 +256,7 @@ Zotero       ←── 浏览器 Connector 抓取 citation meta
 
 ### 前端侧栏 sticky 布局规则
 
-修改 `app/app.css` 中 `dpr-sidebar-v2` 的冻结窗口布局时，上层 sticky header（如“会议论文”“日报”）的白底遮罩不得向下外溢覆盖下级切换行；横向标签行不得用负 `margin-top` 抵消裁剪问题。若增加标签行上下留白，必须同步调整后续 sticky top 变量，并用 `tests/test_dpr_sidebar_v2.js` 锁住 CSS 合同。
+修改 `app/app.css` 中 `dpr-sidebar-v2` 的冻结窗口布局时，不要通过缩小“会议论文”“日报”等上层 sticky header 规避遮挡；其白底遮罩可向上外溢补白，但 bottom 必须为 0，不得向下覆盖下级切换行。横向标签行不得用负 `margin-top` 抵消裁剪问题。若增加 header 或标签行上下留白，必须同步调整后续 sticky top 变量，并用 `tests/test_dpr_sidebar_v2.js` 锁住 CSS 合同。
 
 ### 提交共同作者规则
 
