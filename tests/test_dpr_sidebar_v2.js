@@ -500,6 +500,7 @@ function testSidebarPaperVisualStateCssContract() {
   assert.ok(/\.dpr-sidebar-paper\.is-title-overflowing \.dpr-sidebar-paper-title::after\s*{[^}]*opacity:\s*1/i.test(css));
   assert.ok(/\.dpr-sidebar-paper:hover \.dpr-sidebar-paper-title,\s*\.dpr-sidebar-paper:focus-within \.dpr-sidebar-paper-title\s*{[^}]*padding-right:\s*var\(--dpr-sidebar-paper-action-reserve\)/i.test(css));
   assert.ok(/\.dpr-sidebar-paper:hover \.dpr-sidebar-paper-title::after,\s*\.dpr-sidebar-paper:focus-within \.dpr-sidebar-paper-title::after\s*{[^}]*right:\s*calc\(var\(--dpr-sidebar-paper-action-reserve\) - 2ch\)/i.test(css));
+  assert.ok(/\.dpr-sidebar-paper:hover \.dpr-sidebar-paper-title::after,\s*\.dpr-sidebar-paper:focus-within \.dpr-sidebar-paper-title::after\s*{[^}]*opacity:\s*0/i.test(css));
 
   const actionsRule = cssRule(css, '.dpr-sidebar-paper-actions');
   assert.ok(/position:\s*absolute/i.test(actionsRule));
