@@ -1,0 +1,2039 @@
+Title: Multimodal Knowledge Edit-Scoped Generalization for Online Recursive MLLM Editing
+
+URL Source: https://arxiv.org/pdf/2607.01978v1
+
+Published Time: Fri, 03 Jul 2026 00:51:29 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+> 1
+
+# Multimodal Knowledge Edit-Scoped Generalization for Online Recursive MLLM Editing 
+
+Siyuan Li, Youyuan Zhang, Ruitong Liu, Junxi Wang and Jing Li #, Senior Member, IEEE 
+
+Abstract —Online multimodal knowledge editing requires in-jecting a continual stream of visual-textual corrections into mul-timodal large language models (MLLMs) with bounded overhead and minimal disruption to unrelated behaviors. Existing editors mainly emphasize edit reliability and long-horizon stability, but rarely control the semantic boundary of each edit. Our pilot analyses of post-edit behaviors and internal neuronal activities reveal a scope gap behind reliable edits: instance-level success neither guarantees transfer to valid cross-modal variants nor prevents leakage to unrelated inputs, while edit-related cross-modal responses concentrate in deeper semantic layers. There-fore, we formulate Edit-Scoped Generalization , reframing online MLLM editing from merely correcting an instance to controlling the propagation boundary of each edit. To this end, we propose ScopeEdit, a scope-aware online editor that decomposes each update into a modality-local absorption branch and an evidence-gated shared generalization branch. The local branch supports stable edit absorption, whereas the shared branch enables cross-modal propagation only when visual and textual evidence are sufficiently aligned. Both branches perform scope-separated write geometries in orthogonal low-rank spaces and maintain branch-wise preconditioners via Sherman–Morrison recursions, yielding constant per-edit overhead. Extensive experiments across diverse benchmarks, long-horizon edit streams, MLLM backbones, real-world VLKEB scenarios, and complex vision-language architec-tures show that ScopeEdit consistently improves the trade-off between in-scope cross-modal transfer and out-of-scope locality, while preserving edit reliability, stability and online efficiency. Our code is available at https://github.com/lab-klc/ScopeEdit. 
+
+Index Terms —Multimodal large language models, online knowledge editing, multimodal knowledge editing, edit-scoped generalization, cross-modal generalization, locality preservation. 
+
+I. I NTRODUCTION 
+
+# MULTIMODAL large language models (MLLMs) have become a dominant paradigm for knowledge-intensive multimodal tasks [1]–[6]. However, their visual and textual knowledge is encoded in static parameters, whose validity inevitably changes as real-world facts evolve [7], [8]. Online multimodal knowledge editing aims to incorporate a stream of corrections into an MLLM without retraining from scratch, while preserving unrelated capabilities and behaviors [9]–[12]. As illustrated in Figure 1(A), each edit request provides a visual-textual context and a target correction, and the editor must absorb such requests sequentially into the MLLM.  
+
+> #Jing Li is the corresponding author (E-mail: jingli.phd@hotmail.com). Siyuan Li and Youyuan Zhang are with Harbin Institute of Technology, Shenzhen, China and Peng Cheng Laboratory. Ruitong Liu is with Peking University. Junxi Wang is with Fudan University. Jing Li is with Harbin Institute of Technology, Shenzhen, China.
+
+Compared with text-only LLM editing, MLLM editing faces additional challenges induced by multimodal hetero-geneity [11], [13], [14]. Recent studies have shown that directly transferring text-oriented editors to MLLMs leads to two distinct failure modes: unreliability caused by Cross-modal Conflict and instability caused by Inter-edit Inter-ference [15]. First, cross-modal conflict arises because visual and textual representations may have different statistical scales and energy distributions, causing shared update statistics to be dominated by one modality [15], [16]. Second, inter-edit in-terference emerges when a stream of edits repeatedly modifies overlapping parameter subspaces, resulting in long-horizon drift and forgetting [15], [17]. Modality-decoupled recursive editors mitigate these issues by separating modality-specific update statistics and performing stable Recursive writes in a fixed orthogonal low-rank edit subspace [15]. Beyond reliability and stability, MLLM editing must also account for generality and locality [18]–[20]. As shown in Figure 1(B), existing editors mainly ask whether an edit suc-ceeds on the original request and whether the model remains stable after many edits, but they do not explicitly define the semantic scope in which the edited knowledge should take effect. This omission leads to two scope-related errors. An edit may under-generalize , failing to transfer to semantically equivalent questions or visual variants within the intended scope. It may also over-generalize , leaking to unrelated inputs and changing behaviors that should remain intact. To address this issue, we formalize Edit-Scoped Gener-alization , as illustrated in Figure 1(C). The core principle is that an edit should generalize only inside its intended semantic region and remain invisible outside it. This notion consists of two complementary aspects: (1) In-scope Cross-modal Generalization , where the edited knowledge transfers to semantically valid multimodal contexts, including other modalities that provide equivalent evidence [21]–[23]; and (2) Out-of-scope Locality Preservation , where the edited knowl-edge is prevented from leaking into inputs not semantically covered by the edit. To probe whether reliable edits are truly scope-correct, we conduct pilot analyses of post-edit behaviors and internal MLLM activations (see Section III-B). Restricting the analysis to edits that already succeed on the original request, we find two complementary scope errors: 28 .60% of reliable edits fail to generalize to cross-modal variants within the edit scope, while 7.20% leak into out-of-scope inputs and alter unrelated behaviors. Thus, reliability alone does not guarantee edit-scoped generalization [24]. We further observe that in-scope cross-modal generalization is not uniformly diffused through-
+
+> arXiv:2607.01978v1 [cs.AI] 2 Jul 2026 2
+
+C Our formulation: Edit -Scoped Generalization 
+
+Edit request 
+
+Q:  Who walked  on 
+
+the moon first? 
+
+Target answer: 
+
+Neil Armstrong 
+
+Edit stream 
+
+## ⋯
+
+Edit 1  Edit  2 Edit  n
+
+A Online MLLM Editing  MLLM   
+
+> Vision Text Talk
+
+B
+
+(i) Under -generalization           
+
+> Predicted :Unknown
+> Q:Who was the first
+> person to set foot on the
+> Moon?
+> Paraphrased question
+> (in -scope)
+
+(ii) Over -generalization         
+
+> Predicted :Neil Armstrong
+> (should be Gagarin)
+> Q:Who was the first
+> human in space?
+> Out -of -scope question
+
+Existing focus   
+
+> MLLM editor
+> (existing methods)
+> Reliability
+> (edit success)
+> Long -horizon
+> stability
+> Lack of explicit
+> scope control
+
+(1) In -scope cross -modal generalization  (semantic region:  “first person on the Moon ”)   
+
+> Original edit (text)
+> → Armstrong
+> Paraphrase (text) Alt. image Alt. view
+> Edited knowledge
+
+(2) Out -of -scope locality preservation (outside the semantic region)          
+
+> Unrelated text
+> Q: Who was the first
+> human in space ?
+> → Gagarin
+> Unrelated image
+> → (unchanged)
+> Unrelated fact
+> Q: Which planet is
+> known as the Red Planet?
+> → Mars
+> Irrelevant chat
+> Q: How are you ?
+> → (unchanged)
+> Q: Who walked on the
+> moon first?
+> → Armstrong → Armstrong → Armstrong
+> Unchanged
+> Q:Who was the first to
+> walk on the Moon?
+> Unchanged Unchanged Unchanged
+
+B
+
+Fig. 1. Motivation and formulation of edit-scoped generalization in online MLLM editing. (A) Online multimodal knowledge editing incorporates a stream of visual-textual corrections into an MLLM. (B) Existing editors mainly focus on edit reliability and long-horizon stability, but lack explicit control over the semantic scope of each edit, leading to under-generalization on in-scope variants or over-generalization to unrelated inputs. (C) We define edit-scoped generalization as the joint requirement of in-scope cross-modal generalization and out-of-scope locality preservation. 
+
+out the network [23]. Edit-related responses concentrate in deeper language layers, where target text and visual tokens show synchronized energy peaks; attention visualizations also reveal stronger post-edit attention from target text tokens to semantically relevant image regions [25]. Motivated by these findings, we propose ScopeEdit , an online multimodal editor designed for controlling edit-scoped generalization. ScopeEdit separates each update into two func-tional components: a private absorption branch for reliable and stable modality-local writing, and a shared propagation branch for in-scope cross-modal generalization. The shared branch is activated only when visual and textual evidence are both directionally aligned and comparably supported, thereby enabling warranted cross-modal transfer while suppressing unwarranted leakage [26]–[28]. To maintain long-horizon on-line efficiency and prevent inter-branch entanglement, both branches operate in orthogonal low-rank subspaces derived from the partitioned rank budget, with each branch updated through its own recursive preconditioner. Our contributions are summarized as follows:  
+
+> •
+
+We introduce Edit-Scoped Generalization as a principled criterion for online multimodal knowledge editing that dis-tinguishes warranted cross-modal transfer from unintended behavioral leakage. Pilot analyses show that reliability alone is insufficient, as reliable edits can still exhibit both in-scope under-generalization and out-of-scope over-generalization (Section III-A).  
+
+> •
+
+We propose ScopeEdit , a scope-aware online editor that decomposes each update into a modality-local absorption branch and an evidence-gated shared generalization branch. By combining scope-separated low-rank write geometries, cross-modal evidence gating, and branch-wise recursive preconditioners, ScopeEdit enables warranted cross-modal transfer while suppressing unintended leakage with con-stant per-edit overhead (Section IV).  
+
+> •
+
+We provide a comprehensive empirical evaluation across controlled benchmarks, long edit streams, real-world VLKEB scenarios, and diverse MLLM backbones. The results show that ScopeEdit consistently improves edit-scoped behavior, achieving a favorable balance among reliable correction, in-scope cross-modal transfer, out-of-scope locality, long-horizon stability, and online efficiency (Section V). II. R ELATED WORKS 
+
+This section reviews prior work related to our study. Sec-tions II-A and II-B summarize knowledge editing methods for LLMs and MLLMs, highlighting the shift from text-only editing toward multimodal editing. Sections II-C and II-D further discuss online editing scenarios, where studies on MLLMs remain preliminary. 
+
+A. Knowledge Editing for LLMs 
+
+Knowledge editing for text-only LLMs has been widely studied and can be broadly divided into parameter-modifying 
+
+and parameter-preserving paradigms [29]–[32]. Parameter-modifying methods directly alter model weights [33]–[37], including locate-then-edit approaches such as ROME [9] 3
+
+and MEMIT [38], as well as their extensions such as Al-phaEdit [10] and DeltaEdit [39]. Another line of work uses 
+
+meta-learning to predict edits from gradients or error signals, such as KE [40] and MEND [41]. In contrast, parameter-preserving methods avoid changing the backbone [42], [43] and instead rely on retrieval, in-context editing, or lightweight auxiliary modules to override behavior locally, such as IKE [44], SERAC [45], and GRACE [46]. These methods are effective in text-only regimes, but their assumptions about homogeneous representations and edit scope become fragile once visual inputs are introduced [11], [47]. 
+
+B. Knowledge Editing for MLLMs 
+
+Knowledge editing for MLLMs is still emerging [13]. Early studies mainly adapt LLM editors to multimodal bench-marks [31], [48], while MMEdit shows that such direct transfer is often brittle in coupled vision-language representations [13]. Subsequent methods introduce multimodal-specific designs, such as attribution-guided visual editing in VisEdit [11] and gated dual-branch updating in DualEdit [16]. More recent work, such as M-ORE [15] further highlights cross-modal conflict as a central obstacle to multimodal editing, and emphasizes modality decoupling as a way to improve editing reliability. However, edit reliability only verifies the corrected behavior on the original request; it overlooks edit-scoped generalization [19], [49]. Orthogonal to reliability-oriented improvements, recent parameter-preserving methods have also started to explicitly model the scope of edit application. For instance, MSCKE [50] extends SERAC [45] with an external multimodal scope classifier to route only in-scope image-text queries to the edited memory. This requirement becomes more stringent for parameter-modifying editors, where the edit is absorbed into model weights and must simultaneously generalize to in-scope queries while avoiding out-of-scope leakage [15], [50]. 
+
+C. Online Editing for LLMs 
+
+Online (or sequential) editing extends one-shot correction to a stream of updates [51], requiring editors to continuously balance plasticity and stability over time [45], [52]–[54]. In text-only LLMs, retrieval- or memory-based methods alleviate catastrophic forgetting by storing past edits externally, but usually incur inference costs that grow with the number of edits [55], [56]. Parameter-modifying approaches are more efficient, yet often degrade under long edit streams due to accumulated interference and drift [9], [57]. 
+
+D. Online Editing for MLLMs 
+
+Online editing for MLLMs remains even less explored and is further complicated by multimodal heterogeneity [11], [12], [16]. Existing methods are still dominated by parameter-preserving strategies. For example, LiveEdit [12] formulates lifelong multimodal editing through edit-specific low-rank experts and inference-time routing, improving long-horizon robustness at the cost of edit-growing memory overhead [58]. In contrast, recent parameter-modifying work identifies inter-edit interference as a core challenge and improves long-horizon stability via fixed orthogonal low-rank recursive writes under constant overhead [15]. III. A NALYSIS ON MULTIMODAL KNOWLEDGE 
+
+EDIT -S COPED GENERALIZATION 
+
+This section introduces the preliminary concepts and anal-ysis necessary for our method. Section III-A reviews the MLLM architecture, the FFN key-value view, and the online editing formulation with reliability, generality, and locality criteria. Section III-B analyzes edit-scoped generalization in online MLLM editing, showing that reliable edits may still fail on in-scope variants or leak to out-of-scope inputs. Finally, we examine where cross-modal generalization emerges in MLLMs, providing empirical guidance for our method design. 
+
+A. Preliminary a) Multimodal Large Language Model: We consider an edited MLLM fθ composed of a vision encoder Ev , a projector P, and a language model M. Given a visual input 
+
+xv and a textual query xq , the model autoregressively predicts the output distribution p(y | xv , x q ) from the fused token embeddings H = [ P(Ev (xv )) , Embed( xq )] . For a transformer layer l, we follow the standard residual decomposition [9]: 
+
+hl = hl−1 + al + ml, ml = W l 
+
+> out
+
+σ W l 
+
+> in
+
+γ(hl−1 + al), (1) where al and ml denote the attention and feed-forward out-puts, γ(·) is LayerNorm, and σ(·) is a nonlinearity. Follow-ing the FFN key-value interpretation of transformer memo-ries [10], [59], we define 
+
+kl ≜ σ W l 
+
+> in
+
+γ(hl−1 + al), vl ≜ ml = W l
+
+> out
+
+kl. (2) Here kl acts as a key computed from the current multimodal context, and vl is the value retrieved linearly by W l
+
+> out
+
+.Under this view, many parameter-modifying editing methods intervene on W l 
+
+> out
+
+to rewrite selected k → v associations. For simplicity, we use W to refer to W l 
+
+> out
+
+in the following. 
+
+b) Online Editing in MLLMs: We consider online editing of an MLLM fθ : X → Y that maps a multimodal input 
+
+xe = (xv , x q ) ∈ X to a textual output distribution ye.Following the key-value view above, we focus on parameter-modifying edits that intervene on the selected FFN output matrix W , while keeping the remaining parameters frozen. Concretely, we partition parameters as θ = ( θ0, W ), where 
+
+θ0 is fixed and only W is editable. An edit request at step t
+
+is specified by a target input-output pair et = ( xet , y et ), where 
+
+yet̸ = f(θ0,W t−1)(xet ). Starting from a base model with editable matrix W0, a model editor ME performs online sequential 
+
+edits by producing an additive update ∆Wt with a bounded per-edit cost: 
+
+∆Wt = ME( f(θ0,W t−1), x et , y et ), Wt = Wt−1 + ∆ Wt. (3) Equivalently, the edited model at step t is fθt = f(θ0,W t) with 
+
+Wt = W0 + Pti=1 ∆Wi. A successful editor should satisfy three criteria at each step t, as outlined in [12], [13]: 4       
+
+> Fig. 2. Pilot analysis of edit-scoped generalization and its layer-wise emergence in online MLLM editing, using M-ORE on LLaVA-v1.5. (a) An example edit sample with paired image and text. (b) Reliable edits may still exhibit under-generalization, over-generalization, or entangled failure. (c) Edit-related cross-modal responses mainly emerge in deeper language layers, where textual and visual evidence becomes more synchronized. More discussions on other MLLM architectures are provided in Section V-F.
+
+Reliability requires the model to produce the desired answer on the edited input: 
+
+E(xet ,y et )
+
+I(fθt (xet ) = yet ), (4) where I is a correctness indicator used to compute accuracy. 
+
+Generality measures whether the edit holds under se-mantically equivalent variants of the request, including both textual and visual perturbations that fall within the edit scope. This captures in-scope cross-modal generalization , where the edited knowledge is expected to transfer to contexts providing equivalent semantic evidence. Let Nt(xet ) be such an in-scope neighborhood, e.g., paraphrases of xqt or benign transforma-tions of xvt ; then: 
+
+Ex′∼N t(xet )
+
+I(fθt (x′) = yte). (5) 
+
+Locality demands minimal side effects on unrelated inputs outside the edit scope. This captures out-of-scope locality preservation , requiring the edited knowledge to remain invis-ible to samples not semantically connected to the edit. Let Ut
+
+denote such an irrelevant set; we measure distribution shift by the KL divergence between the next-token distributions of the post-edit and pre-edit models: 
+
+Ex∼U t
+
+exp  −KL  pθt (·| x) ∥ pθt−1 (·| x) , (6) where pθ (·| x) is the next-token distribution under the same decoding prefix. Next, we conduct a pilot study on online MLLM editing to analyze edit-scoped generalization and derive the design principles of our method. 
+
+B. Edit-Scoped Generalization 1) Successful Edits Do Not Imply Scope-Correct General-ization: We restrict our analysis to edits that are reliable on the original edited request, excluding failed edit cases 1. As shown in Figure 2(b), among reliable edits, only 62 .20% achieve proper generalization, while the remaining cases suffer from different scope errors. Specifically, 28 .60% exhibit under-generalization, failing to transfer to in-scope cross-modal variants; 7.20% exhibit over-generalization, leaking to out-of-scope inputs; and 2.00% involve entangled failures. This shows that reliability alone cannot determine the semantic boundary of an edit. A practical online MLLM editor should therefore not only write the corrected knowledge, but also control its propagation scope: generalizing to semantically warranted multimodal variants while remaining inactive on unrelated inputs. 
+
+2) In-Scope Generalization Emerges in Late Shared Se-mantic Layers: We further analyze where edit-scoped cross-modal generalization emerges within MLLMs. Specifically, we quantify layer-wise edit responses for target text tokens and visual tokens, and compare their energy profiles across MLLM layers. As shown in Figure 2(c), edit-related responses are not uniformly distributed throughout the network. Instead, the strongest responses concentrate in deeper language layers, where the response peaks of target text and visual tokens become increasingly synchronized. We also provide qualitative attention visualizations in Figure 2(c). After editing, target text tokens attend more strongly to semantically relevant image regions in deeper layers.                                                       
+
+> 1Following the online editing protocol of M-ORE, we record reliability
+> Rel t, text/image generality T-Gen tand M-Gen t, and text/image locality
+> T-Loc tand M-Loc tafter each edit. We keep edits with Rel t≥τrel , and set Gen t= min( T-Gen t, M -Gen t)and Loc t= min( T-Loc t, M -Loc t).Given thresholds τgen and τloc , reliable edits are categorized as P ROPER
+> PROPAGATION if Gen t≥τgen ,Loc t≥τloc , U NDER -P ROPAGATION if
+> Gen t< τ gen ,Loc t≥τloc , O VER -P ROPAGATION if Gen t≥τgen ,Loc t<τloc , and E NTANGLED FAILURE if Gen t< τ gen ,Loc t< τ loc . We set
+> τrel = 1 .0,τgen = 0 .8, and τloc = 0 .95 .5
+
+IV. M ETHODOLOGY 
+
+Motivated by the above observations, we formulate on-line MLLM editing as a scope-aware two-branch update framework: stable modality-local absorption and evidence-gated shared generalization. The former enables reliable edit-ing while preserving out-of-scope locality , whereas the lat-ter activates in-scope cross-modal generalization only when supported by sufficient semantic evidence in deeper layers, thereby preventing the edit from propagating beyond its in-tended scope. 
+
+A. Edit-Scoped Online Editing Principle 
+
+Existing online editors for MLLMs can be viewed as proximal updates under history-dependent geometric regular-ization [15]. At each step, given an edit sample (xvt , x qt , y t),the editor incorporates the current correction by minimizing 
+
+Lt 
+
+> edit
+
+= E(xvt ,x qt ,y t)[− log pθ (yt | xvt , x qt )] , while constraining the update with accumulated second-order statistics, so as to reduce interference with previously edited and unrelated knowledge. Formally, let Wt−1 denote the editable parameter at step t, and let gt = ∇Wt−1 Lt 
+
+> edit
+
+be the edit gradient. The update can be written as 
+
+∆Wt = arg min  
+
+> ∆W
+
+∥∆W + ηg t∥2 
+
+> F
+
++ Tr  ∆W C t−1∆W ⊤ , (7) where Ct−1 denotes the second-order statistic accumulated from the edit history. Specifically, at each previous step s < t ,we collect a fixed-size step-only context set Bs, consisting of the edit batch and a small locality sample at that step. Then, 
+
+Ct−1 = C0 +
+
+> t−1
+
+X
+
+> s=1
+
+X
+
+> x∈B s
+
+ks(x)ks(x)⊤, C0 = 0 , (8) 
+
+where ks(x) is the FFN key induced by multimodal input x at the edited module. By construction, Ct−1 excludes any context from the current edit step t and therefore serves as a purely historical geometry for the current write. When Ct−1 ⪰ 0, Eq. (7) is strictly convex and admits the closed-form solution: 
+
+∆Wt = −η g t
+
+ I + Ct−1
+
+−1 ≜ −η g tPt−1, (9) where Pt−1 ≜ (I + Ct−1)−1 serves as a history-dependent preconditioner. This view interprets online editing as a gradient write shaped by a stability-history geometry. However, the above objective does not explicitly model the generalizability of edits. As shown in Section III-B, a reliable edit may fail to transfer to in-scope cross-modal variants, or may leak to out-of-scope inputs and thereby compromise locality. To control this behavior, we decompose the update at each layer into two functionally separated branches: 
+
+∆W (l) 
+
+> t
+
+= ∆ W (l) 
+
+> t, loc
+
++ ∆ W (l)
+
+> t, sh
+
+, (10) 
+
+where ∆W (l) 
+
+> t, loc
+
+denotes the modality-local absorption branch, and ∆W (l) 
+
+> t, sh
+
+denotes the shared generalization branch. The local branch is always active and is responsible for reliable editing while preserving out-of-scope locality. The shared branch is activated only when the current edit provides suffi-cient cross-modal semantic evidence, enabling in-scope cross-modal generalization. Accordingly, we instantiate Eq. (7) and derive the following edit-scoped proximal objective:                 
+
+> min
+> ∆W(l)
+> t, loc ,∆W(l)
+> t, sh
+> ∆W(l)loc +ηloc g(l)
+> t, loc
+> 2
+> F
+> + Tr
+> 
+> ∆W(l)loc C(l)
+> t−1,loc ∆W(l)loc
+> ⊤
+> +∆W(l)sh +ηsh γ(l)
+> tg(l)
+> t, sh
+> 2
+> F
+> + Tr
+> 
+> ∆W(l)sh C(l)
+> t−1,sh ∆W(l)sh
+> ⊤
+> .
+
+(11) Furthermore, Ct−1 in Eq. (8) is instantiated as branch-specific edit-scope-aware historical statistics. The local branch accumulates FFN keys from the textual context, whereas the shared branch accumulates gated cross-modal keys constructed from the visual input and textual query: 
+
+C(l) 
+
+> t−1,loc
+
+= C(l)0,loc +
+
+> t−1
+
+X
+
+> s=1
+
+X  
+
+> (xv,x q)∈B s
+
+k(l) 
+
+> s
+
+(xq )k(l) 
+
+> s
+
+(xq )⊤
+
+, (12) 
+
+C(l) 
+
+> t−1,sh
+
+= C(l)0,sh +
+
+> t−1
+
+X
+
+> s=1
+
+γ(l)
+
+> s
+
+X  
+
+> (xv,x q)∈B s
+
+k(l) 
+
+> s
+
+(xv , x q )k(l) 
+
+> s
+
+(xv , x q )⊤
+
+,
+
+(13) 
+
+where γ(l) 
+
+> t
+
+∈ [0 , 1] is a scope gate for the shared branch. It scales the current shared write in Eq. (11) and, analogously, 
+
+γ(l) 
+
+> s
+
+weights the contribution of historical step s in Eq. (13). Thus, only edits supported by sufficient cross-modal semantic evidence are allowed to enter and shape the shared geometry, enabling in-scope generalization while suppressing out-of-scope propagation. 
+
+B. Scope-Separated Write Geometry 
+
+To prevent entanglement between local absorption and shared generalization within the same parameter space while satisfying online editing efficiency, we employ a fixed low-rank write interface and partition the rank budget of each editable layer into two orthogonal branches. Let the total rank be r = rℓ + rs. We parameterize the layer-wise update as 
+
+∆W (l) 
+
+> t
+
+= ∆ W (l) 
+
+> t, loc
+
++ ∆ W (l) 
+
+> t, sh
+
+= ∆ B(l)
+
+> t, loc
+
+A(l)loc + ∆ B(l)
+
+> t, sh
+
+A(l)sh , (14) 
+
+where ∆B(l) 
+
+> t, loc
+
+and ∆B(l) 
+
+> t, sh
+
+are zero-initialized and updated recursively along the edit stream. A(l)loc ∈ Rrℓ×d and A(l)sh ∈
+
+Rrs×d denote the fixed low-rank write coordinates. To prevent the two effects from being geometrically entangled, we impose an orthogonal coordinate split: 
+
+A(l)loc A(l)loc 
+
+> ⊤
+
+= I, A(l)sh A(l)sh 
+
+> ⊤
+
+= I, A(l)loc A(l)sh 
+
+> ⊤
+
+= 0 . (15) Notably, after orthogonal initialization, A(l)loc and A(l)sh remain fixed throughout online editing. Correspondingly, each FFN key is projected into its branch-specific write subspace through a unified projection rule: 
+
+z(l) 
+
+> b
+
+(u) = A(l) 
+
+> b
+
+k(l)(u), b ∈ { loc , sh }, (16) 
+
+where u denotes the branch-dependent input context used to induce the FFN key. In practice, the local branch instantiates 
+
+u as xq , while the shared branch instantiates u as (xv , x q ).Applying this projection to the historical keys in Eqs. (12) and (13) directly yields the corresponding low-rank branch-wise geometries used for online preconditioning. 6
+
+C. Scope Activation from Cross-Modal Semantic Evidence 
+
+Cross-modal generalization is desirable only within the edit scope; beyond this scope, it becomes leakage that harms 
+
+out-of-scope locality preservation . Therefore, we activate the shared generalization branch only when the current visual and textual evidence jointly supports the same edited semantics. When such evidence is insufficient or inconsistent, the current edit is mainly absorbed by the modality-local branch. At edit step t, for each candidate shared layer l, we extract two FFN keys from the current edit input (xv , x q ). Following the projection rule in Eq. (16), both keys are mapped into the shared write subspace: 
+
+z(l) 
+
+> t, text
+
+= A(l)sh k(l) 
+
+> t
+
+(xq ), z(l) 
+
+> t, vision
+
+= A(l)sh k(l) 
+
+> t
+
+(xv ). (17) We characterize the cross-modal evidence with two com-plementary factors: directional agreement and bilateral sup-port [12]. Directional agreement measures whether the two modalities point to a consistent semantic direction in the shared space, while bilateral support measures whether the evidence is comparably supported by both modalities: 
+
+cos (l) 
+
+> t
+
+=
+
+D
+
+z(l)
+
+> t, text
+
+, z (l)
+
+> t, vision
+
+E
+
+∥z(l)
+
+> t, text
+
+∥2 ∥z(l)
+
+> t, vision
+
+∥2 + ε , (18) 
+
+sup (l) 
+
+> t
+
+= min  ∥z(l)
+
+> t, text
+
+∥2, ∥z(l)
+
+> t, vision
+
+∥2
+
+
+
+max  ∥z(l)
+
+> t, text
+
+∥2, ∥z(l)
+
+> t, vision
+
+∥2
+
+ + ε . (19) Based on these two quantities, we define the scope gate as 
+
+γ(l) 
+
+> t
+
+= σ
+
+
+
+β
+
+
+
+cos (l) 
+
+> t
+
+−τ
+
+ 
+
+· sup (l) 
+
+> t
+
+, (20) 
+
+where τ is the activation threshold and β controls the gate sharpness. The gate becomes large only when the textual and visual evidence are directionally aligned and comparably supported. Thus, as shown in Eq. (11) and Eq. (13), γ(l)
+
+> t
+
+suppresses shared propagation under cross-modal conflicts or weak visual-textual evidence, while activating it when the edit is likely to generalize within the intended multimodal scope. 
+
+D. Branch-wise Recursive Online Updates 
+
+We now derive the recursive online update rule in the scope-separated low-rank space. The edit at step t proceeds in two stages: history-preconditioned branch writing, followed by post-write geometric recursion for future edits. 
+
+a) History-preconditioned branch write: For each branch and layer, we maintain a compact inverse geometry: 
+
+P (l) 
+
+> t−1,b
+
+=
+
+
+
+I + C(l)
+
+> t−1,b
+
+−1
+
+, b ∈ { loc , sh }. (21) 
+
+Notably, the step-t editing uses P (l)
+
+> t−1,b
+
+, rather than P (l) 
+
+> t,b
+
+,ensuring that the current edit is constrained only by past edits. Following Eqs. (9) and (14), we only need to recursively update the branch-wise write coefficients ∆B(l) 
+
+> t, loc
+
+and ∆B(l)
+
+> t, sh
+
+.Let G(l) 
+
+> t, loc
+
+and G(l) 
+
+> t, sh
+
+denote the corresponding edit gradients. The resulting branch-wise closed-form updates are 
+
+∆B(l) 
+
+> t, loc
+
+= −ηloc G(l)
+
+> t, loc
+
+P (l)
+
+> t−1,loc
+
+, ∆B(l) 
+
+> t, sh
+
+= −ηsh γ(l) 
+
+> t
+
+G(l)
+
+> t, sh
+
+P (l)
+
+> t−1,sh
+
+.
+
+(22) 
+
+Algorithm 1 Online Editing Pipeline of ScopeEdit 
+
+Require: Base MLLM fθ0 , edit stream {et = ( xet , y et )}Tt=1 with 
+
+xet = ( xvt , x qt ), edited layers L, branch ranks rℓ, r s, and η
+
+Ensure: Edited model sequence {fθt }Tt=1 
+
+1: Construct fixed orthogonal bases {A(l)loc , A (l)sh }l∈L 
+
+2: for l ∈ L do 
+
+3: Initialize branch coefficients B(l)loc ← 0, B(l)sh ← 0
+
+4: Initialize recursive preconditioners P (l)loc ← Irℓ , P (l)sh ← Irs
+
+5: end for 
+
+6: for t = 1 , . . . , T do 
+
+7: Receive current edit request et = ( xvt , x qt , y et )
+
+8: Compute edit loss Ledit (fθt−1 (xvt , x qt ), y et )
+
+9: for l ∈ L do 
+
+10: Extract branch-specific FFN keys k(l) 
+
+> t, loc
+
+and k(l)
+
+> t, sh
+
+11: Project keys into scope-separated subspaces: 
+
+z(l) 
+
+> t, loc
+
+= A(l)loc k(l)
+
+> t, loc
+
+, z(l) 
+
+> t, sh
+
+= A(l)sh k(l)
+
+> t, sh
+
+.
+
+12: Estimate cross-modal evidence gate γ(l)
+
+> t
+
+13: Set branch weights ρ(l) 
+
+> t, loc
+
+= 1 and ρ(l) 
+
+> t, sh
+
+= γ(l)
+
+> t
+
+14: for b ∈ { loc , sh } do 
+
+15: Compute low-rank branch gradient: 
+
+G(l) 
+
+> t,b
+
+= ∇B(l)
+
+> b
+
+Ledit .
+
+16: Apply history-preconditioned branch write: 
+
+∆B(l) 
+
+> t,b
+
+= −ηb ρ(l)
+
+> t,b
+
+G(l)
+
+> t,b
+
+P (l)
+
+> t−1,b
+
+.
+
+17: Update branch coefficient: 
+
+B(l) 
+
+> b
+
+← B(l) 
+
+> b
+
++ ∆ B(l) 
+
+> t,b
+
+.
+
+18: end for 
+
+19: for b ∈ { loc , sh } do 
+
+20: Form weighted current key: 
+
+ez(l) 
+
+> t,b
+
+=
+
+q
+
+ρ(l) 
+
+> t,b
+
+z(l) 
+
+> t,b
+
+.
+
+21: Update recursive preconditioner by Sherman–Morrison: 
+
+P (l) 
+
+> t,b
+
+= P (l) 
+
+> t−1,b
+
+− P (l) 
+
+> t−1,b
+
+ez(l) 
+
+> t,b
+
+(ez(l) 
+
+> t,b
+
+)⊤P (l)
+
+> t−1,b
+
+1 + ( ez(l) 
+
+> t,b
+
+)⊤P (l) 
+
+> t−1,b
+
+ez(l)
+
+> t,b
+
+.
+
+22: end for 
+
+23: end for 
+
+24: Obtain edited model fθt with updated matrices {W (l) 
+
+> t
+
+}l∈L 
+
+25: end for 
+
+b) Post-write geometry recursion: After the write, we compute the projected keys of the current edit step and incor-porate them into the inverse geometries for future updates. For the current edit input (xvt , x qt ), we instantiate z(l) 
+
+> t, loc
+
+= z(l)loc (xqt )
+
+and z(l) 
+
+> t, sh
+
+= z(l)sh (xvt , x qt ) using Eq. (16). To unify the local and shared recursions, we define 
+
+ez(l) 
+
+> t,b
+
+=
+
+q
+
+ρ(l) 
+
+> t,b
+
+z(l) 
+
+> t,b
+
+, ρ(l) 
+
+> t, loc
+
+= 1 , ρ(l) 
+
+> t, sh
+
+= γ(l) 
+
+> t
+
+. (23) 
+
+Using the Sherman–Morrison lemma, we recursively update the branch-specific inverse geometry for the next edit step t+1 ,thereby avoiding the cost of explicit matrix inversion: 
+
+P (l) 
+
+> t,b
+
+= P (l) 
+
+> t−1,b
+
+−
+
+P (l) 
+
+> t−1,b
+
+ez(l)
+
+> t,b
+
+ez(l)
+
+> t,b
+
+⊤
+
+P (l)
+
+> t−1,b
+
+1 + 
+
+ez(l)
+
+> t,b
+
+⊤
+
+P (l) 
+
+> t−1,b
+
+ez(l)
+
+> t,b
+
+, b ∈ { loc , sh }, (24) 
+
+where P (l) 
+
+> t−1,b
+
+preconditions the current update ∆B(l) 
+
+> t,b
+
+, while 
+
+P (l) 
+
+> t,b
+
+is cached and used only from step t + 1 onward. The 7
+
+local geometry is updated by every edit, whereas the shared geometry is scaled by γ(l) 
+
+> t
+
+, allowing only edits with sufficient cross-modal evidence to substantially shape the shared pre-conditioner. Each active layer stores only P (l) 
+
+> t,b
+
+∈ Rrb×rb and updates it in O(r2 
+
+> b
+
+) time, giving constant per-edit overhead with respect to the edit stream length. Algorithm 1 provides a detailed presentation of the overall editing pipeline, elucidating the workflow of our ScopeEdit. 
+
+Derivation of Eq. (24) . For each editable layer l and branch 
+
+b ∈ { loc , sh }, ScopeEdit maintains P (l) 
+
+> t,b
+
+= ( I + C(l) 
+
+> t,b
+
+)−1.
+
+After the current editing, the projected key is inserted into the historical statistic: 
+
+C(l) 
+
+> t,b
+
+= C(l) 
+
+> t−1,b
+
++ ez(l)
+
+> t,b
+
+ ez(l)
+
+> t,b
+
+⊤. (25) 
+
+Let H(l) 
+
+> t−1,b
+
+= I + C(l) 
+
+> t−1,b
+
+and u = ez(l) 
+
+> t,b
+
+. Then the next-step inverse geometry is 
+
+P (l) 
+
+> t,b
+
+=
+
+
+
+H(l) 
+
+> t−1,b
+
++ uu ⊤−1
+
+. (26) 
+
+Applying the Sherman–Morrison identity, 
+
+(H + uu ⊤)−1 = H−1 − H−1uu ⊤H−1
+
+1 + u⊤H−1u , (27) 
+
+with H = H(l) 
+
+> t−1,b
+
+and H−1 = P (l) 
+
+> t−1,b
+
+directly yields Eq. (24). Therefore, the inverse geometry can be updated through a rank-one correction in the branch-specific low-rank space, avoiding explicit matrix inversion while keeping the online update independent of the edit stream length. V. E XPERIMENTS 
+
+To evaluate the effectiveness, stability, efficiency, and ex-tensibility of ScopeEdit, we organize experiments around five research questions, followed by a qualitative case study for in-tuitive analysis. We first compare ScopeEdit with mainstream online editors to assess its ability to balance in-scope cross-modal generalization and out-of-scope locality preservation (Section V-B). We then analyze its core components, basis initialization, and hyperparameter sensitivity (Section V-C), followed by long-horizon stability analysis on inter-edit in-terference and representation drift (Section V-D). We further examine its theoretical and empirical efficiency under online constraints (Section V-E), and finally evaluate whether the pilot observations generalize across MLLM architectures and real-world or more complex vision-language scenarios (Sec-tion V-F). The research questions are summarized as follows:  
+
+> •
+
+RQ1: How does ScopeEdit compare with existing main-stream editors in online MLLM editing, particularly in balancing in-scope cross-modal generalization and out-of-scope locality preservation ? 
+
+> •
+
+RQ2: How do the core components and configurations of ScopeEdit affect its edit-scoped performance, including branch-wise ablations, write-space basis initialization, and hyperparameter sensitivity?  
+
+> •
+
+RQ3: Can ScopeEdit maintain stable edit-scoped behavior over long online edit streams, such as mitigating inter-edit interference and hidden representation drift?                    
+
+> TABLE I STATISTICS OF DATASETS USED FOR ONLINE EDITING EVALUATION .
+> Dataset Train Test Images Reliability T/M-Generality T/M-Locality
+> E-VQA 6,346 2,093 1,390 2,093 2,093 / 2,093 4,289 / 5,046 E-IC 2,849 1,000 1,000 1,000 1,000 / 1,000 4,289 / 5,046
+> •
+
+RQ4: What are the time and space complexities of ScopeEdit for each online edit, and how does it achieve a quality–efficiency trade-off under strict online constraints?  
+
+> •
+
+RQ5: Are the phenomena revealed by our pilot study con-sistent across different MLLM architectures? Furthermore, can ScopeEdit be extended to real-world scenarios and more complex vision-language architectures? 
+
+A. Experiment Setup 1) Datasets: Following [13], we evaluate online MLLM editing on E-VQA (Editing VQA) and E-IC (Editing Image Caption), where E-IC requires finer-grained visual grounding. Detailed dataset statistics are summarized in Table I. 
+
+2) Metrics: For E-VQA and E-IC, we report Reliability ,
+
+Generality , and Locality (Section III-A), and further decom-pose Generality/Locality into text- and image-conditioned evaluations. 
+
+3) MLLM Backbones & Baseline Editors: For comprehen-sive evaluation, we select diverse MLLM backbones span-ning architectures and parameter scales, including BLIP2-OPT (2.7B) [3] and LLaVA-v1.5 (7B) [60]. Given the lack of effective online multimodal editors, we follow [13] and align with the setup in Section III-A. Specifically, we adapt LLM-based editors to MLLMs and categorize them into two groups: parameter-modifying and parameter-preserving .The former includes FT-L [13], FT-M [13], MEND [41], AlphaEdit [10] and M-ORE [15], while the latter covers IKE [44], SERAC [45], and LiveEdit [12]. 
+
+4) Implementation Details: For FT-L, FT-M, MEND, SERAC, and LiveEdit, we follow and align with the official editing protocol in LiveEdit/MMEdit [12], [13], including the same training/evaluation splits, and per-edit optimization settings. For IKE, we use the MMEdit-aligned setup [13] to ensure a fair comparison under identical edit scopes. For AlphaEdit [10], we follow the official hyperparameters and construct the retain key set K0 using E-VQA and E-IC train samples [13] to cover both modalities. Following Section III-B, we restrict editing to the last seven transformer layers, identified as the primary contributors. We perform online updates with ScopeEdit using the closed-form solver (Eq. (9)), without iterative optimization. To make the setting more challenging, we use a per-edit batch size of 1 throughout. We apply model-specific hyperparameters:  
+
+> •
+
+LLaVA-v1.5: We set the low-rank write dimension to r =512 with α/r = 2 .0. For the language backbone, we apply the dual-branch design with learning rates ηloc = 0 .1 and 
+
+ηsh = 1 .0 for the local and shared branches, respectively. For the visual projection layer, we use a single low-rank write with ηvis = 0 .001 , without the local/shared branch decomposition, since applying dual-branch routing to the projection layer may distort low-level visual alignment. We 8                       
+
+> TABLE II ONLINE EDITING RESULTS ON E-VQA AND E-IC FOR BLIP2-OPT AND LL AVA-V1.5 UNDER DIFFERENT EDIT HORIZONS . “R EL .”, “T/M-G EN .”, AND
+> “T/M-L OC .” ABBREVIATE Reliability ,Generality ,AND Locality (FOR TEXT /MODAL EVALUATIONS ), RESPECTIVELY . T HE SUBSCRIPT OF EACH METHOD
+> (E.G., 1,100 )DENOTES THE NUMBER OF ONLINE EDITS PERFORMED . R OWS SHADED IN LIGHT PURPLE INDICATE parameter-modifying METHODS .
+
+Model Methods E-VQA E-IC 
+
+Rel. ↑ T-Gen. ↑ M-Gen. ↑ T-Loc. ↑ M-Loc. ↑ Avg. ↑ Rel. ↑ T-Gen. ↑ M-Gen. ↑ T-Loc. ↑ M-Loc. ↑ Avg. ↑
+
+> BLIP2-OPT (2.7B)
+
+FT-L 1 100.00 100.00 60.00 94.74 100.00 90.95 96.77 95.02 90.72 90.05 68.27 88.16 FT-M 1 100.00 96.67 63.33 100.00 73.33 86.67 100.00 100.00 76.92 100.00 24.79 80.34 MEND 1 100.00 100.00 100.00 60.61 33.33 78.79 100.00 100.00 100.00 84.21 100.00 96.84 AlphaEdit 1 60.00 50.00 40.00 91.64 73.33 62.99 30.77 30.77 30.77 89.47 100.00 56.35 M-ORE 1 100.00 100.00 96.67 100.00 100.00 99.45 100.00 100.00 84.62 100.00 100.00 97.44 SERAC 1 100.00 100.00 100.00 89.47 80.00 93.89 97.38 95.52 86.11 100.00 63.82 88.57 IKE 1 100.00 100.00 100.00 52.63 13.33 73.19 100.00 100.00 100.00 63.16 10.00 74.63 LiveEdit 1 92.68 92.33 89.25 100.00 95.57 93.97 80.67 80.67 77.79 100.00 98.09 87.44 
+
+ScopeEdit 1 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 92.31 100.00 100.00 98.72 
+
+FT-L 100 26.00 18.00 11.00 86.28 53.12 38.88 79.45 71.69 57.82 92.23 55.18 71.27 FT-M 100 58.40 50.85 43.69 100.00 46.85 59.96 67.18 62.17 51.63 100.00 9.81 58.16 MEND 100 1.00 1.00 1.00 90.42 77.20 34.12 0.00 0.00 0.00 46.96 54.05 20.20 AlphaEdit 100 36.83 28.50 26.78 86.35 69.97 49.69 27.94 28.57 26.69 90.52 78.83 50.51 M-ORE 100 99.13 90.34 83.91 99.29 96.50 93.77 90.14 87.75 66.31 97.21 94.97 87.28 SERAC 100 88.03 85.18 88.03 89.95 37.60 77.76 74.02 63.79 56.93 77.52 42.94 63.04 IKE 100 83.53 83.00 84.72 74.63 6.37 66.45 81.18 71.13 84.30 79.90 11.93 65.69 LiveEdit 100 91.83 91.16 85.02 99.31 92.78 92.02 74.63 74.33 61.95 96.77 95.34 80.60 
+
+ScopeEdit 100 98.80 91.84 88.84 98.94 96.80 95.11 93.01 91.75 85.48 97.63 97.17 93.01 LLaVA-v1.5 (7B) 
+
+FT-L 1 95.66 99.00 81.84 89.38 89.98 91.17 100.00 100.00 89.80 91.67 28.01 81.89 FT-M 1 95.00 95.00 79.67 100.00 85.83 91.10 100.00 100.00 76.47 100.00 26.11 80.52 MEND 1 95.53 95.53 83.79 74.82 59.65 81.86 96.81 97.65 96.44 94.74 100.00 97.13 AlphaEdit 1 72.57 72.57 70.67 88.04 96.67 80.10 47.06 47.06 52.94 100.00 100.00 69.41 M-ORE 1 100.00 100.00 84.80 100.00 100.00 97.47 100.00 100.00 88.24 100.00 100.00 98.04 SERAC 1 90.00 90.00 60.00 100.00 23.33 72.67 88.61 90.17 81.45 98.24 50.83 81.86 IKE 1 50.00 50.00 50.00 58.33 15.00 44.67 94.12 94.12 94.12 62.50 12.50 71.47 LiveEdit 1 93.36 93.67 87.91 100.00 100.00 94.99 82.33 82.33 80.67 100.00 100.00 89.07 
+
+ScopeEdit 1 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 94.12 100.00 100.00 99.02 
+
+FT-L 100 74.55 66.59 66.14 84.15 65.71 71.43 86.00 82.11 78.15 77.13 11.33 66.94 FT-M 100 85.67 81.75 67.03 100.00 46.19 76.13 84.57 80.05 62.88 100.00 8.32 67.16 MEND 100 1.09 1.09 1.01 75.33 61.67 28.04 0.11 0.08 0.04 25.52 31.33 11.42 AlphaEdit 100 71.33 70.93 70.67 88.45 77.67 75.81 51.98 48.21 47.23 92.59 56.90 59.38 M-ORE 100 93.51 90.15 80.76 96.08 89.98 90.10 94.58 93.47 78.29 97.48 89.21 90.61 SERAC 100 87.71 85.03 67.13 92.27 20.83 70.59 73.38 71.00 59.72 72.88 25.85 60.57 IKE 100 38.87 35.85 39.40 46.22 11.24 34.32 78.78 77.37 78.07 53.86 12.88 60.19 LiveEdit 100 90.22 91.39 81.49 98.05 95.27 91.28 78.49 78.77 65.50 98.77 96.76 83.66 
+
+ScopeEdit 100 92.52 96.05 84.18 98.69 91.39 92.57 95.42 94.66 86.35 98.42 92.26 93.42 
+
+update the last seven transformer layers and the visual projection layer. For each editable low-rank write, we initial-ize A(l) via torch.nn.init.orthogonal and B(l) as zero matrices, while freezing A(l) and updating only B(l). 
+
+> •
+
+BLIP2-OPT: We set the low-rank write dimension to r =128 with α/r = 2 .0. For the language backbone, we use 
+
+ηloc = 0 .05 and ηsh = 0 .5 for the local and shared branches, respectively. For the visual projection layer, we similarly use a single low-rank write with ηvis = 0.001 and do not apply branch decomposition. We update the last seven transformer layers and the visual projection layer, using the same initialization and freezing strategy as above. 
+
+5) Codebase: For fair comparison, all methods are imple-mented within the unified E ASY EDIT framework [13] and evaluated on a single NVIDIA H20 (96GB) GPU. 
+
+B. Overall Online Editing Performance (RQ1) 1) Performance on coarse-grained benchmarks: Table II reports online editing results on E-VQA and E-IC across two MLLM backbones and different edit horizons. Existing editors exhibit different forms of scope-incorrect behavior. Parameter-modifying methods such as FT and MEND can fit individual edits, but degrade sharply under long edit streams, suggesting accumulated interference and poor online stability. AlphaEdit sometimes preserves locality, but often fails to achieve reliable in-scope generalization under multimodal inputs. Parameter-preserving methods such as SERAC, IKE, and LiveEdit better avoid direct weight drift, yet still show an imbalanced trade-off: they may preserve locality, but insufficiently propagate edits to in-scope cross-modal variants. In contrast, ScopeEdit consistently achieves the best overall 9                                                                                                                                                                                                            
+
+> TABLE III ABLATION STUDY OF SCOPE EDIT DESIGN CHOICES ON THE E-IC TASK FOR LL AVA-V1.5. S HADED ROWS DENOTE THE FULL SCOPE EDIT MODEL .COLORED ARROWS IN PARENTHESES INDICATE CHANGES RELATIVE TO SCOPE EDIT UNDER THE SAME EDIT HORIZON .
+> Variant E-IC
+> Rel. ↑T-Gen. ↑M-Gen. ↑T-Loc. ↑M-Loc. ↑Avg. ↑
+> ScopeEdit 1100.00 ±0.00 100.00 ±0.00 92.16 ±3.39 100.00 ±0.00 100.00 ±0.00 98.43 ±0.68
+> w/o Edit-Scoped Principle 1100 .00 ±0.00 100 .00 ±0.00 90 .20 ±3.39 (↓1.96 )100 .00 ±0.00 (±0.00 )100 .00 ±0.00 (±0.00 )98 .04 ±0.68
+> w/o Scope Separation 1100 .00 ±0.00 100 .00 ±0.00 94 .12 ±0.00 (↑1.96 )97 .22 ±4.81 (↓2.78 )99 .05 ±1.02 (↓0.95 )98 .08 ±1.17
+> w/o Scope Activation 1100 .00 ±0.00 100 .00 ±0.00 92 .16 ±3.39 (±0.00 )95 .83 ±0.00 (↓4.17 )100 .00 ±0.00 (±0.00 )97 .60 ±0.68
+> ScopeEdit 100 95.56 ±0.34 94.75 ±0.41 86.49 ±0.15 98.16 ±0.25 91.62 ±0.56 93.32 ±0.34
+> w/o Edit-Scoped Principle 100 94 .77 ±0.27 93 .88 ±0.37 78 .39 ±0.13 (↓8.10 )97 .64 ±0.18 (↓0.52 )90 .07 ±1.33 (↓1.55 )90 .95 ±0.46
+> w/o Scope Separation 100 93 .71 ±0.56 93 .06 ±0.40 89 .55 ±1.19 (↑3.06 )94 .05 ±0.75 (↓4.11 )87 .72 ±1.92 (↓3.90 )91 .62 ±0.96
+> w/o Scope Activation 100 94 .07 ±0.22 92 .84 ±0.27 89 .84 ±2.15 (↑3.35 )94 .98 ±1.11 (↓3.18 )89 .83 ±1.41 (↓1.79 )92 .31 ±1.03 110 100
+> 70
+> 80
+> 90
+> 100
+> Rel.
+> 110 100
+> T-Gen.
+> 110 100
+> M-Gen.
+> 110 100
+> T-Loc.
+> 110 100
+> M-Loc.
+> Score (%)
+> Rank 1024 Rank 512 Rank 256 Rank 128
+> Fig. 3. Sensitivity analysis of the low-rank write-interface dimension runder different online edit horizons.
+
+performance across all backbones, tasks, and edit horizons. Under t=100 , it obtains the highest average scores in all four settings: 95 .11 on BLIP2-OPT E-VQA, 93 .01 on BLIP2-OPT E-IC, 92 .57 on LLaVA-v1.5 E-VQA, and 93 .42 on LLaVA-v1.5 E-IC. The improvements are especially clear on mul-timodal generalization, which reflects in-scope cross-modal generalization. On BLIP2-OPT E-IC at t=100 , ScopeEdit improves M-Gen. from 66 .31 with M-ORE to 85 .48 , while also increasing M-Loc. from 94 .97 to 97 .17 . On LLaVA-v1.5 E-IC, it improves M-Gen. from 78 .29 to 86 .35 over M-ORE, while maintaining strong locality. These results support our central claim: effective online MLLM editing should neither generalize indiscriminately nor suppress edit effects for locality. Instead, edits should generalize within their intended semantic scope while remaining constrained outside it .
+
+C. Design Analysis and Hyperparameter Sensitivity (RQ2) 1) Ablation Study: Table III presents the ablation experi-ments demonstrating our core contributions, and our detailed setup is as follows:  
+
+> •
+
+w/o Edit-Scoped Principle collapses ScopeEdit into a single-branch recursive editor, using one low-rank write space and one recursive statistic for all edits.  
+
+> •
+
+w/o Scope Separation removes the orthogonal split be-tween the modality-local absorption branch and the shared generalization branch, forcing both functions to share the same low-rank write space.  
+
+> •
+
+w/o Scope Activation removes the evidence-based scope gate and always activates the shared generalization branch. Overall, removing any component degrades the average score, and the gap becomes more pronounced under long edit streams, indicating that edit-scoped generalization is not achieved by stable recursive writing alone. First, w/o Edit-Scoped Principle collapses the two-branch formulation into a single recursive write path. While it remains reliable under t=100 , its M-Gen. drops from 86 .49 to 78 .39 .This shows that explicitly modeling editing as a scoped problem is necessary for in-scope cross-modal generalization beyond reliability and stability. Second, w/o Scope Separation obtains high M-Gen. but suffers clear locality degradation under long horizons, with T-Loc. and M-Loc. dropping from 98 .16 /91 .62 to 94 .05 /87 .72 .This suggests that forcing local absorption and shared gener-alization into the same write space can over-expand the edit effect and harm out-of-scope locality preservation. Third, w/o Scope Activation encourages stronger cross-modal generalization by uniformly activating the shared branch, but this also over-generalizes the edit beyond its intended scope. At t=100 , T-Loc. and M-Loc. drop from 
+
+98 .16 /91 .62 to 94 .98 /89 .83 , indicating increased out-of-scope leakage. This confirms that cross-modal generalization must be gated by semantic evidence rather than applied uniformly. 
+
+2) Basis Initialization Analysis: To examine the robust-ness of the orthogonal coordinate design more explicitly, we compare different initializations of the fixed basis A(l). As shown in Table IV, random initializations such as Gaussian and Xavier are substantially less stable, especially under long edit horizons. Although the data-driven basis improves over random initialization, it still falls behind the orthogonal basis. In contrast, the proposed orthogonal initialization achieves the best overall performance at both t=1 and t=100, demonstrating that an orthonormal and fixed/drift-free coordinate system provides a more reliable low-rank write space for editing. 10 −1.0 −0.5 0.0 0.5 1.0  
+
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0 Pre-edit
+> 1st edit
+> 100th edit
+
+(a) MEND −1.0 −0.5 0.0 0.5 1.0   
+
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0 Pre-edit
+> 1st edit
+> 100th edit
+
+(b) M-ORE −1.0 −0.5 0.0 0.5 1.0   
+
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0 Pre-edit
+> 1st edit
+> 100th edit
+
+(c) ScopeEdit 
+
+Fig. 4. Sequential visualization of hidden-state distribution shifts under long-horizon online editing. We compare MEND, M-ORE, and ScopeEdit on locality samples before editing, after the 1st edit, and after the 100th edit. MEND exhibits clear representation drift after sequential edits, whereas M-ORE and ScopeEdit better preserve the pre-edit distribution. 1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+> Edit step
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+
+1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+> Edit step
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+
+1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+> Edit step
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+
+1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+> Edit step
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+
+1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+> Edit step
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+
+(a) MEND Top-k coordinate overlap. 1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10  
+
+> Edit step
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+
+(b) ScopeEdit Top-k coordinate overlap. 1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10  
+
+> Edit step
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+
+(c) MEND weight cosine similarity. 1 2 3 4 5 6 7 8 9 10 
+
+Edit step 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10  
+
+> Edit step
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+
+(d) ScopeEdit weight cosine similarity. 
+
+Fig. 5. Pairwise weight-entanglement analysis across consecutive online edits. The first row shows results on BLIP-2, and the second row shows results on LLaVA-v1.5. For each backbone, we compare MEND and ScopeEdit using top-k coordinate overlap and weight-update cosine similarity. MEND exhibits high off-diagonal overlap and strong positive cosine similarity, indicating that sequential edits collapse into a shared edit core. ScopeEdit maintains lower overlap and near-zero cosine similarity across edit pairs, suggesting more disentangled and stable online updates. TABLE IV EFFECT OF DIFFERENT WRITE -SPACE BASIS INITIALIZATIONS ON E-IC  
+
+> WITH
+
+LL AVA-V1.5. W E COMPARE GAUSSIAN , X AVIER , DATA -DRIVEN ,
+
+> AND THE PROPOSED ORTHOGONAL INITIALIZATION UNDER SHORT
+
+- AND LONGHORIZON ONLINE EDITING . T HE DATA -DRIVEN BASIS IS INITIALIZED USING ACTIVATION STATISTICS COLLECTED FROM THE TRAINING SET .
+
+Basis Choice Rel. T-Gen. M-Gen. T-Loc. M-Loc. 
+
+Gaussian 1 100.00 100.00 88.24 97.96 100.00 Xavier 1 94.12 94.12 94.12 91.67 100.00 Data-driven 1 100.00 100.00 94.12 91.67 100.00 
+
+Orthogonal 1 100.00 100.00 94.12 100.00 100.00 
+
+Gaussian 100 83.19 80.83 72.26 94.87 85.44 Xavier 100 11.39 11.39 11.39 96.64 56.83 Data-driven 100 94.23 88.31 79.55 92.36 90.83 
+
+Orthogonal 100 95.42 94.66 86.35 98.42 92.26 
+
+3) Hyperparameter Analysis: Figure 3 analyzes the ef-fect of the low-rank write-interface dimension r ∈{128 , 256 , 512 , 1024 }. Overall, r = 512 achieves the most balanced stability–plasticity trade-off. When the rank is too small, such as r = 128 , the restricted write capacity limits the absorption of edited knowledge, leading to weaker relia-bility and generality, especially on multimodal generalization. Increasing the rank provides a larger write space and generally improves edit expressiveness, but the gains are not strictly monotonic. Once the write space is sufficiently expressive, additional rank dimensions bring limited benefits and may introduce mild locality fluctuations under long edit streams due to increased editable degrees of freedom. These results suggest that ScopeEdit benefits from a write space that is expressive enough for editing but still sufficiently constrained for stable online updates. Therefore, we adopt r = 512 as the default rank in our experiments. 
+
+D. Long-Horizon Stability and Representation Shift (RQ3) 1) Hidden representation stability: We further investigate whether online editing induces accumulated representation drift on locality samples that are unrelated to the edited requests. Figure 4 compares three representative methods, i.e., 11 0.9                            
+
+> 1.0
+> 1.1
+> 1.2
+> S
+> 0.930±0.003 s
+> ScopeEdit
+> raw
+> rolling mean
+> 25 50 75 100
+> Edit step t
+> 4.5
+> 5.0
+> GB
+> 0.8
+> 0.9
+> 1.0
+> 1.1
+> 1.2
+> 0.892±0.003 s
+> M-ORE
+> 25 50 75 100
+> Edit step t
+> 4.5
+> 5.0
+> 2
+> 4
+> 6
+> 8
+> 3.715±1.386 s
+> FT-M
+> 25 50 75 100
+> Edit step t
+> 4.5
+> 5.0
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 1.433±0.332 s
+> FT-L
+> 25 50 75 100
+> Edit step t
+> 0
+> 5
+> 84
+> 86
+> 88
+> 90
+> 92
+> 88.275±2.017 s
+> AlphaEdit
+> 25 50 75 100
+> Edit step t
+> 7.5
+> 8.0
+> Fig. 6. Efficiency metrics of editors on LLaVA-v1.5 over the online edit sequence t.Top: Edit latency (raw and rolling mean) . Bottom: Incremental peak memory ( ∆peak mem).
+
+MEND, M-ORE, and ScopeEdit. MEND causes a pronounced shift in the hidden-state distribution after sequential editing: the representations after the 100th edit clearly deviate from the pre-edit distribution, indicating that repeated parameter updates can gradually distort the model’s representation space even for unrelated inputs. This observation explains the local-ity degradation and long-horizon instability of MEND, which is consistent with its performance collapse in Table II. In contrast, M-ORE largely preserves the pre-edit distribu-tion after both the 1st and 100th edits, suggesting that re-cursive history-aware preconditioning can effectively suppress accumulated drift. ScopeEdit further balances edit reliability, generality, locality, and long-horizon stability: its post-edit representation distributions remain highly overlapped with the pre-edit distribution, with no clear distributional separation even after 100 edits. This indicates that the proposed evidence-gated shared branch can enhance in-scope knowledge gener-alization while avoiding global perturbations to unrelated rep-resentations. Overall, these results demonstrate that ScopeEdit maintains stable edit-scoped behavior over long online edit streams. 
+
+2) Weight entanglement analysis: We analyze long-horizon stability from the perspective of parameter-update entangle-ment. Figure 5 reports pairwise top-k coordinate overlap and weight-update cosine similarity across consecutive edits. For MEND, later edits increasingly reuse a compact set of update coordinates, leading to large off-diagonal top-k overlaps. Its weight-update cosine similarities also become strongly pos-itive after several edits, indicating that different edits are repeatedly written into highly aligned parameter directions. This suggests that sequential edits collapse into a shared edit core , making newly injected edits interfere with previous ones and amplifying long-horizon drift. In contrast, ScopeEdit shows substantially lower off-diagonal overlap and near-zero cosine similarity across most edit pairs on both backbones. This indicates that its up-dates are less concentrated on the same coordinates and less directionally coupled across edit steps. This observation aligns closely with the scope-separated write geometry and the recursive preconditioning mechanism: frequently exploited update directions are progressively suppressed, while local absorption and shared generalization are encoded into mutu-ally independent orthogonal subspaces. Therefore, ScopeEdit                                     
+
+> TABLE V PER -EDIT COMPUTATIONAL AND MEMORY COMPLEXITIES UNDER AN ONLINE EDIT STREAM OF LENGTH t. T IME /EDIT COUNTS ONLY EDITOR -SPECIFIC OVERHEAD ,EXCLUDING THE SHARED FORWARD /BACKWARD COST FOR EDIT -GRADIENT COMPUTATION . H ERE
+> r≪d,|L| DENOTES THE NUMBER OF EDITED LAYERS ,AND pMEM
+> DENOTES THE SIZE OF AN EDIT -SPECIFIC STORED ITEM .
+> Method Time / edit Memory t-dep. ScopeEdit (ours) O |L| dout r2O |L| (dout r+r2)O(1)
+> Locate-then-edit O(d3)or O(d2)O(d2)O(1)
+> Null-space constraint O(d t 2)O(d t )↑
+> Parameter-preserving O(t)or O(log t)O(t p mem )↑
+> Naive finetuning O |L| dout rO |L| dout rO(1)
+
+effectively reduces parameter-level entanglement, which ex-plains its stronger stability under long online edit streams. 
+
+E. Online Editing Efficiency Analysis (RQ4) 
+
+We analyze the editor-specific overhead of ScopeEdit under an online edit stream. Let r = rℓ+rs ≪ d denote the total low-rank edit dimension, where rℓ and rs are the ranks of the local absorption and shared generalization branches, respectively. Let d and dout be the FFN key/input and output dimensions, and let L be the set of edited layers. ScopeEdit performs each edit through fixed low-rank write coordinates and maintains only branch-wise recursive statistics in the edit subspace. Since ScopeEdit updates its branch-wise statistics using only the current-step keys K(l) 
+
+> t
+
+= {k(l) 
+
+> t
+
+(xq ), k(l) 
+
+> t
+
+(xv , x q )} rather than storing past edit instances, the per-edit overhead is 
+
+O |L| dout r2, and the online memory cost is O
+
+|L| (dout r +
+
+r2)
+
+. Both are independent of the edit stream length t. As summarized in Table V, ScopeEdit avoids the dense second-order solvers required by locate-then-edit methods and does not store edit-specific memories or experts as parameter-preserving methods do. Thus, it provides constant per-edit compute and online memory under strict streaming constraints. We further validate this analysis with empirical efficiency measurements in Figure 6. ScopeEdit exhibits nearly flat per-edit latency across the edit stream, with an average time of 
+
+0.930 ± 0.003 seconds per edit. This is comparable to M-ORE ( 0.892 ± 0.003 s), faster than FT-L ( 1.433 ± 0.332 s) and FT-M ( 3.715 ± 1.386 s), and substantially more efficient than AlphaEdit ( 88 .275 ± 2.017 s), whose dense projection 12 1 7 13 21 27 32 OPT                  
+
+> Proj.
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Contribution ( |Δ a| mean)
+> BLIP2-OPT
+> 1713 19 25 28 MM
+> Proj.
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Qwen2-VL
+> 1715 23 31 36 MM
+> Proj.
+> 0
+> 1
+> 2
+> 3
+> 4
+> Qwen3-VL
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Normalized token energy
+> Layer
+> Attention MLP Vision projector Text energy Vision energy
+> Fig. 7. Cross-model validation of the layer-wise phenomenon. BLIP2-OPT, Qwen2-VL, and Qwen3-VL exhibit similar late-layer concentration patterns in module contributions and token energy, suggesting that the observed phenomenon is not model-specific.
+
+step dominates the runtime. The memory curve of ScopeEdit also remains stable over time, showing no monotonic growth as t increases. Although naive finetuning is asymptotically cheaper, Table II shows that it sacrifices multimodal locality under sequential edits. ScopeEdit achieves a better quality– efficiency trade-off by maintaining constant online overhead while preserving both edit generalization and locality. 
+
+Complexity Derivation . For each edited layer l ∈ L,ScopeEdit maintains two branches b ∈ { loc , sh } with ranks 
+
+rloc = rℓ, rsh = rs, and r = rℓ + rs. Each branch contains a fixed basis A(l) 
+
+> b
+
+∈ Rrb×d, an editable coefficient matrix B(l) 
+
+> b
+
+∈
+
+Rdout ×rb , and a recursive preconditioner P (l) 
+
+> b
+
+∈ Rrb×rb .At edit step t, projecting the branch-specific key, z(l) 
+
+> t,b
+
+=
+
+A(l) 
+
+> b
+
+k(l) 
+
+> t,b
+
+, costs O(rbd). The history-preconditioned write 
+
+∆B(l) 
+
+> t,b
+
+= −ηG (l)
+
+> t,b
+
+P (l) 
+
+> t−1,b
+
+with G(l) 
+
+> t,b
+
+∈ Rdout ×rb costs 
+
+O(dout r2 
+
+> b
+
+). The Sherman–Morrison update of P (l) 
+
+> b
+
+in Eq. (24) is a rank-one correction in the rb-dimensional edit subspace and costs O(r2 
+
+> b
+
+). Thus, the per-layer cost is 
+
+X
+
+> b∈{ loc ,sh }
+
+O rbd + dout r2 
+
+> b
+
++ r2
+
+> b
+
+ . (28) 
+
+Using rℓ +rs = r and r2 
+
+> ℓ
+
++r2 
+
+> s
+
+≤ r2, the total per-edit overhead over all edited layers is 
+
+O
+
+
+
+|L| (rd + dout r2 + r2)
+
+
+
+≈ O |L| dout r2, (29) 
+
+where the approximation reflects that the preconditioned low-rank write dominates in practice. For online memory, ScopeEdit stores only the branch-wise coefficient matrices B(l) 
+
+> b
+
+and recursive preconditioners P (l) 
+
+> b
+
+:
+
+X
+
+> b∈{ loc ,sh }
+
+O(dout rb + r2 
+
+> b
+
+) = O(dout r + r2 
+
+> ℓ
+
++ r2 
+
+> s
+
+) ≤ O(dout r + r2)
+
+(30) 
+
+per edited layer. Therefore, the total online memory cost is 
+
+O
+
+
+
+|L| (dout r + r2)
+
+
+
+. (31) 
+
+The fixed bases A(l) 
+
+> b
+
+are initialized once with resident cost 
+
+O(|L| rd ) if counted, but they do not grow with the edit stream. Since ScopeEdit updates its statistics using only current-step keys and stores no past edit instances, both the per-edit computation and online memory are independent of the number of edits t.
+
+F. Architecture and Scenario Extension (RQ5) 1) Consistency of pilot observations across MLLMs: Our pilot study in Section III-B is conducted on LLaVA-v1.5, raising a natural question of whether the observed edit-scoped behaviors are architecture-specific or generally present across MLLMs. To examine this, we further evaluate representative MLLM backbones with different vision-language alignment designs, including BLIP2-OPT [3], Qwen2-VL [61], and Qwen3-VL [62]. For each backbone, we apply the same online editing protocol and analyze whether edit-related cross-modal responses concentrate in deeper semantic layers. Figure 7 reports the layer-wise module contributions and token-energy profiles across different MLLM backbones. The results show a consistent pattern: edit-related responses are not uniformly distributed, but become increasingly concentrated in deeper language layers. Although BLIP2-OPT, Qwen2-VL, and Qwen3-VL adopt different vision-language alignment de-signs, their text and vision token energies all exhibit clear late-layer amplification, and the dominant module contributions also shift toward high-level semantic layers. This indicates that the pilot observation on LLaVA-v1.5 is not architecture-specific. Instead, in-scope cross-modal generalization gener-ally emerges where visual and textual evidence has been sufficiently fused into shared semantic representations. These findings support our design of applying edit-scoped control in deeper editable modules. 
+
+2) Extension to Real-World Scenarios: Beyond controlled editing benchmarks [13], we further evaluate ScopeEdit on VLKEB [18], a real-world vision-language knowledge edit-ing benchmark. VLKEB contains more natural visual-textual knowledge updates and further evaluates portability , which measures whether the edited knowledge can be applied to related knowledge queries. Following VLKEB, for an edit request et = ( xet , y et ) with 
+
+xet = ( xvt , x qt ), let Pport  
+
+> t
+
+denote its portability set, where each 13 
+
+TABLE VI ONLINE EDITING RESULTS ON VLKEB FOR BLIP2-OPT AND 
+
+LL AVA-V1.5 UNDER THE SLIDING CONTINUAL EDITING PROTOCOL . T HE SUBSCRIPT OF EACH METHOD DENOTES THE NUMBER OF CONSECUTIVE EDITS IN THE SLIDING EVALUATION , E.G., 1 AND 100 INDICATE EVALUATION AFTER 1 AND 100 SEQUENTIAL EDITS , RESPECTIVELY .“P ORT .” DENOTES PORTABILITY .                                                                                                                                                    
+
+> Model Methods VLKEB
+> Rel. ↑T-Gen. ↑M-Gen. ↑T-Loc. ↑M-Loc. ↑Port. ↑Avg. ↑
+> BLIP2-OPT (2.7B)  FT-L 199.95 99.23 100.00 72.20 20.18 17.50 68.18 FT-M 199.53 96.89 99.27 100.00 5.87 27.90 71.58 M-ORE 198.70 91.41 91.26 81.87 12.23 36.01 68.58 SERAC 190.42 89.23 90.50 100.00 2.47 12.62 64.21
+> ScopeEdit 198.35 96.95 93.02 82.91 13.48 34.38 69.85
+> FT-L 100 47.18 46.61 46.34 18.49 1.17 10.04 28.31 FT-M 100 30.80 29.69 30.67 100.00 1.23 23.59 36.00 M-ORE 100 73.03 74.83 70.33 81.44 9.15 35.24 57.34 SERAC 100 90.54 35.43 90.54 100.00 2.46 13.30 55.38
+> ScopeEdit 100 80.64 72.64 73.09 81.47 10.52 36.65 59.17 LLaVA-v1.5 (7B)
+> FT-L 199.85 99.30 99.80 86.96 30.35 30.70 74.49 FT-M 1100.00 98.98 98.75 100.00 19.87 55.48 78.85 M-ORE 194.57 87.44 91.31 87.41 57.33 60.79 79.81 SERAC 198.56 97.46 98.56 99.96 1.94 41.46 72.99
+> ScopeEdit 1100.00 93.37 99.10 87.06 53.05 60.42 82.17
+> FT-L 100 72.27 65.90 68.28 56.97 11.80 28.85 50.68 FT-M 100 69.58 67.28 66.68 100.00 2.53 45.93 58.67 M-ORE 100 93.31 87.21 90.47 84.36 51.53 60.62 77.92 SERAC 100 98.56 70.32 98.56 99.96 1.91 41.08 68.40
+> ScopeEdit 100 94.47 87.26 91.40 84.17 51.24 60.69 78.20
+
+(xpt , y pt ) ∈ P port  
+
+> t
+
+is a related visual-textual query-answer pair constructed from the multimodal knowledge graph associated with the edited entity. The portability score is defined as 
+
+E(xpt ,y pt )∼P port 
+
+> t
+
+I(fθt (xpt ) = ypt ). (32) Thus, VLKEB evaluates not only reliability, generality, and locality, but also whether the edited model can transfer the corrected knowledge to related real-world contexts. Different from the main online editing protocol in Sec-tion V-B1, we follow the sliding continual editing protocol of VLKEB [18]. We evaluate two representative MLLM back-bones, BLIP2-OPT and LLaVA-v1.5, and compare ScopeEdit with parameter-modifying editors, including FT-L, FT-M, and M-ORE, as well as the memory-based editor SERAC. Table VI shows that ScopeEdit remains effective and pre-serves stable edit-scoped behavior under real-world sliding continual editing. First, fine-tuning-based methods achieve high scores at t=1 but degrade sharply after 100 edits, revealing poor long-horizon stability in realistic visual-textual streams. Second, recursive parameter-modifying editors, in-cluding M-ORE and ScopeEdit, substantially outperform tra-ditional editors on portability, suggesting that stable param-eter updates are more effective than direct fine-tuning or memory-based correction for transferring edited knowledge to related visual-textual contexts. Third, compared with M-ORE, ScopeEdit achieves a better long-horizon trade-off across all evaluation dimensions. At t=100 , ScopeEdit achieves the best Avg. scores on both BLIP2-OPT and LLaVA-v1.5, reaching 
+
+59 .17 and 78 .20 , respectively. This indicates that ScopeEdit does not merely excel on isolated metrics, but provides a strong overall trade-off among reliability, generality, locality, and portability. 
+
+3) Extension to complex vision-language architectures: 
+
+Since the Edit-Scoped Online Editing Principle is module-
+
+TABLE VII EXTENSION TO COMPLEX VISION -LANGUAGE ARCHITECTURES ON 
+
+E-VQA AND E-IC WITH LL AVA-V1.5 UNDER SHORT - AND LONG -HORIZON ONLINE EDITS .Variant Rel. ↑ T-Gen. ↑ M-Gen. ↑ T-Loc. ↑ M-Loc. ↑
+
+E-VQA Task 
+
+ScopeEdit 1 (default) 100.00 100.00 100.00 100.00 100.00 
+
+ScopeEdit w/ vis 1 63.33 60.00 51.33 100.00 100.00 ScopeEdit w/ text 1 100.00 100.00 50.00 100.00 100.00 ScopeEdit w/ vis-text 1 100.00 100.00 100.00 100.00 100.00 
+
+ScopeEdit 100 (default) 92.52 96.05 84.18 98.69 91.39 ScopeEdit w/ vis 100 89.07 84.70 66.31 100.00 90.47 ScopeEdit w/ text 100 92.51 86.65 81.39 92.02 82.47 ScopeEdit w/ vis-text 100 100.00 96.00 87.55 98.64 93.08 
+
+E-IC Task 
+
+ScopeEdit 1 (default) 100.00 100.00 94.12 100.00 100.00 
+
+ScopeEdit w/ vis 1 58.82 52.94 52.94 100.00 100.00 ScopeEdit w/ text 1 100.00 100.00 94.12 95.83 100.00 ScopeEdit w/ vis-text 1 100.00 100.00 94.12 100.00 100.00 
+
+ScopeEdit 100 (default) 95.42 94.66 86.35 98.42 92.26 ScopeEdit w/ vis 100 88.88 84.55 65.35 100.00 87.30 ScopeEdit w/ text 100 95.09 90.97 81.79 94.73 93.52 
+
+ScopeEdit w/ vis-text 100 96.91 90.09 90.95 94.07 91.74 
+
+wise, each editable module can maintain its own scope-separated write geometry, branch-wise historical statistic C(l),and recursive preconditioner P (l). This allows modality-local absorption and shared cross-modal generalization to be applied not only to the projector and language layers, but also to vision-side modules. To examine this extensibility, we evaluate ScopeEdit on LLaVA-v1.5 under both short- and long-horizon online editing settings. Besides the default setting that edits the projector and text-LLM modules, we consider three variants:  
+
+> •
+
+ScopeEdit w/ vis : edits only the vision encoder and projector, testing whether vision-side modules alone can absorb multimodal corrections.  
+
+> •
+
+ScopeEdit w/ text : edits only the text-LLM modules, testing whether language-side updates alone can absorb multimodal corrections.  
+
+> •
+
+ScopeEdit w/ vis-text : jointly edits the vision encoder, projector, and text-LLM modules, testing the effectiveness of ScopeEdit under a more complex editable architecture. For vision-side editing, the branch-specific projected keys are instantiated as z(l) 
+
+> t, loc
+
+= z(l)loc (xvt ) for the local branch and 
+
+z(l) 
+
+> t, sh
+
+= z(l)sh (xvt , x qt ) for the shared branch. We edit only the last three layers of the vision encoder to avoid excessive perturbation to low-level visual representations. Table VII evaluates the extension of ScopeEdit to more com-plex editable architectures. First, the default projector-plus-text-LLM setting already achieves a strong balance between edit absorption and locality preservation. Second, among the extended variants, ScopeEdit w/ vis preserves locality but sub-stantially weakens reliability and generality, while ScopeEdit w/ text maintains strong text-side performance but provides limited multimodal generalization. Third, ScopeEdit w/ vis-text yields the strongest long-horizon M-Gen., improving it from 84 .18 to 87 .55 on E-VQA and from 86 .35 to 90 .95 on E-IC at t=100 . These results suggest that incorporating vision-side modules can further 14 Editing Sample 
+
+Image ：
+
+Query ：a photo of 
+
+Editing 
+
+Target Answer 
+
+：
+
+A red bicycle parked 
+
+close to a black train. 
+
+In -scope Cross -modal 
+
+Generalization 
+
+In -Scope Text 
+
+In -Scope Image             
+
+> Image ：
+> Query ：an image of
+> A train with the number
+> 7402 on the front is parked
+> Answer Before Editing ：
+> A red bicycle parked close
+> to a black train.
+> Answer After Editing ：
+> Image
+> Query ：aphoto of
+> A bicycle is parked on the
+> side of a railroad track .
+> Answer Before Editing ：
+> A red bicycle parked close
+> to a black trai n.
+> Answer After Editing ：
+
+Out -of -scope Locality 
+
+Preservation 
+
+Out -of -scope Text 
+
+Out -of -scope Image            
+
+> NQ Question:
+> when did the name of
+> bombay change to mumbai
+> Answer Before Editing ：
+> The name of the city of Bombay was
+> officially changed to Mumbai in 1995.
+> Answer After Editing ：
+> The name of the city of Bombay was
+> officially changed to Mumbai in 1995.
+> Question: Where can i
+> buy flowers like these?
+> Short answer:
+> Answer Before Editing ：
+> Florist .
+> Answer After Editing ：
+> Florist .
+> ScopeEdit
+> M-ORE
+
+In -scope Cross -modal 
+
+Generalization 
+
+In -Scope Text 
+
+In -Scope Image            
+
+> Image ：
+> Query ：an image of
+> A train with the number
+> 7402 on the front is parked
+> Answer Before Editing ：
+> A red bicycle parked next
+> to a train.
+> Answer After Editing ：
+> Image
+> Query ：aphoto of
+> A bicycle is parked on the
+> side of a railroad track .
+> Answer Before Editing ：
+> A red bicycle parked on the
+> side of a railroad track,
+> Answer After Editing ：
+
+Out -of -scope Locality 
+
+Preservation 
+
+Out -of -scope Text 
+
+Out -of -scope Image              
+
+> NQ Question:
+> when did the name of
+> bombay change to mumbai
+> Answer Before Editing ：
+> The name of the city of Bombay was
+> officially changed to Mumbai in 1995.
+> Answer After Editing ：
+> Question: Where can i
+> buy flowers like these?
+> Short answer:
+> Answer Before Editing ：
+> At a florist .
+> Answer After Editing ：
+> The name of the city of Bombay was
+> officially changed to Mumbai in 1995.
+> Florist .
+> Not exactly
+> the same .
+
+Fig. 8. Case study of edit-scope control. Given the same multimodal edit, ScopeEdit correctly absorbs the target correction and generalizes it to in-scope text and image variants, while preserving unrelated textual and multimodal locality. In contrast, M-ORE either fails to propagate the edit to in-scope variants or leaks the edited knowledge to unrelated multimodal inputs. TABLE VIII CROSS -ARCHITECTURE ONLINE EDITING RESULTS ON E-IC WITH 
+
+QWEN 2-VL AND QWEN 3-VL UNDER DIFFERENT EDIT HORIZONS .
+
+Model Methods E-IC 
+
+Rel. ↑ T-Gen. ↑ M-Gen. ↑ T-Loc. ↑ M-Loc. ↑
+
+> Qwen2-VL
+
+M-ORE 1 100.00 100.00 90.82 100.00 100.00 
+
+ScopeEdit 1 100.00 100.00 100.00 100.00 100.00 
+
+M-ORE 10 96.01 95.18 85.85 97.52 95.00 
+
+ScopeEdit 10 95.10 92.50 90.75 97.83 96.67 
+
+M-ORE 100 91.73 91.01 72.98 87.42 88.92 ScopeEdit 100 92.11 91.40 77.96 89.37 86.11 
+
+> Qwen3-VL
+
+M-ORE 1 100.00 100.00 92.31 100.00 100.00 
+
+ScopeEdit 1 100.00 100.00 92.31 100.00 100.00 
+
+M-ORE 10 94.20 93.43 82.57 91.28 95.00 
+
+ScopeEdit 10 94.97 91.68 84.80 94.97 100.00 
+
+M-ORE 100 93.89 91.80 65.38 89.70 87.78 
+
+ScopeEdit 100 91.16 86.98 73.75 91.64 89.30 
+
+enhance in-scope cross-modal generalization when combined with language-side editing, and the module-wise recursive design keeps locality competitive. Beyond module-level extension within LLaVA-v1.5, we further test whether ScopeEdit can generalize to recent MLLM backbones with different vision-language architectures. We evaluate Qwen2-VL and Qwen3-VL on E-IC under the same online editing protocol and compare ScopeEdit with M-ORE across t ∈ { 1, 10 , 100 } edit horizons, using the same hyperpa-rameters as LLaVA-v1.5 without architecture-specific tuning. Table VIII reports the results, showing that ScopeEdit remains effective on both Qwen2-VL and Qwen3-VL. First, it consistently improves long-horizon multimodal generalization over M-ORE, increasing M-Gen. from 72 .98 to 77 .96 on Qwen2-VL and from 65 .38 to 73 .75 on Qwen3-VL at t=100 .Second, ScopeEdit maintains competitive reliability and text generality, with only mild trade-offs on Qwen3-VL under long edit streams. Third, locality remains stable across horizons, especially on text-side locality. These results complement the LLaVA-v1.5 module-extension study, showing that ScopeEdit is not architecture-specific but provides a general edit-scoped mechanism for improving cross-modal generalization and pre-serving locality across other recent MLLM backbones. 
+
+G. Case Study 
+
+Figure 8 provides an intuitive comparison between ScopeEdit and M-ORE on the same editing sample. ScopeEdit updates the target knowledge from “train” to “bicycle” and consistently transfers this correction to both text-side and image-side in-scope variants. Meanwhile, it preserves the outputs on unrelated textual and multimodal locality samples, indicating that the edit is confined to the intended scope. In contrast, M-ORE shows less precise scope control: the correction is not reliably activated for in-scope variants, while an unrelated multimodal sample is incorrectly affected by the edit. This case supports our motivation that online multimodal editing requires not only reliable knowledge injection, but also explicit scope-aware separation between in-scope generaliza-tion and out-of-scope preservation. VI. C ONCLUSION 
+
+In this work, we studied online multimodal knowledge editing from the perspective of edit-scoped generalization .We showed that reliable edits in MLLMs may still fail to generalize to semantically valid cross-modal variants or leak to unrelated inputs, indicating that reliability and long-horizon stability alone are insufficient for practical online editing. To address this issue, we proposed ScopeEdit, a scope-aware on-line editor that decomposes each update into a modality-local absorption branch and an evidence-gated shared generalization branch. By combining scope-separated low-rank write geome-tries, cross-modal evidence gating, and branch-wise recursive preconditioners, ScopeEdit enables stable online editing with constant per-edit overhead while explicitly controlling where edited knowledge is allowed to propagate. Extensive experiments validate the effectiveness and gener-ality of ScopeEdit. Across representative parameter-modifying and parameter-preserving editors, ScopeEdit achieves a more 15 
+
+favorable edit-scoped trade-off, improving in-scope cross-modal generalization while preserving out-of-scope locality and edit reliability. Mechanistic and long-horizon analyses fur-ther confirm that its scope-separated write geometry, evidence-gated propagation, and recursive updates are essential for robust and stable online editing. Results on diverse MLLM backbones, real-world VLKEB scenarios, and more complex vision-language architectures further demonstrate that edit-scoped generalization is not tied to a specific model design, but provides a broadly applicable principle for online multi-modal editing. Future work may extend this principle toward more adaptive scope discovery, richer open-world multimodal streams, and uncertainty-aware propagation control, enabling MLLMs to support more reliable and scalable lifelong knowl-edge adaptation. REFERENCES [1] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Rozi` ere, N. Goyal, E. Hambro, F. Azhar et al. ,“Llama: Open and efficient foundation language models,” arXiv preprint arXiv:2302.13971 , 2023. [2] W. X. Zhao, K. Zhou, J. Li, T. Tang, X. Wang, Y. Hou, Y. Min, B. Zhang, J. Zhang, Z. Dong et al. , “A survey of large language models,” arXiv preprint arXiv:2303.18223 , vol. 1, no. 2, 2023. [3] J. Li, D. Li, S. Savarese, and S. Hoi, “Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models,” in Proceedings of the International conference on machine learning (ICML) , 2023, pp. 19 730–19 742. [4] B. Lin, Y. Ye, B. Zhu, J. Cui, M. Ning, P. Jin, and L. Yuan, “Video-llava: Learning united visual representation by alignment before projection,” in Proceedings of the 2024 conference on empirical methods in natural language processing (EMNLP) , 2024, pp. 5971–5984. [5] B. Lin, Z. Tang, Y. Ye, J. Huang, J. Zhang, Y. Pang, P. Jin, M. Ning, J. Luo, and L. Yuan, “Moe-llava: Mixture of experts for large vision-language models,” IEEE Transactions on Multimedia , 2026. [6] D. Xue, S. Qian, and C. Xu, “Vision-controllable language model for image-guided story ending generation,” IEEE Transactions on Multime-dia , 2026. [7] K. Jiang, Y. Du, Y. Ding, Y. Ren, N. Jiang, Z. Gao, Z. Zheng, L. Liu, B. Li, and Q. Li, “When large multimodal models confront evolving knowledge: Challenges and explorations,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2026. [8] S. Wang, X. Cao, J. Zhang, Z. Yuan, S. Shan, X. Chen, and W. Gao, “Vlbiasbench: A comprehensive benchmark for evaluating bias in large vision-language model,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2026. [9] K. Meng, D. Bau, A. Andonian, and Y. Belinkov, “Locating and editing factual associations in gpt,” in Proceedings of the Advances in neural information processing systems (NeurIPS) , 2022, pp. 17 359–17 372. [10] J. Fang, H. Jiang, K. Wang, Y. Ma, J. Shi, X. Wang, X. He, and T.-S. Chua, “Alphaedit: Null-space constrained knowledge editing for language models,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2025. [11] Q. Chen, T. Zhang, C. Wang, X. He, D. Wang, and T. Liu, “Attribution analysis meets model editing: Advancing knowledge correction in vision language models with visedit,” in Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2025, pp. 2168–2176. [12] Q. Chen, C. Wang, D. Wang, T. Zhang, W. Li, and X. He, “Lifelong knowledge editing for vision language models with low-rank mixture-of-experts,” in Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , 2025, pp. 9455–9466. [13] S. Cheng, B. Tian, Q. Liu, X. Chen, Y. Wang, H. Chen, and N. Zhang, “Can we edit multimodal large language models?” in Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2023, pp. 13 877–13 888. [14] X. Liu, X. Xia, S.-K. Ng, and T.-S. Chua, “Principled multimodal representation learning,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2026. [15] S. Li, Y. Zhang, F. Liu, and J. Li, “Modality-decoupled online recursive editing,” arXiv preprint arXiv:2605.20273 , 2026. [16] Z. Shi, B. Wang, C. Si, Y. Wu, J. Kim, and H. Pfister, “Dualedit: Dual editing for knowledge updating in vision-language models,” in 
+
+Proceedings of the Second Conference on Language Modeling (COLM) ,2025. [17] Q. Li and X. Chu, “Can we continually edit language models? on the knowledge attenuation in sequential model editing,” in Findings of the Association for Computational Linguistics (ACL) , 2024, pp. 5438–5455. [18] H. Huang, H. Zhong, T. Yu, Q. Liu, S. Wu, L. Wang, and T. Tan, “VLKEB: A large vision-language model knowledge editing bench-mark,” in Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 , 2024. [19] L. Fang, X. Wang, D. Wang, Z. Wu, Y. Guo, H. Zhu, Z. Zhang, and G. Liu, “Can knowledge be transferred from unimodal to multi-modal? investigating the transitivity of multimodal knowledge editing,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 2482–2490. [20] Y. Du, K. Jiang, Z. Gao, C. Shi, Z. Zheng, S. Qi, and Q. Li, “Mmke-bench: A multimodal editing benchmark for diverse visual knowledge,” in The Thirteenth International Conference on Learning Representa-tions(ICLR) , 2025. [21] J. Zhang, H. Zhang, X. Yin, B. Huang, X. Zhang, X. Hu, and X. Wan, “MC-MKE: A fine-grained multimodal knowledge editing benchmark emphasizing modality consistency,” in Findings of the Association for Computational Linguistics(ACL) , 2025, pp. 17 430–17 445. [22] J. Seong, J. Park, W. Liermann, H. Choi, Y. Nam, H. Kim, S. Lim, and N. Lee, “Memeic: A step toward continual and compositional knowl-edge editing,” in Proceedings of the Advances in neural information processing systems (NeurIPS) , vol. 38, 2025, pp. 129 205–129 242. [23] B. Jia, J. Zhang, H. Zhang, and X. Wan, “Exploring and evaluat-ing multimodal knowledge reasoning consistency of multimodal large language models,” in Findings of the Association for Computational Linguistics(EMNLP) , 2025, pp. 11 966–11 981. [24] Y. Zhou, P. Cao, Y. Chen, Q. Liu, D. Sui, X. Chen, K. Liu, and J. Zhao, “M2Edit: Locate and edit multi-granularity knowledge in multimodal large language model,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing(EMNLP) , 2025, pp. 29 029–29 042. [25] Q. Wang, J. Hu, and M. Jiang, “V-SEAM: Visual semantic editing and attention modulating for causal interpretability of vision-language models,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing(EMNLP) , 2025, pp. 17 396–17 420. [26] G. Das and S. Jena, “Dsca: Dynamic subspace concept alignment for lifelong vlm editing,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2026, pp. 40 772– 40 781. [27] X. Liu, W. Wang, Y. Yuan, J.-t. Huang, Q. Liu, P. He, and Z. Tu, “Insight over sight: Exploring the vision-knowledge conflicts in multimodal LLMs,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL) , 2025, pp. 17 825–17 846. [28] Z. Shao, F. Gao, Z. Zhu, C. Luo, H. Xing, Z. Yu, Q. Zheng, M. Yan, and J. Bu, “Is cognition consistent with perception? assessing and mitigating multimodal knowledge conflicts in document understanding,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing(EMNLP) , 2025, pp. 30 923–30 944. [29] D. Dai, L. Dong, Y. Hao, Z. Sui, B. Chang, and F. Wei, “Knowledge neurons in pretrained transformers,” in Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (ACL) , 2022, pp. 8493–8502. [30] A. Sinitsin, V. Plokhotnyuk, D. V. Pyrkin, S. Popov, and A. Babenko, “Editable neural networks,” in Proceedings of the International Confer-ence on Learning Representations (ICLR) , 2020. [31] N. Zhang, Y. Yao, B. Tian, P. Wang, S. Deng, M. Wang, Z. Xi, S. Mao, J. Zhang, Y. Ni et al. , “A comprehensive study of knowledge editing for large language models,” arXiv preprint arXiv:2401.01286 , 2024. [32] Z. Huang, Y. Shen, X. Zhang, J. Zhou, W. Rong, and Z. Xiong, “Transformer-patcher: One mistake worth one neuron,” in Proceedings of the International Conference on Learning Representations (ICLR) ,2023. [33] J.-Y. Ma, Z.-H. Ling, N. Zhang, and J.-C. Gu, “Neighboring perturba-tions of knowledge editing on large language models,” in Proceedings of the 41st International Conference on Machine Learning(ICML) , vol. 235, 2024, pp. 33 839–33 854. [34] M. Zhang, X. Ye, Q. Liu, S. Wu, P. Ren, and Z. Chen, “Uncovering over-fitting in large language model editing,” in Proceedings of the Thirteenth International Conference on Learning Representations(ICLR) , 2025. 16 
+
+[35] P. Wang, Z. Tang, K. Zhou, J. Li, Q. Zhu, and M. Zhang, “Revealing and mitigating over-attention in knowledge editing,” in Proceedings of the Thirteenth International Conference on Learning Representa-tions(ICLR) , 2025, pp. 20 922–20 948. [36] S. Zhai, Y. Meng, Y. Zhang, and G. Qi, “Parameter-aware contrastive knowledge editing: Tracing and rectifying based on critical transmission paths,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL) , 2025, pp. 28 189–28 200. [37] Y. Yao, J. Fang, J.-C. Gu, N. Zhang, S. Deng, H. Chen, and N. Peng, “CaKE: Circuit-aware editing enables generalizable knowledge learn-ers,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing(EMNLP) , 2025, pp. 11 366–11 382. [38] K. Meng, A. S. Sharma, A. J. Andonian, Y. Belinkov, and D. Bau, “Mass-editing memory in a transformer,” in Proceedings of the Interna-tional Conference on Learning Representations (ICLR) , 2023. [39] D. Cao, Y. Cai, R. Guo, X. He, and G. Liu, “Deltaedit: Enhancing sequential editing in large language models by controlling superimposed noise,” arXiv preprint arXiv:2505.07899 , 2025. [40] N. De Cao, W. Aziz, and I. Titov, “Editing factual knowledge in language models,” in Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2021. [41] E. Mitchell, C. Lin, A. Bosselut, C. Finn, and C. D. Manning, “Fast model editing at scale,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2022. [42] M. Scialanga, T. Laugel, V. Grari, and M. Detyniecki, “SAKE: Steering activations for knowledge editing,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL) , 2025, pp. 15 966–15 978. [43] C. Wang, W. Su, Q. Ai, Y. Tang, and Y. Liu, “Knowledge editing through chain-of-thought,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing(EMNLP) , 2025, pp. 10 673– 10 693. [44] C. Zheng, L. Li, Q. Dong, Y. Fan, Z. Wu, J. Xu, and B. Chang, “Can we edit factual knowledge by in-context learning?” in Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2023, pp. 4862–4876. [45] E. Mitchell, C. Lin, A. Bosselut, C. D. Manning, and C. Finn, “Memory-based model editing at scale,” in Proceedings of the International Conference on Machine Learning (ICML) , 2022, pp. 15 817–15 831. [46] T. Hartvigsen, S. Sankaranarayanan, H. Palangi, Y. Kim, and M. Ghas-semi, “Aging with GRACE: lifelong model editing with discrete key-value adaptors,” in Proceedings of the Advances in neural information processing systems (NeurIPS) , 2023. [47] L. Yu, Q. Chen, J. Zhou, and L. He, “MELO: enhancing model editing with neuron-indexed dynamic lora,” in Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2024, pp. 19 449–19 457. [48] Y. He, Z. Liu, J. Chen, Z. Tian, H. Liu, X. Chi, R. Liu, R. Yuan, Y. Xing, W. Wang, J. Dai, Y. Zhang, W. Xue, Q. Liu, Y. Guo, and Q. Chen, “Llms meet multimodal generation and editing: A survey,” 
+
+arXiv preprint arXiv:2405.19334 , 2024. [49] D. Guo, M. Hu, Z. Guan, T. Hartvigsen, and S. Li, “BalancEdit: Dynamically balancing the generality-locality trade-off in multi-modal model editing,” in Proceedings of the 42nd International Conference on Machine Learning(ICML) , vol. 267, 2025, pp. 20 843–20 857. [50] Z. Zeng, L. Gu, X. Yang, Z. Duan, Z. Shi, and M. Wang, “Visual-oriented fine-grained knowledge editing for multimodal large language models,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 2491–2500. [51] T. Liu, R. Li, Y. Qi, H. Liu, X. Tang, T. Zheng, Q. Yin, M. Cheng, J. Huan, H. Wang, and J. Gao, “Unlocking efficient, scalable, and continual knowledge editing with basis-level representation fine-tuning,” in Proceedings of the Thirteenth International Conference on Learning Representations(ICLR) , 2025, pp. 18 939–18 959. [52] H. Jiang, J. Fang, T. Zhang, B. Bi, A. Zhang, R. Wang, T. Liang, and X. Wang, “Neuron-level sequential editing for large language models,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL) , 2025, pp. 16 678–16 702. [53] Y. Wang, Y. Gao, X. Chen, H. Jiang, S. Li, J. Yang, Q. Yin, Z. Li, X. Li, B. Yin, J. Shang, and J. Mcauley, “MEMORYLLM: Towards self-updatable large language models,” in Proceedings of the 41st In-ternational Conference on Machine Learning(ICML) , 2024, pp. 50 453– 50 466. [54] Q. Li and X. Chu, “AdaEdit: Advancing continuous knowledge editing for large language models,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (ACL) , 2025, pp. 4127– 4149. [55] Q. Chen, T. Zhang, X. He, D. Li, C. Wang, L. Huang, and H. Xue’, “Lifelong knowledge editing for LLMs with retrieval-augmented con-tinuous prompt learning,” in Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2024, pp. 13 565–13 580. [56] P. Wang, Z. Li, N. Zhang, Z. Xu, Y. Yao, Y. Jiang, P. Xie, F. Huang, and H. Chen, “WISE: rethinking the knowledge memory for lifelong model editing of large language models,” in Proceedings of the Advances in Neural Information Processing Systems (NeurIPS) , 2024. [57] Q. Li, X. Liu, Z. Tang, P. Dong, Z. Li, X. Pan, and X. Chu, “Should we really edit language models? on the evaluation of edited language models,” in Proceedings of the 38th International Conference on Neural Information Processing Systems(NeurIPS) , 2024. [58] L. Thede, K. Roth, M. Bethge, Z. Akata, and T. Hartvigsen, “Wik-ibigedit: Understanding the limits of lifelong knowledge editing in llms,” in Proceedings of the International Conference on Machine Learning (ICML) , 2025. [59] M. Geva, R. Schuster, J. Berant, and O. Levy, “Transformer feed-forward layers are key-value memories,” in Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2021, pp. 5484–5495. [60] H. Liu, C. Li, Y. Li, and Y. J. Lee, “Improved baselines with visual instruction tuning,” in Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , 2024, pp. 26 286–26 296. [61] P. Wang, S. Bai, S. Tan, S. Wang, Z. Fan, J. Bai, K. Chen, X. Liu, J. Wang, W. Ge, Y. Fan, K. Dang, M. Du, X. Ren, R. Men, D. Liu, C. Zhou, J. Zhou, and J. Lin, “Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution,” arXiv preprint arXiv:2409.12191 , 2024. [62] S. Bai, Y. Cai, R. Chen, K. Chen, X. Chen, Z. Cheng, L. Deng, W. Ding, C. Gao, C. Ge, W. Ge, Z. Guo, Q. Huang, J. Huang, F. Huang, B. Hui, S. Jiang, Z. Li, M. Li, M. Li, K. Li, Z. Lin, J. Lin, X. Liu, J. Liu, C. Liu, Y. Liu, D. Liu, S. Liu, D. Lu, R. Luo, C. Lv, R. Men, L. Meng, X. Ren, X. Ren, S. Song, Y. Sun, J. Tang, J. Tu, J. Wan, P. Wang, P. Wang, Q. Wang, Y. Wang, T. Xie, Y. Xu, H. Xu, J. Xu, Z. Yang, M. Yang, J. Yang, A. Yang, B. Yu, F. Zhang, H. Zhang, X. Zhang, B. Zheng, H. Zhong, J. Zhou, F. Zhou, J. Zhou, Y. Zhu, and K. Zhu, “Qwen3-vl technical report,” arXiv preprint arXiv:2511.21631 , 2025.

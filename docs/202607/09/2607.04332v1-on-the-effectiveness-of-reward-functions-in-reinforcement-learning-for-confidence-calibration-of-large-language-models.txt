@@ -1,0 +1,2072 @@
+Title: On the effectiveness of reward functions in reinforcement learning for confidence calibration of large language models
+
+URL Source: https://arxiv.org/pdf/2607.04332v1
+
+Published Time: Tue, 07 Jul 2026 02:28:59 GMT
+
+Number of Pages: 50
+
+Markdown Content:
+# On the effectiveness of reward functions in reinforcement learning for confidence calibration of large language models 
+
+Chee Heng Tan 
+
+School of Computing National University of Singapore 
+
+e0764286@u.nus.edu 
+
+Zhuoyi Lin 
+
+Institute of Advanced Intelligence and Computing Agency for Science, Technology and Research 
+
+lin_zhuoyi@a-star.edu.sg 
+
+Mehul Motani 
+
+Department of Electrical & Computer Engineering National University of Singapore 
+
+motani@nus.edu.sg 
+
+Wee Sun Lee 
+
+School of Computing National University of Singapore 
+
+leews@comp.nus.edu.sg 
+
+# Abstract 
+
+In this paper, we consider the setting where large language models (LLMs) are trained using reinforcement learning (RL) to simultaneously improve reasoning accuracy and verbalize its confidence. Our reward scheme uses two functions for rewarding confidence verbalized by the LLM: one when the LLM is correct and a different one when the LLM is incorrect. With a poorly designed reward scheme, the LLM may be incentivized to answer incorrectly so that it can be confident that its answer is indeed incorrect, a phenomenon that we call confidence reward hacking. We propose the concept of non-hackable confidence reward schemes and define a spectrum of such reward schemes for RL confidence calibration training in LLMs. We demonstrate that selective confidence reward hacking can occur in practical datasets with reward schemes that are not designed to be non-hackable. We also demonstrate that the reward scheme with the best calibration to accuracy tradeoff depends on the dataset and the application, and propose using the reward scheme as a hyperparameter to optimize the tradeoffs in accordance to what is important for the application. The code of our experiments is available in https://anonymous. 4open.science/r/rl-confidence-calibration-9ED4/README.md .
+
+# 1 Introduction 
+
+Large language models (LLM)s have made significant recent advances in reasoning, especially when using reinforcement learning (RL) [1]. However, much of the RL literature has mainly focused on the RL with verifiable rewards setting (RLVR) [2], [3], which does not directly attempt to estimate the likelihood of hallucinations via confidence calibration. Confidence calibration has applications such as event forecasting [4] and determining whether the user is trying to factually deceive the LLM [5]. Pretrained LLMs have been demonstrated to be overconfident [6], [7] and the same is true for LLMs trained with RL without confidence calibration [8], [9]. Overconfidence in LLM can mislead end-users into thinking that the output of the LLM is almost certainly correct and can be trusted even though the output should still be viewed with skepticism. For instance, in medical LLM assistants, LLM overconfidence in a negative diagnosis may result in doctors underestimating the risk of cancer development during screening, which may lead to insufficient precautions to manage cancer risk. 
+
+> Preprint.
+> arXiv:2607.04332v1 [cs.LG] 5 Jul 2026
+
+Confidence calibration using RL shows potential as RL usually exhibits better out-of-distribution generalization capabilities [10] and lesser forgetting [11]. However, it remains an underexplored topic. RL calibration fine-tuning using proper scoring methods such as log loss [12] or Brier score [13] is possible, but doing so in isolation may improve calibration at the expense of answer accuracy. It is possible to define a function that rewards a combination of accuracy and calibration. However, this may incentivize the LLM to answer incorrectly so that it can be confident that its answer is indeed incorrect. We call this phenomenon confidence reward hacking. In [6], a provably non-hackable scheme, combining a constant correctness reward with the Brier score, is proposed. In this paper, we define a reward scheme as a pair of confidence-dependent functions that, respectively, provide the rewards for answering correctly and answering incorrectly. We theoretically characterized the set of non-hackable confidence reward schemes, which are reward schemes that reward more for being confidently incorrect, penalize more for being confidently incorrect and encourage the LLM to be honest with its confidence and to answer to the best of its ability. To support our theoretical analysis, we empirically demonstrate that LLMs trained with RL using reward schemes outside the set can answer some questions incorrectly to maximize the reward. Subsequently, we define a spectrum of reward schemes containing reward schemes where underconfi-dence is preferred and where overconfidence is preferred. Such schemes may be useful when there is a need to trade off accuracy with calibration, e.g. when the LLM has limited capacity or where the optimization process is difficult, resulting in the LLM being unable to provide the optimal solution to both requirements. Lastly, we examine the tradeoffs and demonstrate that different reward schemes can lead to better accuracy-calibration tradeoffs, suggesting that the choice of the reward scheme is a hyperparameter that can be used to optimize the tradeoff depending on what is important for the application. 
+
+# 2 Related Work 
+
+Proper scoring methods have been used for confidence calibration in RL of LLM. In [12], a clipped log-loss reward function is used over the confidence scores of the LLM while in [13], RL with a Brier-based reward function is used after supervised finetuning (SFT) using empirical correctness rates. In both papers, accuracy is not optimized and is treated as secondary to confidence calibration. In [14], it is shown that two stage training, first for accuracy, then for confidence calibration results in reward hacking when using the standard Group Relative Policy Optimization (GRPO) [15] loss. To address the issue, a combination of a correctness reward and a confidence alignment reward denoting how close the output confidence is to the question-wise empirical accuracy of the model is proposed. While experimentally successful, this work did not show theoretically that the reward functions are non-hackable. We provide mathematical foundations for understanding non-hackability in this paper. Recently, Damani et al. [6] proposed a reward scheme which combines accuracy with Brier score and proved that it incentivizes both answering correctly and accurate confidence calibration. More generally, in their theoretical derivation, they considered reward schemes with constant correctness rewards. Notably, [16] had also examined the theory of proper scoring reward schemes that also incentivize answering correctly, and obtained theoretical results similar to [6] in their analysis. To the best of our knowledge, Damani et al. [6] were the first to successfully utilize RL for simultaneously learning to reason and performing confidence calibration. Despite experimenting with reward schemes that allow for confidence reward hacking, they did not show concrete evidence of reward hacking in practical datasets when trained simultaneously for correctness and calibration [6], leaving open the question of whether reward hacking occurs in practice. Moreover, they considered only reward schemes with constant correctness reward. We generalize their work to more general reward schemes where the correctness reward can vary by confidence. We show the presence of reward hacking in practical datasets and further examine the trade-off between accuracy and calibration for different non-hackable confidence reward schemes. Similar reward functions have been proposed in [17] and [18] based on the behavioral calibration framework of [19]. While [18] proposed a family of reward schemes proven to incentivize both answering accurately and accurate confidence calibration, we demonstrate the existence of other reward schemes satisfying both properties and characterize the set of all such reward schemes. More details can be found in Appendices A.1, A.2 and A.3. 23 Problem Formulation 
+
+Our goal is to investigate the effect of reward functions in RL when LLMs are trained for confidence calibration. We consider the following RL setting: For each question, the LLM is tasked to answer the question and provide a confidence value c ∈ (0 , 1) .We assume that the questions have a deterministic and well-defined set of correct answers. The LLM obtains a reward of f (c) for answering correctly and a reward of g(c) for answering incorrectly. The objective of the LLM is to maximize its reward. Note that this differs from the setting in [6] since the reward for correctness is no longer constrained to be independent of c.
+
+Definition 1. We define a “binary correctness confidence reward scheme”, or “reward scheme” for short, as a pair of functions (f (c), g (c)) defined over (0 , 1) , where f and g have continuous first derivatives. The corresponding "binary correctness confidence reward function", or "reward function" for short, is r(q, a, c ) = isCorrect (q, a )f (c) + (1 − isCorrect (q, a )) g(c) where isCorrect (q, a ) is 1 if the answer a to question q is correct and 0 otherwise. A reward function can be viewed as the composition of the reward scheme (f (c), g (c)) and the evaluator isCorrect, where f (c) is returned if isCorrect (q, a ) = 1 and g(c) otherwise. 
+
+If the reward scheme is not properly designed, the LLM may select some questions to intentionally answer wrongly with low confidence to obtain a higher reward, a phenomenon we term “confidence reward hacking”. For more details on how this may occur, refer to Remark 1 in Appendix A.1. Therefore, our first research question aims to investigate the possibility of selective confidence reward hacking over practical reasoning datasets. Infinitely many reward schemes exist such that confidence reward hacking never happens. We term such reward schemes as “non-hackable confidence”. Such reward schemes may not offer the same accuracy and confidence calibration performance due to the limited approximation capability of neural networks and optimization capability of gradient descent optimizers. Therefore, our second research question aims to examine the accuracy and calibration tradeoffs as well as the convergence speed for different non-hackable confidence reward schemes. We aim to investigate and answer the following research questions: • RQ1 : Can the use of a hackable confidence reward scheme on (0 , 1) result in LLMs selectively choosing questions to intentionally answer incorrectly? • RQ2 : What are the accuracy and confidence calibration tradeoffs in using different non-hackable confidence reward schemes for RL training in LLM? 
+
+# 4 Methodology 
+
+In this paper, we propose the concept of non-hackable confidence reward schemes, designed to encourage the LLM to answer to the best of its ability and to be honest about its confidence. Subsequently, we designed a spectrum of reward schemes with one end where it is better to be overconfident when unsure, and the other end where it is better to be underconfident when unsure. 
+
+4.1 Non-hackable Confidence Reward Schemes 
+
+A confident and correct answer should be rewarded more than an unconfident and correct answer. Likewise, a confident and incorrect answer should be rewarded less than an unconfident and incorrect answer. Ideally, we would want the LLM to answer to the best of its ability, and yet understand its own limitations by providing an informative estimate of its epistemic uncertainty. This notion, refined from [6] via the inclusion of the Interpretability property, is formalized as follows: 
+
+Definition 2. We define a “non-hackable confidence reward scheme” over an open interval (a, b ) ⊆
+
+(0 , 1) as a pair of functions (f (c), g (c)) satisfying the following properties: (i) Interpretability : f (c) is non-decreasing on (0 , 1) and g(c) is non-increasing on (0 , 1) .(ii) Proper Scoring : Let R(c, p ) = Eq∼Bernoulli (p)[qf (c) + (1 − q)g(c)] = pf (c) + (1 − p)g(c),defined over c ∈ (0 , 1) and p ∈ [0 , 1] . Then, for all p ∈ (0 , 1) , p ∈ argmax cR(c, p ).(iii) Best Effort : Let Rmax (c) = R(c, c ). Then, Rmax (c) is non-decreasing in (a, b ).
+
+3If the open interval is not explicitly mentioned, it is taken to be over (0 , 1) . Corresponding reward functions of non-hackable confidence reward schemes are termed “non-hackable confidence reward functions”. 
+
+Non-hackable confidence reward schemes are characterized as follows, with proof in Appendix A.1: 
+
+Theorem 1. A reward scheme is non-hackable confidence over (a, b ) ⊆ (0 , 1) if and only if all of the following hold: (i) There exists a function h(c) defined over (0 , 1) such that h(c) = f ′(c) 
+
+> c−1
+
+= g′(c)
+
+> c
+
+(ii) h(c) ≤ 0 for all c ∈ (0 , 1) 
+
+(iii) f (a+) ≥ g(a+)
+
+Intuitively, property (iii) means that the LLM is never incentivized to answer incorrectly, e.g. by intentionally answering incorrectly, provided the confidence output of the LLM is restricted to (a, b ).The standard binary reward for correctness (1 , 0) and the Brier-based reward scheme (1 − (1 −
+
+c)2, −c2), originally proposed by [6], are examples of non-hackable confidence reward schemes. Table 1 shows more examples of reward schemes and whether they are non-hackable confidence. 
+
+4.2 Overconfidence to Underconfidence Spectrum 
+
+In this subsection, we define an overconfidence to underconfidence spectrum of non-hackable confidence reward schemes. To understand the spectrum, we first define the miscalibration penalty. Intuitively, the miscalibration penalty is the loss in expected reward due to outputting a sub-optimal confidence value c instead of the true probability p of answering the question correctly. 
+
+Definition 3. The miscalibration penalty for a reward scheme (f (c), g (c)) , denoted as Rpen (c, p ), is defined as Rpen (c, p ) = R(p, p ) − R(c, p ).If c > p , the miscalibration penalty can be termed as “overconfidence penalty". If c < p , the miscalibration penalty can be termed as “underconfidence penalty". 
+
+Definition 4. We define an overconfidence to underconfidence spectrum of non-confidence hackable reward schemes as follows, where the mentioned reward schemes are as defined in Table 1. In order from the overconfident end to the underconfident end of the spectrum, reading from top to bottom, we have the following reward schemes: 
+
+• Correctness-only 
+
+• Overconfidence-k, k > 0, larger k indicates more towards the overconfident end. 
+
+• Brier-1 
+
+• Underconfidence-k, k > 0, larger k indicates more towards the underconfident end. 
+
+• Brier-log Hybrid 1
+
+We also introduce the notion of overconfidence and underconfidence bias. Intuitively, a reward scheme exhibits overconfidence bias when the LLM is penalized less by being slightly overconfident compared to being slightly underconfident. Definition 5 formalizes this notion. 
+
+Definition 5. A non-hackable confidence reward scheme (f (p), g (p)) has overconfidence bias (respectively, underconfidence bias) if the miscalibration penalty Rpen satisfies the following property: For all δ > 0 and p ∈ (0 , 1) such that p+δ ∈ (0 , 1) and p−δ ∈ (0 , 1) , Rpen (p+δ, p ) < R pen (p−δ, p )
+
+(respectively Rpen (p + δ, p ) > R pen (p − δ, p ))Note that Rpen is as defined in Definition 3. 
+
+Figure 1 shows the miscalibration penalty plot for some reward schemes along the overconfidence to underconfidence spectrum. Brier-log Hybrid and Underconfidence-k are towards the underconfident end of the spectrum and exhibit underconfidence bias. Overconfidence-k is towards the overconfident end of the spectrum and exhibits overconfidence bias. Both Brier-1 and Correctness-only have neither overconfidence nor underconfidence bias. Even though Correctness-only does not have overconfidence bias, Overconfidence-k converges pointwise      
+
+> 1Brier-log Hybrid is named as such since it approximates half of Brier-1 reward at small cand p, while it approximates Log Loss at cclose to 1. More detailed justification can be found in Appendix B.
+
+4Figure 1: Miscalibration penalty of Correctness-only, Overconfidence-1000, Overconfidence-4, Overconfidence-1, Brier-1, Underconfidence-1, Underconfidence-4 and Brier-log Hybrid reward schemes. The reward schemes are as defined in Table 1. Darker greys mean higher miscalibration penalty, which occur when the confidence c differs more significantly from the probability p of answering correctly. Blue line represents ideal confidence calibration. Green and red line represents being consistently underconfident and overconfident by 0.2 respectively. to Correctness-only over (0 , 1) as k → ∞ , which justifies the position of Correctness-only furthest in the overconfident end of the spectrum. A rigorous derivation can be found in Appendix D. 
+
+# 5 Experimental Settings 
+
+In this section, we describe the datasets, reward schemes and the procedure for our experiments. 
+
+5.1 Datasets Used 
+
+For our experiments, we used the HotpotQA [20], HotpotQA-Modified (inspired by [6]), BigMath [21] and DeepMath-103K [22] datasets. HotpotQA is a textual reasoning dataset where the LLM is given sources and required to reason about the sources to provide the answer. HotpotQA-Modified is a variant of HotpotQA where two sources are removed at random. Questions with one or both removed sources being relevant are harder to answer because the LLM is required to answer based on its trained knowledge. BigMath and DeepMath-103K are math reasoning datasets. More details of the datasets used and their preprocessing can be found on Appendix E. 
+
+5.2 Reward Schemes Used 
+
+For our experiments, we use the reward schemes shown in Table 1. Let RRQ 2 = {Correctness-only, Overconfidence-1000, Overconfidence-4, Overconfidence-1, Brier-1, Underconfidence-1, Underconfidence-4, Brier-log Hybrid} denote the set of non-hackable confidence reward schemes that we will examine in our experiments. Justifications behind why each of the reward schemes are or are not hackable can be found in Appendix C. For Log-k, we tested k ∈ { 1, 1ln 202 }. For Brier-k, we tested k ∈ { 1, 2}. For Overconfidence-k, we tested k ∈ { 1, 4, 1000 }. For Underconfidence-k, we tested k ∈ { 1, 4}. All reward schemes in Table 1 except Log Loss and Brier Score satisfy f (1 −) = 1 and g(0 +) = 0 , which implies Rmax (1 −) = 1 
+
+and Rmax (0 +) = 0 . This ensures a consistent reward scale for a fair comparison among reward schemes with correctness rewards. 55.3 Experimental Procedure 
+
+We ran our experiments on Qwen 2.5 (3B) Instruct [23], [24]. The LLM was fine-tuned using SFT on a reformatted version of its own responses to help it follow the RL answering format. For each reward scheme, we ran RL training on the LLM using Dr GRPO [25]. We evaluated the model on Accuracy, Expected Calibration Error (ECE), Area Under Receiver Operating Characteristic Curve (AUROC), Brier score, average Brier-1 reward and Calibration bias. Calibration bias is defined as accuracy minus average confidence. A negative calibration bias indicates overconfidence while a positive calibration bias indicates underconfidence. More details on the metrics used can be found on Appendix E.7. For full details on the experimental procedure, refer to Appendix E.1. Table 1: Table of reward schemes used in experiments. f (c) is the reward for answering correctly while g(c) is the reward for answering incorrectly. Details on whether reward schemes listed are non-hackable confidence can be found in Appendix C. Reward Scheme f (c) g(c) Non-hackable confidence? Correctness-only 1 0 Yes Log-k 1 + k ln( c) k ln(1 − c) No Log Loss ln( c) ln(1 − c) No Brier-k 1 − k(1 − c)2 −kc 2 Only for k ≤ 1
+
+Brier Score −(1 − c)2 −c2 No Brier-Log Hybrid c c + ln(1 − c) Yes Overconfidence-k (k+1) ln( ck +1) −ck  
+
+> (k+1) ln( k+1) −k
+> ln( ck +1) −ck
+> (k+1) ln( k+1) −k
+
+Yes Underconfidence-k kc +ln(1 − kc     
+
+> 1+ k)
+> k−ln(1+ k)
+> kc +( k+1) ln(1 −kc
+> 1+ k)
+> k−ln(1+ k)
+
+Yes 
+
+# 6 Experimental Results 
+
+In this section, we analyze our experimental results to answer RQ1 and RQ2. The full results, containing performance statistics by difficulty split, can be found in Appendix F. Table 2: Accuracy results for BigMath, DeepMath-103K, HotpotQA-Modified and HotpotQA for different reward schemes, split by difficulty. Bolded reward schemes are non-hackable confidence. The reward schemes are subdivided into three categories from top to bottom: independent of confidence, hackable confidence and other non-hackable confidence. Reward Scheme BigMath DeepMath-103K HotpotQA-Modified HotpotQA easy medium hard easy medium hard easy medium hard hard                                                                                                                                    
+
+> Correctness-only 0.9540 0.7545 0.3229 0.5308 0.3940 0.4189 0.6273 0.4250 0.2100 0.6571 Log Loss 0.0001 0.0001 0.0000 0.0000 0.0000 0.0003 0.0001 0.0000 0.0000 0.0000 Brier Score 0.0003 0.0001 0.0000 0.0001 0.0001 0.0001 0.0000 0.0001 0.0000 0.0000 Log-1 0.9388 0.6981 0.2748 0.0001 0.0000 0.0000 0.2022 0.0619 0.0204 0.6472 Brier-2 0.9530 0.7520 0.3185 0.0000 0.0001 0.0004 0.5296 0.2323 0.0958 0.6507 Log-1ln 202 0.9501 0.7427 0.3139 0.5334 0.4059 0.4260 0.6271 0.4203 0.2093 0.6537
+> Overconfidence-1000 0.9529 0.7506 0.3172 0.5262 0.3886 0.4197 0.6228 0.4135 0.2050 0.6548
+> Overconfidence-4 0.9509 0.7474 0.3169 0.5324 0.4054 0.4167 0.6248 0.4187 0.2070 0.6526
+> Overconfidence-1 0.9521 0.7532 0.3211 0.5205 0.3855 0.4063 0.6328 0.4238 0.2055 0.6507
+> Brier-1 0.9529 0.7480 0.3117 0.5108 0.3796 0.3976 0.6317 0.4184 0.2028 0.6504
+> Underconfidence-1 0.9505 0.7444 0.3146 0.5191 0.3876 0.4105 0.6245 0.4197 0.2110 0.6551
+> Underconfidence-4 0.9552 0.7573 0.3279 0.4948 0.3613 0.3911 0.6199 0.4158 0.2008 0.6529
+> Brier-log-hybrid 0.9513 0.7460 0.3169 0.3312 0.2263 0.2919 0.6111 0.4003 0.1915 0.6439
+
+66.1 RQ1: Presence of Selective Reward Hacking 
+
+To answer RQ1, we demonstrate the presence of confidence reward hacking in reward schemes that allow such hacking, which can occur to varying degrees in practice. Table 2 shows the accuracy statistics for BigMath, DeepMath-103K, HotpotQA-Modified and HotpotQA, split by question difficulty, where the LLM is trained under different reward schemes. The LLM trained with the Log Loss and Brier Score reward schemes obtained a near-zero accuracy, highlighting the necessity of adding a correctness reward (which may vary by confidence) when both answering ability and confidence calibration ability are simultaneously trained. Compared to the Correctness-only reward scheme, Log-1 reward scheme demonstrates more se-vere accuracy loss in HotpotQA-Modified and BigMath than in the other examined non-hackable confidence reward schemes. The accuracy decrease in relative terms is more significant with in-creasing difficulty in the test set (e.g. 14.9% on hard, 7.5% on medium and 1.6% on easy relative to Correctness-only for BigMath), suggesting that the LLM has learnt to give up answering the questions it finds harder to answer. The result for Brier-2 reward scheme is qualitatively similar to Log-1 for HotpotQA-Modified but Brier-2 maintained similar accuracy as Correctness-only for BigMath, suggesting that Brier-2 is less prone to confidence reward hacking than Log-1. Both Brier-2 and Log-1 satisfy Rmax (0 +) = 0 , Rmax (c) < 0 for all c ∈ (0 , p ) and Rmax (c) > 0
+
+for all c ∈ (p, 1) for some p ∈ (0 , 1) . The value of p for Brier-2 is 12 , which is smaller than 
+
+p ≈ 0.64842 for Log-1. The confidence threshold below which it is optimal for the LLM to always answer incorrectly with confidence approaching 0+ is lower for Brier-2, hence Brier-2 is less prone to confidence reward hacking. During the final step of the training run, as evidence of selective confidence reward hacking, the LLM has occasionally given up on answering the question, giving responses such as “Unknown" with confidence 0. Appendix G shows a case study of selective confidence reward hacking. In contrast, no evidence of confidence reward hacking occurred for Log- 1ln 202 as the accuracy remained similar to Correctness-only. Log- 1ln 202 is a non-hackable confidence reward scheme over 
+
+( 1203 , 1) but not (0 , 1) . In practice, we can clip the confidence values to [ 1203 , 1 − 1203 ] to prevent confidence reward hacking, similar to what is proposed in Equation 4 of [17], and the “truncated logarithmic scoring system” in [16, p. 137]. Overall, this suggests that the presence and extent of reward hacking depends on the difficulty distribution of the dataset and the reward scheme used. Model size influences reasoning ability of the model [26]. Both reasoning ability of the model and dataset distribution influence the difficulty distribution of the dataset. Therefore, the findings indirectly support the hypothesis in [6, p. 23]. 
+
+Answer to RQ1: 
+
+Confidence reward hacking, selective or total, can occur when a hackable confidence reward scheme is used. Its occurrence and type depends on the difficulty distribution of the dataset and the reward scheme used. 
+
+6.2 RQ2: Accuracy and Calibration Tradeoffs 
+
+To answer RQ2, we demonstrate using Figures 2, 3 and 4 that the best reward scheme within the overconfidence to underconfidence spectrum depends on both the dataset and the metric used. Subsequently, we demonstrate using Figure 5 that the reward scheme influences the training speed of the LLM in both accuracy and confidence calibration. Figure 2 shows the accuracy, AUROC and Brier-1 reward metric for the reward schemes in RRQ 2
+
+when ordered from the overconfident end to the underconfident end of the spectrum (from left to right of plot). Brier-1 is an integrated metric which takes into account both accuracy and confidence calibration, simulating one possible application where accuracy and confidence are both important. As one moves towards the underconfident end of the spectrum, the accuracy is either maintained or generally decreases. The decrease in accuracy is most notable in DeepMath-103K and is the least pronounced in BigMath. In contrast, AUROC and Brier-1 initially improve, but may deteriorate or level off as one moves towards the underconfident end of the spectrum. The degree of deterioration depends on the dataset and the metric. Underconfidence-4 and Overconfidence-4 have the best 7Figure 2: Accuracy, AUROC and Brier-1 performance metrics for BigMath, DeepMath, HotpotQA and HotpotQA-Modified datasets (from left to right) for non-hackable confidence reward schemes ordered in the spectrum from the overconfident end to the underconfident end (from left to right). For all three performance metrics, higher is better. Brier-1 performance in BigMath and DeepMath-103K respectively while Brier-log Hybrid and Overconfidence-1 have the best AUROC in BigMath and DeepMath-103K respectively, highlighting that the best reward scheme depends on both the dataset and the metric. 
+
+Figure 3: Brier score, ECE (10 bins) and Calibration bias statistics for BigMath, DeepMath-103K, HotpotQA and HotpotQA-Modified datasets (from left to right) for non-hackable confidence reward schemes ordered in the spectrum from the overconfident end to the underconfident end (from left to right). For all three performance metrics, closer to 0 (red dotted line) is better. 
+
+Figure 4: Confidence calibration plots of the LLM after RL training with Correctness-only, Overconfidence-1000, Brier-1 and Brier-log Hybrid reward schemes (from left to right, in order from overconfident end to underconfident end of spectrum) from the BigMath dataset. Each question in the test set was evaluated with 16 different responses. Confidence values are subdivided into 10 equally spaced bins, with tie-breaking at boundaries to the right. The label of each point represents the size of each bin. The ideal calibration line is in red. Figure 3 shows the Brier score, ECE (10 bins) and calibration bias for the reward schemes in RRQ 2
+
+when ordered from the overconfident end of the spectrum to the underconfident end (from left to right of plot). As one moves towards the underconfident end of the spectrum, both Brier score and ECE generally improve before leveling off around Overconfidence-4. As one moves toward the 8Figure 5: Training accuracy (left) and training confidence (right) statistics for DeepMath-103K from Step 10 to Step 499 (0-indexed), smoothed using an exponential moving average [27, p. 15], both initialized at 0.5 with smoothing factor of 0.2. underconfident end of the spectrum, the calibration bias generally becomes less negative. This is further supported by the confidence calibration plots in Figure 4 depicting the LLM accuracy in each confidence bin when trained and evaluated on the BigMath dataset. Figure 5 shows the training accuracy and training confidence of Qwen 2.5 (3B) Instruct when trained with different non-hackable confidence reward schemes in DeepMath-103K. The training speed is generally slower towards the underconfident end of the spectrum, while the confidence calibration is generally faster apart from a significant anomaly in Brier-Log Hybrid. Speed of confidence calibration is important in resource-limited applications where confidence calibration is prioritized over accuracy. While the initial LLM, i.e. just after the SFT stage, is overconfident, its AUROC is above 0.5 (see Appendix F for full results), suggesting that answers with lower confidence are less likely to be correct. With higher confidence penalty at high confidences towards the underconfident end of the spectrum, the LLM is incentivized to generate responses with lower confidence as these responses have higher expected reward. Such answers are less likely to be correct, leaving the LLM with fewer correct responses to learn from, which slows down the improvements in training accuracy. The general trend in the confidence calibration speed is likely due to the higher miscalibration penalties towards the underconfident end of the spectrum when initial confidence is high. The anomaly is likely due to relatively low miscalibration penalties at low confidences and low probability of answering correctly in DeepMath-103K when using the Brier-log Hybrid reward scheme. As the priority metric varies by application, the optimal choice of reward scheme depends on the application. Compute budget may influence the optimal choice as different reward schemes have different training speeds and confidence calibration speeds. Therefore, we suggest adopting the reward scheme as a hyperparameter to tune the tradeoffs. 
+
+Answer to RQ2: 
+
+Accuracy and speed of training accuracy improvements generally improve towards the overconfident end of the spectrum. Brier score generally improves and calibration bias generally becomes less negative towards the underconfident end of the spectrum. The optimal reward scheme for AUROC and Brier-1 is generally in between Overconfidence-4 and Brier-log Hybrid (both inclusive), and depends on both the dataset and the metric. As one moves towards the underconfident end of the spectrum, the speed of confidence calibration generally improves but may slow down if the initial probability of answering correctly is low. The optimal tradeoff within the spectrum depends on the dataset and the application since different applications require prioritization of different metrics. 
+
+# 7 Limitations and Future Work 
+
+In this section, we analyze the limitations of our work and provide future research directions. First, correctness evaluation is not perfect for practical datasets. Therefore, evaluation noise may seep into confidence estimates, leading to post-training biases. Second, this work only applies to scenarios where an answer can be considered completely correct, or completely wrong. Future work can generalize to scenarios involving partially correct answers 9earning partial credit, categorical distribution of possible correct answers and long-form answers where only some sentences, but not others, are factually correct. Third, this work is dependent on the stability of RL training of LLM. Future work can investigate into the loss landscapes of different reward schemes to improve learning stability. 
+
+# 8 Conclusion 
+
+In this paper, we examined RL for LLMs in the setting where the LLM is trained to jointly improve reasoning accuracy and verbalized confidence calibration. We identified a failure mode, which we call confidence reward hacking, in which a poorly designed reward scheme can incentivize the LLM to provide an answer it can confidently recognize as incorrect. Therefore, rewarding confidence naively can create incentives that conflict with accuracy. To address this issue, we introduced non-hackable confidence reward schemes, which removes the incentive for an LLM to trade correctness for high confidence in incorrectness. Furthermore, we introduced an overconfidence to underconfidence spectrum of reward schemes which contain reward schemes that favor overconfidence by δ over underconfidence by δ and rewards that favor underconfidence by δ over overconfidence by δ.Empirically, we showed that hackable confidence reward schemes can lead to selective confidence reward hacking on practical datasets, with accuracy degradation concentrated on harder questions compared with training for accuracy alone. We also found that no single non-hackable confidence reward scheme consistently performs best across different metrics and different datasets. Thus, the reward scheme should be tuned as a hyperparameter according to the calibration and accuracy requirements of the target application. 
+
+# References 
+
+[1] K. Zhang et al., A Survey of Reinforcement Learning for Large Reasoning Models , 2025. arXiv: 
+
+2509.08827 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2509.08827 
+
+[2] C. Wang, Z. Li, J. Bai, Y. Zhang, S. Cui, Z. Zhao, and Y. Wang, Arbitrary entropy policy optimization breaks the exploration bottleneck of reinforcement learning , 2025. arXiv: 2510. 08141 [cs.LG] . [Online]. Available: https://arxiv.org/abs/2510.08141 
+
+[3] Y. Wu et al., It Takes Two: Your GRPO Is Secretly DPO , 2026. arXiv: 2510.00977 [cs.LG] .[Online]. Available: https://arxiv.org/abs/2510.00977 
+
+[4] B. Turtel, D. Franklin, K. Skotheim, L. Hewitt, and P. Schoenegger, “Outcome-based Rein-forcement Learning to Predict the Future,” Transactions on Machine Learning Research , 2025, 
+
+> ISSN
+
+: 2835-8856. [Online]. Available: https://openreview.net/forum?id=bbhdeL8EUX 
+
+[5] Y. Li, Y. Miao, X. Ding, R. Krishnan, and R. Padman, “Firm or Fickle? Evaluating Large Language Models Consistency in Sequential Interactions,” in Findings of the Association for Computational Linguistics: ACL 2025 , W. Che, J. Nabende, E. Shutova, and M. T. Pile-hvar, Eds., Vienna, Austria: Association for Computational Linguistics, Jul. 2025, pp. 6679– 6700, ISBN : 979-8-89176-256-5. DOI : 10.18653/v1/2025.findings-acl.347 [Online]. Available: https://aclanthology.org/2025.findings-acl.347/ 
+
+[6] M. Damani, I. Puri, S. Slocum, I. Shenfeld, L. Choshen, Y. Kim, and J. Andreas, “Beyond Binary Rewards: Training LMs to Reason About Their Uncertainty,” in The Fourteenth International Conference on Learning Representations , 2026. [Online]. Available: https: //openreview.net/forum?id=ASQ649zdHm 
+
+[7] Y. Li, R. Krishnan, and R. Padman, Consistency of Large Reasoning Models Under Multi-Turn Attacks , 2026. arXiv: 2602.13093 [cs.AI] . [Online]. Available: https://arxiv.org/ abs/2602.13093 
+
+[8] X. Xie, X. Liu, and B. Yao, Know When You’re Wrong: Aligning Confidence with Correctness for LLM Error Detection , 2026. arXiv: 2603.06604 [cs.LG] . [Online]. Available: https: //arxiv.org/abs/2603.06604 
+
+[9] J. Achiam et al., GPT-4 Technical Report , 2024. arXiv: 2303 . 08774 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2303.08774 
+
+10 [10] T. Chu, Y. Zhai, J. Yang, S. Tong, S. Xie, D. Schuurmans, Q. V. Le, S. Levine, and Y. Ma, “SFT memorizes, RL generalizes: A comparative study of foundation model post-training,” in Forty-second International Conference on Machine Learning , 2025. [Online]. Available: 
+
+https://openreview.net/forum?id=dYur3yabMj 
+
+[11] I. Shenfeld, J. Pari, and P. Agrawal, “RL’s razor: Why online reinforcement learning forgets less,” in The Fourteenth International Conference on Learning Representations , 2026. [Online]. Available: https://openreview.net/forum?id=7HNRYT4V44 
+
+[12] D. Bani-Harouni, C. Pellegrini, P. Stangel, E. Özsoy, K. Zaripova, M. Keicher, and N. Navab, “Rewarding Doubt: A Reinforcement Learning Approach to Calibrated Confidence Expression of Large Language Models,” in The Fourteenth International Conference on Learning Repre-sentations , 2026. [Online]. Available: https://openreview.net/forum?id=yResLmrVO1 
+
+[13] T. Xu, S. Wu, S. Diao, X. Liu, X. Wang, Y. Chen, and J. Gao, “SaySelf: Teaching LLMs to express confidence with self-reflective rationales,” in Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , Y. Al-Onaizan, M. Bansal, and Y. -N. Chen, Eds., Miami, Florida, USA: Association for Computational Linguistics, Nov. 2024, pp. 5985–5998. DOI : 10.18653/v1/2024.emnlp- main.343 [Online]. Available: 
+
+https://aclanthology.org/2024.emnlp-main.343/ 
+
+[14] C. Li, J. Wu, H. Zhang, Z. Chen, G. An, J. Qiu, X. Wang, and Q. Tian, Confidence Before Answering: A Paradigm Shift for Efficient LLM Uncertainty Estimation , 2026. arXiv: 2603. 05881 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2603.05881 
+
+[15] Z. Shao et al., DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models , 2024. arXiv: 2402 . 03300 [cs.CL] . [Online]. Available: https : / / arxiv.org/abs/2402.03300 
+
+[16] E. H. Shuford Jr, A. Albert, and H. E. Massengill, “Admissible probability measurement procedures,” Psychometrika , vol. 31, no. 2, pp. 125–145, 1966. [17] J. Wu, J. Liu, Z. Zeng, T. Zhan, T. Cai, and W. Huang, Mitigating LLM Hallucination via Be-haviorally Calibrated Reinforcement Learning , 2026. arXiv: 2512.19920 [cs.LG] . [Online]. Available: https://arxiv.org/abs/2512.19920 
+
+[18] S. Wu, F. K. Gustafsson, E. Phillips, B. Gao, A. Thakur, and D. A. Clifton, BAS: A Decision-Theoretic Approach to Evaluating Large Language Model Confidence , 2026. arXiv: 2604. 03216 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2604.03216 
+
+[19] A. T. Kalai, O. Nachum, S. S. Vempala, and E. Zhang, Why language models hallucinate , 2025. arXiv: 2509.04664 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2509.04664 
+
+[20] Z. Yang, P. Qi, S. Zhang, Y. Bengio, W. W. Cohen, R. Salakhutdinov, and C. D. Manning, “HotpotQA: A dataset for diverse, explainable multi-hop question answering,” in Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2018. [21] A. Albalak et al., Big-Math: A Large-Scale, High-Quality Math Dataset for Reinforcement Learning in Language Models , 2025. arXiv: 2502 . 17387 [cs.LG] . [Online]. Available: 
+
+https://arxiv.org/abs/2502.17387 
+
+[22] Z. He et al., “DeepMath-103K: A Large-Scale, Challenging, Decontaminated, and Verifi-able Mathematical Dataset for Advancing Reasoning,” 2025. arXiv: 2504.11456 [cs.CL] .[Online]. Available: https://arxiv.org/abs/2504.11456 
+
+[23] A. Yang et al., “Qwen2 Technical Report,” arXiv preprint arXiv:2407.10671 , 2024. [24] Qwen Team, Qwen2.5: A Party of Foundation Models , Sep. 2024. [Online]. Available: https: //qwenlm.github.io/blog/qwen2.5/ 
+
+[25] Z. Liu, C. Chen, W. Li, P. Qi, T. Pang, C. Du, W. S. Lee, and M. Lin, Understanding R1-Zero-Like Training: A Critical Perspective , 2025. arXiv: 2503.20783 [cs.LG] . [Online]. Available: https://arxiv.org/abs/2503.20783 
+
+[26] Qwen Team, Qwen3 Technical Report , 2025. arXiv: 2505.09388 [cs.CL] . [Online]. Avail-able: https://arxiv.org/abs/2505.09388 
+
+[27] R. G. Brown, Exponential smoothing for predicting demand . Arthur D. Little Inc., 1956. [28] M. J. Schervish, “A General Method for Comparing Probability Assessors,” The Annals of Statistics , vol. 17, no. 4, pp. 1856–1879, 1989. [29] R. C. Buck and E. F. Buck, Advanced Calculus (International Series in Pure and Applied Mathematics) , 3rd ed. New York: McGraw-Hill, 1978. 11 [30] T. Gneiting and A. E. Raftery, “Strictly proper scoring rules, prediction, and estimation,” 
+
+Journal of the American Statistical Association , vol. 102, no. 477, pp. 359–378, 2007. [31] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, LoRA: Low-Rank Adaptation of Large Language Models , 2021. arXiv: 2106.09685 [cs.CL] . [Online]. Available: https://arxiv.org/abs/2106.09685 
+
+[32] M. Bereket and J. Leskovec, Uncalibrated Reasoning: GRPO Induces Overconfidence for Stochastic Outcomes , 2025. arXiv: 2508.11800 [cs.LG] . [Online]. Available: https:// arxiv.org/abs/2508.11800 
+
+[33] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, On Calibration of Modern Neural Networks ,2017. arXiv: 1706.04599 [cs.LG] . [Online]. Available: https://arxiv.org/abs/1706. 04599 
+
+[34] J. Marcum, “A statistical theory of target detection by pulsed radar,” IRE Transactions on Information Theory , vol. 6, no. 2, pp. 59–267, 1960. DOI : 10.1109/TIT.1960.1057560 
+
+[35] W. Peterson, T. Birdsall, and W. Fox, “The theory of signal detectability,” Transactions of the IRE Professional Group on Information Theory , vol. 4, no. 4, pp. 171–212, 1954. DOI :
+
+10.1109/TIT.1954.1057460 
+
+[36] G. W. Brier, “Verification of forecasts expressed in terms of probability,” Monthly weather review , vol. 78, no. 1, pp. 1–3, 1950. DOI : 10.1175/1520-0493(1950)078<0001:vofeit> 2.0.co;2 
+
+[37] C. - Y. Lin, “ROUGE: A package for automatic evaluation of summaries,” in Text Summarization Branches Out , Barcelona, Spain: Association for Computational Linguistics, Jul. 2004, pp. 74– 81. [Online]. Available: https://aclanthology.org/W04-1013/ 
+
+[38] W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu, J. E. Gonzalez, H. Zhang, and I. Sto-ica, “Efficient Memory Management for Large Language Model Serving with PagedAttention,” in Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles , 2023. [39] I. Loshchilov and F. Hutter, “Decoupled Weight Decay Regularization,” in International Conference on Learning Representations , 2019. [Online]. Available: https://openreview. net/forum?id=Bkg6RiCqY7 
+
+[40] D. Han, M. Han, and Unsloth team, Unsloth , 2023. [Online]. Available: https://github. com/unslothai/unsloth 
+
+[41] S. Devic, C. Peale, A. Bradley, S. Williamson, P. Nakkiran, and A. Gollakota, Trace Length is a Simple Uncertainty Signal in Reasoning Models , 2025. arXiv: 2510.10409 [cs.AI] .[Online]. Available: https://arxiv.org/abs/2510.10409 
+
+[42] A. Grattafiori et al., The Llama 3 Herd of Models , 2024. arXiv: 2407 . 21783 [cs.AI] .[Online]. Available: https://arxiv.org/abs/2407.21783 
+
+# A Proofs of Theorems In Paper 
+
+A.1 Non-hackable confidence reward schemes 
+
+In these proofs, R is as defined in Proper Scoring property of Definition 2, and Rmax is as defined in Best Effort property of Definition 2. We first motivate our definition of non-hackable confidence reward schemes, then proceed to characterize the set of non-hackable confidence reward schemes. 
+
+Remark 1. Why we consider non-hackable confidence reward schemes in the first place. Consider the strategy where the LLM performs at its best and honestly reports its confidence c,aligned with the Bayesian probability of answering correctly. We want this strategy to be optimal. Its expected reward is Rmax (c).Suppose (f (c), g (c)) is a hackable confidence reward scheme. Then, there exists c ∈ (0 , 1) and 
+
+p ∈ (0 , c ) such that Rmax (p) > R max (c). Consider the strategy where the LLM reports a confidence of p, and answers to the best of its ability with probability pc and answers gibberish, assumed to be a wrong, otherwise. Then, the probability of the LLM answering correctly is pc c + (1 − pc )(0) = p.Therefore, the expected reward of this strategy is Rmax (p) > R max (c).Therefore, the LLM can obtain a higher maximum expected reward by intentionally answering wrongly with some probability, for instance, by answering some gibberish. In practice, this defeats the purpose of doing RL to improve LLM reasoning, as this loophole encourages the LLM to answer 
+
+12 incorrectly. Since such a p may only exist for a proper subset of questions in the dataset, it is possible that the LLM will selectively choose the subset of questions to answer incorrectly, which may lead to difficult debugging or even non-detection of bugs if the overall accuracy happens to increase during the training. 
+
+Lemma 1. Reward schemes (f (c), g (c)) that satisfy the Proper Scoring property over (0 , 1) must necessarily satisfy f ′(c) 
+
+> c−1
+
+= g′(c) 
+
+> c
+
+over (0 , 1) .
+
+Remark 2. A related result, i.e. both Lemma 1 and its converse hold assuming the Interpretability property, was proven in [16] and generalized by [28], with varying assumptions about f (c) and 
+
+g(c). In this section, we take a slightly different approach and prove Lemma 1 in the context of characterizing non-hackable confidence reward schemes. 
+
+Proof of Lemma 1 .
+
+Consider R(c, p ) = pf (c) + (1 − p)g(c), where p is treated as constant. Since f and g are assumed to be have continuous first derivatives, R is partially differentiable with respect to c. Differentiating with respect to R, we obtain ∂R ∂c = pf ′(c) + (1 − p)g′(c).By the Proper Scoring property, since R(c, p ) obtains its maximum at c = p when keeping p constant, 
+
+pf ′(p) + (1 − p)g′(p) = 0 for all p ∈ (0 , 1) . Therefore, pf ′(p) = ( p − 1) g′(p). Since p ∈ (0 , 1) ,
+
+p̸ = 0 and p − 1̸ = 0 , hence we divide by p(p − 1) on both sides to obtain f ′(p) 
+
+> p−1
+
+= g′(p) 
+
+> p
+
+. A change of variable from p to c yields the result in the lemma. 
+
+■
+
+Definition 6. For any reward scheme such that f ′(c) 
+
+> c−1
+
+= g′(c) 
+
+> c
+
+for all c ∈ (0 , 1) , the function h(c) is well-defined over (0 , 1) as h(c) = f ′(c) 
+
+> c−1
+
+= g′(c) 
+
+> c
+
+. In such a scenario, f (c) and g(c) can be expressed as f (c) = R (c − 1) h(c) dc and g(c) = R ch (c) dc, up to arbitrary additive constants. 
+
+Lemma 2. Assuming h(c) is well-defined (as defined in Definition 6), the Interpretability property holds if and only if h(c) ≤ 0 for all c ∈ (0 , 1) .
+
+Proof of Lemma 2 .
+
+Recall that the Interpretability property is that f is non-decreasing on (0 , 1) and g is non-increasing on (0 , 1) . Because f and g are differentiable on (0 , 1) :
+
+f is non-decreasing on (0 , 1) 
+
+⇐⇒ f ′(c) = ( c − 1) h(c) ≥ 0 for all c ∈ (0 , 1) 
+
+⇐⇒ h(c) ≤ 0 for all c ∈ (0 , 1) since c − 1 < 0 for all c ∈ (0 , 1) 
+
+Similarly, 
+
+g is non-increasing on (0 , 1) 
+
+⇐⇒ g′(c) = ch (c) ≤ 0 for all c ∈ (0 , 1) 
+
+⇐⇒ h(c) ≤ 0 for all c ∈ (0 , 1) since c > 0 for all c ∈ (0 , 1) .
+
+Thus, the Interpretability property holds if and only if h(c) ≤ 0 over (0 , 1) .
+
+■
+
+Lemma 3. Assuming h is well-defined, ∂∂c R(c, p ) = ( c − p)h(c) for all c ∈ (0 , 1) 
+
+Proof of Lemma 3 .
+
+By the definition of the expected reward R in the Proper Scoring property of Definition 2, R(c, p ) = 
+
+pf (c) + (1 − p)g(c). Therefore, ∂∂c R(c, p ) = pf ′(c) + (1 − p)g′(c).From Definition 6, f ′(c) = ( c − 1) h(c) and g′(c) = ch (c) for all c ∈ (0 , 1) .Therefore, ∂∂c R(c, p ) = p(c − 1) h(c) + (1 − p)ch (c) = ( pc − p)h(c) + ( c − pc )h(c) = ( c − p)h(c)
+
+■
+
+13 Corollary 1. For any fixed p, if the reward scheme satisfies both the Interpretability and the Proper Scoring property, R(c, p ) is non-decreasing on c ∈ (0 , p ) and non-increasing on c ∈ (p, 1) .
+
+Proof of Corollary 1 .
+
+Since the reward scheme satisfies the Proper Scoring property, by Lemma 1, h is well-defined. Since the reward scheme additionally satisfies the Interpretability property, by Lemma 2, h is non-positive. By Lemma 3, ∂∂c R(c, p ) = ( c − p)h(c). For c ∈ (0 , p ), c − p < 0. For c ∈ (p, 1) , c − p > 0.This implies that keeping p fixed, R(c, p ) is non-decreasing on c ∈ (0 , p ) and non-increasing on 
+
+c ∈ (p, 1) .
+
+■
+
+Corollary 2. 
+
+Now, we assume the LLM can only output confidences c ∈ (0 , 1) in some finite set Cvalid . All elements in Cvalid are assumed to be in (0 , 1) . Let cmin = min Cvalid and cmax = max Cvalid .Take any p ∈ (0 , 1) . Let C≤ = {c ∈ Cvalid |c ≤ p} and C> = {c ∈ Cvalid |c > p }.Let clef t = max C≤ if C≤ is not empty, otherwise set to cmin .Let cright = min C> if C> is not empty, otherwise set to cmax .Suppose the reward scheme satisfies both the Interpretability property and the Proper Scoring property, then an optimal value of c ∈ Cvalid that maximizes R(c, p ) is either clef t or cright .
+
+Proof of Corollary 2 .
+
+We consider three cases based on where p ∈ (0 , 1) lies relative to cmin and cmax .Case 1: p ∈ (0 , c min )
+
+In this case, clef t = cmin since C≤ is empty and cright = cmin .Since cmin ∈ (p, 1) , all values in Cvalid are in (p, 1) . Therefore, since R(c, p ) is non-increasing on 
+
+c ∈ (p, 1) by Corollary 1, cmin ∈ argmax c∈Cvalid R(c, p ).Case 2: p ∈ [cmin , c max ).In this case, since C≤ and C> are both non-empty, clef t = max C≤ and cright = min C>.If clef t = p, then clef t ∈ argmax c∈(0 ,1) R(c, p ) implies clef t ∈ argmax c∈Cvalid R(c, p ) since 
+
+Cvalid ⊆ (0 , 1) .Otherwise, since all elements in C≤ are in (0 , p ) and R(c, p ) is non-decreasing on c ∈ (0 , p ) by Corollary 1, clef t = max C≤ ∈ argmax c∈C≤ R(c, p ).Likewise, since all elements in C> are in (p, 1) and R(c, p ) is non-increasing on c ∈ (p, 1) by Corollary 1, cright = min C> ∈ argmax c∈C> R(c, p ).Since Cvalid = C≤ ∪ C>, either clef t ∈ argmax c∈Cvalid R(c, p ) or cright ∈ argmax c∈Cvalid R(c, p ).Case 3: p ∈ [cmax , 1) .In this case, cright = cmax since C> is empty and clef t = cmax .If p = cmax , then clef t = cmax ∈ argmax c∈(0 ,1) R(c, p ) implies clef t ∈ argmax c∈Cvalid R(c, p )
+
+since Cvalid ⊆ (0 , 1) .Otherwise, p ∈ (cmax , 1) . Therefore, all values in Cvalid are in (0 , p ). Since R(c, p ) is non-decreasing on c ∈ (0 , p ) by Corollary 1, cmax ∈ argmax c∈Cvalid R(c, p ).
+
+■
+
+Remark 3. For our experiments, Cvalid =  ˜c+0 .5101 |˜c ∈ { 0, 1, · · · , 100 } .
+
+14 Remark 4. Intuitively, Corollary 2 implies that even in discretization of confidences, for non-hackable confidence reward schemes, the LLM is incentivized to output a confidence value that is the closest to (either just lesser than or just greater than) the probability of answering the question correctly. 
+
+Lemma 4. Assuming h is well-defined, R′
+
+> max
+
+(c) = f (c) − g(c) for all c ∈ (0 , 1) .
+
+Proof of Lemma 4 .
+
+By definition of Rmax and R, Rmax (c) = R(c, c ) = cf (c) + (1 − c)g(c).
+
+R′
+
+> max
+
+(c) = f (c) + cf ′(c) − g(c) + (1 − c)g′(c)
+
+Since h is assumed to be well-defined, f ′(c) 
+
+> c−1
+
+= g′(c) 
+
+> c
+
+, which implies that cf ′(c) + (1 − c)g′(c) = 0 .Therefore, R′
+
+> max
+
+(c) = f (c) − g(c). ■
+
+For ease of reference, Theorem 1, which characterizes the non-hackable confidence reward schemes, is restated as follows: 
+
+Theorem 1. A reward scheme is non-hackable confidence over (a, b ) ⊆ (0 , 1) if and only if all of the following hold: (i) There exists a function h(c) defined over (0 , 1) such that h(c) = f ′(c) 
+
+> c−1
+
+= g′(c)
+
+> c
+
+(ii) h(c) ≤ 0 for all c ∈ (0 , 1) 
+
+(iii) f (a+) ≥ g(a+)
+
+Proof of Theorem 1 .
+
+(⇒)
+
+If a reward scheme is non-hackable confidence, then three properties must be proven to be true. We are given that (f, g ) is a non-reward hackable scheme. Since (f, g ) satisfies the proper scoring property over (0 , 1) , by Lemma 1, h(c) exists and is well-defined, satisfying property (i). By the Interpretability property, since we assume f to be differentiable and non-decreasing on (0 , 1) ,since c ∈ (0 , 1) , f ′(c) ≥ 0 ⇒ h(c) = f ′(c) 
+
+> c−1
+
+≤ 0, which fulfills property (ii). By Lemma 4, R′
+
+> max
+
+(c) = f (c) − g(c) for all c ∈ (0 , 1) . By Best Effort property, since R′ 
+
+> max
+
+is non-decreasing on (a, b ), R′
+
+> max
+
+(c) ≥ 0 for all c ∈ (a, b ). Therefore, since (a, b ) ⊆ (0 , 1) , f (c) ≥ g(c)
+
+for all c ∈ (a, b ).Take any x, y ∈ (a, b ). By Interpretability property, f is non-decreasing and g is non-increasing. Case 1: x ≤ y. f (x) ≥ g(x) ≥ g(y)
+
+Case 2: x > y . f (x) ≥ f (y) ≥ g(y)
+
+Therefore, f (x) ≥ g(y) for all x, y ∈ (a, b ).This implies inf x∈(a,b ) f (x) ≥ g(y) for all y ∈ (a, b ).This implies inf x∈(a,b ) f (x) ≥ sup y∈(a,b ) g(y).By Interpretability property, since f is non-decreasing on (a, b ), inf x∈(a,b ) f (x) = f (a+).By Interpretability property, since g is non-increasing on (a, b ), sup y∈(a,b ) g(y) = g(a+).Therefore, f (a+) ≥ g(a+), satisfying property (iii). 
+
+(⇐)
+
+If the following three properties are satisfied, then we need to prove that the scheme is non-confidence hackable. (i) There exists a function h(c) defined over (0 , 1) such that h(c) = f ′(c) 
+
+> c−1
+
+= g′(c)
+
+> c
+
+(ii) h(c) ≤ 0 for all c ∈ (0 , 1) 
+
+15 (iii) f (a+) ≥ g(a+)
+
+From property (i), h is well-defined. Therefore, by Lemma 2 and property (ii), the Interpretability property holds. Next, we aim to show the Proper Scoring property. Fix any p ∈ (0 , 1) and let r(c) = R(c, p ), where 
+
+r is defined over c ∈ (0 , 1) . By Lemma 3, r′(c) = ∂R ∂c = ( c − p)h(c) for all c in (0 , 1) .Therefore, from property (ii), r′(c) ≥ 0 ⇔ c ≤ p and r′(c) ≤ 0 ⇔ c ≥ p.We aim to show that r(c) ≤ r(p) for all c ∈ (0 , 1) .Case 1: c ∈ (0 , p ] Since r′(x) ≥ 0 for all x ∈ (0 , p ], r(p) − r(c) = R pc r′(x) dx ≥ 0. This implies 
+
+r(p) ≥ r(c).Case 2: c ∈ (p, 1) Since r′(x) ≤ 0 for all x ∈ (p, 1) , r(c) − r(p) = R cp r′(x) dx ≤ 0. This implies 
+
+r(c) ≤ r(p).In both cases, r(p) is an upper bound of r(c). Therefore, the maximum value of R when p is fixed is achieved when c is set to p. Hence, the Proper Scoring property is satisfied. Last, we aim to show the Best Effort property. By Lemma 4, since h is well-defined, R′
+
+> max
+
+(c) = 
+
+f (c) − g(c) for all c ∈ (0 , 1) .By the Interpretability property, for all c ∈ (a, b ), f (c) ≥ inf c′∈(a,b ) f (c′) = f (a+). Similarly, 
+
+g(a+) = sup c′∈(a,b ) g(c′) ≥ g(c). Since property (iii) states that f (a+) ≥ g(a+), we have f (c) −
+
+g(c) = R′
+
+> max
+
+(c) ≥ 0. Therefore, Rmax is non-decreasing on (a, b ), which is the Best Effort property. 
+
+■
+
+Corollary 3. If a reward scheme (f (c), g (c)) is a non-hackable confidence reward scheme over 
+
+(a, b ) ⊆ (0 , 1) , then it must be non-hackable confidence over (a, 1) .
+
+Proof of Corollary 3 .
+
+The corollary follows from the fact that properties (i), (ii) and (iii) in Theorem 1 do not rely on the endpoint b. Here is an alternative proof which does not rely on Theorem 1. Since (f (c), g (c)) is a non-hackable confidence reward scheme, it satisfies proper scoring, hence the corresponding function h is well-defined and Lemma 4 applies. By the Interpretability property, both 
+
+f (c) and −g(c) are non-decreasing on (0 , 1) . Therefore, using Lemma 4, R′ 
+
+> max
+
+= f (c) − g(c) is non-decreasing on (0 , 1) . By the Best Effort property, Rmax (c) is non-decreasing on (a, b ), which implies R′
+
+> max
+
+(c) ≥ 0 for all c ∈ (a, b ).Since R′ 
+
+> max
+
+is non-decreasing on (0 , 1) and is non-negative on (a, b ), R′ 
+
+> max
+
+must be non-negative on (a, 1) . Therefore, Rmax (c) must be non-decreasing on (a, 1) , satisfying the Best Effort property. The Interpretability and Proper Scoring properties are automatically satisfied as the properties remain the same when the interval is changed from (a, b ) to (a, 1) .Therefore, (f (c), g (c)) is a non-hackable confidence reward scheme on (a, 1) .
+
+■
+
+We then proceed to derive the general form of non-hackable confidence reward schemes. But we have to first show that certain improper integrals are convergent to establish well-definedness of the general form. 
+
+Lemma 5. Let f1, f 2 be continuous on (a, b ], where a, b ∈ R and 0 ≤ f1(x) ≤ f2(x) for all 
+
+x ∈ (a, b ]. If R ba f2(x) dx converges, then R ba f1(x) dx converges. 
+
+Lemma 6. Let f1, f 2 be continuous on (a, b ], where a, b ∈ R and f1(x), f 2(x) ≥ 0 for all x ∈ (a, b ].If lim x→a+ f1(x) 
+
+> f2(x)
+
+exists and is positive and finite, then R ba f1(x) dx and R ba f2(x) dx either both converge or both diverge. 
+
+The proofs of Lemmas 5 and 6 are analogous to the proofs of Theorem 15 and its corollary respectively in [29, pp. 214-215]. 16 Lemma 7. Let f1 be a continuous function on (0 , 1) . If R c 
+
+> 0
+
+f1(x) dx converges for some c ∈ (0 , 1) ,then R p 
+
+> 0
+
+f1(x) dx converges for all p ∈ (0 , 1) .
+
+Proof of Lemma 7 .
+
+We are given that R c 
+
+> 0
+
+f1(x) dx converges for some c ∈ (0 , 1) . Take any p ∈ (0 , 1) .Case 1: p = c
+
+Trivially proven as R c 
+
+> 0
+
+f1(x) dx is known to converge. Case 2: p < c 
+
+Since R c 
+
+> 0
+
+f1(x) dx converges and f1 is continuous on (0 , c ], both R cp f1(x) dx and R p 
+
+> 0
+
+f1(x) dx must converge. Case 3: p > c 
+
+Since f1 is continuous on [c, p ], R pc f1(x) dx is a proper integral and therefore converges. Since R c 
+
+> 0
+
+f1(x) dx converges by hypothesis, R p 
+
+> 0
+
+f1(x) dx converges and is equal to R pc f1(x) dx +
+
+R c 
+
+> 0
+
+f1(x) dx .Therefore, combining the three cases, R p 
+
+> 0
+
+f (x) dx converges for all p ∈ (0 , 1) .
+
+■
+
+Corollary 4. Let h(c) be any continuous function on (0 , 1) such that h(c) ≤ 0 for all c ∈ (0 , 1) .Then, R p 
+
+> 0
+
+h(c) dc converges for all p ∈ (0 , 1) ⇔ R p 
+
+> 0
+
+(c − 1) h(c) dc converges for all p ∈ (0 , 1) .
+
+Proof of Corollary 4 .
+
+Let f1 and f2 be defined on (0 , 1) such that f1(c) = ( c − 1) h(c) and f2(c) = −h(c).Since h is continuous on (0 , 1) , f1 and f2 are continuous on (0 , 1) .Since h(c) ≤ 0 and c − 1 < 0 for all c ∈ (0 , 1) , f1(c) ≥ 0 and f2(c) ≥ 0 for all c ∈ (0 , 1) .
+
+lim c→0+ f1(c) 
+
+> f2(c)
+
+= lim c→0+ (1 − c) = 1 is positive and finite. Therefore, by Lemma 6, R p 
+
+> 0
+
+f1(c) dc and R p 
+
+> 0
+
+f2(c) dc either both converge or both diverge for all p ∈ (0 , 1) . Since h(c) = −f2(c) and (c − 1) h(c) = f1(c), it follows that R p 
+
+> 0
+
+h(c) dc and 
+
+R p 
+
+> 0
+
+(c − 1) h(c) dc either both converge or both diverge for all p ∈ (0 , 1) .Note that since we did not rule out the possibility where R p1 
+
+> 0
+
+h(c) dc converges but R p2 
+
+> 0
+
+h(c) dc 
+
+diverges for some p1, p 2 ∈ (0 , 1) , we are not done yet. Take any p ∈ (0 , 1) and consider whether R p 
+
+> 0
+
+h(c) dc diverges. Case 1: R p 
+
+> 0
+
+h(c) dc diverges By Lemma 7, R p 
+
+> 0
+
+h(c) dc must diverge for all p ∈ (0 , 1) .Hence, R p 
+
+> 0
+
+(c − 1) h(c) dc must diverge for all p ∈ (0 , 1) .Case 2: R p 
+
+> 0
+
+f1(x) dx converges By Lemma 7, R p 
+
+> 0
+
+h(c) dc must converge for all p ∈ (0 , 1) .Hence, R p 
+
+> 0
+
+(c − 1) h(c) dc must converge for all p ∈ (0 , 1) .Therefore, combining the two cases, R p 
+
+> 0
+
+h(c) dc converges for all p ∈ (0 , 1) ⇔ R p 
+
+> 0
+
+(c − 1) h(c) dc 
+
+converges for all p ∈ (0 , 1) 
+
+Hence, R p 
+
+> 0
+
+h(c) dc either both converge or both diverge. 
+
+■
+
+17 Corollary 5. Let h(c) be any continuous function on (0 , 1) such that h(c) ≤ 0 for all c ∈ (0 , 1) .Then, R c 
+
+> 0
+
+h(x) dx converges for all c ∈ (0 , 1) = ⇒ R c 
+
+> 0
+
+xh (x) dx converges for all c ∈ (0 , 1) .
+
+Proof of Corollary 5 .
+
+Suppose R c 
+
+> 0
+
+h(x) dx converges for all c ∈ (0 , 1) .Since h(c) is continuous on (0 , 1) , ch (c) is continuous on (0 , 1) .Since h(c) ≤ 0 for all c ∈ (0 , 1) and R c 
+
+> 0
+
+h(x) dx converges for all c ∈ (0 , 1) , R c 
+
+> 0
+
+|h(x)| dx =
+
+R c 
+
+> 0
+
+−h(x) dx converges for all c ∈ (0 , 1) .Since 0 ≤ | ch (c)| ≤ | h(c)| and R c 
+
+> 0
+
+|h(x)| dx converges for all c ∈ (0 , 1) , by Lemma 5, R c 
+
+> 0
+
+|xh (x)| dx 
+
+converges for all c ∈ (0 , 1) .For all c ∈ (0 , 1) , since c > 0 and h(c) ≤ 0, ch (c) ≤ 0. Therefore, R c 
+
+> 0
+
+xh (x) dx = R c 
+
+> 0
+
+−| xh (x)| dx 
+
+converges for all c ∈ (0 , 1) .
+
+■
+
+Theorem 2. The general form of non-hackable confidence reward schemes is (R c 
+
+> 0
+
+(x − 1) h(x) dx +
+
+f0, R c 
+
+> 0
+
+xh (x) dx + g0), where the following conditions hold: (i) h(c) ≤ 0 for all c ∈ (0 , 1) 
+
+(ii) h is continuous on (0 , 1) 
+
+(iii) R c 
+
+> 0
+
+h(x) dx converges for all c ∈ (0 , 1) 
+
+(iv) f0, g 0 are constants in R satisfying f0 ≥ g0
+
+Remark 5. A related theorem that describes the general form of reward schemes (not necessarily non-hackable confidence) that satisfy Proper Scoring property can be found in Theorem 4.2 of [28]. 
+
+Proof of Theorem 2 .
+
+(⇒)
+
+We aim to show that if a reward scheme (f (c), g (c)) is non-hackable confidence, then it must be of the given form. Since (f (c), g (c)) is non-hackable confidence, by Theorem 1, h(c) is well-defined and h(c) =   
+
+> f′(c)
+> c−1
+
+= g′(c) 
+
+> c
+
+, which implies that f ′(c) = ( c − 1) h(c) and g′(c) = ch (c). Moreover, h(c) ≤ 0 for all 
+
+c ∈ (0 , 1) , satisfying (i). By Interpretability property, since g is non-increasing on (0 , 1) , it is impossible for g(0 +) to diverge to −∞ . Since f (0 +) ≥ g(0 +), it is impossible for f (0 +) to diverge to −∞ . Likewise, since f
+
+is non-decreasing on (0 , 1) , it is impossible for f (0 +) to diverge to ∞. Since f (0 +) ≥ g(0 +),it is impossible for g(0 +) to diverge to ∞. Therefore, the antiderivatives of f ′ and g′ must have well-defined real number limits at 0+.Since f and g are assumed to have continuous first order derivatives, h(c) is continuous on (0 , 1) ,satisfying (ii). Therefore, f ′(c) = ( c − 1) h(c) and g′(c) = ch (c) are continuous on (0 , 1) . This implies that R c 
+
+> 0
+
+(x − 1) h(x) dx and R c 
+
+> 0
+
+xh (x) dx are well-defined and must converge for all c ∈ (0 , 1) . Hence, 
+
+f (c) = R c 
+
+> 0
+
+(x − 1) h(x) dx + f0 and g(c) = R c 
+
+> 0
+
+xh (x) dx + g0 for some real constants f0 and g0,satisfying the general form. By Corollary 4, since R c 
+
+> 0
+
+(x − 1) h(x) dx converges for all c ∈ (0 , 1) , R c 
+
+> 0
+
+h(x) dx must converge for all c ∈ (0 , 1) , satisfying (iii). Since f (0 +) ≥ g(0 +) by Theorem 1, lim c→0+ (R c 
+
+> 0
+
+(x − 1) h(x) dx + f0) ≥ lim c→0+ (R c 
+
+> 0
+
+xh (x) dx +
+
+g0), which implies that f0 ≥ g0 since both integrals converge, satisfying (iv). 
+
+(⇐)
+
+18 We want to show that if (f (c), g (c)) = ( R c 
+
+> 0
+
+(x − 1) h(x) dx + f0, R c 
+
+> 0
+
+xh (x) dx + g0) such that the given constraints on h, f0 and g0 are satisfied, then (f (c), g (c)) is non-hackable confidence. Since h(c) ≤ 0 for all c ∈ (0 , 1) from (i), h is continuous on (0 , 1) from (ii) and R c 
+
+> 0
+
+h(x) dx converges for all c ∈ (0 , 1) from (iii), it follows that R c 
+
+> 0
+
+(x − 1) h(x) dx converges for all c ∈ (0 , 1) by Corollary 4 and R c 
+
+> 0
+
+xh (x) dx converges for all c ∈ (0 , 1) by Corollary 5. Therefore, both f and g are well-defined functions. Since h is continuous on (0 , 1) from (ii), f ′(c) = ( c − 1) h(c) and g′(c) = ch (c) are both continuous on (0 , 1) , hence both f and g have continuous first derivatives on (0 , 1) .
+
+f (0 +) = lim c→0(R c 
+
+> 0
+
+(x − 1) h(x) dx + f0) = f0
+
+g(0 +) = lim c→0(R c 
+
+> 0
+
+xh (x) dx + g0) = g0
+
+Since f0 ≥ g0 from (iv), we have f (0 +) ≥ g(0 +). In addition, we also have h(c) ≤ 0 for all 
+
+c ∈ (0 , 1) , therefore, (f (c), g (c)) is non-hackable confidence on (0 , 1) .
+
+■
+
+Definition 7. A reward scheme (f (c), g (c)) is strictly non-hackable confidence if all of the following are satisfied: (i) Strict Interpretability : f (c) is strictly increasing in (0 , 1) and g(c) is strictly decreasing on (0 , 1) .(ii) Strict Proper Scoring : (f (c), g (c)) is a strictly proper scoring rule, i.e. argmax cR(c, p ) = 
+
+{p} ∀ p ∈ (0 , 1) .(iii) Strict Best Effort : Rmax is strictly increasing on (0 , 1) .
+
+Remark 6. Strict Interpretability ensures that correct answers with higher confidence are always given a higher reward and incorrect answers with higher confidence are always penalized more heavily. Strict Proper Scoring provides a stronger theoretical guarantee that the only optimal solution is for the LLM to be honest about its epistemic uncertainty, assuming the answer to each question is deterministic and the evaluator is deterministic. Without the strict condition, the LLM can output an inaccurate confidence estimate and still obtain the same reward. Strict Best Effort ensures that the LLM is incentivized to always answer to the best of its ability as an increase the probability for answering correctly is always rewarded with an increase with the maximum possible expected reward for accurate confidence calibration. 
+
+Remark 7. In general, strictly non-hackable confidence reward schemes are non-hackable confidence. But the converse is not true. Correctness-only, i.e. the reward scheme (1 , 0) , is an example of a non-hackable confidence reward scheme that is not strictly non-hackable confidence. Theorem 3 describes a condition under which the converse is true. 
+
+Theorem 3. If a non-hackable confidence reward scheme (f (c), g (c)) further satisfies h(c) < 0 for all c ∈ (0 , 1) , then (f (c), g (c)) is strictly non-hackable confidence. 
+
+Proof of Theorem 3 .
+
+Let p be any real number in (0 , 1) and r(c) = R(c, p ), where r is defined over c ∈ (0 , 1) . By Lemma 3, r′(c) = ∂R ∂c = ( c − p)h(c) for all c in (0 , 1) . Since h(c) < 0 for all c ∈ (0 , 1) , c = p is the only critical point in (0 , 1) . Since r′ changes from positive to negative at c = p, c = p is a local maximum by first derivative test. This implies that c = p is the global maximum of r on (0 , 1) . Therefore, argmax cR(c, p ) = {p}, satisfying the Strict Proper Scoring property. From Definition 6, f ′(c) = ( c − 1) h(c) and g′(c) = ch (c). Since c − 1 < 0 and c > 0 for all 
+
+c ∈ (0 , 1) , f ′(c) > 0 and g′(c) < 0 for all c ∈ (0 , 1) . Therefore, f is strictly increasing and g is strictly decreasing on (0 , 1) , satisfying the Strict Interpretability property. In addition, by Lemma 4, since h is well-defined by definition of non-hackable confidence reward schemes (Definition 2), R′
+
+> max
+
+(c) = f (c) − g(c) for all c ∈ (0 , 1) . Therefore, R′ 
+
+> max
+
+is strictly increasing on (0 , 1) .19 Since Best Effort property is satisfied in non-hackable confidence reward schemes, R′
+
+> max
+
+(c) ≥ 0 for all c ∈ (0 , 1) . Suppose R′
+
+> max
+
+(ϵ) = 0 for some ϵ ∈ (0 , 1) . Then ϵ 
+
+> 2
+
+∈ (0 , 1) and ϵ 
+
+> 2
+
+< ϵ , which implies that R′
+
+> max
+
+( ϵ 
+
+> 2
+
+) < 0 since R′ 
+
+> max
+
+is strictly increasing. This contradicts the Best Effort Property. Hence, 
+
+R′
+
+> max
+
+(c) > 0 for all c ∈ (0 , 1) . This implies that Rmax is strictly increasing on (0 , 1) , satisfying the Strict Best Effort property. 
+
+■
+
+A.2 Alternative Formulation of Non-hackable Confidence Reward Schemes 
+
+As mentioned in Section 2, [17] and [18] proposed reward functions based on the behavioral calibra-tion framework of [19]. In this subsection, we show that the abstention-based risk-thresholding framework leads to a non-confidence hackable reward scheme and can be used to construct all non-hackable confidence reward schemes such that f (0 +) = g(0 +) = 0 .In the behavioral calibration framework of [19, p. 13], the LLM is awarded 1 point for a correct answer, 0 for an abstention, and − t 
+
+> 1−t
+
+points for an incorrect answer. This is formally described in Definition 8, and termed “abstention reward function”. 
+
+Definition 8. Let isAbstention (q, a ) be 1 if the LLM answer a abstains from answering question q
+
+and 0 otherwise. Let isCorrect (q, a ) be equal to 1 if answer a is a correct answer to question q and 0 otherwise. Then, for any t ∈ [0 , 1) , the abstention reward function with confidence threshold t is defined as follows: 
+
+Rabs (q, a ) = 
+
+
+
+1, if isCorrect (q, a ) = 1 ∧ isAbstention (q, a ) = 0 0, if isAbstention (q, a ) = 1 
+
+− t 
+
+> 1−t
+
+, if isCorrect (q, a ) = 0 ∧ isAbstention (q, a ) = 0 
+
+Theorem 4. Assuming that the confidence output c of the LLM is well-calibrated, under the abstention reward scheme with confidence threshold t, it is optimal on expectation for the LLM to answer is 
+
+c ≥ t and to abstain if c < t .
+
+Proof of Theorem 4 .
+
+Note that E[LLM answers ] = c − (1 −c)t 
+
+> 1−t
+
+and E[LLM abstains ] = 0 since we assume that the confidence outputs are well-calibrated. Since 1 − t ∈ (0 , 1] ,
+
+E[LLM answers ] ≥ E[LLM abstains ]
+
+⇔ c − (1 −c)t 
+
+> 1−t
+
+≥ 0
+
+⇔ c ≥ (1 −c)t
+
+> 1−t
+
+⇔ c ≥ t 
+
+> 1−t
+
+− ct 
+
+> 1−t
+
+⇔ c + ct  
+
+> 1−t
+
+≥ t
+
+> 1−t
+
+⇔ c(1 + t 
+
+> 1−t
+
+) ≥ t
+
+> 1−t
+
+⇔ c( (1 −t)+ t 
+
+> 1−t
+
+) ≥ t
+
+> 1−t
+
+⇔ c( 11−t ) ≥ t
+
+> 1−t
+
+⇔ c ≥ t
+
+Therefore, it is optimal for the LLM to answer the question if c ≥ t and abstain otherwise. 
+
+■
+
+We define a function w(t) of confidence thresholds, where w is defined, non-negative and continuous on (0 , 1) and R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) . Note that this generalizes from [18] by no longer restricting w(t) to be a probability distribution over [0 , 1) .20 Following [18], we aim to maximize the expected reward of the LLM under the abstention reward function with confidence threshold t weighted by w(t). Under the optimal strategy as described in Theorem 4, we derive the reward scheme (f (c), g (c)) as follows: 
+
+f (c) = R 1 
+
+> c
+
+0 dt + R c 
+
+> 0
+
+w(t) dt = R c 
+
+> 0
+
+w(t) dt g(c) = R 1 
+
+> c
+
+0 dt + R c 
+
+> 0
+
+w(t) −t 
+
+> 1−t
+
+dt = R c 
+
+> 0
+
+w(t) tt−1 dt 
+
+Definition 9 formally summarizes this notion as “weighted abstention confidence threshold reward schemes”. 
+
+Definition 9. (f (c), g (c)) is a weighted abstention confidence threshold reward scheme if there exists 
+
+w(c) defined on (0 , 1) such that all of the following hold: (i) w(c) ≥ 0 for all c ∈ (0 , 1) 
+
+(ii) w is continuous on (0 , 1) 
+
+(iii) R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) 
+
+(iv) f (c) = R c 
+
+> 0
+
+w(t) dt 
+
+(v) g(c) = R c 
+
+> 0
+
+w(t) tt−1 dt 
+
+Remark 8. [16] derived a general form of reward schemes (f (c), g (c)) that satisfy Interpretability and Proper Scoring, but not necessarily Best Effort. Up to notational differences, the expressions of f (c) and g(c) are almost identical to weighted abstention confidence threshold reward schemes except for the integration endpoints for g(c). In this work, we aim to characterize non-hackable confidence reward schemes in terms of weighted abstention confidence threshold reward schemes, which satisfies Best Effort in addition to Interpretability and Proper Scoring. 
+
+Theorem 5. The weighted abstention confidence threshold reward scheme (f (c), g (c)) =(R c 
+
+> 0
+
+w(t) dt, R c 
+
+> 0
+
+w(t) tt−1 dt ) is a non-hackable confidence reward scheme for any non-negative and continuous w(t) over (0 , 1) such that R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) .
+
+Proof of Theorem 5 .
+
+Since f ′(c) = w(c) and g′(c) = w(c) cc−1 from (iv) and (v) respectively and w is continuous on 
+
+(0 , 1) from (ii), f and g have continuous first derivatives on (0 , 1) . Furthermore, f ′(c) 
+
+> c−1
+
+= w(c) 
+
+> c−1
+
+and  
+
+> g′(c)
+> c
+
+= w(c) 
+
+> c−1
+
+. Hence, h is well defined and h(c) = w(c) 
+
+> c−1
+
+.Since w(c) ≥ 0 for all c ∈ (0 , 1) from (i) and c − 1 < 0 for all c ∈ (0 , 1) , h(c) ≤ 0 for all c ∈ (0 , 1) .Since w(c) is continuous on (0 , 1) from (ii), it follows that h(c) must also be continuous on (0 , 1) .By Corollary 4, since w(c) = ( c − 1) h(c) and R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) from (iii), 
+
+R c 
+
+> 0
+
+h(t) dt converges for all c ∈ (0 , 1) . Therefore, by Corollary 5, R c 
+
+> 0
+
+th (t) dt converges for all 
+
+c ∈ (0 , 1) .Since w(c) = ( c − 1) h(c) and w(c) cc−1 = ch (c) for all c ∈ (0 , 1) , (R c 
+
+> 0
+
+w(t) dt, R c 
+
+> 0
+
+w(t) tt−1 dt ) = (R c 
+
+> 0
+
+(t − 1) h(t) dt, R c 
+
+> 0
+
+th (t) dt ) is a non-hackable confidence reward scheme on (0 , 1) by Theorem 2. 
+
+■
+
+As the proof of Theorem 5 suggests, the formulation of the weighted abstention confidence threshold reward scheme has f0 = g0 = 0 , hence does not take into account possible additive constant rewards for answering correctly and answering incorrectly. Therefore, we generalize the notion of weighted abstention confidence threshold reward schemes in Definition 10. 
+
+Definition 10. (f (c), g (c)) is a generalized weighted abstention confidence threshold reward scheme if there exists w(t) defined on (0 , 1) and f0, g 0 ∈ R such that all of the following hold: (i) w(c) ≥ 0 for all c ∈ (0 , 1) 
+
+(ii) w is continuous on (0 , 1) 
+
+(iii) R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) 
+
+21 (iv) f (c) = R c 
+
+> 0
+
+w(t) dt + f0
+
+(v) g(c) = R c 
+
+> 0
+
+w(t) tt−1 dt + g0
+
+(vi) f0 ≥ g0
+
+Theorem 6. The set of non-hackable confidence reward schemes is the set of generalized weighted abstention confidence threshold reward schemes. 
+
+Proof of Theorem 6 .
+
+(⇒)
+
+We aim to show non-hackable confidence reward schemes are generalized weighted abstention confidence threshold reward schemes. Let (f (c), g (c)) be a non-hackable confidence reward scheme. By Theorem 2, f (c) = R c 
+
+> 0
+
+(t − 1) h(t) dt + f0 and g(c) = R c 
+
+> 0
+
+th (t) dt + g0, where all of the following hold: (a) h(c) ≤ 0 for all c ∈ (0 , 1) 
+
+(b) h is continuous on (0 , 1) 
+
+(c) R c 
+
+> 0
+
+h(t) dt converges for all c ∈ (0 , 1) 
+
+(d) f0, g 0 ∈ R such that f0 ≥ g0.We aim to show that (f (c), g (c)) is a generalized weighted abstention confidence threshold reward scheme. Let w(c) = ( c − 1) h(c) for all c ∈ (0 , 1) . Since h(c) ≤ 0 for all c ∈ (0 , 1) from (a) and c − 1 < 0
+
+for all c ∈ (0 , 1) , w(c) ≥ 0 for all c ∈ (0 , 1) , satisfying (i) in Definition 10. Since h is continuous on (0 , 1) from (b), w is continuous on (0 , 1) , satisfying (ii) in Definition 10. Since in addition, R c 
+
+> 0
+
+h(t) dt converges for all c ∈ (0 , 1) from (c), by Corollary 4, R c 
+
+> 0
+
+(t − 1) h(t) dt 
+
+converges for all c ∈ (0 , 1) from (c), satisfying (iii) in Definition 10. Therefore, by Corollary 5, R c 
+
+> 0
+
+th (t) dt converges for all c ∈ (0 , 1) . This ensures both f and g are well-defined on (0 , 1) .
+
+f (c) = R c 
+
+> 0
+
+(t − 1) h(t) dt + f0 = R c 
+
+> 0
+
+w(t) dt + f0, satisfying (iv) in Definition 10. For all c ∈ (0 , 1) , since w(c) = ( c − 1) h(c), h(c) = w(c) 
+
+> c−1
+
+. Therefore, 
+
+g(c) = R c 
+
+> 0
+
+th (t) dt + g0 = R c 
+
+> 0
+
+w(t) tt−1 dt + g0, which satisfies (v) in Definition 10. (vi) in Definition 10 is automatically satisfied from (d). Therefore, (f (c), g (c)) is a generalized weighted abstention confidence threshold reward scheme. 
+
+(⇐)
+
+We aim to show that generalized weighted abstention confidence threshold reward schemes are non-hackable confidence reward schemes. Let (f (c), g (c)) be a generalized weighted abstention confidence threshold reward scheme. Since f ′(c) = w(c) and g′(c) = w(c) cc−1 from (iv) and (v) in Definition 10 respectively and w is continuous on (0 , 1) from (ii) in Definition 10, f and g have continuous first derivatives on (0 , 1) .Furthermore, f ′(c) 
+
+> c−1
+
+= w(c) 
+
+> c−1
+
+and g′(c) 
+
+> c
+
+= w(c) 
+
+> c−1
+
+. Hence, h is well defined and h(c) = w(c) 
+
+> c−1
+
+.Since w(c) ≥ 0 for all c ∈ (0 , 1) from (i) in Definition 10 and c − 1 < 0 for all c ∈ (0 , 1) , h(c) ≤ 0
+
+for all c ∈ (0 , 1) . Since w(c) is continuous on (0 , 1) from (ii) in Definition 10, it follows that h(c)
+
+must also be continuous on (0 , 1) .By Corollary 4, since w(c) = ( c − 1) h(c) and R c 
+
+> 0
+
+w(t) dt converges for all c ∈ (0 , 1) from (iii) in Definition 10, R c 
+
+> 0
+
+h(t)dt converges for all c ∈ (0 , 1) . Therefore, by Corollary 5, R c 
+
+> 0
+
+th (t)dt converges for all c ∈ (0 , 1) .22 Since f0 ≥ g0 from (vi) in Definition 10, w(c) = ( c − 1) h(c) for all c ∈ (0 , 1) and w(c) cc−1 = ch (c)
+
+for all c ∈ (0 , 1) , (R c 
+
+> 0
+
+w(t) dt + f0, R c 
+
+> 0
+
+w(t) tt−1 dt + g0) = ( R c 
+
+> 0
+
+(t − 1) h(t) dt + f0, R c 
+
+> 0
+
+th (t) dt + g0)
+
+is a non-hackable confidence reward scheme on (0 , 1) by Theorem 2. 
+
+■
+
+As shown in Theorem 6, generalized weighted abstention confidence threshold reward schemes form an alternative parametrization of non-hackable confidence reward schemes, providing an alternative perspective from the decision theoretic point of view. The scenario in [18] is a special case with all of the following additional constraints: (i) w(t) has a well-defined continuous extension at 0+ by setting w(0) = w(0 +).(ii) f0 = g0 = 0 
+
+(iii) R 10 w(t) dt = 1 
+
+A.3 Importance of Interpretability Property 
+
+While both [6] and [18] considered the Proper Scoring and Best Effort properties, they did not consider the Interpretability property. Nonetheless, their proposed Brier-1 [6] and Brier-log Hybrid [18] reward schemes satisfy the Interpretability property. As demonstrated in Corollary 2, proper scoring reward schemes that also satisfy the Interpretability property encourage a response confidence value close to the true probability of answering the question correctly even when the allowed confidence values are discretized. This is useful as the difference in the optimal confidence value to the true probability of answering the question correctly can be bounded by the maximum gap of two consecutive allowable confidence values when the set of allowable confidence values is finite. For instance, this applies to settings where the LLM is tasked to output a raw unnormalized confidence value as an integer between 0 and 100 inclusive. This section provides a proof that reward schemes that satisfy the Proper Scoring property must also satisfy the Interpretability property, demonstrating that we did not further restrict the set of possible non-hackable confidence reward schemes by inclusion of the Interpretability property. 
+
+Theorem 7. Reward schemes (f (c), g (c)) that satisfy the Proper Scoring property must also satisfy the Interpretability property. 
+
+Remark 9. A more general version of Theorem 7, which does not assume continuity of f (c) and 
+
+g(c), and its corresponding proof, can be found in Lemma A.1 of [28]. A different explanation of why Theorem 7 holds can be found in [30]. 
+
+Proof of Theorem 7 .
+
+Since (f (c), g (c)) satisfies the Proper Scoring property, by Lemma 1, h is well-defined and h(c) =   
+
+> f′(c)
+> c−1
+
+= g′(c) 
+
+> c
+
+for all c ∈ (0 , 1) .Suppose the Interpretability property is not satisfied. Then, by Lemma 2, there exists p ∈ (0 , 1) such that h(p) > 0.Since f and g are assumed to have continuous first derivatives on (0 , 1) , h is continuous on (0 , 1) .Therefore, there exist ϵ > 0 such that |h(c) − h(p)| < h (p) for all c ∈ (p − ϵ, p + ϵ). Note that since h(c) must be well-defined for all c ∈ (p − ϵ, p + ϵ), p − ϵ, p + ϵ ∈ [0 , 1] . Since ϵ > 0,
+
+0 ≤ p − ϵ < p − ϵ 
+
+> 2
+
+< p < p + ϵ ≤ 1.Hence, for all c ∈ [p − ϵ 
+
+> 2
+
+, p ), |h(c) − h(p)| < h (p) = ⇒ h(c) − h(p) > −h(p) = ⇒ h(c) > 0.Let r(c) = R(c, p ). By Lemma 3, r′(c) = ∂∂c R(c, p ) = ( c − p)h(c) < 0 for all c ∈ [p − ϵ 
+
+> 2
+
+, p ).Therefore, r(p) − r(c) = R pc (c − p)h(c) < 0 =⇒ r(c) > r (p) for all c ∈ [p − ϵ 
+
+> 2
+
+, p ). Hence, 
+
+p / ∈ argmax cr(c) =⇒ p / ∈ argmax cR(c, p ). Therefore, we obtain a contradiction on the Proper Scoring property and all reward schemes that satisfy the Proper Scoring property must also satisfy the Interpretability property. 
+
+■
+
+23 B Brier-log Hybrid Naming 
+
+This section of the appendix aims to justify why the Brier-log Hybrid reward scheme is named as such. To recall, Brier-log Hybrid reward scheme is the reward scheme (f (c), g (c)) , where f (c) = c
+
+and g(c) = c + ln(1 − c). In short, the Brier-log Hybrid reward scheme resembles the log loss at higher confidences and a scaled version of Brier-1 score at lower confidences. 
+
+B.1 Calculations for Brier-1 reward scheme 
+
+To understand the comparison with the Brier-1 reward scheme when the probability of answering correctly is low, we need to compute Rmax (c) and R(c, p ). To recall, the Brier-1 reward scheme, originally proposed (but not named as such) by [6], is defined as (1 − (1 − c)2, −c2).For the Brier-1 reward scheme, the maximum expected reward with probability of correctness c is 
+
+Rmax (c)= c(1 − (1 − c)2) + (1 − c)( −c2)= c(1 − 1 + 2 c − c2) − c2 + c3
+
+= 2 c2 − c3 − c2 + c3
+
+= c2.The expected reward with confidence c and probability of correctness p is 
+
+R(c, p )= p(1 − (1 − c)2) + (1 − p)( −c2)= p(1 − 1 − 2c + c2) − c2 + pc 2
+
+= −2pc + pc 2 − c2 + pc 2
+
+= 2 pc − c2
+
+B.2 Low confidence 
+
+When c ∈ (0 , 1) is close to 0, the incorrectness reward is c + ln(1 − c) ≈ c − c − c2 
+
+> 2
+
+= − c2 
+
+> 2
+
+. The correctness reward is approximately c.The maximum possible expected reward is Rmax (c) ≈ c2 + (1 − c)( − c2 
+
+> 2
+
+) ≈ c2 − c2 
+
+> 2
+
+= c2 
+
+> 2
+
+, which is exactly half of that in the Brier-1 reward scheme. Up to the second order terms, for the Brier-log Hybrid function, assuming both p and c are small, 
+
+R(c, p )= p(c) + (1 − p)( c + ln(1 − c)) 
+
+≈ pc + (1 − p)( c − c − c2 
+
+> 2
+
+)= pc + (1 − p)( − c2 
+
+> 2
+
+)= pc − c2 
+
+> 2
+
++ pc 2
+
+> 2
+
+≈ pc − c2
+
+> 2
+
+which is one-half of the corresponding value for Brier-1. 
+
+B.3 High confidence 
+
+As observed by [18], both Brier-log Hybrid and Log Loss have a heavy overconfidence penalty. In this short subsection, we explain from an intuitive mathematical perspective how Brier-log Hybrid resembles the Log Loss reward scheme when the confidence c is high. 24 Table 3: List of corresponding h(c) for each reward scheme Reward Scheme h(c)
+
+Correctness-only 0Log-k kc(c−1) 
+
+Log Loss 1
+
+> c(c−1)
+
+Brier-k −2k
+
+Brier Score −2
+
+Brier-Log Hybrid 1
+
+> c−1
+
+Overconfidence-k − k  
+
+> (1
+> k+c)(( k+1) ln( k+1) −k)
+
+Underconfidence-k − 1( 1   
+
+> k+(1 −c))(1 −ln( k+1)
+> k)
+
+When c ∈ (0 , 1) is close to 1, ln c ≈ 0. Therefore, the correctness reward of c approximates c + ln( c).The incorrectness reward of c + ln(1 − c) stays the same as Log Loss reward scheme except for an additional reward of c. Hence, Brier-log Hybrid approximates Log Loss with an additional constant reward of c regardless of the correctness of the answer. 
+
+# C Determination of whether reward schemes in experiments are non-hackable confidence 
+
+For all reward schemes parametrized by k, we assume that k is non-negative. The reward schemes used in experiments all have h(c), as defined in Definition 6, well defined. The corresponding values of h(c) are in Table 3. Note that all the h(c) in Table 3 are non-positive for 
+
+c ∈ (0 , 1) , assuming positive k. Moreover, assuming positive k, h(c) < 0 for all c ∈ (0 , 1) for all examined examined reward schemes except Correctness-only. Hence, by Theorem 3, apart from Correctness-only, all other examined reward schemes are strictly non-hackable confidence over the same interval they are non-hackable confidence. By Theorem 1, it remains to check the values of a such that f (a+) ≥ g(a+) holds 
+
+C.1 Correctness-only 
+
+Since f (c) = 1 > g (c) = 0 for all c ∈ (0 , 1) , Correctness-only is a non-hackable confidence reward scheme on (0 , 1) .
+
+C.2 Log-k
+
+Recall that for Log-k, f (c) = 1 + k ln( c) and g(c) = k ln(1 − c).
+
+f (c) − g(c)= 1 + k ln( c) − k ln(1 − c)= 1 + k(ln( c) − ln(1 − c)) = 1 + k ln( c 
+
+> 1−c
+
+)
+
+Therefore, f (c) ≥ g(c)
+
+⇔ 1 + k ln( c 
+
+> 1−c
+
+) ≥ 0
+
+⇔ k ln( c 
+
+> 1−c
+
+) ≥ − 1
+
+⇔ ln( c 
+
+> 1−c
+
+) ≥ − 1
+
+> k
+
+25 ⇔ c 
+
+> 1−c
+
+≥ e− 1
+
+> k
+
+⇔ c ≥ (1 − c)e− 1 
+
+> k
+
+(which holds since c ∈ (0 , 1) = ⇒ 1 − c > 0)
+
+⇔ c ≥ e− 1 
+
+> k
+
+− ce − 1
+
+> k
+
+⇔ c + ce − 1 
+
+> k
+
+≥ e− 1
+
+> k
+
+⇔ c(1 + e− 1 
+
+> k
+
+) ≥ e− 1
+
+> k
+
+⇔ c ≥ e− 1 
+
+> k
+> 1+ e−1
+> k
+
+Therefore, Log-k is a non-hackable confidence reward scheme on 
+
+  
+
+> e−1
+> k
+> 1+ e−1
+> k
+
+, 1
+
+
+
+. An alternative explanation for why Log-k is a hackable confidence reward scheme on (0 , 1) can be found in [6]. In particular, when k = 1ln 202 , e− 1 
+
+> k
+
+= e− ln 202 = 1202 . Therefore, Log- 1ln 202 is a non-hackable confidence reward scheme on ( 1203 , 1) . For our experiments, the minimum possible representable confidence value is 1202 , hence confidence reward hacking cannot take place in Log- 1ln 202 . In practice, with a sufficiently small k, which need not be too small (e.g. less than 0.1), confidence reward hacking is unlikely to take place. 
+
+C.3 Log Loss 
+
+Recall that f (c) = ln( c) and g(c) = ln(1 − c).Hence, f (c) ≥ g(c) ⇔ ln( c) ≥ ln(1 − c) ⇔ c ≥ 1 − c ⇔ 2c ≥ 1.Therefore, the Log Loss reward scheme is non-hackable confidence only on (0 .5, 1) .
+
+C.4 Brier-k
+
+Recall that for Brier-k, f (c) = 1 − k(1 − c)2 and g(c) = −kc 2.
+
+f (c) − g(c)= 1 − k(1 − c)2 − (−kc 2)= 1 − k(1 − 2c + c2) + kc 2
+
+= 1 − k + 2 kc − kc 2 + kc 2
+
+= 1 − k + 2 kc 
+
+Therefore, f (c) ≥ g(c) ⇔ 1 − k + 2 kc ≥ 0 ⇔ 2kc ≥ k − 1 ⇔ c ≥ k−12k .Hence, Brier-k is non-confidence hackable on (0 , 1) for all k ∈ (0 , 1] and on ( k−12k , 1) for all 
+
+k ∈ (1 , ∞).An alternative explanation for why Brier-k is a non-hackable confidence reward scheme over (0 , 1) if and only if k ∈ (0 , 1] (excluding the Interpretability property) can be found in [6]. 
+
+C.5 Brier Score 
+
+Recall that the Brier Score reward scheme has f (c) = −(1 − c)2 and g(c) = −c2.
+
+f (c) − g(c) = −(1 − c)2 − (−c2) = −(1 − 2c + c2) + c2 = −1 + 2 c
+
+Therefore, f (c) ≥ g(c) if and only if c ∈ [0 .5, 1) .Hence, Brier score is a non-hackable confidence reward scheme only over (0 .5, 1) .
+
+C.6 Brier-log Hybrid 
+
+Since f (c) − g(c) = − ln(1 − c) is always non-negative for all c ∈ (0 , 1) , Brier-Log Hybrid is non-hackable confidence. 26 An alternative explanation for why Brier-log Hybrid is a strict non-hackable confidence reward scheme over (0 , 1) (excluding the strict Interpretability property) can be found on [18]. 
+
+C.7 Overconfidence-k
+
+Let l(k) = ( k + 1) ln( k + 1) − k. Since l(0 +) = 0 and l′(k) = ln( k + 1) + 1 − 1 = ln( k + 1) > 0
+
+for all positive k, l(k) > 0 for all positive k.Since f (c) − g(c) = k ln( ck +1) (k+1) ln( k+1) −k is always non-negative for all c ∈ (0 , 1) , Overconfidence-k is non-hackable confidence. 
+
+C.8 Underconfidence-k
+
+Let l(k) = k − ln(1 + k). Since l(0 +) = 0 and l′(k) = 1 − 11+ k > 0 for all positive k, l(k) is positive for all positive k.Therefore, f (c) − g(c) = −k ln(1 − kc   
+
+> 1+ k)
+> k−ln(1+ k)
+
+is always non-negative for all c ∈ (0 , 1) . Hence, Underconfidence-k is a non-hackable confidence reward scheme on (0 , 1) .
+
+# D Determination of Non-hackable Confidence Reward Schemes with Overconfidence and Underconfidence Bias 
+
+Intuitively, overconfidence bias means that the LLM will receive a better reward when overconfident relative to the true probability of answering correctly by δ, compared to being underconfident by 
+
+δ. When unsure about the well-calibrated subjective probability of answering correctly, LLM is incentivized to be overconfident about its correctness. Likewise, underconfidence bias means that the LLM will receive a better reward when underconfident relative to the true probability of answering correctly by δ, compared to being overconfident by 
+
+δ. When unsure about the well-calibrated subjective probability of answering correctly, LLM is incentivized to be underconfident about its correctness. Definition 5 is restated below. Note that for simplicity, in this section of the appendix, we only consider non-hackable confidence reward schemes. 
+
+Definition 5. A non-hackable confidence reward scheme (f (p), g (p)) has overconfidence bias (respectively, underconfidence bias) if the miscalibration penalty Rpen satisfies the following property: For all δ > 0 and p ∈ (0 , 1) such that p+δ ∈ (0 , 1) and p−δ ∈ (0 , 1) , Rpen (p+δ, p ) < R pen (p−δ, p )
+
+(respectively Rpen (p + δ, p ) > R pen (p − δ, p ))Note that Rpen is as defined in Definition 3. 
+
+[18] proposed Brier-log Hybrid and alluded to its underconfidence bias. In Appendix D.1, we generalize this finding by proving a sufficient condition for a non-hackable reward confidence scheme to exhibit overconfidence or underconfidence bias. In Appendix D.2, we determine whether each of the non-reward hackable schemes examined in Appendix C exhibit overconfidence bias or underconfidence bias. 
+
+D.1 Sufficient Condition for Overconfidence/Underconfidence Bias 
+
+For this subsection, we further assume that both the reward for answering correctly f (c) and the reward for answering incorrectly g(c) have continuous second-order derivatives. This allows for the expected reward function R(c, p ) to have continuous second-order derivatives. 
+
+Lemma 8. Let r be a function on (0 , 1) such that r has continuous second-order derivatives on (0 , 1) 
+
+and r′′ is strictly decreasing on (0 , 1) . Suppose r has a maximum at p.Then, for all δ > 0 such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) , −r′(p + δ) > r ′(p − δ).
+
+Proof of Lemma 8 .
+
+27 Take any δ > 0 such that such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) .Since r has continuous second-order derivatives in (0 , 1) , r′ must have continuous first-order deriva-tives in (0 , 1) . Since r has a maximum at p, r′(p) = 0 and r′′ (p) ≤ 0.
+
+r′(p + δ) = r′(p + δ) − r′(p) = R p+δp r′′ (c) dc 
+
+−r′(p − δ) = r′(p) − r′(p − δ) = R pp−δ r′′ (c) dc 
+
+Let u = c + δ. Then, when c = p, u = p + δ; and when c = p − δ, u = p. Moreover, du = dc .Therefore, since r′′ (u − δ) > r ′′ (u) for all u ∈ [p, p + δ],
+
+−r′(p − δ) = R p+δp r′′ (u − δ) du > R p+δp r′′ (u) du = r′(p + δ)
+
+Hence, r′(p − δ) < −r′(p + δ), yielding the result in the lemma. 
+
+■
+
+Lemma 9. Let r be a function on (0 , 1) such that r has continuous second-order derivatives on (0 , 1) 
+
+and r′′ is strictly decreasing on (0 , 1) . Suppose r has a maximum at p.Then, for all δ > 0 such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) , r(p) − r(p + δ) > r (p) − r(p − δ)
+
+Proof of Lemma 9 .
+
+Take any δ > 0 such that such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) .For all x ∈ (0 , δ ], since p − δ ≤ p − x < p < p + x ≤ p + δ, both p − x and p + x are in (0 , 1) .Therefore, by Lemma 8, −r′(p + x) > r ′(p − x) for all x ∈ (0 , δ ].Note that r(p) − r(p + δ) = R p+δp −r′(c+) dc + and r(p) − r(p − δ) = R pp−δ r′(c−) dc −
+
+Let u+ = c+ − p. Then, when c+ = p, u+ = 0 and when c+ = p + δ, u+ = δ. Moreover, 
+
+du + = dc +.let u− = p − c−. Then, when c− = p, u− = 0 and when c− = p − δ, u− = δ. Moreover, 
+
+du − = −dc −.Hence, r(p) − r(p + δ) = R p+δp −r′(c+) dc + = R δ 
+
+> 0
+
+−r′(p + u+) du + and 
+
+r(p) − r(p − δ) = R pp−δ r′(c−) dc − = R 0 
+
+> δ
+
+−r′(p − u−) du − = R δ 
+
+> 0
+
+r′(p − u−) du −.Since −r′(p + u) > r ′(p − u) for all u ∈ (0 , δ ], we conclude that R δ 
+
+> 0
+
+−r′(p + u+) du + >
+
+R δ 
+
+> 0
+
+r′(p − u−) du −, therefore, r(p) − r(p + δ) > r (p) − r(p − δ). ■
+
+Similarly, using the idea of the proofs of Lemmas 8 and 9, we can prove the following result: 
+
+Lemma 10. Let r be a function on (0 , 1) such that r has continuous second-order derivatives on 
+
+(0 , 1) and r′′ is strictly increasing on (0 , 1) . Suppose r has a maximum at p.Then, for all δ > 0 such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) , r(p) − r(p + δ) < r (p) − r(p − δ)
+
+Theorem 8. Let (f (c), g (c)) be a non-hackable confidence reward scheme such that f and g have continuous second-order derivatives. Let R(c, p ) be as defined in Definition 2. Then, the following hold: (i) If for all p ∈ (0 , 1) , ∂2R∂c 2 is strictly decreasing with respect to c on (0 , 1) when keeping p fixed, then (f (c), g (c)) has underconfidence bias. (ii) If for all p ∈ (0 , 1) , ∂2R∂c 2 is strictly increasing with respect to c on (0 , 1) when keeping p fixed, then (f (c), g (c)) has overconfidence bias. 
+
+Proof of Theorem 8 .
+
+Since the proofs for (i) and (ii) are similar, we show only the proof of (i) here. 28 Fix any p ∈ (0 , 1) . Note that when p is fixed, by Proper Scoring property of non-hackable confidence reward schemes in Definition 2, R(c, p ) has a maximum at c = p.Let rp(c) = R(c, p ) for all c ∈ (0 , 1) . Note that by Definition 2, R(c, p ) = pf (c) + (1 − p)g(c).Therefore, since f (c) and g(c) are assumed to have continuous second-order derivatives, R(c, p ) has continuous second-order derivatives. Since rp has a maximum at c = p and r′′  
+
+> p
+
+(c) = ∂2 
+
+> ∂c 2
+
+(R(c, p )) is strictly decreasing on (0 , 1) , by Lemma 9, rp(p) − r(p + δ) > r p(p) − rp(p − δ) for all δ > 0 such that p + δ ∈ (0 , 1) and 
+
+p − δ ∈ (0 , 1) .Therefore, for all δ > 0 such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) , R(p, p ) − R(p + δ, p ) >R(p, p ) − R(p − δ, p ), which implies that Rpen (p + δ, p ) > R pen (p − δ, p ).Therefore, (f (c), g (c)) has underconfidence bias. 
+
+■
+
+Theorem 8 provides a sufficient condition of overconfidence and underconfidence bias based on the second derivative of the expected reward function R(c, p ), allowing us to show that Overconfidence-k
+
+has overconfidence bias and Underconfidence-k has underconfidence bias in the next subsection. 
+
+D.2 Determination of Reward Schemes with Overconfidence/Underconfidence Bias D.2.1 Correctness-only 
+
+Since Correctness-only reward scheme has a reward that is independent of the confidence of the LLM, the miscalibration penalty is always zero. Therefore, the Correctness-only reward scheme has neither overconfidence nor underconfidence bias. 
+
+D.2.2 Overconfidence-kR(c, p )= pf (c) + (1 − p)g(c)= p (k+1) ln( ck +1) −ck  
+
+> (k+1) ln( k+1) −k
+
++ (1 − p) ln( ck +1) −ck 
+
+> (k+1) ln( k+1) −k
+
+= p(( k+1) ln( ck +1) −ck )+(1 −p)(ln( ck +1) −ck )(k+1) ln( k+1) −k
+
+= p(k+1) ln( ck +1)+(1 −p) ln( ck +1) −ck 
+
+> (k+1) ln( k+1) −k
+
+= (pk +p+1 −p)(ln( ck +1)) −ck 
+
+> (k+1) ln( k+1) −k
+
+= (pk +1) ln( ck +1) −ck  
+
+> (k+1) ln( k+1) −k∂R ∂c
+
+= (pk +1) kck +1 −k 
+
+> (k+1) ln( k+1) −k∂2R∂c 2
+
+= −(pk +1) k2(ck +1) 2
+
+> (k+1) ln( k+1) −k
+
+As shown in Appendix C.7, (k +1) ln( k +1) −k is always positive for all k > 0. Note that pk +1 > 0
+
+and k2 > 0 since p is non-negative and k is positive. As c increases in (0 , 1) , ck + 1 increases and is positive, hence (ck + 1) 2 increases and is positive. This implies that k2 
+
+> (ck +1) 2
+
+decreases and is positive. Therefore, keeping p fixed, ∂2R∂c 2 increases with respect to c on the interval (0 , 1) . Hence, by Theorem 8, Overconfidence-k has overconfidence bias. 
+
+D.2.3 Brier-k, where k ≤ 1
+
+The expected reward with confidence c and probability of correctness p is 29 R(c, p )= p(1 − k(1 − c)2) + (1 − p)( −kc 2)= p(1 − k(1 − 2c + c2)) − kc 2 + pkc 2
+
+= p(1 − k + 2 ck − c2k) − kc 2 + pkc 2
+
+= p − pk + 2 pck − pc 2k − kc 2 + pkc 2
+
+= p − pk + 2 pck − kc 2
+
+Therefore, the miscalibration penalty Rpen (c, p ) is equal to 
+
+R(p, p ) − R(c, p )= ( p − pk + 2 p2k − kp 2) − (p − pk + 2 pck − kc 2)= p − pk + 2 p2k − kp 2 − p + pk − 2pck + kc 2)= 2 p2k − kp 2 − 2pck + kc 2)= k(2 p2 − p2 − 2pc + c2)= k(p2 − 2pc + c2)= k(p − c)2
+
+Therefore, for all δ > 0 and p ∈ (0 , 1) such that p + δ ∈ (0 , 1) and p − δ ∈ (0 , 1) , Rpen (p + δ, p ) = 
+
+kδ 2 = Rpen (p − δ, p ). Therefore, Brier-k has neither overconfidence bias nor underconfidence bias. 
+
+D.2.4 Underconfidence-kR(c, p )= pf (c) + (1 − p)g(c)= p kc +ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k) + (1 − p) kc +( k+1) ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k)
+
+= p(kc +ln(1 − kc  
+
+> 1+ k
+
+))+(1 −p)( kc +( k+1) ln(1 − kc  
+
+> 1+ k
+
+)) 
+
+k−ln(1+ k)
+
+= pkc +p ln(1 − kc  
+
+> 1+ k
+
+)+(1 −p)kc +(1 −p)( k+1) ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k)
+
+= kc +( p+(1 −p)( k+1)) ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k)
+
+= kc +( p+(1 −p)k+(1 −p)) ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k)
+
+= kc +(1+ k−pk ) ln(1 − kc  
+
+> 1+ k
+
+)
+
+k−ln(1+ k)
+
+∂R ∂c 
+
+=
+
+k+(1+ k−pk ) − k 
+
+> 1+ k
+> 1−kc
+> 1+ k
+
+k−ln(1+ k)
+
+= k+(1+ k−pk ) −k
+
+> 1+ k−kc
+
+k−ln(1+ k)
+
+= kk−ln(1+ k) + 1+ k−pk k−ln(1+ k)
+
+−k
+
+1+ k−kc ∂2R∂c 2
+
+= 1+ k−pk k−ln(1+ k)(−k)( −1)( −k)(1+ k−kc )2
+
+= 1+ k−pk k−ln(1+ k)
+
+−k2
+
+(1+ k−kc )2
+
+= 1+ k(1 −p)
+
+k−ln(1+ k)
+
+−k2
+
+(1+ k(1 −c)) 2
+
+30 Let p ∈ (0 , 1) be fixed. As shown in Appendix C.8, k − ln(1 + k) > 0 for all k > 0. Furthermore, since p ∈ (0 , 1) , 1+ k(1 −p) > 1 > 0 and −k2 < 0. Likewise, for all c ∈ (0 , 1) , 1+ k(1 −c) > 1 > 0.Therefore, ∂2R∂c 2 < 0 for all p, c ∈ (0 , 1) .Keeping p fixed, since 1 + k(1 − c) decreases and is positive as c increases within the interval (0 , 1) , 
+
+> 1(1+ k(1 −c)) 2
+
+increases as c increases within the interval (0 , 1) . Therefore, ∂2R∂c 2 is strictly decreasing with respect to c ∈ (0 , 1) . Therefore, by Theorem 8, Underconfidence-k has underconfidence bias. 
+
+D.2.5 Brier-log Hybrid 
+
+R(c, p )= pf (c) + (1 − p)g(c)= pc + (1 − p)( c + ln(1 − c)) = pc + c + ln(1 − c) − pc − p ln(1 − c)= c + ln(1 − c) − p ln(1 − c)= c + (1 − p) ln(1 − c) 
+
+> ∂R ∂c
+
+= 1 − 1−p 
+
+> 1−c∂2R∂c 2
+
+= − 1−p
+
+> (1 −c)2
+
+For all p ∈ (0 , 1) , keeping p fixed, ∂2R∂c 2 is strictly decreasing as c increases in the range (0 , 1) .Therefore, by Theorem 8, Brier-log Hybrid has underconfidence bias. 
+
+# E Experimental Setting Details 
+
+E.1 Experimental Procedure 
+
+Our experiment methodology can be described as follows: 
+
+Stage 1 - Dataset preparation : For each dataset obtained, we split the data into training and testing sets, and classified the questions according to their difficulty in easy, medium and hard, as elaborated in Appendix E.2. 
+
+Stage 2 - Fine-tuning preparation : For each dataset, the LLM with temperature 1 is tasked to answer 1024 questions in the training set and to provide its confidence score in JSON format. Its responses are collected for the next stage. More details on how this is done can be found on Appendix E.3. 
+
+Stage 3 - Supervised Fine-tuning (SFT) : The responses from the previous step are reformatted to an XML-like format to help the LLM follow instructions in the next step. The LLM is fine-tuned on the reformatted responses using LoRA [31] for 1 epoch. 
+
+Stage 4 - RL : We fine-tuned the LLM to perform confidence calibration using RL. The LLM is tasked to answer the question and to provide a confidence value ˜c, an integer in [0, 100], to its answer, along with some reasoning on how it arrived at the answer and ˜c. To determine the reward, the answer is graded for correctness and ˜c is normalized into the implied confidence c by setting c = ˜c+0 .5101 .Instead of Group Relative Policy Optimization (GRPO) [15], we used GRPO Done Right (Dr GRPO) [25] loss, which removes the standard deviation normalization term and gives each token equal weightage. This loss removes the confidence calibration bias found in GRPO [32]. We ran our experiments for 500 steps, with 8 generations per question and 64 questions per batch. Since we aim to train the LLM in both confidence calibration and reasoning improvements, the loss is taken over the entire output. 
+
+Step 5 - Evaluation : The LLM is then evaluated using the test set of the dataset, with the answers and verbalized confidences recorded. The LLM samples 16 responses for each question at a temperature of 1. The base model and the model after Stage 3 (i.e., the SFT model) are evaluated as baselines. We evaluated the model using accuracy, Expected Calibration Error (10 bins) [33], Area Under 31 Receiver Operating Characteristic Curve [34], [35], Brier score [36], the average Brier-1 reward [6] and calibration bias. Details regarding the exact prompt formats can be found on Appendix E.8. 
+
+E.2 Dataset details and preprocessing 
+
+• BigMath [21] : We took the filtered dataset from Hugging Face found at open-r1/Big-Math-RL-Verified-Processed 2. The filtered dataset contains only questions where the answers are parseable by math-verify 3 and the Llama 3.1 (8B) solve rate is provided by [21]. We labeled the questions with the highest tercile of Llama 3.1 (8B) solve rate as easy, middle tercile of Llama 3.1 (8B) solve rate as medium and lower tercile of Llama 3.1 (8B) solve rate as difficult. The easy questions have Llama 3.1 (8B) solve rates greater than 0.765625, the hard questions have corresponding solve rates below 0.1875, while the medium questions have solve rates in between 0.1875 and 0.765625 inclusive. We randomly split the dataset into train and test splits in an approximately 97:3 ratio. To verify LLM answers, we used math-verify, with an accuracy tolerance of two decimal places for non-exact answers represented in decimal. • DeepMath-103K [22] : This dataset consists of difficult math questions and has been used to finetune LLM via RL to improve reasoning performance [22]. The difficulty rating is based on estimates from GPT-4o after being prompted with the difficulty level guidance in the Art of Problem Solving 4[22]. We labeled the questions with the lowest tercile of difficulty rating as easy, middle tercile of difficulty rating as medium and highest tercile of difficulty rating as difficult. The easy questions have difficulty under 5, the hard questions have difficulty above 6 while the medium questions have difficulty in between 5 and 6 inclusive. The train and test dataset splits were taken from trl-lib/DeepMath-103K at Hugging Face 5.The questions were matched with the original dataset from zwhe99/DeepMath-103K 6 to obtain the difficulty values. We attempted to filter off multiple choice questions and yes/no questions by filtering off the questions whose case-insensitive answer after removing the dollar sign in LaTeX or the full stop at the back is in the set {yes, no, true, false, a, b, c, d}. In such questions, the question format and the ground truth format are often inconsistent, complicating reliable grading of the answers. In particular, the yes/no questions often require proof to ensure that true understanding of mathematical concepts is rewarded. Automating the grading of the reasoning accuracy in proofs is difficult and can be unreliable. The verification method is the same as in BigMath. • HotpotQA [20] : This is a textual reasoning dataset where LLMs are given multiple sources and are asked reading comprehension questions about the sources. The entries in the dataset have 10 sources, where 2 sources are relevant and 8 are irrelevant. The difficulties of easy, medium and hard are already provided in the dataset. We used the distractor subset. For training, we used the provided training set, while for validation, we used the provided validation set. The training set contains easy, medium and hard questions while the validation set only contains hard questions. An answer is marked as correct if the ROUGE-1 [37] score exceeds 0.7. • HotpotQA-Modified : Modified from the procedure in [6] with the most important difference being the inclusion of dataset difficulty, for each dataset entry in the HotpotQA dataset, we perform the following at random: 
+
+> 2https://huggingface.co/datasets/open-r1/Big-Math-RL-Verified-Processed
+> 3https://github.com/huggingface/Math-Verify
+> 4https://artofproblemsolving.com/wiki/index.php/AoPS_Wiki:Competition_ratings
+> 5https://huggingface.co/datasets/trl-lib/DeepMath-103K
+> 6https://huggingface.co/datasets/zwhe99/DeepMath-103K
+
+32 Table 4: Number of questions with valid JSON responses in Qwen 2.5 (3B) Instruct out of the 1024 questions in the fine-tuning preparation stage. Dataset Questions with valid JSON BigMath 1019 DeepMath-103K 1015 HotpotQA 1015 HotpotQA-Modified 1019 
+
+– With probability 13 , 2 irrelevant sources are removed. These are relabeled as easy questions. 
+
+– With probability 13 , 1 irrelevant source and 1 relevant source are removed. These are relabeled as medium questions. 
+
+– With probability 13 , both relevant sources are removed, leaving the LLM with no choice but to deduce from prior knowledge. These are relabeled as hard questions. The evaluation method is the same as in HotpotQA. 
+
+E.3 Procedure details for fine-tuning preparation 
+
+The LLM was instructed to answer a 1024-question subset of questions in the training set in JavaScript Object Notation (JSON) format. A format enforcer in vLLM [38] was used to guide the LLM to produce valid a JSON response. The JSON contains the reasoning, answer, confidence analysis and confidence attributes. The LLM is instructed to place its reasoning on the reasoning attribute, its final answer on the answer attribute, its justification of its confidence value on the confidence analysis attribute and the confidence value on the confidence attribute. The LLM is instructed to output an integer value between 0 and 100 inclusive in the confidence attribute. For BigMath and DeepMath-103K, the output token limit was 2048. For HotpotQA and HotpotQA-Modified, the output token limit was 1024. If a valid JSON response was produced, each of the attributes were extracted and rearranged into an Extensible Markup Language (XML) format for the SFT stage. As the LLM may not realize that its LaTeX expressions involving backslashes were being escaped, we attempt to undo the escapes to recover the original string. If the JSON response was invalid, the question will be discarded and its response will not be included in the SFT dataset. As shown in Table 4, our experiments in Qwen 2.5 (3B) Instruct had the LLM output valid JSON responses for over 95% of the 1024-question subset for each of the datasets tested, ensuring a sufficient dataset size for the SFT stage. For the exact prompt formats used, please refer to Appendix E.8. 
+
+E.4 Training details for SFT 
+
+The LLM was loaded in 16-bit. We used LoRA [31] with a rank of 32 and an α of 32. We used the AdamW [39] optimizer with a weight decay of 0.01. The learning rate was set to 0.0002 with 5 warmup steps. The effective batch size is 16. We trained over the SFT dataset, prepared from the previous fine-tuning preparation stage, for 1 epoch. 
+
+E.5 Training details for RL 
+
+The LLM was loaded in 16-bit. We used the AdamW [39] 8-bit optimizer with β1 = 0 .9 and 
+
+β2 = 0 .99 . The learning rate was set to 10 −5 with 25 warmup steps. The maximum gradient norm was set to 0.1. The experiments were run for 500 steps. We used an effective batch size of 512 with 8 generations per question and 64 questions per batch. For consistency with the SFT stage, we used LoRA [31] with a rank of 32 and an α of 32. The LLM was initialized from the LoRA adapter in the supervised finetuning step because the LLM has been 33 fine-tuned in the supervised finetuning step to follow the XML output format which is used in the current RL step. The RL code was implemented using Unsloth [40], significantly decreasing the video random access memory (VRAM) requirements. For consistency, the output token limits were the same as during the fine-tuning preparation stage. Our implementation of RL contained additional formatting rewards in addition to the reward in the reward scheme. These were graded independently of the answer. Our formatting reward was based on an Unsloth GRPO tutorial [40] 7. To discourage overly long answers which would highly likely be graded as incorrect, a valid answer reward of 0.5 was provided if the length did not exceed 1000 characters. A reward of 0.5 was awarded for fully following the XML format. An additional reward of 0.1 was awarded for each opening and closing tag in the XML format that appears exactly once. A reward of 1 was provided by providing a valid confidence value, i.e. an integer between 0 and 100 inclusive. In the event of an invalid confidence value, the worst possible confidence value for the answer was assigned, further discouraging reward hacking of the LLM by not following the format. For the exact prompt formats used, please refer to Appendix E.8. 
+
+E.6 Details on Evaluation Protocol 
+
+During the evaluation stage, we tested the base model on both the JSON format and XML format. The JSON format was evaluated to ensure that the SFT training in XML format did not significantly decrease performance of the base model. The XML format was evaluated to demonstrate that the base model is prompt-sensitive, i.e. performance varies by the exact prompt format used. We also evaluated on the SFT models and each of the RL models, corresponding to the different reward schemes, on the SFT model. For both the JSON and XML formats, we provided a system prompt instructing the LLM on the format to use and used a format enforcer in vLLM [38] to guide the LLM towards following the instructed format. For consistency, the output token limits were the same as in the RL stage and the fine-tuning preparation stage. Inspired by [6], in the event of invalid output, we give the LLM a second chance during evaluation and probe them for the final answer and confidence. If the model was instructed to format in JSON, the LLM will additionally be guided to provide a valid confidence value, i.e. an integer in between 0 and 100 inclusive and an answer not exceeding 1000 characters. Nearly all ground truths in the BigMath, DeepMath-103K and the HotpotQA dataset are under 1000 characters long. Since an invalid JSON string cannot be parsed, in the event the JSON string is invalid, the LLM will be asked to output its answer in a follow-up prompt, then the confidence. If the model was instructed to output in XML, in the event of an invalid XML output, the evaluation code will attempt to extract valid XML tags for answer and confidence as parts of the output may be salvaged. In the event of multiple valid tags, only the last tag will be taken. If both the answer and the confidence can be retrieved, the output will be graded as normal. If the answer cannot be retrieved, the LLM will be asked for the answer in a follow-up. If a valid confidence cannot be retrieved, the LLM will be asked for the confidence in a follow-up. If both the answer and the confidence cannot be taken, the LLM will be asked for the answer, followed by a separate prompt asking for the confidence in a follow-up. The follow-up prompts are identical for both JSON and XML formats. Since the initial insructions to output in JSON and XML no longer apply, the system prompt was removed with the remaining conversational trace left intact. To prevent the LLM from taking extra time to answer the question via extra reasoning beyond the original given token limit, the LLM was tasked to output only the final answer when asked in a follow-up, and in LaTeX format for mathematical datasets. In addition, to reduce the chances of LLM failing to follow instructions, we prefixed the response with "Final Answer:" using a format 
+
+> 7https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Qwen2.5_(3B)-GRPO.ipynb
+
+34 enforcer. The output token limit, including the prefix, was set to 64 in BigMath and DeepMath-103K and 32 for HotpotQA and HotpotQA-Modified. When the LLM is asked for its confidence in a follow-up, the LLM will be guided using a format enforcer to output an integer in between 0 and 100 inclusive, representing the confidence value. Just like in [6], once the answer and confidence values were retrieved, the same dataset-dependent correctness checking algorithm is used, allowing for a fair comparison. For the exact prompt formats used, please refer to Appendix E.8. 
+
+E.7 Evaluation Metrics Used 
+
+To evaluate our model, we used the following metrics. • Accuracy : The proportion of sampled responses that were judged as correct answers to the corresponding questions. • Expected Calibration Error (ECE) [33]: Following [6], let M be the number of bins and 
+
+N questions in total. The ith bin is denoted as Bi, defined as the set of question-answer-confidence tuples whose confidence lies within the ith bin. Let the average confidence of the tuples in the ith bin be denoted as conf (Bi) and the accuracy of the tuples in the ith bin be denoted as acc (Bi). Then, the ECE is defined as PMi=1  
+
+> |Bi|
+> N
+
+|acc (Bi) − conf (Bi)| [6]. Following [6], we used M = 10 bins. In addition, we use equally spaced bins. • Area Under Receiver Operating Characteristic Curve (AUROC) [34], [35]: Since a zero ECE can be obtained by uninformedly aligning the confidence score with the accuracy of the model [41], we use the AUROC metric to measure the ability of the LLM to differentiate between the answers that are likely correct and the answers that are likely wrong via its verbalized confidence. Where TPR stands for the true positive rate and FPR stands for the false positive rate, AUROC is defined as R 10 TPR (FPR −1(t)) dt [6]. • Brier score [36]: Let N be the number of questions. For question i, let the question be denoted as qi, the corresponding answer denoted as ai, and the confidence, normalized in the range [0 , 1] , be denoted as ci. Let isCorrect (qi, a i) denote the function that validates whether ai is the correct answer to qi, returning 1 if the answer is correct and 0 if the answer is wrong. Brier score is a proper scoring metric that is used to evaluate probability calibration abilities, given by the formula: 1
+
+> N
+
+PNi=1 (isCorrect (qi, a i) − ci)2.• Average Brier-1 reward [6]: A non-hackable confidence reward scheme repurposed as an integrated metric that takes into account both the accuracy and the confidence calibration of the model. The average Brier-1 reward is equal to the difference between the accuracy and the Brier score since Brier-1 offers an additional reward of 1 to the negative of the Brier score if and only if the answer is correct. • Calibration bias : Calibration bias is defined as the accuracy minus the average confidence over the evaluated answers. The average confidence over the evaluated answers is the expected accuracy assuming the confidence values are well-calibrated. A negative value means that the model is overconfident on average, while a positive value means that the model is underconfident on average. 
+
+E.8 Prompt formats 
+
+The JSON system prompt format is used for the fine-tuning preparation stage, and when evaluating base models. The XML prompt format is used during the SFT stage to train the LLM to follow instructions for the RL stage. It is also used during the RL stage and the XML evaluation for consistency. The JSON and XML system prompt formats are as shown below. 
+
+JSON system prompt format 
+
+35 Respond in the JSON format: {"reasoning": string, "answer": string, "confidence_analysis": string, "confidence": int} Provide your internal thought process in "reasoning" attribute. Provide only your final answer in "answer" attribute. For mathematical questions, provide your final answer in LaTeX format. Provide your analysis on the uncertainty of your answer in "confidence_analysis" attribute, taking into account various factors that may lead to your answer being different or incorrect. In "confidence" attribute, express your confidence as an integer between 0 and 100 inclusive. 
+
+XML system prompt format 
+
+When answering questions, follow these instructions: 1) Enclose your internal thought process with <reasoning> and </reasoning> tags. 2) Enclose your final answer with <answer> and </answer> tags. For mathematical answers, answer in LaTeX format. 3) Enclose your analysis on the uncertainty of your answer with <confidence_analysis> and </confidence_analysis> tags, taking into account various factors that may lead to your answer being different or incorrect. 4) Enclose your confidence with <confidence> and </confidence> tags. Confidence is an integer between 0 and 100 inclusive, with higher values indicating higher confidence. Higher confidence means higher score if answer is correct but lower score if answer is incorrect. Your aim is to maximize your score considering the confidence of your answer given your internal thought process to the question. Respond in the following format: <reasoning> ... </reasoning> <answer> ... </answer> <confidence_analysis> ... </confidence_analysis> <confidence> ... </confidence> 
+
+For BigMath and DeepMath-103K, the prompt is simply the question in the dataset. For HotpotQA and HotpotQA-Modified, there are multiple sources which need to be presented to form a prompt. The sources are presented in random order to mitigate the effects of data leakage. The LLM prompt for questions in the HotpotQA and HotpotQA-Modified datasets are as follows, where N is the number of sources in the question: 36 Question prompt format for HotpotQA and HotpotQA-Modified 
+
+Based on the information sources given below and your existing knowledge, answer the follow-ing question: [QUESTION] Source 1: [TITLE OF SOURCE 1] [TEXT OF SOURCE 1] Source 2: [TITLE OF SOURCE 2] [TEXT OF SOURCE 2] ... Source [N]: [TITLE OF SOURCE N] [TEXT OF SOURCE N] 
+
+For the evaluation, sometimes, the LLM may produce an invalid response despite the help of a format enforcer. Therefore, the LLM may be prompted a second time for the answer or the confidence. Their respective prompt formats are as shown below. 
+
+Prompt format for second LLM probe for answer (BigMath and DeepMath-103K) 
+
+Reasoning token limit reached. Please output only your final answer within 64 tokens. Express your answer in LaTeX. 
+
+Prompt format for second LLM probe for answer (HotpotQA and HotpotQA-Modified) 
+
+Reasoning token limit reached. Please output only your final answer within 32 tokens. Note that the token limit for the second probe of the answer is 64 for BigMath and DeepMath-103K and 32 for HotpotQA and HotpotQA-Modified. 
+
+Prompt format for second LLM probe for confidence 
+
+Please output your confidence as an integer between 0 and 100 inclusive. 
+
+E.9 Hardware used 
+
+Only central processing unit (CPU) power is required for dataset preparation and result analysis. For our finetuning dataset preparation, SFT, RL and evaluation stages, we used a single instance of 3g.47gb in an NVIDIA H100 graphics processing unit (GPU). For finetuning dataset preparation, supervised finetuning, RL, we used 48 GiB of CPU random access memory (RAM). For the evaluation stage, we used 128 GiB of CPU RAM. For Qwen 2.5 (3B) Instruct, the preprocessing stage and the finetuning stage each took under 10 minutes per dataset. The RL experiment took anywhere between 20 hours and 3 days depending on the dataset and the reward scheme. The evaluation stage completed in under 3 days per dataset, with execution time varying depending on dataset. 
+
+E.10 Dataset and Model Licenses 
+
+DeepMath-103K [22] is MIT licensed, BigMath [21] has Apache 2.0 license, and HotpotQA [20] has CC-BY-SA-4.0 licence, which allows derivatives of the work such as HotpotQA-Modified. Qwen 2.5 (3B) Instruct [24] is licensed using Qwen Research Agreement license, which permits use only for research and evaluation purposes. Llama 3.2 (3B) Instruct [42] is licensed using the Llama 37 3.2 Community License Agreement. Llama 3.1 (8B) Instruct [42] is licensed using the Llama 3.1 Community License Agreement. All the licenses involved permit use for research. 
+
+# F Full results 
+
+This section provides the accuracy, AUROC, Brier-1, Brier score, ECE (10-bins) and calibration bias of all datasets used in the experiment for Qwen 2.5 (3B) Instruct. For accuracy, AUROC and Brier-1, higher is better, while for Brier score, ECE (10-bins) and calibration bias, closer to 0 is better. The results are split by dataset difficulty. Note that the HotpotQA test set only contains questions labeled as hard, therefore, only the overall results in HotpotQA are shown. The AUROC is not shown if the accuracy is outside the range (0 .001 , 0.999) because the small number of correct answers or the small number of wrong answers may not form a reliable sample of the ability of the LLM to differentiate correct answers from wrong answers. For all tables in the section, base models and SFT models are included for reference at the top, while the middle section contains hackable confidence reward schemes and the bottom contains the reward schemes in the overconfidence to underconfidence spectrum, arranged from the overconfident end at the top to the underconfident end at the bottom. The SFT (XML) model performed similarly to the Base (JSON) model. The SFT (XML) model was fine-tuned via SFT from reformatted outputs of Base (JSON) to XML format. This shows that the SFT stage did not result in a significant loss of accuracy from the original model. The Base (XML) format was shown to highlight the prompt sensitivity of LLM, demonstrating the importance of the exact prompt format used in evaluation. This draws parallels to [25], which highligted that including a prompt template for Qwen 2.5 models negatively impacts performance prior to RL. Tables 5, 6, 7 and 8 respectively show the performance statistics of Qwen 2.5 (3B) Instruct when trained on BigMath and tested on the entire test set, easy subset, medium subset and hard subset, of the test set of BigMath. Tables 9, 10, 11 and 12 respectively show the performance statistics of Qwen 2.5 (3B) Instruct when trained on DeepMath-103K and tested on the entire test set, easy subset, medium subset and hard subset, of the test set of DeepMath-103K. Table 13 shows the performance statistics of Qwen 2.5 (3B) Instruct when trained on HotpotQA and tested on the test set of HotpotQA. Tables 14, 15, 16 and 17 respectively show the performance statistics of Qwen 2.5 (3B) Instruct when trained on HotpotQA-Modified and tested on the entire test set, easy subset, medium subset and hard subset, of the test set of HotpotQA-Modified. 38 Table 5: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the test set of BigMath when trained with BigMath dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.2531 0.5908 -0.4212 0.6743 0.6988 -0.6983 Base (XML) 0.5644 0.5982 0.1736 0.3908 0.3910 -0.3844 SFT (XML) 0.2499 0.5959 -0.4266 0.6765 0.7018 -0.7017 Log Loss 0.0001 - 0.0000 0.0001 0.0049 -0.0049 Brier Score 0.0001 - 0.0000 0.0002 0.0049 -0.0049 Log-1 0.6336 0.8602 0.4841 0.1495 0.0826 0.0826 Brier-2 0.6713 0.8434 0.5278 0.1436 0.0388 0.0028 Log- 1ln 202 0.6656 0.7849 0.4885 0.1771 0.0649 -0.0503 Correctness-only 0.6739 0.5277 0.3565 0.3174 0.3171 -0.3171 Overconfidence-1000 0.6704 0.6681 0.4364 0.2340 0.1826 -0.1825 Overconfidence-4 0.6685 0.7492 0.4908 0.1777 0.0564 -0.0376 Overconfidence-1 0.6723 0.7669 0.5080 0.1643 0.0560 -0.0151 Brier-1 0.6676 0.8195 0.5151 0.1525 0.0244 -0.0243 Underconfidence-1 0.6666 0.8282 0.5132 0.1534 0.0307 -0.0192 Underconfidence-4 0.6769 0.8343 0.5272 0.1498 0.0441 0.0423 Brier-log Hybrid 0.6682 0.8521 0.5253 0.1429 0.0474 -0.0054 Table 6: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the easy subset of the test set of BigMath when trained with BigMath dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.4391 0.5595 -0.0842 0.5233 0.5321 -0.5315 Base (XML) 0.8587 0.5524 0.7228 0.1359 0.1175 -0.1093 SFT (XML) 0.4494 0.5681 -0.0628 0.5122 0.5219 -0.5217 Log Loss 0.0001 - 0.0000 0.0002 0.0048 -0.0048 Brier Score 0.0003 - 0.0000 0.0004 0.0047 -0.0047 Log-1 0.9388 0.7847 0.8574 0.0814 0.1645 0.1645 Brier-2 0.9530 0.7412 0.8981 0.0549 0.0866 0.0743 Log- 1ln 202 0.9501 0.6862 0.8837 0.0664 0.1351 0.1351 Correctness-only 0.9540 0.5181 0.9090 0.0450 0.0405 -0.0405 Overconfidence-1000 0.9529 0.5987 0.9035 0.0495 0.0670 0.0621 Overconfidence-4 0.9509 0.6201 0.8804 0.0705 0.1540 0.1533 Overconfidence-1 0.9521 0.6179 0.8836 0.0685 0.1597 0.1596 Brier-1 0.9529 0.6756 0.9012 0.0517 0.0923 0.0921 Underconfidence-1 0.9505 0.7292 0.8926 0.0579 0.1001 0.0996 Underconfidence-4 0.9552 0.7240 0.8925 0.0626 0.1233 0.1225 Brier-log Hybrid 0.9513 0.7566 0.8994 0.0519 0.1010 0.1009 39 Table 7: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the medium subset of the test set of BigMath when trained with BigMath dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.2387 0.5701 -0.4519 0.6905 0.7135 -0.7130 Base (XML) 0.6096 0.5734 0.2559 0.3538 0.3472 -0.3381 SFT (XML) 0.2262 0.5702 -0.4767 0.7030 0.7263 -0.7262 Log Loss 0.0001 - 0.0000 0.0002 0.0048 -0.0048 Brier Score 0.0001 - 0.0000 0.0001 0.0050 -0.0050 Log-1 0.6981 0.7655 0.5074 0.1907 0.1417 0.1417 Brier-2 0.7520 0.7580 0.5902 0.1618 0.0929 0.0735 Log- 1ln 202 0.7427 0.6964 0.5712 0.1715 0.0311 0.0227 Correctness-only 0.7545 0.5231 0.5149 0.2395 0.2376 -0.2374 Overconfidence-1000 0.7506 0.6171 0.5610 0.1896 0.1088 -0.1080 Overconfidence-4 0.7474 0.6718 0.5761 0.1712 0.0354 0.0272 Overconfidence-1 0.7532 0.6829 0.5903 0.1629 0.0428 0.0391 Brier-1 0.7480 0.7244 0.5823 0.1657 0.0507 0.0318 Underconfidence-1 0.7444 0.7373 0.5785 0.1660 0.0461 0.0445 Underconfidence-4 0.7573 0.7436 0.5832 0.1741 0.1143 0.1134 Brier-log Hybrid 0.7460 0.7600 0.5878 0.1582 0.0532 0.0532 Table 8: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the hard subset of the test set of BigMath when trained with BigMath dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.0892 0.5631 -0.7134 0.8027 0.8440 -0.8436 Base (XML) 0.2358 0.5598 -0.4376 0.6734 0.6995 -0.6957 SFT (XML) 0.0823 0.5723 -0.7250 0.8073 0.8496 -0.8496 Log Loss 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Brier Score 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Log-1 0.2748 0.7581 0.1019 0.1729 0.0569 -0.0561 Brier-2 0.3185 0.7265 0.1085 0.2100 0.1387 -0.1380 Log- 1ln 202 0.3139 0.6824 0.0248 0.2891 0.3028 -0.3028 Correctness-only 0.3229 0.5225 -0.3355 0.6584 0.6639 -0.6639 Overconfidence-1000 0.3172 0.6105 -0.1393 0.4565 0.4935 -0.4934 Overconfidence-4 0.3169 0.6635 0.0296 0.2873 0.2869 -0.2869 Overconfidence-1 0.3211 0.6949 0.0633 0.2577 0.2382 -0.2382 Brier-1 0.3117 0.7084 0.0758 0.2359 0.1933 -0.1932 Underconfidence-1 0.3146 0.7136 0.0822 0.2324 0.1991 -0.1984 Underconfidence-4 0.3279 0.7136 0.1191 0.2087 0.1081 -0.1073 Brier-log Hybrid 0.3169 0.7330 0.1022 0.2148 0.1674 -0.1671 40 Table 9: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the test set of DeepMath-103K when trained with DeepMath-103K dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.1796 0.5713 -0.5268 0.7063 0.7427 -0.7415 Base (XML) 0.3228 0.5577 -0.2743 0.5971 0.6145 -0.6078 SFT (XML) 0.1634 0.5732 -0.5626 0.7260 0.7636 -0.7633 Log Loss 0.0001 - 0.0000 0.0002 0.0049 -0.0049 Brier Score 0.0001 - 0.0000 0.0001 0.0049 -0.0049 Log-1 0.0000 - 0.0000 0.0001 0.0050 -0.0050 Brier-2 0.0002 - 0.0000 0.0002 0.0048 -0.0048 Log- 1ln 202 0.4327 0.6119 0.1952 0.2375 0.0556 0.0527 Correctness-only 0.4238 0.5034 -0.1437 0.5675 0.5686 -0.5684 Overconfidence-1000 0.4204 0.5446 0.1737 0.2468 0.0822 -0.0821 Overconfidence-4 0.4294 0.6609 0.2052 0.2242 0.0155 -0.0140 Overconfidence-1 0.4138 0.6752 0.1930 0.2207 0.0341 0.0299 Brier-1 0.4063 0.6558 0.1828 0.2235 0.0468 0.0082 Underconfidence-1 0.4159 0.6375 0.1870 0.2289 0.0296 -0.0153 Underconfidence-4 0.3921 0.6452 0.1684 0.2237 0.0422 0.0360 Brier-log Hybrid 0.2635 0.6302 0.0781 0.1854 0.0273 0.0271 Table 10: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the easy subset of the test set of DeepMath-103K when trained with DeepMath-103K dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.1958 0.5777 -0.5148 0.7107 0.7412 -0.7404 Base (XML) 0.4331 0.5909 -0.0689 0.5020 0.5118 -0.5070 SFT (XML) 0.1785 0.5796 -0.5570 0.7355 0.7660 -0.7660 Log Loss 0.0000 - 0.0000 0.0000 0.0051 -0.0051 Brier Score 0.0001 - -0.0001 0.0001 0.0051 -0.0051 Log-1 0.0001 - 0.0000 0.0001 0.0050 -0.0050 Brier-2 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Log- 1ln 202 0.5334 0.6897 0.2933 0.2401 0.1270 0.1249 Correctness-only 0.5308 0.5040 0.0689 0.4619 0.4618 -0.4617 Overconfidence-1000 0.5262 0.5899 0.2904 0.2358 0.0120 0.0039 Overconfidence-4 0.5324 0.7571 0.3292 0.2032 0.0786 0.0359 Overconfidence-1 0.5205 0.7646 0.3118 0.2087 0.0938 0.0860 Brier-1 0.5108 0.7142 0.2843 0.2265 0.1289 0.0834 Underconfidence-1 0.5191 0.6986 0.2907 0.2284 0.1143 0.0695 Underconfidence-4 0.4948 0.7209 0.2692 0.2256 0.1062 0.1061 Brier-log Hybrid 0.3313 0.7306 0.1347 0.1966 0.0750 0.0649 41 Table 11: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the medium subset of the test set of DeepMath-103K when trained with DeepMath-103K dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.1508 0.5724 -0.5790 0.7298 0.7706 -0.7695 Base (XML) 0.3016 0.5557 -0.3137 0.6153 0.6351 -0.6280 SFT (XML) 0.1398 0.5677 -0.6080 0.7479 0.7876 -0.7874 Log Loss 0.0000 - 0.0000 0.0001 0.0049 -0.0049 Brier Score 0.0001 - 0.0000 0.0001 0.0049 -0.0049 Log-1 0.0000 - 0.0000 0.0001 0.0049 -0.0049 Brier-2 0.0001 - 0.0000 0.0001 0.0049 -0.0049 Log- 1ln 202 0.4059 0.6051 0.1732 0.2328 0.0328 0.0283 Correctness-only 0.3940 0.5037 -0.2030 0.5970 0.5986 -0.5984 Overconfidence-1000 0.3886 0.5359 0.1399 0.2487 0.1123 -0.1123 Overconfidence-4 0.4054 0.6549 0.1817 0.2237 0.0335 -0.0335 Overconfidence-1 0.3855 0.6683 0.1681 0.2174 0.0253 0.0057 Brier-1 0.3796 0.6575 0.1611 0.2185 0.0489 -0.0170 Underconfidence-1 0.3876 0.6344 0.1616 0.2260 0.0402 -0.0401 Underconfidence-4 0.3613 0.6433 0.1450 0.2163 0.0180 0.0088 Brier-log Hybrid 0.2263 0.6178 0.0568 0.1695 0.0079 -0.0039 Table 12: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the hard subset of the test set of DeepMath-103K when trained with DeepMath-103K dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.2204 0.5671 -0.4435 0.6639 0.6957 -0.6941 Base (XML) 0.3015 0.5334 -0.3140 0.6155 0.6331 -0.6260 SFT (XML) 0.1958 0.5793 -0.4876 0.6835 0.7212 -0.7207 Log Loss 0.0003 - 0.0000 0.0004 0.0047 -0.0047 Brier Score 0.0001 - 0.0000 0.0002 0.0048 -0.0048 Log-1 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Brier-2 0.0004 - 0.0000 0.0004 0.0046 -0.0046 Log- 1ln 202 0.4260 0.5671 0.1818 0.2441 0.0586 0.0567 Correctness-only 0.4189 0.5024 -0.1533 0.5722 0.5731 -0.5728 Overconfidence-1000 0.4197 0.5273 0.1704 0.2493 0.0776 -0.0754 Overconfidence-4 0.4167 0.6007 0.1807 0.2360 0.0304 -0.0068 Overconfidence-1 0.4063 0.6217 0.1736 0.2327 0.0476 0.0420 Brier-1 0.3976 0.6062 0.1670 0.2306 0.0184 0.0122 Underconfidence-1 0.4105 0.5993 0.1762 0.2342 0.0179 -0.0172 Underconfidence-4 0.3911 0.5921 0.1559 0.2352 0.0523 0.0459 Brier-log Hybrid 0.2919 0.5800 0.0850 0.2069 0.0637 0.0603 42 Table 13: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the test set of HotpotQA when trained with HotpotQA dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.4404 0.5850 -0.0286 0.4689 0.4730 -0.4693 Base (XML) 0.0479 0.5315 -0.7309 0.7788 0.8399 -0.8399 SFT (XML) 0.4362 0.6044 -0.0208 0.4570 0.4644 -0.4634 Log Loss 0.0000 - 0.0000 0.0001 0.0050 -0.0049 Brier Score 0.0000 - -0.0001 0.0001 0.0058 -0.0058 Log-1 0.6472 0.6420 0.4277 0.2194 0.0777 -0.0776 Brier-2 0.6507 0.5920 0.4221 0.2286 0.1057 -0.1057 Log- 1ln 202 0.6537 0.5455 0.4077 0.2461 0.1491 -0.1491 Correctness-only 0.6571 0.5095 0.3207 0.3363 0.3346 -0.3345 Overconfidence-1000 0.6548 0.5273 0.3220 0.3328 0.3307 -0.3305 Overconfidence-4 0.6526 0.5725 0.4134 0.2393 0.1319 -0.1319 Overconfidence-1 0.6507 0.5854 0.4059 0.2448 0.1563 -0.1562 Brier-1 0.6504 0.5790 0.4144 0.2360 0.1225 -0.1225 Underconfidence-1 0.6551 0.6046 0.4238 0.2313 0.1175 -0.1175 Underconfidence-4 0.6529 0.6158 0.4242 0.2287 0.1093 -0.1093 Brier-log Hybrid 0.6439 0.6098 0.4128 0.2311 0.1081 -0.1080 Table 14: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the test set of HotpotQA-Modified when trained with HotpotQA-Modified dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.2806 0.6559 -0.2226 0.5032 0.5335 -0.5317 Base (XML) 0.0363 0.6050 -0.6437 0.6800 0.7703 -0.7703 SFT (XML) 0.2787 0.6472 -0.2270 0.5057 0.5347 -0.5325 Log Loss 0.0000 - 0.0000 0.0001 0.0050 -0.0050 Brier Score 0.0000 - 0.0000 0.0001 0.0050 -0.0050 Log-1 0.0950 0.9681 0.0536 0.0415 0.0235 -0.0235 Brier-2 0.2862 0.8900 0.1677 0.1185 0.0414 -0.0414 Log- 1ln 202 0.4186 0.7081 0.1922 0.2264 0.1038 -0.1026 Correctness-only 0.4204 0.5292 -0.1282 0.5486 0.5508 -0.5470 Overconfidence-1000 0.4135 0.6856 0.1402 0.2734 0.2300 -0.2290 Overconfidence-4 0.4166 0.7405 0.2149 0.2016 0.0223 -0.0129 Overconfidence-1 0.4204 0.7332 0.2012 0.2192 0.1182 -0.1152 Brier-1 0.4173 0.7474 0.2131 0.2043 0.0637 -0.0608 Underconfidence-1 0.4181 0.7519 0.2140 0.2041 0.0794 -0.0775 Underconfidence-4 0.4118 0.7481 0.2088 0.2030 0.0616 -0.0565 Brier-log Hybrid 0.4007 0.7440 0.1994 0.2013 0.0503 -0.0459 43 Table 15: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the easy subset of the test set of HotpotQA-Modified when trained with HotpotQA-Modified dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.4493 0.5908 -0.0125 0.4618 0.4672 -0.4642 Base (XML) 0.0588 0.5386 -0.7216 0.7804 0.8369 -0.8368 SFT (XML) 0.4421 0.5898 -0.0213 0.4634 0.4680 -0.4655 Log Loss 0.0001 - 0.0000 0.0001 0.0050 -0.0049 Brier Score 0.0000 - 0.0000 0.0001 0.0050 -0.0050 Log-1 0.2022 0.9386 0.1275 0.0747 0.0271 -0.0271 Brier-2 0.5296 0.7723 0.3546 0.1750 0.0162 -0.0162 Log- 1ln 202 0.6271 0.6098 0.3953 0.2318 0.0725 -0.0320 Correctness-only 0.6273 0.5059 0.2612 0.3661 0.3648 -0.3634 Overconfidence-1000 0.6228 0.5957 0.3723 0.2506 0.1348 -0.1299 Overconfidence-4 0.6248 0.6326 0.3958 0.2290 0.0698 0.0697 Overconfidence-1 0.6328 0.6198 0.4081 0.2247 0.0506 -0.0310 Brier-1 0.6317 0.6359 0.4082 0.2235 0.0419 0.0025 Underconfidence-1 0.6245 0.6511 0.4033 0.2212 0.0414 -0.0083 Underconfidence-4 0.6199 0.6488 0.3972 0.2226 0.0433 0.0044 Brier-log Hybrid 0.6111 0.6461 0.3864 0.2247 0.0371 0.0210 Table 16: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the medium subset of the test set of HotpotQA-Modified when trained with HotpotQA-Modified dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.2726 0.6221 -0.2435 0.5161 0.5411 -0.5382 Base (XML) 0.0352 0.5796 -0.6395 0.6746 0.7681 -0.7681 SFT (XML) 0.2726 0.6152 -0.2452 0.5178 0.5407 -0.5381 Log Loss 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Brier Score 0.0001 - 0.0000 0.0001 0.0050 -0.0049 Log-1 0.0619 0.9708 0.0272 0.0347 0.0268 -0.0268 Brier-2 0.2323 0.8839 0.1149 0.1174 0.0583 -0.0583 Log- 1ln 202 0.4203 0.6393 0.1704 0.2499 0.1243 -0.0881 Correctness-only 0.4250 0.5209 -0.1237 0.5487 0.5498 -0.5447 Overconfidence-1000 0.4135 0.6110 0.1207 0.2929 0.2229 -0.2217 Overconfidence-4 0.4187 0.6659 0.1923 0.2264 0.0541 0.0033 Overconfidence-1 0.4238 0.6575 0.1805 0.2433 0.1206 -0.1053 Brier-1 0.4184 0.6743 0.1875 0.2309 0.0896 -0.0424 Underconfidence-1 0.4197 0.6762 0.1902 0.2295 0.0777 -0.0615 Underconfidence-4 0.4158 0.6766 0.1869 0.2289 0.0816 -0.0363 Brier-log Hybrid 0.4003 0.6699 0.1747 0.2257 0.0691 -0.0296 44 Table 17: Accuracy, AUROC, Brier-1, Brier, ECE (10 bins) and calibration bias statistics for the hard subset of the test set of HotpotQA-Modified when trained with HotpotQA-Modified dataset. Calib. Bias is short for Calibration bias. Model/Reward Scheme Accuracy AUROC Brier-1 Brier ECE Calib. Bias Base (JSON) 0.1203 0.6546 -0.4118 0.5320 0.5926 -0.5926 Base (XML) 0.0149 0.6180 -0.5702 0.5851 0.7062 -0.7062 SFT (XML) 0.1217 0.6452 -0.4144 0.5361 0.5953 -0.5938 Log Loss 0.0000 - 0.0000 0.0000 0.0050 -0.0050 Brier Score 0.0000 - 0.0000 0.0001 0.0050 -0.0050 Log-1 0.0204 0.9829 0.0054 0.0149 0.0166 -0.0166 Brier-2 0.0958 0.9398 0.0325 0.0633 0.0503 -0.0503 Log- 1ln 202 0.2093 0.7020 0.0109 0.1984 0.1896 -0.1870 Correctness-only 0.2100 0.5276 -0.5202 0.7302 0.7370 -0.7321 Overconfidence-1000 0.2050 0.6807 -0.0722 0.2772 0.3357 -0.3346 Overconfidence-4 0.2070 0.7824 0.0567 0.1504 0.1160 -0.1110 Overconfidence-1 0.2055 0.7701 0.0152 0.1904 0.2106 -0.2085 Brier-1 0.2028 0.7788 0.0434 0.1594 0.1448 -0.1416 Underconfidence-1 0.2110 0.7925 0.0486 0.1624 0.1638 -0.1618 Underconfidence-4 0.2008 0.7764 0.0424 0.1584 0.1413 -0.1366 Brier-log Hybrid 0.1915 0.7612 0.0371 0.1544 0.1326 -0.1283 45 Table 18: Table of responses to three example questions in the final RL training batch of Qwen 2.5 (3B) Instruct for Brier-2 in the HotpotQA-Modified dataset. Con. stands for the corresponding confidence level of the response. Example Question A Example Question B Example Question C Response Con. Response Con. Response Con. W. Chump & Sons Limited 70 Unknown 0 Unknown 0W. Chump & Sons Limited 60 No information 0 Not provided 0W. Chump & Sons Limited 70 Hog 60 Unknown 0W. Chump & Sons 70 Unknown 0 Not enough information 0W. Chump & Sons Limited 70 Hog 70 Unknown 0W. Chump & Sons 70 Unknown 0 Unknown 0W. Chump & Sons Limited 70 unspecified 0 Unknown 0W. Chump & Sons Limited 70 Unknown 0 Not provided 0
+
+# G Case study of selective confidence reward hacking 
+
+This appendix section shows a case study of selective confidence reward hacking in Brier-2 reward scheme for the HotpotQA-Modified dataset. This was recorded during the 500th and final RL training step of Qwen 2.5 (3B) Instruct. Table 18 shows the responses of a cherry-picked sample of 3 questions in the final RL training batch of the LLM but representative of the scenarios on how the LLM may respond when selective confidence reward hacking is present. Note that the exact question is irrelevant because the main focus is to show how the LLM chooses not to provide an educated guess to maximize its chances of getting the correct answer. The LLM chose to answer Example Question A as it was moderately confident of the correct answer. The confidence values have largely converged to 70, showing a high degree of internal consistency of its confidence. The LLM has selectively given up on answering Example Question B in 6 out of the 8 responses. This shows that the decision to be confident about an incorrect answer may not be deterministic. In the third example question, the LLM has decided to give up on Example Question C as there was insufficient information to answer the question. This occurs in HotpotQA-Modified as relevant sources can be removed during dataset preprocessing. 
+
+# H Results for other LLM 
+
+In addition to Qwen 2.5 (3B) Instruct, we ran our experiments on Llama 3.2 (3B) Instruct and Llama 3.1 (8B) Instruct [42] on the BigMath dataset. 
+
+H.1 Llama 3.2 (3B) Instruct 
+
+For Llama 3.2 (3B) Instruct, we ran RL on BigMath on 1000 steps and the learning rate lowered to 10 −6. The other hyperparameters are the same as in Qwen 2.5 (3B) Instruct. We tested the LLM on Brier-1, Log-1, Brier-2 and Brier-log Hybrid reward schemes, of which only Brier-1 and Brier-log Hybrid are non-hackable confidence. The training accuracies and the training losses for each experiment are as shown in Figure 6. Dr GRPO training collapsed, as evidenced by the sudden spike in training loss in Figure 6. As this empirically holds independent of the reward scheme used, it is likely a limitation of Dr GRPO RL rather than the reward scheme. Notably, Brier-2 was the first and Brier-log Hybrid was the last to experience training collapse. 46 Figure 6: Training accuracy (left) and training loss (right) statistics for BigMath in Llama 3.2 (3B) Instruct from Step 10 to Step 999 (0-indexed). The training accuracy has been smoothed using an exponential moving average [27, p. 15], initialized at 0.5 with smoothing factor of 0.2. Dotted lines represent hackable confidence reward schemes. 
+
+Figure 7: Training accuracy (left) and training loss (right) statistics for BigMath in Llama 3.1 (8B) Instruct from Step 10 to Step 299 (0-indexed). The training accuracy has been smoothed using an exponential moving average [27, p. 15], initialized at 0.5 with smoothing factor of 0.2. Dotted lines represent hackable confidence reward schemes. 
+
+H.2 Llama 3.1 (8B) Instruct 
+
+We ran Dr GRPO RL on BigMath with the same hyperparameters as Qwen 2.5 (3B) Instruct except that the maximum gradient norm has been conservatively set to 0.01 to rule out issues regarding too large a gradient. We ran our experiments on Correctness-only, Overconfidence-1000, Overconfidence-1, Brier-1, Underconfidence-1, Brier-log Hybrid, Log-1 and Brier-2 reward schemes. All the reward schemes mentioned are non-hackable confidence except Log-1 and Brier-2. Figure 7 shows the results of our experiments. Likewise, the model initially trains well before a sharp decrease to training accuracy, likely due to conflicting signals in the Dr GRPO loss. This occurred regardless of the reward scheme used. The peaks in the training loss occur during the significant decrease in training accuracy. Similarly, Brier-log Hybrid was the last to suffer the training collapse. However, unlike the experiment in Llama 3.2 (3B) Instruct, the training collapse occurs when the LLM has reached approximately the same reasoning accuracy apart from the hackable confidence reward scheme Log-1, which suggests a learning problem. A more detailed investigation on the phenomenon of training collapse during confidence calibration of RL will be left to future research. As Brier-log Hybrid is the furthest along the underconfident end of the spectrum, based on the results in Figure 5 of Section 6.2, Brier-log Hybrid can be expected to take the longest time to train to the approximate accuracy level threshold, after which, RL training collapse would occur. Indeed, as shown in Figure 7, Brier-log Hybrid takes the longest time to do so among the examined non-hackable confidence reward schemes. 47 I Experimental Anomalies 
+
+This section highlights experimental anomalies that researchers may face while attempting to re-produce this work. Currently, only one has been identified, i.e. the confidence may converge to approximately 0.1 while performing RL training on confidence calibration. 
+
+I.1 Confidence Converges to Approximately 0.1 
+
+As shown in Figure 8, while training Qwen 2.5 (3B) Instruct on the HotpotQA-Modified dataset using RL on the reward schemes Correctness-only, Brier-1 and Overconfidence-1, the average LLM training confidence appeared to converge to approximately 0.1 mid-run, and did not significantly change for hundreds of steps despite improving training accuracy, suggesting poor confidence calibration due to the LLM getting stuck in a suboptimal local maximum. These runs were not taken for evaluation in the main paper. We reran the anomalous RL experiments starting from the same fine-tuned model at the supervised fine-tuning stage. Upon rerun, the anomalies mostly did not resurface, and we took these runs for the evaluation in the main paper. As the problem was not reproducible across reruns, this was likely due to the stochasticity of the RL algorithm and issues with the reliability of the trust region in RL. 
+
+Figure 8: Training accuracy (left) and training confidence (right) statistics for both anomalous runs and their corresponding reruns during RL training Qwen 2.5 (3B) Instruct of the HotpotQA-Modified dataset from Step 10 to Step 499 (0-indexed), smoothed using an exponential moving average [27, p. 15], both initialized at 0.5 with smoothing factor of 0.2. Dotted lines represent the anomalous runs while solid lines of the same color represent the corresponding reruns. The LLM has often shown high confidence on its confidence analysis despite providing a confidence of 10 on the scale from 0 to 100. Therefore, the LLM has likely misinterpreted the instruction to output the confidence on a scale from 0 to 100 as a scale from 0 to 10 instead, and the misinterpretation was likely reinforced due to the lower confidence of 10 resulting in a higher expected reward. To discourage this from happening, there should be checks to ensure that the confidence analysis correctly justifies the confidence value provided. We leave the checking to future work. In the example below, we provide one question and one corresponding LLM response in the final training step of the anomalous experimental run when RL training on the HotpotQA-Modified dataset and using the Brier-1 reward scheme. The response demonstrates LLM confidence in its answer despite indicating a low confidence of 10 on the scale of 0 to 100, as instructed in the system prompt. The system prompt used is the XML system prompt format in Section E.8. 
+
+Question (excluding system prompt) 
+
+Based on the information sources given below and your existing knowledge, answer the follow-ing question: The Holy Trinity, an episode of British motoring series "The Grand Tour" was produced by which independent television production company founded in 2015 in the UK? Source 1: James May James Daniel May (born 16 January 1963) is an English television presenter and journalist. He is best known as a co-presenter of the motoring programme "Top Gear" alongside Jeremy Clarkson and Richard Hammond from 2003 until 2015. As of 2016 he is a director of the production company W. Chump & Sons (founded July 2015) and is also a co-presenter in 48 the television series "The Grand Tour" for Amazon Video as an exclusive for Amazon Prime customers, alongside his former "Top Gear" colleagues, Clarkson and Hammond, as well as former producer Andy Wilman. Source 2: G-Unit Films and Television Inc. G-Unit Films and Television Inc. is an American film and television production company founded by rapper 50 Cent and Interscope in 2003. In 2008, 50 Cent stated in an interview that he has created his own independent film production company with Randall Emmett called Cheetah Vision, technically scrapping G-Unit Films. In 2010, Jackson revived G-Unit Films, renaming the company to G-Unit Films and Television Inc. The company has joint ventures with Will Packer’s production company Will Packer Productions and Universal Television. In over 18 months, Jackson has sold projects to six different networks. Among them was "Power", a STARZ drama in which he not only co-stars but also serves as co-creator and executive producer. “Power” debuted in June 2014 and was renewed for a second season after one episode. “Power’s” August 2 season finale garnered the high ratings through the season, more than doubling the premiere and it generated 71% of the African-American viewership of any scripted premium series since 2006. Jackson serves as a co-star, co-creator and executive television producer of the STARZ network drama where he signed a 2 year contract with representation coming from the Agency for the Performing Arts. Ratings have been a success for Starz. with the second season premiere being the highest-ever season with 1.43 million people tuning in live. Jackson also serves as an executive television producer for "Dream School" for SundanceTV, a series that follows fifteen high school dropouts as they are taught by a series of celebrity "teachers". Source 3: WestWind Pictures WestWind Pictures Ltd. is an independent television production company founded in 1989 in Regina, Saskatchewan. The company, now based in Toronto, Ontario, is co-owned by CEO Mary Darling and President Clark Donnelly. WestWind currently has programs airing in over 80 countries around the world. The company is currently involved in scripted television series, documentaries, lifestyle programming and feature films. Source 4: W. Chump and Sons W. Chump & Sons Limited is an independent television production company founded in July 2015 in the United Kingdom. The company is headquartered on Power Road , Chiswick, London, and owned by Jeremy Clarkson, Richard Hammond, James May and Andy Wilman. The directors of the company are the former presenters and executive producer of the MPH Show and "Top Gear" Live exhibition tours, as well as the former "Top Gear" series produced for BBC Television from October 2002 until March 2015. s of 2016 the company was engaged in producing "The Grand Tour," a motoring television series that debuted on Amazon Video on 18 November 2016. Source 5: The Automobile Association AA plc (The AA, originally The Automobile Association) is a British motoring association founded in 1905, which currently provides car insurance, driving lessons, breakdown cover, loans, motoring advice, road maps and other services. The association demutualised in 1999, to become a private limited company, and in 2002, the AA Motoring Trust was created to continue its public interest and road safety activities. The company is listed on the London Stock Exchange, and is a constituent of the FTSE 250 Index. Source 6: Kapital Entertainment Kapital Entertainment is an American independent television production company founded by Aaron Kaplan in 2009. Prior to founding Kapital, Kaplan was the worldwide head of scripted television at William Morris Agency to which he joined in 1991. He exited the company in 2009 after 18 years when WMA was going through the regulatory process to finalize their merger with Endeavor to form WME Entertainment. Source 7: The Grand Tour (TV series) The Grand Tour is a British motoring television series for Amazon Video presented by Jeremy Clarkson, Richard Hammond and James May and produced by Andy Wilman. 
+
+49 Source 8: Desilu Productions Desilu Productions ( ) was an American production company founded and co-owned by husband and wife Desi Arnaz and Lucille Ball, best known for shows such as "I Love Lucy", "", and "The Untouchables". Until 1962, Desilu was the second-largest independent television production company in the U.S. behind MCA’s Revue Productions until MCA bought Universal Pictures, and Desilu became and remained the number-one independent production company until being sold in 1967. Ball and Arnaz jointly owned the majority stake in Desilu from its inception until 1962, when Ball bought out Arnaz and ran the company by herself for several years. Ball had succeeded in making Desilu profitable again by 1967, when she sold her shares of Desilu to Gulf+Western for $17 million ($ in 2016 dollars). Gulf+Western then transformed Desilu into the television production arm of Paramount Pictures, rebranding the company as the original Paramount Television. 
+
+Response 
+
+<reasoning> The question asks for the independent television production company founded in 2015 in the UK producing The Holy Trinity, an episode of the British motoring series ’The Grand Tour’. ’The Grand Tour’ is produced by W. Chump and Sons, which is stated to be an independent television production company founded in July 2015 in the United Kingdom. </reasoning> <answer> W. Chump and Sons </answer> <confidence_analysis> The answer is directly derived from Source 4, which states that W. Chump & Sons Limited is an independent television production company founded in July 2015 in the United Kingdom and is the producer of ’The Grand Tour’. All other sources either do not mention ’The Grand Tour’ or are unrelated to the production company question. </confidence_analysis> <confidence> 10 </confidence> 
+
+50

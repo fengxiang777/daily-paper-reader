@@ -1,0 +1,1093 @@
+Title: Diagnosing Task Insensitivity in Language Agents
+
+URL Source: https://arxiv.org/pdf/2606.26918v1
+
+Published Time: Fri, 26 Jun 2026 01:06:22 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+## Diagnosing Task Insensitivity in Language Agents 
+
+Jingyu Liu 1, Xiaopeng Wu 2, Kehan Chen 2, Chuan Yu 2,Yong Liu 1,4,5 † 
+
+> 1
+
+Gaoling School of Artificial Intelligence Renmin University of China, Beijing, China  
+
+> 2
+
+Taobao & Tmall Group of Alibaba  
+
+> 4
+
+Beijing Key Laboratory of Research on Large Models and Intelligent Governance  
+
+> 5
+
+Engineering Research Center of Next-Generation Intelligent Search and Recommendation, MOE 
+
+> liujy1016@ruc.edu.cn
+
+Abstract 
+
+Large language models can serve as capa-ble long-horizon agents, but their out-of-distribution (OOD) generalization remains weak. We identify a key source of this failure as task insensitivity : when faced with similar but distinct tasks, models might apply patterns learned during training and fail to solve the task at hand. We show that models often con-tinue with actions aligned with the original task even when the instruction is semantically cor-rupted and cannot be directly answered. We further find that, when we replace the task de-scription in a trained prompt with another sim-ilar but distinct task, the model may still out-put the same action. This behavior is accom-panied by a consistent training-time attention drift away from task tokens and toward local observations, suggesting an optimization bias toward shortcuts. To mitigate this problem, we propose Task-Perturbed NLL Optimization , a lightweight contrastive regularizer that explic-itly encourages action dependence on the task instruction. Extensive evaluations show that our intervention improves task sensitivity and OOD generalization while preserving more sta-ble attention to task tokens. 
+
+1 Introduction 
+
+Large language models (LLMs) (Achiam et al., 2023; Team et al., 2024; Bai et al., 2023; Guo et al., 2025; Ouyang et al., 2022) have enabled increas-ingly capable autonomous agents for long-horizon tasks (Zeng et al., 2023; Wang et al., 2022; Bai et al., 2024; Zhang et al., 2024; Wang et al., 2025, 2024). Yet robust generalization remains a cen-tral bottleneck. Even with reinforcement learning, agents trained for interactive decision making can overfit to their training environments and general-ize poorly to out-of-distribution (OOD) tasks (Chu et al., 2025; Zhang et al., 2025). This challenge is especially acute in long-horizon settings, where each action must stay grounded in the task instruc-
+
+Figure 1: The model might overfit to the trained tasks. 
+
+tion despite long interaction histories and many spurious correlations. Across tasks, local obser-vations and available actions can remain highly similar, making it easy for the model to rely on state cues rather than the intended goal. A central question, then, is whether current LLMs truly solve tasks by following the instruc-tion or instead memorize how familiar tasks are usually carried out. To study this question, we use ALFWorld, ScienceWorld, and WebShop (Shridhar et al., 2020; Wang et al., 2022; Yao et al., 2022), and manually corrupt the task description, making it impossible to interpret while leaving the rest of the prompt unchanged. However, current models, including GPT-5.4, often fail to recognize that the instruction is invalid and instead continue as if it were valid, even when explicitly told that they can ask for clarification. In many such cases, the model effectively recon-structs the original task from the corrupted input. This behavior reveals a specific failure mode: when the prompt resembles a familiar task, the model defaults to a learned policy even though the instruc-tion no longer cleanly supports that behavior. We term this phenomenon task insensitivity .We further ask whether the same failure mode harms OOD generalization when models face simi-lar but distinct tasks. In controlled task splits for all three environments, agents trained with supervised 1
+
+> arXiv:2606.26918v1 [cs.AI] 25 Jun 2026
+
+fine-tuning or reinforcement learning often reuse action patterns learned during training even when the new task requires different behavior. For exam-ple, as shown in Figure 1, a model trained on heat bread and place it on countertop may choose go to microwave 1 when evaluated on cool bread and place it on the countertop (Liu et al., 2025), despite knowing that a microwave should not be used for cooling when asked directly. To understand why this shortcut behavior devel-ops during training, we analyze attention during action generation. We find a consistent drift: atten-tion to the task instruction decreases, while atten-tion to current observations increases. This pattern is consistent with a policy that increasingly predicts actions from local context rather than from the task itself. Taken together, these diagnostics point to a train-ing gap: standard next-action supervision provides no explicit pressure to preserve strong dependence on the task instruction. To address this gap, we introduce Task-Perturbed NLL Optimization , a lightweight contrastive regularizer that encourages the original action to become less likely when the task description is replaced with a different task. Our contributions are as follows: • We provide empirical evidence that LLM agents suffer from task insensitivity : they of-ten reconstruct and execute familiar tasks un-der corrupted or replaced instructions, even when clarification is explicitly permitted. • We use task perturbations as behavioral probes and show that the same failure mode appears under controlled OOD task shifts, where ac-tion dependence on the task instruction weak-ens over training and attention drifts from task tokens toward local observations. • We introduce Task-Perturbed NLL Optimiza-tion, a lightweight contrastive regularizer that improves task sensitivity and OOD robustness in the controlled settings we study while pre-serving more stable task-focused attention. 
+
+2 Related Work 
+
+Agent Generalization. Recent studies of agent training dynamics and RL fine-tuning suggest that improved optimization does not automatically yield OOD robustness (Chu et al., 2025; Liu et al., 2025); models may continue to rely on brittle heuristics inherited from the training distribution (Chu et al., 
+
+> Figure 2: Examples of corrupted task descriptions and representative model behavior in the diagnostic setting.
+
+2025; Zhang et al., 2025; Zhou et al., 2024; Chen et al., 2025; Wei et al., 2025). Most of this literature evaluates final success under distribution shift. Our focus is more specific: we ask whether the learned action policy remains conditionally grounded in the task instruction as training progresses. 
+
+Shortcut learning. A broad literature shows that neural models often rely on shortcuts and spurious correlations that perform well in-distribution but fail under distribution shift (Geirhos et al., 2020; Kaushik et al., 2020; Veitch et al., 2021). In lan-guage models, instruction tuning improves task following (Ouyang et al., 2022; Wang et al., 2023), but optimization can still drift toward easier local regularities rather than the intended instruction se-mantics (Song et al., 2024; Sun et al., 2024). Here we focus on agentic training, and we show that current models gradually attend less to the task description and become more prone to shortcut learning. 
+
+3 Diagnostics: Task Insensitivity in Agentic Training 
+
+3.1 Evidence of Task-Level Overfitting 
+
+To isolate whether strong benchmark performance reflects instruction following or memorization, we design a minimal diagnostic: we corrupt the task description while keeping the agent prompt other-wise intact. Concretely, for each task in ALFWorld, ScienceWorld, and WebShop (Shridhar et al., 2020; Wang et al., 2022; Yao et al., 2022), we manually rewrite the task description to be lexically similar 2ALFWorld ScienceWorld WebShop Hit Inquiry Hit Inquiry Hit Inquiry GPT-5.4 84.9 7.3 43.2 6.5 82.1 7.1 Qwen3.5-Plus 72.3 6.5 42.7 5.2 75.6 7.3 Llama3 70B 70.2 5.2 45.3 3.1 72.3 6.9 Llama3 8B 59.1 3.1 40.7 2.5 51.8 5.2 Qwen3 32B 72.4 3.2 53.1 5.7 79.8 6.3 Qwen3 14B 67.6 3.4 51.1 4.3 73.5 3.2 Qwen3 8B 67.2 3.2 49.3 4.4 72.2 3.7 Qwen3 4B 63.5 2.1 44.1 3.9 71.2 3.9 
+
+Table 1: Model behavior under corrupted task descriptions across ALFWorld, ScienceWorld, and WebShop. Hit 
+
+denotes the fraction of cases in which the model takes an action consistent with the original uncorrupted task, while 
+
+Inquiry denotes the fraction of cases in which the model asks a clarification question. We sample five generations for both the original task and the corrupted task. Hit is the probability that an action generated from the corrupted task also appears among the actions generated for the original task. ALF SCI Web           
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Task Reconstruction  0.77
+> 0.64
+> 0.75
+> GPT-5.4
+> ALF SCI Web
+> 0.71
+> 0.60
+> 0.73
+> Qwen3-8B
+> ALF SCI Web
+> 0.76
+> 0.64 0.70
+> Qwen3-14B
+> ALF SCI Web
+> 0.80
+> 0.64 0.69
+> Qwen3-32B
+> ALFWorld ScienceWorld WebShop
+
+Figure 3: Probability that models appear to reconstruct the original task intent from a corrupted task description. We evaluate only cases in which the generated action matches an action from the original task. 
+
+to the original but semantically ambiguous or un-derspecified. For ALFWorld and ScienceWorld, we directly remove descriptive words; for exam-ple, "cool the bread and put it on the countertop" can be rewritten as "cool bread countertop," which cannot be interpreted unambiguously. For Web-Shop, we introduce conflicting attributes such as "loose fit and slim fit". We use 300 samples for each environment for evaluation. We show some examples in Figure 2. Critically, we explicitly instruct the model to ask a clarifica-tion question if the task is unclear; the full prompt template is provided in the appendix. Under this setup, the model has two options: it can request clarification, or it can treat the cor-rupted description as sufficient and proceed to ac-tion. We define two metrics: Inquiry denotes the fraction of cases in which the model asks a clari-fication question, and Hit denotes the fraction of cases in which the model takes the same action it would take under the original, uncorrupted task. As shown in Table 1, models usually choose to act on the corrupted task description even when they are explicitly allowed to ask for clarification. Rather than flagging the corrupted instruction as unclear, they often infer a well-formed task and attempt to solve it. A high Hit rate does not, by itself, prove that the model has semantically recon-structed the original task; however, it does show that the corrupted prompt often elicits behavior aligned with the original task. To more directly estimate whether the model se-mantically reconstructs the original task intent, we use GPT-5.4 as a judge model to determine whether a generated response appears to be attempting the original task. We randomly select 100 samples and compare the GPT-5.4 judgments with human anno-tations. GPT-5.4 agrees with the human judgments on 91% of the samples. As shown in Figure 3, corrupted tasks frequently elicit responses consis-tent with the original intent. Taken together, these results indicate that when faced with an ambigu-ous instruction, models default to familiar policies rather than reasoning from the provided text—a 3150 300 450 600 750         
+
+> Checkpoint
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Consistency Rate
+> ALFworld
+> 150 300 450 600 750
+> Checkpoint
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Consistency Rate
+> ScienceWorld
+> 150 300 450 600 750
+> Checkpoint
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Consistency Rate
+> Webshop
+> Qwen3-4B
+> Qwen3-8B
+> Qwen3-14B
+> Qwen3-32B
+> Llama-3.1-8B-Instruct
+> Ministral-8B-Instruct-2410
+
+Figure 4: Probability that the predicted action under a corrupted task description remains aligned with the action predicted for the original task. 80 160 240 320 400 480 560 640 720 800                   
+
+> checkpoint
+> 0.84
+> 0.86
+> 0.88
+> 0.90
+> 0.92
+> Similarity
+> ALFWorld
+> 80 160 240 320 400 480 560 640 720 800
+> checkpoint
+> 0.62
+> 0.64
+> 0.66
+> 0.68
+> 0.70
+> 0.72
+> ScienceWorld
+> 80 160 240 320 400 480 560 640 720 800
+> checkpoint
+> 0.58
+> 0.60
+> 0.62
+> 0.64
+> 0.66
+> Webshop
+> Reconstructed Task Similarity
+> Qwen3-4B
+> Qwen3-8B
+> Qwen3-14B
+> Qwen3-32B
+> Llama-3.1-8B-Instruct
+> Ministral-8B-Instruct-2410
+
+Figure 5: Similarity between the task inferred from a corrupted description and the corresponding original task, measured by bge-base-en 
+
+phenomenon we term task insensitivity .
+
+3.2 Training-Time Dynamics Associated with Overfitting 
+
+The corrupted-task diagnostic above shows that task insensitivity is present across models even without deliberate training. We next ask how this failure mode evolves when agents are explicitly trained on a restricted set of tasks. To study this, we train agents via supervised fine-tuning and re-inforcement learning, and track diagnostic metrics across training checkpoints. Figure 4 shows the probability that the model’s predicted action under a corrupted task description remains aligned with the original task. This proba-bility increases over training, which suggests that the model becomes increasingly likely to recover familiar task patterns from incomplete or ambigu-ous instructions. In addition, the training responses always restate the task description at the beginning of the response. We therefore evaluate the similarity between the restated task and the original task when the model is asked to solve the corrupted task. Figure 5 shows this similarity, measured by bge-base-en. This sim-ilarity increases over training, which suggests that the model becomes increasingly likely to recover familiar task patterns from corrupted instructions. The corruption-based diagnostic establishes that agents can ignore or reconstruct underspecified in-structions. We next ask whether the same failure mode matters for realistic generalization: when the task is valid but differs from training, does the model still over-rely on familiar action patterns? We next move to a more realistic OOD setting in which the model is trained on one subset of task types and evaluated on another. In ALFWorld, ScienceWorld, and WebShop, we split each envi-ronment into disjoint training and evaluation task groups along semantic categories (details in the appendix). For example, in ALFWorld we train on “heat and place” tasks and evaluate on “cool and place” tasks. After training, the model often reuses training-set heuristics in contexts where they are inappropriate: an agent trained on “heat A and place it on B” may still go to the microwave when asked to “cool A and place it on B”. Crucially, this is not a knowledge failure—when asked directly whether a microwave should be used for cooling, the same model answers correctly. 4200 400 600 800       
+
+> Checkpoint
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Consistency Rate
+> ALFWorld
+> 200 400 600 800
+> Checkpoint
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> ScienceWorld
+> 200 400 600 800
+> Checkpoint
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> WebShop
+> Qwen3-4B
+> Qwen3-8B
+> Qwen3-14B
+> Qwen3-32B
+> Llama-3.1-8B-Instruct
+> Ministral-8B-Instruct-2410
+
+Figure 6: Probability that the model generates the same action after the task description is replaced with another task while the rest of the prompt is kept fixed; higher values indicate weaker sensitivity to the task substitution. 
+
+To test this account more directly, we conduct a controlled task replacement experiment. For these training prompts, we replace the original task de-scription with similar OOD task descriptions, and manually filter out cases where the original ac-tion would still solve the new task (retaining only pairs that genuinely require a different action, with 200 samples per dataset). As shown in Figure 6, we track action consistency across training check-points and find that the model becomes increasingly likely to predict the same action even when the task changes. These results show that training can also increase overfitting to the seen task distribution: when faced with similar but different tasks, the model may still reuse the action pattern associated with the training task even after the task has changed. 
+
+4 Observed Attention Drift During Training 
+
+To understand the mechanism behind the shortcut behavior reported in Section 3, we study attention patterns during action generation. We decompose the agent prompt into five regions: Overall task ,
+
+Response style , Current observation , available ac-tions and Others . As shown in Figure 7, during training, attention to the overall task region de-creases, while attention to the current observation 
+
+region increases (see Appendix for the full per-region breakdown). The observed pattern suggests a relative reweighting rather than a complete col-lapse of task use. In most models, task tokens still receive substantial attention throughout train-ing, but the gap between task-related attention and observation-related attention narrows over time. This is precisely the regime in which errors such as confusing “heat” with “cool” become plausible: the model is not blind to the task, but it may no longer weight task information strongly enough when local context supports a familiar policy. An analogous trend also appears under reinforcement-learning training: Appendix Figure 16 shows that attention to the task instruction also declines across GRPO checkpoints. In these environments, “cool-ing something” and “heating something” can in-duce nearly identical local states before the heating or cooling action is taken; the task instruction may be the only meaningful difference. If the model un-derweights the task instruction, it can easily choose the wrong tool, such as a microwave for a cooling task. We view the observed attention drift as a plausi-ble optimization bias rather than a formal property of transformers. In long-horizon agent training, the task instruction is nearly constant within a tra-jectory, while the current observation and recent history change at every step. Because supervi-sion is applied at every decision point, these dy-namic signals can continue to provide fresh action-discriminative evidence, especially after the model has already captured the coarse task identity. A simple toy decomposition makes this intuition more concrete. Consider the simplified predictor 
+
+ˆyt = wsxs + wdxt + b, (1) where xs is a trajectory-level task signal shared across the episode and xt is a step-varying state signal. Under the squared loss 
+
+L = 12N
+
+> N
+
+X
+
+> t=1
+
+(ˆ yt − yt)2, (2) 5100 200 300 400 500 600 700 800               
+
+> checkpoint
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> ×10 −3
+> alfworld
+> 100 200 300 400 500 600 700 800
+> checkpoint
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> ×10 −3
+> sciworld
+> 100 200 300 400 500 600 700 800
+> checkpoint
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> ×10 −3
+> webshop
+> SFT task attention
+> avg token attention
+> Qwen3-4B
+> Qwen3-8B
+> Qwen3-14B
+> Qwen3-32B
+> Llama-3.1-8B-Instruct
+> Ministral-8B-Instruct-2410
+
+Figure 7: Attention allocated to task description across training checkpoints during action generation. Across model sizes, attention to the task instruction gradually declines, shifting toward local context. We average attention over all layers and heads. 
+
+the gradients satisfy 
+
+∂L ∂w s
+
+= xs ¯δ, ∂L ∂w d
+
+= 1
+
+N
+
+> N
+
+X
+
+> t=1
+
+δtxt, (3) where δt = ˆ yt − yt and ¯δ = 1
+
+> N
+
+PNt=1 δt. The main message is qualitative. The update associated with the static task signal depends on the average residual over the trajectory, while the update asso-ciated with the dynamic state signal depends on step-specific error-feature interactions. Once the model has already captured coarse task-level infor-mation, ¯δ may become small, whereas 
+
+1
+
+N
+
+> N
+
+X
+
+> t=1
+
+δtxt
+
+can still remain informative because xt varies across steps. This creates an optimization bias toward features that continue to explain the remain-ing step-level errors. This toy view does not analyze transformer at-tention directly, and it does not imply that task tokens become useless. Rather, it offers a simple explanatory picture: during training, the model may gradually rely more on current observations and recent history for next-action prediction, which is consistent with the empirically observed decline in relative attention to task tokens. In summary, the observed attention drift aligns with the behavioral evidence from previous sec-tions: as training progresses, models become more vulnerable to relying on local, state-level cues when solving similar-but-different tasks. Although this analysis does not establish a complete causal ac-count of internal decision-making, it offers a plausi-ble optimization picture that directly motivates our intervention: if task insensitivity is associated with an optimization bias toward dynamic local-context features, then training should explicitly reward con-ditioning on the task instruction. 
+
+5 Method: Task-Perturbed NLL Optimization 
+
+The analysis above suggests that, in the settings we study, the issue is not a lack of access to task information, but rather a lack of training pressure to preserve task sensitivity. If local state and his-tory are sufficient to explain the training action, standard next-action training provides little incen-tive to maintain a strong dependence on the task tokens. Our goal is therefore to add a direct signal that tests whether the predicted action still depends on the task. If the task instruction is replaced with a different task, the original ground-truth action should become substantially less likely. We turn this intuition into a contrastive regularizer. 
+
+5.1 Formulation 
+
+We augment standard supervised fine-tuning (SFT) with a task-perturbation regularizer. For each train-ing instance, we construct a perturbed prompt by replacing the original task description with a sim-ilar but distinct task from the same environment. In practice, we sample replacement tasks from the top-10 most lexically similar task descriptions in the training set (measured by edit distance). These nearby replacements create hard counterfactuals: the surrounding context remains plausible, but the correct action should typically change. The core desideratum is simple: if the task changes, the original response should become less likely. A naive way to enforce this would be to 6directly enlarge the gap between the negative log-likelihood under the original prompt and that under the perturbed prompt. However, such an objective can over-penalize the perturbed case by driving 
+
+N LL perturb (the NLL of the response under the per-turbed task) unnecessarily high. Instead, we ask only that the current model maintain a sufficient amount of separation between the two prompts, calibrated by a frozen reference model. Specifically, for each instance i, the refer-ence model computes the token-level negative log-likelihood of the response under the origi-nal prompt and the perturbed prompt, denoted by 
+
+N LL (i) 
+
+> vanilla,ref
+
+and N LL (i)
+
+> perturb,ref
+
+, respectively. We then define the reference ratio 
+
+ρ(i) 
+
+> ref
+
+= N LL (i)
+
+> perturb,ref
+
+N LL (i) 
+
+> vanilla,ref
+
++ ϵ , (4) where ϵ > 0 is a small constant for numerical stability. This ratio measures how much less com-patible the original response becomes after the task is replaced, according to the reference model. During training, the current model computes the corresponding ratio 
+
+ρ(i) 
+
+> cur
+
+= N LL (i)
+
+> perturb
+
+N LL (i) 
+
+> vanilla
+
++ ϵ . (5) Rather than encouraging ρ(i) 
+
+> cur
+
+to grow without bound, we penalize it only when the current sepa-ration is weaker than the reference-calibrated one: 
+
+L(i) 
+
+> floor
+
+= max 
+
+
+
+0, log ρ(i) 
+
+> ref
+
+− log ρ(i)
+
+> cur
+
+
+
+. (6) The full training objective is then 
+
+Ltotal = LSFT + λLfloor , (7) where LSFT is the standard supervised fine-tuning loss. This objective preserves the desired effect of task perturbation, namely making the original re-sponse less likely when the task changes, while re-moving the incentive to keep increasing N LL perturb 
+
+once a sufficient reference-calibrated separation has been reached. 
+
+Extension to RL. We apply the same idea in rein-forcement learning after rollout and advantage com-putation. We select k% of samples with negative advantage, replace their task descriptions with per-turbed tasks, and reuse the same advantage scores in the subsequent logit computation and gradient update. This discourages the model from assign-ing high probability to the original action once the task has been changed. We do not use a margin here because the advantage already controls the optimization strength. 
+
+6 Experiments 
+
+6.1 Experimental Setup 
+
+We evaluate our method on embodied-agent bench-marks with controlled train/test task splits designed to measure OOD generalization. Our primary envi-ronments are ALFWorld, ScienceWorld, and Web-Shop (Shridhar et al., 2020; Wang et al., 2022; Yao et al., 2022). We train each model three times and report the mean performance across the three runs. Further details are provided in the appendix. We consider two training settings. In the first, we apply Task-Perturbed NLL Optimization on top of supervised fine-tuning (SFT). In the second, we in-corporate the same regularizer into reinforcement-learning-based agent training with GRPO (Shao et al., 2024). Unless otherwise stated, all models use the same backbone, prompt template, decoding configuration, and environment interfaces within each comparison group. We compare against three baselines: vanilla SFT, contrastive instruction tun-ing (CoIN) (Yan et al., 2024), and task augmen-tation. CoIN augments tasks and uses contrastive learning to align similar tasks and separate dissimi-lar ones. We use GPT-5.4 to rewrite task descrip-tions for CoIN training. For task augmentation, we randomly replace the original task with one rewritten version, allowing the task wording to vary across steps for training. For SFT, we use λ = 0 .3;for RL, we use k = 30% .
+
+6.2 Main Results 
+
+Figure 8 and Tables 2 and 4 summarize the main quantitative results on ALFWorld, ScienceWorld, and WebShop. Our method improves OOD per-formance in most settings. The gains are most consistent under GRPO and in task pairs where local state is highly similar across tasks but the correct action depends critically on the task instruc-tion. This is precisely the regime in which shortcut learning should be most harmful in our controlled task-split evaluations. We study the effect of λ
+
+in Table 3. The RL results are reported in more detail in Appendix Table 4, which shows that the same intervention also improves both in-domain and OOD performance under GRPO for Qwen3-4B 74B 8B 14B 32B 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Score
+
+ALFWorld    
+
+> 4B 8B 14B 32B
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+
+ScienceWorld    
+
+> 4B 8B 14B 32B
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+
+Webshop 
+
+baseline ours Figure 8: Model performance on OOD tasks. The results show that our method improves OOD performance in the controlled task-split setting. Baseline stands for vanilla SFT 100 200 300 400 500 600 700 800       
+
+> checkpoint / step
+> 0.70
+> 0.75
+> 0.80
+> task avg attention (x1000)
+> SFT
+> 40 80 120 160 200
+> checkpoint / step
+> 0.850
+> 0.875
+> 0.900
+> 0.925
+> RL
+> ALFWorld ScienceWorld WebShop
+
+Figure 9: Attention allocated to the task-instruction region across training checkpoints under Task-Perturbed NLL Optimization on Qwen3-8B; higher values indicate greater relative attention to task tokens during action generation. 
+
+and Qwen3-8B. Overall, the results suggest that explicit task-sensitivity regularization can improve OOD gen-eralization in these controlled settings when the task instruction provides information that cannot be recovered reliably from state and history alone. ALFWorld ScienceWorld WebShop SFT 55.2 25.6 47.1 COIN 57.3 25.1 45.2 Task Aug 56.3 26.4 47.5 Ours 58.7 29.6 49.6 
+
+Table 2: OOD performance of Qwen3-8B. We compare our method with vanilla SFT, CoIN, and Task Aug. 
+
+Figure 9 shows that under our method, atten-tion to the task description is better preserved over training. Figure 10 shows that this increase is ac-companied by a slower rise in conditional consis-tency across checkpoints. Since higher consistency means that the model repeats the same action af-ter the task is replaced, the flatter trend indicates that our method suppresses the growth of task-insensitive behavior and better preserves sensitivity to task changes. Taken together, these patterns 200 400 600 800       
+
+> Checkpoint
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Conditional Consistency Rate  SFT
+> 40 80 120 160 200
+> Training Step
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> RL (GRPO)
+> ALFWorld ScienceWorld WebShop
+
+Figure 10: Conditional consistency across training checkpoints under Task-Perturbed NLL Optimization. Higher consistency indicates weaker task sensitivity because the model is more likely to repeat the same action after the task specification changes; the slower increase under our method therefore indicates that task-insensitive behavior grows more slowly. 
+
+support the interpretation that the intervention is effective not because it adds a qualitatively new capability, but because it directly reinforces depen-dence on the task instruction. 
+
+7 Conclusion 
+
+We identify task insensitivity as a concrete and mea-surable source of OOD failure in language agents. Across three benchmark environments, we show that agents can reconstruct corrupted tasks, reuse familiar action patterns under controlled task shifts, and gradually drift away from task-focused atten-tion during training. We further show that making task sensitivity an explicit training target through Task-Perturbed NLL Optimization improves OOD generalization in the controlled settings we study. Taken together, these results suggest that preserv-ing action-level dependence on task instructions is a promising direction for improving agent robust-ness beyond standard next-action training. 8Limitations 
+
+Our empirical study covers only three agent set-tings: ALFWorld, ScienceWorld, and WebShop. These environments span embodied tasks, scien-tific interaction, and tool use, but they still represent a narrow slice of agentic behavior. Our attention analysis is mechanistically suggestive rather than causal: the observed drift away from task tokens is consistent with our optimization account, but it does not by itself establish how the model internally computes its decisions. 
+
+References 
+
+Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, and 1 others. 2023. GPT-4 techni-cal report. arXiv preprint arXiv:2303.08774 .Hao Bai, Yifei Zhou, Jiayi Pan, Mert Cemri, Alane Suhr, Sergey Levine, and Aviral Kumar. 2024. Di-girl: Training in-the-wild device-control agents with autonomous reinforcement learning. Advances in Neural Information Processing Systems , 37:12461– 12495. Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, and 1 others. 2023. Qwen technical report. 
+
+arXiv preprint arXiv:2309.16609 .Kevin Chen, Marco Cusumano-Towner, Brody Hu-val, Aleksei Petrenko, Jackson Hamburger, Vladlen Koltun, and Philipp Krähenbühl. 2025. Reinforce-ment learning for long-horizon interactive llm agents. 
+
+arXiv preprint arXiv:2502.01600 .Tianzhe Chu, Yuexiang Zhai, Jihan Yang, Shengbang Tong, Saining Xie, Dale Schuurmans, Quoc V Le, Sergey Levine, and Yi Ma. 2025. SFT mem-orizes, RL generalizes: A comparative study of foundation model post-training. arXiv preprint arXiv:2501.17161 .Robert Geirhos, Jörn-Henrik Jacobsen, Claudio Michaelis, Richard Zemel, Wieland Brendel, Matthias Bethge, and Felix A. Wichmann. 2020. Shortcut learning in deep neural networks. Nature Machine Intelligence , 2(11):665–673. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shi-rong Ma, Peiyi Wang, Xiao Bi, and 1 others. 2025. DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. arXiv preprint arXiv:2501.12948 .Divyansh Kaushik, Eduard Hovy, and Zachary C. Lip-ton. 2020. Learning the difference that makes a dif-ference with counterfactually-augmented data. In 
+
+International Conference on Learning Representa-tions .Jingyu Liu, Xiaopeng Wu, Jingquan Peng, Kehan Chen, Chuan Yu, Lizhong Ding, and Yong Liu. 2025. Gra-dient coupling: The hidden barrier to generalization in agentic reinforcement learning. arXiv preprint arXiv:2509.23870 .Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, and 1 others. 2022. Training language models to follow in-structions with human feedback. Advances in neural information processing systems , 35:27730–27744. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, and 1 others. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 .Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. 2020. ALFWorld: Aligning text and em-bodied environments for interactive learning. arXiv preprint arXiv:2010.03768 .Rui Song, Yingji Li, Lida Shi, Fausto Giunchiglia, and Hao Xu. 2024. Shortcut learning in in-context learn-ing: a survey. arXiv preprint arXiv:2411.02018 .Zechen Sun, Yisheng Xiao, Juntao Li, Yixin Ji, Wen-liang Chen, and Min Zhang. 2024. Exploring and mitigating shortcut learning for generative large lan-guage models. In Proceedings of the 2024 joint in-ternational conference on computational linguistics, language resources and evaluation (LREC-COLING 2024) , pages 6883–6893. Gemini Team, Petko Georgiev, Ving Ian Lei, Ryan Burnell, Libin Bai, Anmol Gulati, Garrett Tanzer, Damien Vincent, Zhufeng Pan, Shibo Wang, and 1 others. 2024. Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context. 
+
+arXiv preprint arXiv:2403.05530 .Victor Veitch, Alexander D’Amour, Steve Yadlowsky, and Jacob Eisenstein. 2021. Counterfactual invari-ance to spurious correlations: Why and how to pass stress tests. In Advances in Neural Information Pro-cessing Systems , volume 34. Peisong Wang, Ruotian Ma, Bang Zhang, Xingyu Chen, Zhiwei He, Kang Luo, Qingsong Lv, Qingxuan Jiang, Zheng Xie, Shanyi Wang, and 1 others. 2025. RLVer: Reinforcement learning with verifiable emo-tion rewards for empathetic agents. arXiv preprint arXiv:2507.03112 .Ruoyao Wang, Peter Jansen, Marc-Alexandre Côté, and Prithviraj Ammanabrolu. 2022. ScienceWorld: Is your agent smarter than a 5th grader? arXiv preprint arXiv:2203.07540 .
+
+9Shuai Wang, Weiwen Liu, Jingxuan Chen, Yuqi Zhou, Weinan Gan, Xingshan Zeng, Yuhan Che, Shuai Yu, Xinlong Hao, Kun Shao, and 1 others. 2024. GUI agents with foundation models: A comprehensive survey. arXiv preprint arXiv:2411.04890 .Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A. Smith, Daniel Khashabi, and Hannaneh Hajishirzi. 2023. Self-instruct: Aligning language models with self-generated instructions. In Proceed-ings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 13484–13508. Zhepei Wei, Wenlin Yao, Yao Liu, Weizhi Zhang, Qin Lu, Liang Qiu, Changlong Yu, Puyang Xu, Chao Zhang, Bing Yin, and 1 others. 2025. WebAgent-R1: Training web agents via end-to-end multi-turn reinforcement learning. arXiv preprint arXiv:2505.16421 .Tianyi Yan, Fei Wang, James Y Huang, Wenxuan Zhou, Fan Yin, Aram Galstyan, Wenpeng Yin, and Muhao Chen. 2024. Contrastive instruction tuning. In Find-ings of the Association for Computational Linguistics: ACL 2024 , pages 10288–10302. Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. 2022. WebShop: Towards scalable real-world web interaction with grounded language agents. 
+
+arXiv preprint arXiv:2207.01206 .Aohan Zeng, Mingdao Liu, Rui Lu, Bowen Wang, Xiao Liu, Yuxiao Dong, and Jie Tang. 2023. AgentTuning: Enabling generalized agent abilities for LLMs. arXiv preprint arXiv:2310.12823 .Kechi Zhang, Jia Li, Ge Li, Xianjie Shi, and Zhi Jin. 2024. CodeAgent: Enhancing code gener-ation with tool-integrated agent systems for real-world repo-level coding challenges. arXiv preprint arXiv:2401.07339 .Zijing Zhang, Ziyang Chen, Mingxiao Li, Zhaopeng Tu, and Xiaolong Li. 2025. RLVMR: Reinforce-ment learning with verifiable meta-reasoning re-wards for robust long-horizon agents. arXiv preprint arXiv:2507.22844 .Yifei Zhou, Andrea Zanette, Jiayi Pan, Sergey Levine, and Aviral Kumar. 2024. Archer: Training language model agents via hierarchical multi-turn rl. arXiv preprint arXiv:2402.19446 .
+
+10 LLM usage 
+
+We use LLMs to polish the paper and help create figures. 
+
+A Additional Experimental Details 
+
+This appendix is organized into four parts. We first summarize additional experimental details, then provide supplementary theoretical analysis, imple-mentation details for Task-Perturbed NLL Opti-mization, and finally collect prompts together with additional visualizations. 
+
+A.1 Dataset Split 
+
+We conduct experiments in three environments: ALFWorld, ScienceWorld, and WebShop. For all environments, we set the maximum number of in-teraction steps to 30. For ALFWorld and Science-World, we follow the OOD splits of Zhang et al. (2025). In ALFWorld, we designate Cool & Place and Pick Two & Place as held-out task types. In ScienceWorld, we reserve the final task type of each topic for OOD evaluation. For WebShop, we treat product categories as task types and randomly designate 30% of the categories as OOD, using the remaining categories for in-domain training and evaluation. 
+
+A.2 Training Details 
+
+We train for five epochs in SFT and 200 steps in GRPO. The learning rate is 1 × 10 −5 for SFT and 
+
+1×10 −6 for GRPO. All experiments are conducted on eight NVIDIA H20 GPUs. The batch size is 16 for SFT and 32 for GRPO, with a group size of 8 for GRPO. To penalize outputs that do not follow the required format, we apply a reward penalty of 
+
+−0.1. The KL regularization coefficient is set to 0.01. 
+
+B Additional Theoretical Analysis 
+
+B.1 Gradient Analysis of Static Task Signals 
+
+This appendix provides a simplified analysis in-tended only to build intuition. It does not model the full optimization dynamics of autoregressive trans-formers, nor does it prove that task attention must decrease in practice. Instead, it isolates a basic optimization asymmetry between a trajectory-level task signal and step-varying state signals, offering intuition for why task information can become rel-atively under-emphasized during training. Consider a toy predictor for the action represen-tation at decision step t:
+
+ˆyt = wsxs + wdxt + b, (8) where xs is a static task feature shared across the trajectory, xt is a dynamic state feature that varies with t, and b is a bias term. We optimize the squared-error objective 
+
+L = 12N
+
+> N
+
+X
+
+> t=1
+
+(ˆ yt − yt)2. (9) Let δt = ˆ yt − yt denote the residual. Then the gradient on the static-feature weight is 
+
+∂L ∂w s
+
+= 1
+
+N
+
+> N
+
+X
+
+> t=1
+
+δtxs = xs · ¯δ, (10) where ¯δ = 1
+
+> N
+
+PNt=1 δt is the average residual. By contrast, the update on wd is proportional to 1
+
+> N
+
+PNt=1 δtxt, which continues to reflect step-specific variation through the changing feature xt.The same average residual ¯δ also drives the bias update, so once coarse trajectory-level error has been largely absorbed by b and the static term, the remaining loss is more readily reduced by fit-ting the dynamic feature. In this sense, the static task signal can receive weaker continuing action-discriminative updates than the dynamic state sig-nal. Although highly simplified, this toy view is intended only as explanatory intuition. It does not claim that transformer attention directly equals fea-ture importance, nor that task attention must liter-ally collapse. Rather, it highlights a training bias in which step-varying features may remain more useful for reducing residual error at individual de-cision points. This is consistent with our empirical observation that, over training, the model increas-ingly relies on the current observation and recent history, while the relative influence of task tokens declines. 
+
+B.2 Local Attention-Reallocation Analysis 
+
+This appendix gives a local first-order analysis of a simplified two-source softmax attention module. The goal is not to prove that attention drift must occur in a full Transformer. In full models, queries, keys, values, residual connections, MLP blocks, and layer normalization co-evolve during training. Instead, the analysis isolates a simple local mech-anism: if a dynamic local-context representation 11 provides a better first-order descent direction than a static task representation, gradient descent on the attention logits reallocates probability mass toward the dynamic source. 
+
+Setup. Consider one action-prediction step. We approximate the prompt as containing two sources of information: a static task source with value vtask ,and a dynamic local-context source with value vdyn .The dynamic source may summarize the current observation, recent interaction history, and other step-specific prompt regions. Let stask and sdyn 
+
+be their attention logits, and define the relative dy-namic logit 
+
+r = sdyn − stask . (11) The corresponding two-source softmax weights are 
+
+αdyn = σ(r), αtask = 1 − σ(r), (12) where σ(·) denotes the logistic sigmoid. The atten-tion output used for action prediction is 
+
+o = αtask vtask + αdyn vdyn . (13) Let ℓ(o, y ) be the action-prediction loss, and define the output-space gradient 
+
+g = ∇oℓ(o, y ). (14) 
+
+Proposition. Assume the attention weights are non-degenerate, 
+
+0 < α task < 1, 0 < α dyn < 1. (15) If the dynamic source has a local predictive advan-tage over the task source, 
+
+g⊤(vdyn − vtask ) < 0, (16) then an infinitesimal gradient descent step on r =
+
+sdyn − stask increases αdyn and decreases αtask .
+
+Proof. Since αdyn = σ(r) and αtask = 1 − σ(r),we have 
+
+∂α dyn 
+
+∂r = αdyn αtask , ∂α task 
+
+∂r = −αdyn αtask .
+
+(17) Therefore, 
+
+∂o ∂r = αdyn αtask (vdyn − vtask ) . (18) By the chain rule, 
+
+∂ℓ ∂r = g⊤ ∂o ∂r = αdyn αtask g⊤ (vdyn − vtask ) .
+
+(19) The non-degeneracy assumption implies 
+
+αdyn αtask > 0. Hence, under the local pre-dictive advantage condition, 
+
+∂ℓ ∂r < 0. (20) For a sufficiently small gradient descent step with learning rate η > 0,
+
+r+ = r − η ∂ℓ ∂r > r. (21) Since σ(r) is strictly increasing, 
+
+α+dyn = σ(r+) > σ (r) = αdyn . (22) Because αtask = 1 − αdyn , it follows that 
+
+α+task < α task . (23) This proves the claim. □
+
+Expected reallocation over decision steps. Now consider decision steps t = 1 , . . . , N , each with rel-ative logit rt, attention weights αdyn ,t and αtask ,t ,output gradient gt, and source values vdyn ,t and 
+
+vtask ,t . A first-order gradient descent step gives 
+
+∆rt = −ηα dyn ,t αtask ,t g⊤ 
+
+> t
+
+(vdyn ,t − vtask ,t ) .
+
+(24) Therefore, if 
+
+Et
+
+h
+
+αdyn ,t αtask ,t g⊤ 
+
+> t
+
+(vdyn ,t − vtask ,t )
+
+i
+
+< 0, (25) then 
+
+Et[∆ rt] > 0. (26) Thus, when the dynamic local-context source has an average first-order predictive advantage, gradi-ent descent increases its expected relative attention logit. 
+
+Interpretation. The condition g⊤(vdyn −
+
+vtask ) < 0 means that moving the attention output from the static task representation toward the dynamic local-context representation reduces the loss to first order. Under this condition, the softmax attention update increases the relative logit of the dynamic source and decreases relative task attention. This local mechanism complements the static-versus-dynamic gradient intuition in the main text. Static task tokens can identify the broad task, but once coarse task-level information has been learned, dynamic local-context tokens may con-tinue to explain residual step-level action errors. 12 Whenever this happens, gradient descent can re-allocate attention toward the dynamic source. In the simplified two-source model, this appears as attention drift away from task tokens. In full Trans-formers, this should be interpreted only as a local mechanism consistent with the empirical drift we observe, not as a proof that attention drift must occur. 
+
+C Implementation Details of Task-Perturbed NLL Optimization 
+
+Response masking. The response template begins with a task-restatement field (the initial Task: . . . 
+
+slot), which explicitly repeats the original instruc-tion. If this field were included in N LL perturb , the perturbed prompt would be penalized for not match-ing the copied task string rather than for predicting the action itself. Therefore, when computing the task-perturbation regularizer, we mask tokens in this field by setting their labels to IGNORE_INDEX .This masking is applied only to the regularizer; the main SFT loss is computed on the full response. 
+
+Reference-ratio computation. For each train-ing instance, we use a frozen reference model to compute 
+
+ρ(i)
+
+ref = N LL (i)
+
+perturb,ref 
+
+N LL (i)
+
+vanilla,ref + ϵ ,
+
+where N LL (i)
+
+vanilla,ref and N LL (i)
+
+perturb,ref are the neg-ative log-likelihoods of the response under the orig-inal and perturbed prompts, respectively, and ϵ > 0
+
+is a small constant for numerical stability. This reference ratio serves as a sample-wise target for how strongly the current model should separate the original and perturbed prompts. 
+
+Training objective. For the current model, we compute 
+
+ρ(i)
+
+cur = N LL (i)
+
+perturb 
+
+N LL (i)
+
+vanilla + ϵ .
+
+We then apply a hinge-style lower-bound regular-izer: 
+
+Lfloor = 1
+
+B
+
+BX
+
+i=1 
+
+max 
+
+
+
+0, log ρ(i)
+
+ref − log ρ(i)
+
+cur 
+
+
+
+.
+
+(27) The final training objective is 
+
+Ltotal = LSFT + λLfloor , (28) ALFWorld ScienceWorld WebShop 0.1 58.4 27.2 47.7 0.3 58.7 29.6 49.6 0.5 57.8 29.2 50.1 0.7 59.8 27.4 49.2 1.0 59.2 29.0 50.4 
+
+Table 3: Ablation results for different values of λ.
+
+where LSFT is the standard SFT loss and λ is the regularization weight. This formulation preserves the desired effect of task perturbation while pre-venting optimization from unnecessarily inflating 
+
+N LL perturb once the reference-calibrated separa-tion is reached. 
+
+D Prompts and Additional Visualizations 
+
+D.1 Agent Prompts 
+
+Listing 1: Prompt for ALFWorld. 
+
+> You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description} Prior to this step, you have already taken {step_count} step(s ). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history} You are now at step {current_step} and your current observation is: {current_observation} The admissible actions in the current situation are: [{ admissible_actions}]. Now it 's your turn to take an action. You should first reason step-by-step based on the current situation. This reasoning process MUST be enclosed within < thinking></thinking> tags. Once you 've finished your reasoning, you should choose an admissible action for the current step and present it within < action></action> tags.
+
+Listing 2: Prompt for ScienceWorld. 
+
+> You are an expert agent operating in the ScienceWorld environment, which is a text-based virtual environment centered around accomplishing tasks from the elementary science curriculum. Your current task is: {task_description} Prior to this step, you have already taken {step_count} step(s ). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history} You are now at step {current_step} and your current observation is: {current_observation} Here are the actions you may take: {action_descriptions} Current available actions: {available_actions} Now it 's your turn to take an action. You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <thinking></thinking> tags. Once you 've finished your reasoning, you should choose an appropriate action for the current step and present it within <action></action> tags.
+
+Listing 3: Prompt for WebShop. 
+
+13 ALFWorld ScienceWorld WebShop In-domain OOD In-domain OOD In-domain OOD Qwen3-4B GRPO 0.82 0.44 0.46 0.22 0.74 0.71 Ours 0.86 0.62 0.51 0.25 0.77 0.76 Qwen3-8B GRPO 0.95 0.86 0.57 0.4 0.76 0.72 Ours 0.97 0.92 0.62 0.46 0.81 0.79 
+
+Table 4: In-domain and OOD performance under GRPO training. 4B 8B 14B 32B 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Score
+
+ALFWorld 
+
+4B 8B 14B 32B 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+ScienceWorld 
+
+4B 8B 14B 32B 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+Webshop 
+
+baseline ours 
+
+Figure 11: SFT model performance on in-domain tasks. The results show that our method improves in-domain performance in the controlled task-split setting. 
+
+You are an expert autonomous agent operating in the WebShop e-commerce environment. Your task is to: {task_description}. Prior to this step, you have already taken {step_count} step(s ). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history} You have a total budget of {max_steps} steps for this task. You are now at step {current_step}, so you have { remaining_steps} step(s) remaining including the current step. If you use too many steps without completing the task, the episode will fail, so avoid unnecessary searching or paging when you already have enough information to make progress. You are now at step {current_step} and your current observation is: {current_observation}. The admissible actions in the current situation are: [{available_actions} ]. Now it 's your turn to take one action for the current step. You should first reason step-by-step about the current situation, then think carefully about which admissible action best advances the shopping goal. This reasoning process MUST be enclosed within <thinking></thinking> tags. Once you 've finished your reasoning, you should choose an admissible action for the current step and present it within < action></action> tags. 
+
+If we explicitly allow the model to ask for clari-fication, the prompt becomes: 
+
+Listing 4: Prompt for ALFWorld with explicit clarifica-tion. 
+
+You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description} If the task is unclear, you may ask a clarification question within <inquiry></inquiry> tags. Prior to this step, you have already taken {step_count} step(s ). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history} You are now at step {current_step} and your current observation is: {current_observation} The admissible actions in the current situation are: [{ admissible_actions}]. Now it 's your turn to take an action. You should first reason step-by-step based on the current situation. This reasoning process MUST be enclosed within < thinking></thinking> tags. Once you 've finished your reasoning, you should choose an admissible action for the current step and present it within < action></action> tags. If the task is unclear, you may ask a clarification question within <inquiry></inquiry> tags. 
+
+D.2 Judge Prompt 
+
+Listing 5: Prompt for judging whether the model is trying to solve the original task. 
+
+Determine whether the generation is attempting to solve the original task. Return valid JSON only. [ORIGINAL TASK] {task_description} [GENERATION] {model_response} Judge whether the generation is trying to solve the original task. Return JSON with EXACT keys: {"reconstruction_label": "exact|partial|wrong|uncertain", "reason_short": "<one sentence>", "matched_evidence": "<short evidence span>", "conflict_evidence": "<short conflict span or empty>", "confidence": <float 0.0..1.0> }
+
+14 D.3 Per-Region Attention Breakdown 
+
+As a complement to Figure 7 in Section 4, we report attention allocation for each prompt region individually across training checkpoints. 15 100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.04 
+
+0.06 
+
+0.08 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+> ×10 −3
+
+alfworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.04 
+
+0.06 
+
+0.08 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+> ×10 −3
+
+sciworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.04 
+
+0.06 
+
+0.08 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+> ×10 −3
+
+webshop 
+
+SFT available actions attention 
+
+> avg token attention
+
+Qwen3-4B 
+
+Qwen3-8B 
+
+Qwen3-14B 
+
+Qwen3-32B 
+
+Llama-3.1-8B-Instruct 
+
+Ministral-8B-Instruct-2410 Figure 12: Attention allocated to available actions regions across training checkpoints during action generation. Across model sizes, this attention remains relatively stable. 100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+> ×10 −3
+
+alfworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+> ×10 −3
+
+sciworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+> ×10 −3
+
+webshop 
+
+SFT current observation attention 
+
+> avg token attention
+
+Qwen3-4B 
+
+Qwen3-8B 
+
+Qwen3-14B 
+
+Qwen3-32B 
+
+Llama-3.1-8B-Instruct 
+
+Ministral-8B-Instruct-2410 
+
+Figure 13: Attention allocated to current observation regions across training checkpoints during action generation. Across model sizes, this attention gradually increases. 100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+0.18 
+
+0.20 
+
+> ×10 −3
+
+alfworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+0.18 
+
+0.20 
+
+> ×10 −3
+
+sciworld 
+
+100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+0.10 
+
+0.12 
+
+0.14 
+
+0.16 
+
+0.18 
+
+0.20 
+
+> ×10 −3
+
+webshop 
+
+SFT others attention 
+
+> avg token attention
+
+Qwen3-4B 
+
+Qwen3-8B 
+
+Qwen3-14B 
+
+Qwen3-32B 
+
+Llama-3.1-8B-Instruct 
+
+Ministral-8B-Instruct-2410 
+
+Figure 14: Attention allocated to other prompt regions across training checkpoints during action generation. Across model sizes, this attention remains relatively stable. 
+
+16 100 200 300 400 500 600 700 800 
+
+checkpoint 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> ×10 −3
+
+alfworld        
+
+> 100 200 300 400 500 600 700 800
+
+checkpoint 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> ×10 −3
+
+sciworld        
+
+> 100 200 300 400 500 600 700 800
+
+checkpoint 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> ×10 −3
+
+webshop 
+
+SFT response style attention 
+
+> avg token attention
+
+Qwen3-4B 
+
+Qwen3-8B 
+
+Qwen3-14B 
+
+Qwen3-32B 
+
+Llama-3.1-8B-Instruct 
+
+Ministral-8B-Instruct-2410 Figure 15: Attention allocated to response style regions across training checkpoints during action generation. Across model sizes, this attention remains relatively stable. 40 80 120 160 200 
+
+checkpoint 
+
+> 0.80
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> ×10 −3
+
+alfworld     
+
+> 40 80 120 160 200
+
+checkpoint 
+
+> 0.80
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> ×10 −3
+
+sciworld     
+
+> 40 80 120 160 200
+
+checkpoint 
+
+> 0.80
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> ×10 −3
+
+webshop 
+
+RL task attention 
+
+> avg_token_attention
+
+Qwen3-4B Qwen3-8B 
+
+Figure 16: Attention allocated to task regions across training checkpoints of GRPO during action generation. Across model sizes, attention to the task instruction gradually declines, shifting toward local context. 
+
+17

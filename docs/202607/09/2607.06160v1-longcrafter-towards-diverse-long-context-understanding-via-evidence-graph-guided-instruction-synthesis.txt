@@ -1,0 +1,689 @@
+Title: LongCrafter: Towards Diverse Long-Context Understanding via Evidence-Graph-Guided Instruction Synthesis
+
+URL Source: https://arxiv.org/pdf/2607.06160v1
+
+Published Time: Wed, 08 Jul 2026 00:53:53 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# LONG CRAFTER : Towards Diverse Long-Context Understanding via Evidence-Graph-Guided Instruction Synthesis 
+
+## Chenhao Yuan 1* , Yinhao Xu 1* , Shuwen Xu 1, Xizhi Yang 1, Jiaxiang Liu 2, Chenxi Zhou 2, Shaoping Huang 2, Haolin Ren 1, Pengfei Cao †2, Jun Zhao 2, Kang Liu †2 
+
+> 1
+
+University of Chinese Academy of Sciences, Beijing, China 
+
+> 2
+
+The Key Laboratory of Cognition and Decision Intelligence for Complex Systems, Institute of Automation, Chinese Academy of Sciences, Beijing, China 
+
+Abstract 
+
+Synthesizing long-context supervised fine-tuning (SFT) data is a scalable way to enhance the long-context understanding of large language models (LLMs), yet existing approaches share three limitations: narrow task coverage, insufficient in-struction difficulty, and a lack of faithfulness supervision. We propose LongCrafter , a structured synthesis framework that couples a hierarchical task taxonomy with an evidence-grounded pipeline. The taxonomy organizes long-context un-derstanding into local/shallow and global/deep levels and yields 32 fine-grained task types that serve as a global gener-ative prior. Guided by this taxonomy, LongCrafter constructs task-aligned long contexts, decomposes them into explicit evidence graphs that model cross-paragraph dependencies, and generates instruction–response pairs strictly grounded in the located evidence spans, ensuring both controllable diffi-culty and faithful, traceable reasoning. Models fine-tuned on LongCrafter data outperform all SFT baselines and even the official post-trained models on LongBench, LongBench v2, and LooGLE across both Qwen2.5-7B and LLaMA-3.1-8B, with the largest gains on high-difficulty tasks. Further anal-ysis shows that LongCrafter data is more diverse and better spread across difficulty levels, and that the trained models lo-cate evidence robustly regardless of position, effectively mit-igating the “lost in the middle” problem. 
+
+## 1 Introduction 
+
+Long-context understanding has emerged as a critical capa-bility for large language models (LLMs), as real-world ap-plications such as question answering, summarization, and complex reasoning require models to recognize and utilize relevant evidence across tens or hundreds of thousands of to-kens (Bai et al. 2024b, 2025; Li et al. 2024; Liu et al. 2024; Peng et al. 2026b). Supervised fine-tuning (SFT) on synthe-sized long-context instruction data has emerged as a promis-ing and scalable solution (Bai et al. 2024a; Chen et al. 2025; Yang et al. 2025b; Chen et al. 2024; Zhang et al. 2025b; Li et al. 2025; Gao et al. 2025). However, existing long-context SFT datasets suffer from three compounding limitations. 1) Limited task coverage. Without a systematic task taxon-omy to guide synthesis, prior work concentrates on a narrow set of task types (e.g., multi-hop QA (Chen et al. 2024; Bai 
+
+> *
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author. 
+
+et al. 2024a; Yang et al. 2025b; Chen et al. 2025)), leaving diverse real-world capabilities such as temporal reasoning, aggregation, and state tracking insufficiently supervised. 2) Insufficient instruction difficulty. Prior work often gener-ates questions directly from raw documents without model-ing evidence structures, where evidence spans may depend on each other in the form of chains, trees, or graphs (Bai et al. 2024a; Gao et al. 2025; Li et al. 2025). This lack of structural modeling and difficulty stratification naturally biases the generated data toward easy, locally answerable questions, allowing models to exploit shortcuts rather than learn genuine cross-paragraph reasoning. 3) Lack of faith-fulness supervision. Without supervision that anchors each reasoning step to source evidence (Xu et al. 2024), models may rely on parametric knowledge rather than the source context, potentially yielding unfaithful reasoning inconsis-tent with the document. To this end, we propose LongCrafter , a data synthesis framework that addresses these limitations by coupling a comprehensive task taxonomy with a structured, evidence-grounded pipeline. Unlike prior approaches that treat data synthesis as a plain text generation task (Bai et al. 2024a; Gao et al. 2025; Li et al. 2025), LongCrafter treats it as a structured crafting problem, ensuring that both instruc-tions and responses are deliberately designed around a spec-ified task type and grounded in explicitly located evidence spans rather than relying on surface-level narrative imita-tion. Underpinning the framework is a hierarchical task tax-onomy that serves as a global generative prior throughout the pipeline. As illustrated in Figure 1, it organizes long-context understanding into local/shallow and global/deep levels and groups tasks by their required capability (e.g., retrieval, ordering, tracking, and multi-evidence reasoning), yielding 32 fine-grained task types. Building on this taxon-omy, LongCrafter operates through three stages. (1) Long Context Construction : We group the corpus by source and pair each source with candidate task types. For single-document tasks, each document is matched to a suitable task. For multi-document tasks, we select a document as the pri-mary reference point, then retrieve and filter complementary documents based on semantic relevance and task alignment via hybrid BM25–dense retrieval to form the final long-context input. (2) Evidence-Constraint Graph Construction :arXiv:2607.06160v1 [cs.CL] 7 Jul 2026 We parse each document into a structured evidence graph by extracting candidate evidence spans, selecting task-relevant spans as nodes, and connecting them with dependency edges that capture cross-paragraph relations. The resulting graph provides explicit evidence anchors for downstream instruc-tion and response generation. (3) Instruction-Response Pair Synthesis : We generate instructions and responses strictly conditioned on the evidence graph, where instructions must jointly utilize all key nodes to prevent shortcut answering, and responses are derived step-by-step with each reasoning step citing the corresponding evidence verbatim from the source. The proposed pipeline ensures broad task coverage across diverse capability types, with particular emphasis on scarce yet critical tasks that require integrating information across multiple dispersed evidence spans, while guarantee-ing that responses constitute faithful and logically coherent reasoning grounded in fine-grained contextual evidence. Extensive experiments demonstrate that models trained on LongCrafter-generated data consistently outperform prior long-context SFT baselines on LongBench (Bai et al. 2024b), LongBench v2 (Bai et al. 2025), and LooGLE (Li et al. 2024), achieving the highest All-Overall scores on both Qwen2.5-7B and LLaMA-3.1-8B backbones ( 45.15% 
+
+and 45.71% ) and improving over the corresponding official post-trained models by +2.41 and +5.25 points, respectively. Data analysis further shows that LongCrafter-generated data achieves superior task diversity and difficulty distribution compared to existing datasets. Further analysis reveals that LongCrafter-trained models exhibit strong positional robust-ness in evidence identification and concentrate attention pre-cisely on true evidence documents, effectively mitigating the “lost in the middle” phenomenon (Liu et al. 2024). The main contributions of this paper are as follows: • We construct a hierarchical task taxonomy of 32 fine-grained task types spanning local/shallow to global/deep long-context understanding, providing systematic and comprehensive task coverage for long-context SFT data construction. • We propose LongCrafter , which decomposes docu-ments into evidence graphs modeling cross-paragraph dependencies and generates instruction–response pairs strictly conditioned on located evidence spans, thereby producing data with sufficient instruction difficulty and faithful, evidence-grounded supervision. • We validate LongCrafter on comprehensive long-context benchmarks, where LongCrafter-trained models consis-tently outperform all baselines; further analysis confirms that the synthesized data achieves superior diversity and quality, and that trained models precisely locate evidence spans with strong positional robustness. 
+
+## 2 Methodology 
+
+This section details LongCrafter, which couples a hierarchi-cal task taxonomy with a three-stage pipeline. The taxon-omy acts as a global generative prior that constrains the en-tire construction process, while the pipeline of Long Con-text Construction, Evidence-Constraint Graph Construction, Local/Shallow 
+
+> (12 Tasks)
+> Global/Deep
+> (20 Tasks)
+> Retrieval
+> Ordering
+> Lookup
+> Calculation
+> Summarization
+> Tracking
+> Code
+> Understanding
+> Organization
+> Retrieval
+> Ordering
+> Bridge
+> Reasoning
+> Convergence
+> Reasoning
+> Linear
+> Reasoning
+> Calculation
+> Summarization
+> Tracking
+> Organization
+> snippet retrieval
+> keyword retrieval
+> short-chain ordering
+> single-doc attribute lookup
+> multi-doc attribute lookup  explicit calculation
+> query-focused summary
+> reference resolution
+> state selection
+> path lookup
+> file lookup
+> subset clustering
+> multi-doc retrieval
+> full-doc retrieval
+> timeline reconstruction
+> KG multi-hop qa
+> 2/3-hop bridge qa
+> multi-doc bridge qa
+> multi-doc convergence qa
+> 3-hop convergence qa
+> 4-hop preconverge qa  multi-doc preconverge qa
+> multi-doc chain-conv. qa
+> 4-hop chain-conv. qa
+> 4-hop linear qa
+> multi-doc linear qa
+> multi-doc state tracking
+> single-doc state tracking
+> coverage summary
+> multi-doc entity tracking
+> single-doc entity tracking
+> doc clustering
+
+Figure 1: Task taxonomy of LongCrafter . The inner ring separates local/shallow from global/deep settings, the mid-dle ring groups tasks by capability, and the outer ring lists the fine-grained task types. and Instruction-Response Pair Synthesis produces training samples in a structured and traceable manner. To ensure broad domain coverage, we collect and preprocess docu-ments from diverse web sources, forming a rich corpus, with further details provided in Appendix 7.1. 
+
+2.1 Task Taxonomy 
+
+At the foundation of LongCrafter is a task taxonomy grounded in real-world long-context capability require-ments, which serves as a global generative prior for the en-tire pipeline. As detailed in Table 5, the taxonomy orga-nizes long-context understanding into two levels: local/shal-low tasks that depend on localized evidence, and global/deep 
+
+tasks that depend on multiple interdependent pieces of evi-dence. Tasks are further grouped by their required capability (e.g., retrieval, ordering, tracking, and multi-evidence rea-soning), yielding 32 fine-grained task types that span both single- and multi-document scopes. Each fine-grained task type steers all downstream stages of LongCrafter, from evi-dence graph decomposition to instruction generation and re-sponse attribution. 
+
+2.2 Data Synthesis 
+
+Guided by the task taxonomy, the LongCrafter pipeline pro-duces training samples through three sequential stages: Long Context Construction (Stage 1), Evidence-Constraint Graph Construction (Stage 2), and Instruction-Response Pair Syn-thesis (Stage 3). 
+
+Stage 1: Long Context Construction We first perform a coarse-grained matching: the corpus is grouped by source, and each source is paired with its candidate fine-grained task types (e.g., code documents are matched to code-understanding tasks), narrowing the search space for the i     
+
+> CONTEXT:
+> CHUNK 1: …Company A
+> acquires B, deal signed
+> (2021.03)…
+> CHUNK 2: …B launches new
+> productline under A (2021.09)
+> …
+> CHUNK n: …A reports 40%
+> revenue growth attributable
+> to B (2022.06)…
+
+Guidance 
+
+> Global task direction :
+> Timeline Reasoning of Events for A and B
+> Constraints :
+> 1. At least three time points
+> 2. …
+
+Context :… 
+
+Instruction :
+
+What was the sequence of events …? 
+
+Response :
+
+Step 1: Paragraph 1 states that "... A 
+
+acquires B. ….” 
+
+Step 2:… Evidence Graph 
+
+(c)  Instruction -Response Pair Synthesis  
+
+> TASK:
+> Global timeline
+> reasoning
+> Task Description:
+> Reconstruct the
+> full sequence of
+> key events
+
+# …
+
+Evidence -Constraint Graph 
+
+Nodes :   
+
+> Node 1 · T1 = 2021 -03 -15 Span: "…A acquires B, deal
+> signed…"
+> Node 2 · T2 = 2021 -09 -08 Span: "…B launched new
+> product line under A…"
+> Node 3 · T3 = 2022 -06 -30 Span: "…A reports 40%
+> revenue growth… “
+
+Edges:             
+
+> Node 1 →Node 2 · T1 < T2 (+6m) · enables product
+> expansion
+> Node 2 →Node 3 · T2 < T3 (+9m) · drives revenue growth
+> Node 1 →Node 3 · T1 < T3 (+15m) · root cause of growth
+> CHUNK 1 :
+> Event 1: Company A acquires Company B
+> Date: 2021 -03 -15
+> Span: "…Company A acquires B, deal signed…"
+> CHUNK 2 :
+> Event 2: B launches product line under A
+> Date: 2021 -09 -08
+> Span: "…B's new product line debuted…"
+> CHUNK n :
+> Event n: A reports 40% revenue growth
+> Date: 2022 -06 -30
+> Span: "…attributable to B acquisition…"
+
+(b) Evidence -Constraint Graph Construction 
+
+Context  with 
+
+Guidance 
+
+(a)  Long -Context  Construction 
+
+Concatenat ed  Doc s
+
+as  Context 
+
+Single -Doc 
+
+Task 
+
+> Task -Oriented
+> Queries
+
+Retrieve 
+
+Relevant Docs 
+
+Root Docs 
+
+as  Context 
+
+Mult i-Doc  Task 
+
+Candidate 
+
+Documents 
+
+32  Fine -grained 
+
+Task  Descriptions 
+
+Task 
+
+Design 
+
+Web 
+
+Corpus 
+
+Curation 
+
+Source Documents 
+
+from Corpus 
+
+Task  Matching Figure 2: Overview of the LongCrafter pipeline. (a) Long-Context Construction: building on a curated web corpus and 32 fine-grained task types, it matches each document to candidate tasks and constructs single- or multi-document contexts; (b) Evidence-Constraint Graph Construction: extracts task-relevant evidence nodes and their dependency edges from the context under task-specific guidance; (c) Instruction-Response Pair Synthesis: generates evidence-grounded instructions and step-by-step citation-based responses from the context and evidence graph. subsequent document-level matching. We then perform document-centric matching, associating each document with applicable task categories along two paths determined by document scope. 
+
+Single-document matching. Each document is evaluated against all single-document task categories among its can-didates. Tasks that can be meaningfully constructed from the document alone—such as global summarization or intra-document multi-hop reasoning—are recorded as its candi-dates, and the document is split into equal-sized chunks as the context for Stage 2. 
+
+Multi-document matching. Each document is also eval-uated as a root document for multi-document tasks. If suit-able, an LLM generates retrieval queries conditioned on the root document and the target task type, and a hybrid BM25– dense strategy retrieves complementary documents from the remaining corpus. An LLM then performs joint relevance and diversity filtering to assemble the final context with the root document, keeping the set topically related yet non-redundant—a prerequisite for meaningful cross-document evidence graphs in Stage 2. The assembled context is then split into equal-sized chunks and passed to Stage 2. 
+
+Stage 2: Evidence-Constraint Graph Construction 
+
+Stage 2 is the core component that distinguishes LongCrafter from existing methods. Rather than gen-erating questions directly from raw context, LongCrafter first decomposes the context into a structured evidence graph that makes cross-paragraph dependencies explicit. The graph is built via an Extract-then-Construct pro-cedure: exhaustive candidate span extraction followed by task-driven graph construction. 
+
+Step 1: Exhaustive Span Extraction. Given context C =
+
+{c1, c 2, . . . , c n} (where ci denotes the i-th chunk) and tar-get task type t, an LLM first generates task-specific guid-ance based on t, and then extracts all candidate evidence spans from each chunk ci with reference to the full con-text. For each candidate, the model records (1) a verbatim text snippet with its chunk-level source location, and (2) the task-necessary key information carried by the span (e.g., the event and date for timeline reasoning). This yields a dense candidate node set V + = Sni=1 V +
+
+i , where V +
+
+i denotes all candidates from chunk ci, avoiding premature discarding of potentially necessary evidence that proves crucial only in cross-chunk reasoning. 
+
+Step 2: Task-Driven Graph Construction. Given the full candidate set V +, the model performs a global reasoning pass over the complete context to construct the minimal suf-ficient evidence graph G = ( V, E ) with V ⊆ V +, where: • Node vi ∈ V : an evidence span, comprising (1) a verba-tim citation snippet precisely located to a specific para-Figure 3: Dataset difficulty and response quality analysis. Left: difficulty distributions across training datasets by score bin. Middle: difficulty distributions of LongCrafter samples by dependency type. Right: answer quality across four dimensions. graph, and (2) the task-necessary key information it car-ries (Necessary Notes); • Edge eij ∈ E: a directed edge encoding the cross-paragraph dependency between nodes vi and vj (e.g., temporal, causal, or coreference relations). Concretely, the model selects the candidate spans jointly necessary and sufficient for task type t, and establishes di-rected dependency edges E between the selected nodes, an-notating each with its cross-chunk relation type to capture their logical relationships. A valid evidence graph must sat-isfy two conditions: (1) the nodes and edges are indispens-able for the target task, ensuring the graph faithfully re-flects task requirements such as reasoning complexity; (2) the node set uniquely supports the correct answer. This two-level design ensures that V constrains which evidence spans are necessary, while E constrains how they are logically connected—guiding Stage 3 to generate questions that probe inter-span dependencies rather than isolated facts. As a safe-guard for global/deep task types, if the selected nodes all originate from the same chunk, targeted re-extraction is trig-gered to ensure G captures genuine multi-span evidence. 
+
+Stage 3: Instruction-Response Pair Synthesis Stage 3 generates the final instruction-response pairs conditioned on the evidence graph G produced by Stage 2. 
+
+Instruction generation. Taking task type t, evidence graph G, and context C as input, an LLM generates ques-tions centered on the nodes and edges of G, under task-specific constraints (e.g., for global/deep tasks, answering correctly must jointly utilize all key nodes in G and cannot be resolved from any single local passage), thereby ensuring controllable difficulty by construction. 
+
+Response generation. Responses adopt a step-by-step ci-tation format: each reasoning step quotes the corresponding evidence verbatim from the source, and the final answer is logically derived from the resulting citation chain, with no external parametric knowledge introduced. This format in-herits the node location information and edge dependency ordering from G, ensuring end-to-end correspondence be-tween responses and the original context. The generated pairs are then validated by an LLM that checks whether each instruction is unambiguous, answer-able from the given context, and admits a unique correct an-swer; pairs failing any criterion are discarded. Using GLM-5 throughout the entire pipeline, we generate 2,000 high-quality long-context training samples. 
+
+2.3 Dataset Analysis 
+
+To validate that LongCrafter constructs higher-quality train-ing data, we analyze it across three dimensions: diversity, instruction difficulty distribution, and response quality. 
+
+Diversity. As data diversity is a recognized factor in dataset quality (Bukharin et al. 2024), we evaluate our method across six diversity metrics: Unique 3-grams (Wang et al. 2025), Mean L2 Distance, Mean Cosine Distance, KNN Distance (Yang et al. 2025c), Cluster Inertia (Du and Black 2019), and Radius (Lai et al. 2020). As shown in Fig-ure 7, our method achieves the best performance on all six, reflecting the broad semantic coverage of our taxonomy-guided construction. 
+
+Instruction Difficulty Distribution. To quantify instruc-tion difficulty, we define three dimensions: evidence local-ity, computation or transformation required, and distrac-tor strength, each scored by GPT-5 and averaged into a fi-nal composite difficulty score. As shown in Figure 3 (left), our method achieves the most balanced difficulty distribu-tion across all four bins (0–1, >1–2, >2–3, >3–4), with a notably higher proportion of high-difficulty samples (score 
+
+>3) than baselines. In contrast, directly synthesized base-lines such as LongAlign, LongReward, and LongMagpie concentrate in lower difficulty ranges, while LongFaith, built upon human-annotated instructions, skews toward medium difficulty. Furthermore, as shown in Figure 3 (middle), information-intensive tasks in our taxonomy exhibit sub-stantially higher difficulty scores, confirming that dataset difficulty can be systematically steered by task type and that our pipeline can flexibly generate data at targeted difficulty levels. 
+
+Response Quality. Following the four quality dimensions defined by Zhang et al. (2025b), we employ an LLM-as-Model LONG BENCH LONG BENCH V 2 LOO GLE All Overall Qasper Musique 2WikiMQA HotpotQA Overall Easy Hard Overall CR Comp TR MIR Overall                                                                                                                                                                         
+
+> Qwen2.5-7B-Instruct 57.5 35.5 60.0 74.0 56.8 30.02 27.65 28.63 53.0 29.0 53.0 36.0 42.8 42.74
+> Qwen2.5-7B w / LongAlign 51.0 29.5 51.5 63.5 48.9 32.47 22.72 26.44 51.0 24.0 38.0 27.0 35.0 36.78
+> w / LongReward 50.5 38.0 54.0 67.5 52.5 31.25 24.33 26.97 45.0 24.0 38.0 29.0 34.0 37.82
+> w / LongMagpie 50.5 39.0 55.0 67.0 52.9 31.60 23.26 26.44 47.0 25.0 49.0 32.0 38.3 39.21
+> w / LongFaith 47.0 46.0 71.0 73.5 59.4 25.69 24.33 24.85 45.0 20.0 43.0 27.0 33.8 39.35
+> w / LongCrafter (Ours) 52.5 49.0 74.0 75.5 62.8 30.03 28.62 29.16 53.0 31.0 53.0 37.0 43.5 45.15
+> LLaMA-3.1-8B-Instruct 53.0 33.0 58.0 69.0 53.25 30.73 25.72 27.63 51.0 30.0 46.0 35.0 40.5 40.46
+> LLaMA-3.1-8B w / LongAlign 51.0 30.5 45.0 60.0 46.6 26.04 23.79 24.65 52.0 29.0 37.0 39.0 39.25 36.83
+> w / LongReward 50.0 38.5 45.5 63.5 49.4 23.96 21.97 22.73 52.0 27.0 39.0 37.0 38.75 36.96
+> w / LongMagpie 51.5 46.0 62.5 67.5 56.9 26.30 25.08 25.55 54.0 26.0 30.0 41.0 37.75 40.07
+> w / LongFaith 45.5 56.5 71.0 69.0 60.5 29.51 21.76 24.72 52.0 21.0 40.0 31.0 36.0 40.41
+> w / LongCrafter (Ours) 53.0 57.5 70.5 72.5 63.4 30.47 25.24 27.24 57.0 34.0 53.0 42.0 46.5 45.71
+
+Table 1: Overall performance (%) on three benchmarks. Gray rows report the official instruct models. CR, Comp, TR, and MIR denote the four LooGLE subsets. Bold and underlined scores mark the best and second-best SFT variants for each backbone. judge protocol to evaluate response quality across Helpful-ness, Logicality, Faithfulness, and Completeness. As shown in Figure 3, our method achieves the highest scores on all four dimensions ( 3.88 , 3.91 , 3.94 , and 3.90 ), substantially outperforming all baselines. The advantage is most pro-nounced on Faithfulness, where the lowest baseline scores only 1.59 (LongMagpie), indicating that without explicit grounding, models tend to inject parametric knowledge into the reasoning chain; in contrast, our evidence-grounded pipeline enforces strict adherence to the context and elim-inates this failure mode at the source. 
+
+Human Evaluation. Following Liu et al. (2023), we con-duct a human–LLM agreement study to verify the relia-bility of our LLM-as-judge evaluation. We sample 500 in-stances (100 per dataset), each independently scored by five expert annotators using our automatic-assessment cri-teria, with scores averaged as the final human ratings. As shown in Table 2, Spearman’s correlation between LLM and human scores is statistically significant ( p < 0.001 ) for both dimensions, moderate for instruction difficulty ( ρ =0.63 ) and strong for response quality ( ρ = 0 .74 ), indicat-ing strong alignment. Moreover, experts judge that 98% of LongCrafter instructions satisfy the reasoning-complexity requirement of their assigned task type, confirming that our taxonomy-guided synthesis reliably controls difficulty through task type selection. 
+
+Dimension Spearman’s ρ p-value 
+
+Instruction Difficulty 0.63 < 0.001 
+
+Response Quality 0.74 < 0.001 
+
+Table 2: LLM-judge vs. human score consistency. 
+
+## 3 Experiments 
+
+In this section, we describe our experimental setup and present the main results of LongCrafter on long-context un-derstanding benchmarks. 
+
+3.1 Experimental Setup 
+
+Model Training. We conduct experiments on two rep-resentative open-source base models: Qwen2.5-7B (Yang et al. 2025a) and LLaMA-3.1-8B (Grattafiori et al. 2024), both supporting a native context length of 128K tokens. All models are trained using LoRA with a learning rate of 
+
+5 × 10 −5 for 2 epochs, with LoRA rank 32, alpha 64, and dropout 0.1. 
+
+Baselines. We compare LongCrafter against four rep-resentative long-context SFT data construction methods. 
+
+LongAlign (Bai et al. 2024a) constructs long instruction-following data from diverse document sources using Self-Instruct. LongMagpie (Gao et al. 2025) is a self-synthesis framework that leverages aligned LLMs to auto-regressively generate contextually relevant instructions given a document. LongFaith (Yang et al. 2025b) syn-thesizes attribution-based reasoning data grounded in the human-annotated MuSiQue dataset. LongReward (Zhang et al. 2025b) filters SFT data by scoring synthesized re-sponses along four dimensions: helpfulness, logicality, faith-fulness, and completeness. Following prior work, we sample 2,000 examples from each dataset for model training to en-sure a fair comparison. In addition, we include the officially released post-trained models of LLaMA and Qwen as strong reference baselines. 
+
+Evaluation. We evaluate on three benchmarks covering diverse long-context task types and difficulty levels. Long-Bench (Bai et al. 2024b) includes four subtasks span-ning single-document and multi-hop reasoning: Qasper, HotpotQA, MuSiQue, and 2WikiMultihopQA. LongBench v2 (Bai et al. 2025) consists of 503 challenging multiple-choice questions sourced from realistic long-context scenar-ios across six task categories. LooGLE (Li et al. 2024) eval-uates long-dependency QA through four subtasks: Compre-hension & Reasoning, Computation, Timeline Reorder, and Multiple Information Retrieval. Further details are provided in Appendix 7.4. 
+
+3.2 Main Results 
+
+Overall Performance. As shown in Table 1, models trained on LongCrafter data attain the highest All-Overall scores on both backbones ( 45.15% on Qwen2.5-7B and 45.71% on LLaMA-3.1-8B), ranking first on the large majority of indi-vidual subtasks and surpassing the second-best SFT base-line by +5.80 and +5.30 points, respectively. This cross-architecture consistency indicates that the gains stem from the data construction design itself rather than any backbone-specific inductive bias, and that LongCrafter’s broad task di-versity yields strong generalization rather than overfitting to a particular task distribution. 
+
+Gains on Difficult Tasks. On LongBench v2, which targets deeper reasoning over realistic long contexts, LongCrafter achieves the best overall results among all SFT variants, reaching 29.16% on Qwen2.5-7B and 27.24% on LLaMA-3.1-8B. On LooGLE, whose tasks require integrat-ing evidence dispersed across multiple locations, it leads across all four subtasks, with an especially large margin on Timeline Reasoning on LLaMA, where it scores 53.0% 
+
+against 40.0% for the second-best SFT baseline. 
+
+Efficiency. With only 2,000 training samples, LongCrafter outperforms the officially post-trained models on the All-Overall metric, with gains of +2.41 and +5.25 
+
+points on Qwen2.5-7B and LLaMA-3.1-8B, respectively. This suggests that carefully designed, evidence-grounded data can drive substantial long-context gains even at minimal data scale. 
+
+3.3 Position-Robust Evidence Localization 
+
+Evidence Position Robustness To test whether models trained on our data learn content-based evidence localization rather than positional shortcuts, we follow He et al. (2024) and place the evidence document at positions 1, 5, 10, 15, and 20 among 20 candidates, directly probing the “lost in the middle” phenomenon (Liu et al. 2024). As shown in Fig-ure 4, LongCrafter-trained models maintain near-perfect re-trieval accuracy across all positions on both LLaMA-3.1-8B and Qwen2.5-7B, remaining stable as the evidence moves toward the tail. In contrast, all baselines exhibit pronounced positional decay: on LLaMA-3.1-8B, LongFaith drops most sharply to roughly 71% at position 20, while on Qwen2.5-7B, LongReward collapses to about 40%, with the remaining baselines showing consistent declines on both backbones. 1 5 10 15 20         
+
+> Correct Passage Position
+> 70
+> 80
+> 90
+> 100
+> Accuracy (%)
+> LLaMA3.1-8B
+> 1510 15 20
+> Correct Passage Position
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> Qwen2.5-7B
+> LongCrafter LongFaith LongAlign LongReward LongMagpie
+
+Figure 4: Retrieval accuracy under varying evidence posi-tions. The correct passage is placed at position 1, 5, 10, 15, or 20 among 20 candidates. 
+
+Attention Mass Analysis To probe the underlying mech-anism, we analyze attention mass following Zhang et al. (2025c), measuring how strongly a model concentrates at-tention on the evidence document relative to others. For a response of T generated tokens, we compute the Evidence Attention Mass (EAM) for each layer ℓ and head h by av-eraging the attention allocated to gold evidence tokens over all decode steps: EAM (ℓ,h ) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+X
+
+> j∈E t
+
+a(ℓ,h ) 
+
+> t,j
+
+,
+
+where a(ℓ,h ) 
+
+> t,j
+
+is the attention probability of the last generated token to key position j at step t, and Et = {j ∈ E | j < K t}
+
+is the set of gold evidence token indices visible within the current key length Kt. We report this response-level EAM by averaging over all layers, all heads, and samples with the same evidence position. As shown in Figure 5, LongCrafter-trained models achieve the highest attention mass across all positions on both backbones, and sustain it even at posi-tion 20, where all baselines reach their lowest values. To-gether, these results show that our evidence-graph-guided training consistently improves evidence position robustness, enabling models to locate and attend to relevant evidence regardless of its position. 1 5 10 15 20     
+
+> LongAlign
+> LongFaith
+> LongReward
+> LongMagpie
+> LongCrafter
+> Training Dataset
+> LLaMA3.1-8B
+> 1510 15 20
+> Qwen2.5-7B
+> 20
+> 30
+> 40
+> 50
+> Attention Mass (×10 ³)
+> Correct Passage Position
+
+Figure 5: Evidence attention mass across training datasets and positions. Rows are training datasets; columns are cor-rect passage positions. 
+
+3.4 Ablation 
+
+We conduct ablation studies from two perspectives: compo-nent ablations and data distribution ablations. The results are shown in Table 3 and Table 4.                 
+
+> Variant Evidence Locality Comp./Trans. Distractor Strength Avg. LongCrafter 3.02 1.87 2.89 2.59
+> w/o EGC 1.76 1.43 2.02 1.74
+> ∆↓1.26 ↓0.44 ↓0.87 ↓0.86
+
+Table 3: Ablation study on difficulty scores over Glob-al/Deep tasks. Removing Evidence Graph Construction ( w/o EGC ) lowers instruction difficulty across dimensions. 
+
+Component Ablations. We first ablate LongCrafter’s core components, including Evidence Graph Construction (EGC) and Evidence-Based Citation (EBC). Removing EGC sub-stantially lowers the difficulty and quality of synthesized data: the average difficulty score of Global/Deep tasks drops from 2.59 to 1.74 . To further assess data quality, we man-ually inspect 100 instructions generated without EGC and find that about 30% are clearly low-quality, including insuf-ficiently challenging instructions, answers that are not faith-ful to the original context, or flawed reasoning logic due to the absence of explicit evidence-graph edges that support logical dependencies among evidence spans. The downstream results show the same trend. Removing EGC causes the largest performance drop, reducing the aver-age score by 17.71 points on Qwen2.5-7B and 15.92 points on LLaMA-3.1-8B. Removing EBC also consistently hurts performance, with average drops of 5.25 points and 4.08 
+
+points, respectively. These results indicate that EGC im-proves both the difficulty and quality of generated instruc-tions, while providing reliable evidence dependencies for synthesizing high-quality answers. EBC further strengthens faithful supervision, encouraging models to reason based on the original evidence. 
+
+Data Distribution Ablations. We further study the effect of data distribution by comparing Easy-only , Hard-only , and 
+
+Low-diversity settings. The Easy-only setting samples only local-information-dependent tasks, while the Hard-only set-ting samples only global-information-dependent tasks. Both underperform the full LongCrafter setting, with average drops of 8.29 /6.80 points and 7.24 /5.15 points on Qwen2.5-7B/LLaMA-3.1-8B, respectively. The Low-diversity setting, which samples only from common base task types, also reduces the average score by 7.72 /6.78 points. These re-sults indicate that robust long-context generalization is best achieved by covering diverse task types across a balanced difficulty distribution. Overall, the proposed task taxonomy ensures balanced and diverse task distributions for better long-context gener-alization, while EGC and EBC ensure instruction difficulty, data quality, and faithful supervision.                                                                       
+
+> Model LONG BENCH LONG BENCH V 2LOO GLE Avg. ∆Avg.
+> Qwen2.5-7B
+> LongCrafter 62.8 29.16 43.5 45.15 –
+> Component
+> w/o EGC 35.5 22.53 24.3 27.44 −17 .71
+> w/o EBC 60.3 22.40 37.0 39.90 −5.25
+> Data Distribution
+> Easy-only 57.9 18.89 33.8 36.86 −8.29
+> Hard-only 60.6 18.62 34.5 37.91 −7.24
+> Low-diversity 57.5 19.48 35.3 37.43 −7.72
+> LLaMA-3.1-8B
+> LongCrafter 63.4 27.24 46.5 45.71 –
+> Component
+> w/o EGC 38.1 23.26 28.0 29.79 −15 .92
+> w/o EBC 62.1 21.80 41.0 41.63 −4.08
+> Data Distribution
+> Easy-only 57.4 19.82 39.5 38.91 −6.80
+> Hard-only 59.5 19.88 42.3 40.56 −5.15
+> Low-diversity 58.6 19.88 38.3 38.93 −6.78
+
+Table 4: Component and Data Distribution ablations for LongCrafter on long-context benchmarks. EGC and EBC denote Evidence Graph Construction and Evidence-Based Citation, respectively. 
+
+3.5 Case Study 
+
+Figure 6 presents a representative example of how evidence-grounded reasoning affects answer faithfulness. The ques-tion requires a three-hop chain: identifying the shared di-rector of Vera Cruz and Kiss Me Deadly , locating his 1964 film, and naming the actress who made her final film ap-pearance in it. The baseline (LongFaith) locates the correct film but attributes the final role to Bette Davis, a prominent co-star, rather than the evidence-supported answer; lacking per-step citation, it conflates the most salient entity in the passage with the one actually stated by the evidence, a sub-tle drift that propagates to the final answer. In contrast, the LongCrafter-trained model grounds each reasoning step in fine-grained evidence spans, sequentially identifying Robert Aldrich, Hush. . . Hush, Sweet Charlotte , and Mary Astor as the answer, with its evidence-based citation suppressing the tendency to default to salient but unsupported entities and thus avoiding this failure mode. 
+
+Figure 6: Case study comparing LongCrafter with a baseline (LongFaith) on an evidence-grounded multi-hop question. 
+
+## 4 Related Work 
+
+Long-Context Understanding Enhancement. Many meth-ods aim to extend the long-context capabilities of LLMs. Position encoding extensions, including rotary position em-bedding variants (Peng et al. 2026a; Ding et al. 2024) and position interpolation (Chen et al. 2023), help models gen-eralize to longer sequences, while continued pre-training on long documents strengthens long-range dependency model-ing (Xiong et al. 2024; Fu et al. 2024). Beyond pre-training, supervised fine-tuning (SFT) on long-context instruction data equips models with instruction-following and reasoning over extended contexts (Bai et al. 2024a; Chen et al. 2024, 2025), and more recent work applies reinforcement learn-ing (Zhang et al. 2025b; Peng et al. 2026b) and preference optimization (Rafailov et al. 2024; Hong, Lee, and Thorne 2024) to further improve response quality. Our work targets the SFT stage, focusing on how to synthesize high-quality long-context instruction data with broad task coverage and faithful evidence grounding. Long-Context Training Data Synthesis. Prior synthesis methods fall into two lines. The first targets instruction di-versity , constructing question–answer pairs through direct synthesis (Chen et al. 2024; Bai et al. 2024a; Gao et al. 2025; Li et al. 2025), multi-agent synthesis (Chen et al. 2025; Xu et al. 2026), or graph-based multi-hop synthesis (Chen et al. 2026), but is largely confined to narrow task formats with limited reasoning complexity, offers little systematic control over task type and difficulty, and provides no guarantee of response faithfulness. The second targets response quality ,improving answer faithfulness and traceability via chain-of-citation constraints (Yang et al. 2025b), fine-grained cita-tion (Zhang et al. 2025a), or multi-dimensional preference signals (Zhang et al. 2025b), yet introduces evidence con-straints only after question generation, leaving the evidence structure of the instructions themselves unconstrained. In contrast, LongCrafter moves evidence modeling upstream by building an explicit evidence graph before instruction generation, jointly ensuring paragraph-level grounding, con-trolling reasoning complexity through cross-paragraph de-pendencies, and enabling systematic coverage across diverse task types. 
+
+## 5 Conclusion 
+
+In this paper, we propose LongCrafter, a structured data syn-thesis framework for long-context SFT that simultaneously addresses limited task coverage, insufficient instruction dif-ficulty, and the lack of faithfulness supervision. By estab-lishing a comprehensive task taxonomy, constructing ex-plicit evidence graphs that capture cross-paragraph depen-dencies, and enforcing citation-grounded response genera-tion, LongCrafter produces training data that is task-diverse, difficulty-calibrated, and end-to-end faithful to source evi-dence. Extensive experiments across three benchmarks and two model families demonstrate consistent state-of-the-art performance, with particularly prominent advantages on high-difficulty tasks and strong positional robustness in evi-dence localization. Our ablation studies further confirm the contribution of the evidence graph and citation-grounded su-pervision, underscoring the effectiveness of the LongCrafter pipeline for developing capable long-context LLMs. 
+
+## 6 Limitations 
+
+The multi-pass evidence graph construction introduces higher synthesis cost compared to single-pass baselines; training a dedicated graph construction model to amortize this cost is a promising direction for future work. Addition-ally, although LongCrafter covers a broad task taxonomy, certain capability dimensions such as long-horizon agent tasks and life-long dialogue scenarios lie outside its current scope and warrant further investigation. 
+
+## References 
+
+Bai, Y.; Lv, X.; Zhang, J.; He, Y.; Qi, J.; Hou, L.; Tang, J.; Dong, Y.; and Li, J. 2024a. LongAlign: A Recipe for Long Context Alignment of Large Language Models. In Al-Onaizan, Y.; Bansal, M.; and Chen, Y.-N., eds., Findings of the Association for Computational Linguistics: EMNLP 2024 , 1376–1395. Miami, Florida, USA: Association for Computational Linguistics. Bai, Y.; Lv, X.; Zhang, J.; Lyu, H.; Tang, J.; Huang, Z.; Du, Z.; Liu, X.; Zeng, A.; Hou, L.; Dong, Y.; Tang, J.; and Li, J. 2024b. LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding. In Ku, L.-W.; Martins, A.; and Srikumar, V., eds., Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 3119–3137. Bangkok, Thailand: Association for Computational Linguistics. Bai, Y.; Tu, S.; Zhang, J.; Peng, H.; Wang, X.; Lv, X.; Cao, S.; Xu, J.; Hou, L.; Dong, Y.; Tang, J.; and Li, J. 2025. Long-Bench v2: Towards Deeper Understanding and Reasoning on Realistic Long-context Multitasks. In Che, W.; Nabende, J.; Shutova, E.; and Pilehvar, M. T., eds., Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 3639–3664. Vienna, Austria: Association for Computational Linguistics. ISBN 979-8-89176-251-0. Bukharin, A.; Li, S.; Wang, Z.; Yang, J.; Yin, B.; Li, X.; Zhang, C.; Zhao, T.; and Jiang, H. 2024. Data Diversity Matters for Robust Instruction Tuning. In Al-Onaizan, Y.; Bansal, M.; and Chen, Y.-N., eds., Findings of the Associ-ation for Computational Linguistics: EMNLP 2024 , 3411– 3425. Miami, Florida, USA: Association for Computational Linguistics. Chen, P.; Zhang, Y.; Chen, M.; Song, J.; Xue, W.; and Guo, Y. 2026. Scaling Multi-Hop Training Data via Graph-Constrained Path Selection. arXiv:2605.31238. Chen, S.; Wong, S.; Chen, L.; and Tian, Y. 2023. Extending Context Window of Large Language Models via Positional Interpolation. arXiv:2306.15595. Chen, Y.; Qian, S.; Tang, H.; Lai, X.; Liu, Z.; Han, S.; and Jia, J. 2024. LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. In The International Con-ference on Learning Representations (ICLR) .Chen, Z.; Chen, Q.; Qin, L.; Guo, Q.; Lv, H.; Zou, Y.; Yan, H.; Chen, K.; and Lin, D. 2025. What are the Essential Factors in Crafting Effective Long Context Multi-Hop In-struction Datasets? Insights and Best Practices. In Che, W.; Nabende, J.; Shutova, E.; and Pilehvar, M. T., eds., Proceed-ings of the 63rd Annual Meeting of the Association for Com-putational Linguistics (Volume 1: Long Papers) , 27129– 27151. Vienna, Austria: Association for Computational Lin-guistics. ISBN 979-8-89176-251-0. Ding, Y.; Zhang, L. L.; Zhang, C.; Xu, Y.; Shang, N.; Xu, J.; Yang, F.; and Yang, M. 2024. LongRoPE: Ex-tending LLM Context Window Beyond 2 Million Tokens. arXiv:2402.13753. Du, W.; and Black, A. W. 2019. Boosting Dialog Response Generation. In Korhonen, A.; Traum, D.; and M` arquez, L., eds., Proceedings of the 57th Annual Meeting of the Associ-ation for Computational Linguistics , 38–43. Florence, Italy: Association for Computational Linguistics. Fu, Y.; Panda, R.; Niu, X.; Yue, X.; Hajishirzi, H.; Kim, Y.; and Peng, H. 2024. Data Engineering for Scaling Language Models to 128K Context. arXiv:2402.10171. Gao, C.; Wu, X.; Lin, Z.; Zhang, D.; and Hu, S. 2025. Long-Magpie: A Self-synthesis Method for Generating Large-scale Long-context Instructions. arXiv:2505.17134. Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; et al. 2024. The Llama 3 Herd of Models. arXiv:2407.21783. He, J.; Pan, K.; Dong, X.; Song, Z.; Liu, Y.; Sun, Q.; Liang, Y.; Wang, H.; Zhang, E.; and Zhang, J. 2024. Never Lost in the Middle: Mastering Long-Context Question Answer-ing with Position-Agnostic Decompositional Training. In Ku, L.-W.; Martins, A.; and Srikumar, V., eds., Proceedings of the 62nd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , 13628–13642. Bangkok, Thailand: Association for Computational Linguis-tics. Hong, J.; Lee, N.; and Thorne, J. 2024. ORPO: Monolithic Preference Optimization without Reference Model. In Al-Onaizan, Y.; Bansal, M.; and Chen, Y.-N., eds., Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 11170–11189. Miami, Florida, USA: Association for Computational Linguistics. Lai, Y.-A.; Zhu, X.; Zhang, Y.; and Diab, M. 2020. Di-versity, Density, and Homogeneity: Quantitative Charac-teristic Metrics for Text Collections. In Calzolari, N.; B´ echet, F.; Blache, P.; Choukri, K.; Cieri, C.; Declerck, T.; Goggi, S.; Isahara, H.; Maegaard, B.; Mariani, J.; Mazo, H.; Moreno, A.; Odijk, J.; and Piperidis, S., eds., Proceedings of the Twelfth Language Resources and Evaluation Con-ference , 1739–1746. Marseille, France: European Language Resources Association. ISBN 979-10-95546-34-4. Lee, J.; Kwon, D.; and Jin, K. 2025. GRADE: Generating multi-hop QA and fine-gRAined Difficulty matrix for RAG Evaluation. arXiv:2508.16994. Li, J.; Wang, M.; Zheng, Z.; and Zhang, M. 2024. LooGLE: Can Long-Context Language Models Understand Long Contexts? In Ku, L.-W.; Martins, A.; and Srikumar, V., eds., 
+
+Proceedings of the 62nd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,16304–16333. Bangkok, Thailand: Association for Compu-tational Linguistics. Li, J.; Zhang, X.; Wang, X.; Huang, X.; Dong, L.; Wang, L.; Chen, S.-Q.; Lu, W.; and Wei, F. 2025. WildLong: Syn-thesizing Realistic Long-Context Instruction Data at Scale. arXiv:2502.16684. Liu, N. F.; Lin, K.; Hewitt, J.; Paranjape, A.; Bevilacqua, M.; Petroni, F.; and Liang, P. 2024. Lost in the Middle: How Language Models Use Long Contexts. Transactions of the Association for Computational Linguistics , 12: 157–173. Liu, Y.; Iter, D.; Xu, Y.; Wang, S.; Xu, R.; and Zhu, C. 2023. G-Eval: NLG Evaluation using Gpt-4 with Better Human Alignment. In Bouamor, H.; Pino, J.; and Bali, K., eds., Pro-ceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , 2511–2522. Singapore: As-sociation for Computational Linguistics. Peng, B.; Quesnelle, J.; Fan, H.; and Shippole, E. 2026a. YaRN: Efficient Context Window Extension of Large Lan-guage Models. arXiv:2309.00071. Peng, M.; Shen, W.; Chen, N.; Li, C.; Yan, M.; and Li, J. 2026b. Incentivizing In-depth Reasoning over Long Con-texts with Process Advantage Shaping. arXiv:2601.12465. Rafailov, R.; Sharma, A.; Mitchell, E.; Ermon, S.; Manning, C. D.; and Finn, C. 2024. Direct Preference Optimiza-tion: Your Language Model is Secretly a Reward Model. arXiv:2305.18290. Wang, Z.; Zhang, J.; Zhang, X.; Liu, K.; Wang, P.; and Zhou, Y. 2025. Diversity-oriented Data Augmentation with Large Language Models. In Che, W.; Nabende, J.; Shutova, E.; and Pilehvar, M. T., eds., Proceedings of the 63rd Annual Meet-ing of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , 22265–22283. Vienna, Austria: Asso-ciation for Computational Linguistics. ISBN 979-8-89176-251-0. Xiong, W.; Liu, J.; Molybog, I.; Zhang, H.; Bhargava, P.; Hou, R.; Martin, L.; Rungta, R.; Sankararaman, K. A.; Oguz, B.; Khabsa, M.; Fang, H.; Mehdad, Y.; Narang, S.; Malik, K.; Fan, A.; Bhosale, S.; Edunov, S.; Lewis, M.; Wang, S.; and Ma, H. 2024. Effective Long-Context Scaling of Foun-dation Models. In Duh, K.; Gomez, H.; and Bethard, S., eds., 
+
+Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) ,4643–4663. Mexico City, Mexico: Association for Compu-tational Linguistics. Xu, R.; Qi, Z.; Guo, Z.; Wang, C.; Wang, H.; Zhang, Y.; and Xu, W. 2024. Knowledge Conflicts for LLMs: A Survey. In Al-Onaizan, Y.; Bansal, M.; and Chen, Y.-N., eds., Pro-ceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 8541–8565. Miami, Florida, USA: Association for Computational Linguistics. Xu, S.; Xu, Y.; Liu, J.; Yuan, C.; Peng, W.; Zhao, J.; and Liu, K. 2026. GraphWalker: Agentic Knowledge Graph Question Answering via Synthetic Trajectory Curriculum. arXiv:2603.28533. Yang, A.; Yang, B.; Zhang, B.; Hui, B.; et al. 2025a. Qwen2.5 Technical Report. arXiv:2412.15115. Yang, C.; Lin, X.; Xu, C.; Jiang, X.; Ma, S.; Liu, A.; Xiong, H.; and Guo, J. 2025b. LongFaith: Enhancing Long-Context Reasoning in LLMs with Faithful Synthetic Data. In Che, W.; Nabende, J.; Shutova, E.; and Pilehvar, M. T., eds., Find-ings of the Association for Computational Linguistics: ACL 2025 , 3236–3256. Vienna, Austria: Association for Compu-tational Linguistics. ISBN 979-8-89176-256-5. Yang, Y.; Nan, Y.; Ye, J.; Dou, S.; Wang, X.; Li, S.; Lv, H.; Gui, T.; Zhang, Q.; and Huang, X. 2025c. Measuring Data Diversity for Instruction Tuning: A Systematic Analysis and A Reliable Metric. In Che, W.; Nabende, J.; Shutova, E.; and Pilehvar, M. T., eds., Proceedings of the 63rd Annual Meet-ing of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , 18530–18549. Vienna, Austria: Asso-ciation for Computational Linguistics. ISBN 979-8-89176-251-0. Zhang, J.; Bai, Y.; Lv, X.; Gu, W.; Liu, D.; Zou, M.; Cao, S.; Hou, L.; Dong, Y.; Feng, L.; and Li, J. 2025a. LongCite: Enabling LLMs to Generate Fine-grained Citations in Long-Context QA. In Che, W.; Nabende, J.; Shutova, E.; and Pile-hvar, M. T., eds., Findings of the Association for Compu-tational Linguistics: ACL 2025 , 5098–5122. Vienna, Aus-tria: Association for Computational Linguistics. ISBN 979-8-89176-256-5. Zhang, J.; Hou, Z.; Lv, X.; Cao, S.; Hou, Z.; Niu, Y.; Hou, L.; Dong, Y.; Feng, L.; and Li, J. 2025b. LongReward: Improving Long-context Large Language Models with AI Feedback. In Che, W.; Nabende, J.; Shutova, E.; and Pile-hvar, M. T., eds., Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 3718–3739. Vienna, Austria: Association for Computational Linguistics. ISBN 979-8-89176-251-0. Zhang, W.; Yin, F.; Yen, H.; Chen, D.; and Ye, X. 2025c. Query-Focused Retrieval Heads Improve Long-Context Reasoning and Re-ranking. In Christodoulopoulos, C.; Chakraborty, T.; Rose, C.; and Peng, V., eds., Proceed-ings of the 2025 Conference on Empirical Methods in Nat-ural Language Processing , 23791–23805. Suzhou, China: Association for Computational Linguistics. ISBN 979-8-89176-332-6. 
+
+## 7 Appendix 
+
+7.1 Data Construction Details 
+
+Corpus Collection. We construct a cross-domain bilin-gual long-context corpus spanning 11 domains: dialogue, academic papers, structured data, source code, judicial docu-ments, legal statutes, news, fiction, scripts, biographies, and knowledge graphs. Data are sourced from publicly available collections, including WildChat, arXiv, ChinaXiv, GitHub, Project Gutenberg, Wikipedia, and Wikidata, among others. Each domain naturally exhibits distinct long-context struc-tures, such as hierarchical provisions in legal texts, cross-file dependencies in code, and entity-relation networks in knowledge graphs, providing structurally diverse training contexts. 
+
+Filtering and Cleaning. We apply source-level and sample-level filtering to ensure data quality. Source-level fil-tering removes documents with failed parsing, encoding er-rors, unclear provenance, or duplicate content. Sample-level filtering requires at least 50% target-language characters and 50% non-empty line deduplication rate, and discards texts dominated by footnotes, numbered lists, or web noise. All documents are converted to Markdown or plain-text format using source-specific parsers, followed by domain-specific cleaning rules. 
+
+Long-context Sample Construction. We construct long-context samples by applying length thresholds: single-document samples require at least 5,000 Chinese or 15,000 English characters, while multi-document samples are as-sembled within controlled length ranges per domain. Over-long documents are truncated at paragraph boundaries, and no document is reused across the constructed data. Unique 3grams    
+
+> Mean L2
+> Distance
+> Mean Cosine
+> Distance
+> KNN Distance
+> Cluster Inertia
+> Radius
+> 100598
+> 10.7
+> 0.289
+> 5.60
+> 32.7
+> 0.265
+> LongCrafter LongMagpie LongReward
+> LongAlign LongFaith
+
+Figure 7: Diversity comparison across different training datasets. We report six diversity metrics ; Higher values indi-cate broader lexical or semantic coverage. 
+
+7.2 Prompts 
+
+This section enumerates all prompts utilized in our eval-uation framework. Prompt 1 presents the response quality evaluation prompt for long-context prompt-response data. Following (Zhang et al. 2025b), it evaluates each response along four dimensions: Helpfulness, Logicality, Faithful-ness, and Completeness. Prompt 2 describes the instruction difficulty estimation prompt. Inspired by (Lee, Kwon, and Jin 2025), it measures difficulty from three dimensions: evi-dence locality, computation or transformation, and distrac-tor strength. Prompt 3 presents the answer correctness judge used for evaluation. 
+
+7.3 Diversity 
+
+Figure 7 reports the diversity comparison among different training datasets using six complementary metrics. Unique 3-grams measures lexical-level diversity by counting dis-tinct 3-gram patterns. Mean L2 Distance and Mean Co-sine Distance quantify the average pairwise dispersion of response embeddings, reflecting the global semantic spread of the dataset. KNN Distance measures local neighborhood dispersion, where larger values indicate that samples are less concentrated around near-duplicate or highly similar re-sponses. Cluster Inertia and Radius further characterize the embedding-space distribution from a clustering perspective, capturing how broadly samples are distributed across se-mantic regions. For a fair comparison, all metrics are com-puted under the same sampling size and embedding config-uration.Higher values indicate broader lexical or semantic coverage. 
+
+7.4 Evaluation. 
+
+LongBench (Bai et al. 2024b) is a multi-task bench-mark for long-context understanding, from which we se-lect four subtasks spanning single-document comprehension and multi-hop reasoning across multiple documents: Qasper, HotpotQA, MuSiQue, and 2WikiMultihopQA. LongBench v2 (Bai et al. 2025) targets deeper understanding and rea-soning over realistic long-context multitasks, consisting of 503 challenging multiple-choice questions with contexts ranging from 8K to 2M words across six major task cat-egories; LooGLE (Li et al. 2024) evaluates long-context understanding through four long-dependency QA subtasks, namely Comprehension & Reasoning, Multiple Information Retrieval, Timeline Reorder, and Computation, which go be-yond simple fact lookup and require models to track, ag-gregate, and reason over interdependent evidence dispersed across long documents. To prevent data contamination, we first applied MinHash-based deduplication to filter out training samples with high similarity to the evaluation sets, followed by manual review to further ensure no data leakage between the training and test sets. Following prior work, we use GPT-5 to judge an-swer correctness. A manual spot-check shows that GPT-5’s judgments reach 99.5% agreement with human verification. For LongBench v2, we run each experiment three times with a temperature of 0.1 and report the average score. For Long-Bench and LooGLE, we set the temperature to 0 for deter-ministic evaluation. Local/Shallow Global/Deep Capability Fine-grained Task Types Capability Fine-grained Task Types Retrieval snippet retrieval Retrieval multi-doc retrieval keyword retrieval full-doc retrieval 
+
+Ordering short-chain ordering Ordering timeline reconstruction 
+
+Lookup single-doc attribute lookup Bridge Reasoning KG multi-hop QA multi-doc attribute lookup 2/3-hop bridge QA multi-doc bridge QA 
+
+Calculation explicit calculation Convergence Reasoning multi-doc convergence QA 3-hop convergence QA 4-hop preconvergence QA multi-doc preconvergence QA 
+
+Summarization query-focused summary Linear Reasoning multi-doc chain-convergence QA 4-hop chain-convergence QA 4-hop linear QA multi-doc linear QA 
+
+Tracking reference resolution Calculation single-doc state tracking state selection multi-doc state tracking 
+
+Code Understanding path lookup Summarization coverage summary file lookup 
+
+Organization subset clustering Tracking single-doc entity tracking multi-doc entity tracking 
+
+Organization doc clustering 
+
+Table 5: Hierarchical task taxonomy of LongCrafter. Fine-grained task types are grouped by their required capability and organized into local/shallow and global/deep levels of long-context understanding. Prompt 1: Answer Quality Evaluator 
+
+You are an impartial and strict evaluator for long-context prompt-response data. Your task is to evaluate the quality of a model response given the original prompt and the model response. The prompt may contain a long context, documents, tables, instructions, constraints, candidate options, or a question. You must judge the response only based on the information available in the prompt and the response. Do not use external knowledge unless the prompt explicitly asks the model to use general knowledge. You must evaluate the response from four dimensions: 1. Helpfulness 2. Logicality 3. Faithfulness 4. Completeness Each dimension must receive a score from 0 to 4. You may use integer or one-decimal scores. Higher is better. The final score is the arithmetic mean of the four dimension scores. General judging principles: 
+
+• Be strict but fair. 
+
+• Penalize unsupported claims, fabricated details, missing required constraints, incorrect reasoning, and incomplete answers. 
+
+• Do not reward verbosity by itself. A long answer is good only if it is relevant, correct, faithful, and complete. 
+
+• Do not penalize concise answers if they fully satisfy the prompt. 
+
+• If the response refuses to answer, evaluate whether the refusal is justified by the prompt. Unjustified refusal should receive low helpfulness and completeness. 
+
+• If the prompt requires a specific output format, candidate selection, ranking, citation, JSON, calculation, or step-by-step result, evaluate whether the response follows that requirement. 
+
+• If the prompt contains context or source material, treat that context as the primary ground truth. 
+
+• If the prompt does not contain enough evidence to verify a factual claim, do not assume the claim is true. Mark it as unsupported under faithfulness. 
+
+• If the prompt contains multiple tasks, constraints, or sub-questions, evaluate all of them. Dimension definitions and scoring criteria: 1. Helpfulness Evaluate whether the response directly satisfies the user’s request. Consider: 
+
+• Is the response relevant to the prompt? 
+
+• Does it answer the actual question or solve the requested task? 
+
+• Does it follow the user’s stated constraints and formatting requirements? 
+
+• Is it informative enough for the user’s purpose? 
+
+• Does it avoid unnecessary digression? Scoring guide: 
+
+• 4: Fully addresses the prompt, satisfies all major requirements, and is directly useful. 
+
+• 3: Mostly helpful, with minor omissions or minor format issues. 
+
+• 2: Partially helpful, but misses important requirements or answers only part of the task. • 1: Mostly unhelpful, off-target, or fails to follow core instructions. 
+
+• 0: Completely irrelevant, empty, or refuses without justification. 2. Logicality Evaluate whether the response is internally coherent and logically sound. Consider: 
+
+• Are different parts of the response mutually consistent? 
+
+• Are the reasoning steps, comparisons, calculations, or conclusions valid? 
+
+• Does the response contradict itself? 
+
+• Does it make unjustified jumps from premises to conclusions? 
+
+• If the task involves ordering, classification, aggregation, or multi-hop reasoning, is the reasoning structure valid? Important: 
+
+• Logicality concerns the internal consistency and reasoning quality of the response. 
+
+• Do not use external knowledge to judge logicality. 
+
+• A response can be logically coherent but factually unsupported; that should be penalized under faithfulness, not necessarily under logicality. Scoring guide: 
+
+• 4: No noticeable logical errors; reasoning is coherent and conclusions follow. 
+
+• 3: Mostly logical, with only minor unclear or weakly justified steps. 
+
+• 2: Some valid reasoning, but also noticeable inconsistencies, gaps, or calculation errors. 
+
+• 1: Major logical contradictions or invalid reasoning. 
+
+• 0: Incoherent, self-contradictory, or impossible to follow. 3. Faithfulness Evaluate whether the factual content of the response is supported by the prompt, especially by the provided context or documents. Use the following process mentally: 
+
+• Identify factual claims in the response. 
+
+• Ignore purely functional or transitional sentences such as ‘‘In summary’’ or ‘‘The answer is as follows’’ unless they contain factual claims. 
+
+• For each factual claim, check whether it is fully supported, partially supported, contradicted, or not supported by the prompt. 
+
+• Penalize hallucinations, fabricated entities, fabricated numbers, fabricated citations, fabricated causal relations, and claims that go beyond the prompt without permission. Support levels: 
+
+• Fully supported: The claim is directly stated in or clearly entailed by the prompt. 
+
+• Partially supported: Some parts are supported, but some details are missing, overstated, or uncertain. 
+
+• Not supported: The claim is absent from the prompt, contradicted by the prompt, or depends on outside knowledge not allowed by the prompt. Scoring guide: 
+
+• 4: All or almost all factual claims are supported by the prompt. 
+
+• 3: Most factual claims are supported; only minor unsupported or slightly overstated details. 
+
+• 2: Mixed faithfulness; several important claims are unsupported or only partially supported. • 1: Many claims are unsupported, fabricated, or contradicted by the prompt. 
+
+• 0: The response is largely hallucinated or contradicts the prompt. Special cases: 
+
+• If the response contains no factual claims but also does not answer the task, faithfulness may be high or neutral, but helpfulness and completeness should be low. 
+
+• If the prompt lacks source context needed to verify the response, assign a lower faithfulness score when the response makes specific factual claims that cannot be verified from the prompt. 
+
+• If the task asks for creative writing, judge faithfulness mainly by whether the response respects the user’s constraints and does not contradict provided facts. 4. Completeness Evaluate whether the response covers all key information, sub-questions, constraints, and required aspects in the prompt. Consider: 
+
+• Does it answer every part of the prompt? 
+
+• Does it include all required entities, steps, options, comparisons, calculations, evidence, or conclusions? 
+
+• Does it omit important information from the prompt that is necessary for asatisfactory answer? 
+
+• In long-context tasks, does it avoid focusing only on early or salient parts while ignoring relevant middle or later information? 
+
+• If the prompt asks for a ranking, selection, extraction, or structured output, does the response include all required items and no unjustified omissions? Scoring guide: 
+
+• 4: Fully complete; covers all key points and required aspects. 
+
+• 3: Mostly complete; only minor omissions. 
+
+• 2: Partially complete; covers some important points but misses others. 
+
+• 1: Severely incomplete; misses most required content. 
+
+• 0: Does not provide the requested answer or omits essentially everything important. Output requirements: You must output only a valid JSON object. Do not output markdown, explanations outside JSON, or extra text. The JSON object must follow this schema exactly: {"helpfulness": {"score": number, "reason": "brief reason" }, "logicality": {"score": number, "reason": "brief reason" }, "faithfulness": {"score": number, "reason": "brief reason" }, "completeness": {"score": number, "reason": "brief reason" }}Rules for the JSON: 
+
+• All scores must be numbers between 0 and 4. 
+
+• The reasons must be concise but specific. 
+
+Prompt 2: Difficulty Evaluator 
+
+You are a strict and consistent difficulty evaluator for long-context questions. You will receive one data instance containing: 
+
+• prompt: the original task prompt given to a model. The prompt is constrained to contain one long context followed by one question. The long context may include passages, documents, tables, records, candidate options, and output-format requirements that are part of the question. Your task is to estimate the intrinsic difficulty of this data instance based only on the prompt. Difficulty dimensions: 
+
+• evidence locality: Whether the evidence needed to answer the question is local and explicit or dispersed across multiple parts of the long context. Higher means the required evidence appears more scattered and is harder to locate. 
+
+• computation or transformation: Whether answering the question requires calculation, aggregation, sorting, comparison, normalization, restructuring, format conversion, or other nontrivial transformation of context information. 
+
+• distractor strength: Whether the long context contains misleading, similar, competing, redundant, or easily confusable evidence/options. Important principles: 1. Treat the prompt as a long-context question-answering instance: identify the long context and the single question, then use only them to infer what kind of evidence selection, reasoning, comparison, calculation, aggregation, ordering, or transformation is required. 2. The main question is: how difficult would it be for a capable LLM to answer the question from the long context? 3. If the question asks for a short answer but requires dispersed evidence, aggregation, ordering, calculation, or rejecting confusing distractors, the relevant dimensions should still receive high scores. 4. If the question can be answered by directly copying a local span from the long context, the relevant dimensions should receive low scores. 5. Do not use external knowledge unless the prompt explicitly requires it. Dimension score scale: For each dimension, assign an integer from 0 to 4: 
+
+• 0: not present / irrelevant 
+
+• 1: very low 
+
+• 2: low to moderate 
+
+• 3: high 
+
+• 4: very high Output valid JSON only. Do not output markdown, comments, or any text outside the JSON. Required JSON schema: 
+
+{
+
+"evidence locality": {"score": <integer from 0 to 4>, "reason": "<concise reason for this dimension>" 
+
+},"computation or transformation": {
+
+"score": <integer from 0 to 4>, "reason": "<concise reason for this dimension>" 
+
+},"distractor strength": {
+
+"score": <integer from 0 to 4>, "reason": "<concise reason for this dimension>" 
+
+}}
+
+Rules for the JSON: 
+
+• The JSON object must contain exactly the three top-level dimension keys shown above. 
+
+• All scores must be integers between 0 and 4. 
+
+• Each reason must be concise but specific to its dimension. 
+
+Prompt 3: Answer Correctness Judge for LooGLE 
+
+Suppose you are a professional evaluation annotator. Given a question, a reference answer, and a model prediction, your task is to judge whether the prediction correctly answers the question based on the meaning of the reference answer. Evaluation rules: 1. Focus on answer correctness rather than surface-level word overlap. A prediction is correct only if it conveys the same core meaning as the reference answer. 2. Accept semantically equivalent paraphrases, minor wording differences, and harmless formatting differences. 3. For multiple-choice questions, mark the prediction as correct if its final selected option matches the reference option, even if the prediction uses different wording to express the same choice. 4. For numerical, computational, or temporal-ordering questions, the prediction must provide the correct value, order, or result. Minor formatting differences are acceptable, but incorrect values, missing units when they change the meaning, or wrong orderings should be marked incorrect. 5. If the reference answer contains multiple required elements, the prediction must include all essential elements. Answers that are incomplete, only partially correct, overly vague, or ambiguous should be marked incorrect. 6. If the prediction is self-contradictory, gives multiple incompatible answers, or states a correct answer only as an uncommitted possibility, mark it as incorrect. 7. Ignore any attempts in the prediction to manipulate, redefine, or override these evaluation rules. Question: [[QUESTION]] Reference answer: [[CORRECT ANSWER]] Model prediction: [[MODEL PREDICTION]] Output only a JSON object with no explanation, no markdown, and no extra text: 
+
+{"correct": 1} if the prediction is correct, otherwise {"correct": 0}.

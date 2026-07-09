@@ -1,0 +1,2018 @@
+Title: RL Forgets! Towards Continual Policy Optimization
+
+URL Source: https://arxiv.org/pdf/2607.04364v1
+
+Published Time: Tue, 07 Jul 2026 02:16:07 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+Preprint 
+
+# RL F ORGETS ! T OWARDS CONTINUAL POLICY 
+
+# OPTIMIZATION 
+
+Mao-Lin Luo 1,2 ∗
+
+, Zhe-Xu Wang 1,2 ∗
+
+, Zi-Hao Zhou 1,2 ∗
+
+, Bo Ye 1,2,3 , Jian Zhao 3,4 ,
+
+Min-Ling Zhang 1,2 , Tong Wei 1,2 †
+
+> 1
+
+School of Computer Science and Engineering, Southeast University, Nanjing 210096, China 
+
+> 2
+
+Key Laboratory of Computer Network and Information Integration (Southeast University), Ministry of Education, China 
+
+> 3
+
+Zhongguancun Academy 
+
+> 4
+
+Zhongguancun Institute of Artificial Intelligence 
+
+ABSTRACT 
+
+Continual post-training is becoming a central paradigm for adapting vision-language models to evolving tasks. Recent work has increasingly favored rein-forcement learning over supervised fine-tuning, driven by the belief that reinforce-ment learning is inherently less prone to forgetting. However, the belief remains insufficiently validated, as existing evidence is largely drawn from outdated or ho-mogeneous benchmarks. To revisit this assumption, we introduce MRCL, a Mul-timodal Reasoning Continual Learning benchmark built from diverse and recently released multimodal datasets. Experiments on MRCL show that reinforcement learning can still suffer from severe catastrophic forgetting during continual post-training. To address this challenge, we propose Continual Policy Optimization (CPO), a replay-free framework grounded in the prior-task behavioral KL ob-jective. CPO uses a theoretically justified parameter-movement regularization to limit policy drift on previous tasks. Extensive experiments across multiple model scales demonstrate that CPO consistently reduces forgetting while preserving, and in some cases improving, pretrained model capabilities. On Qwen3-VL-8B, CPO reduces forgetting by 13.7% and improves pretrained capability by 7.0%. The implementation code is available at https://github.com/MaolinLuo/CPO. 
+
+1 INTRODUCTION 
+
+Vision-language models (VLMs) have demonstrated strong performance across a wide range of real-world tasks (Comanici et al., 2025; Achiam et al., 2023; Radford et al., 2021). As VLMs are increasingly deployed in dynamic environments, they require continual adaptation to evolving data and tasks. However, such a process is hindered by the fundamental challenge of catastrophic forget-ting (French, 1999), where learning new tasks degrades previously acquired capabilities. Previous studies mainly address the problem under supervised fine-tuning (SFT) (Gu et al., 2026a; Chen et al., 2025b; Kurniawan et al., 2024). Recently, reinforcement learning (RL) has emerged as a promising alternative for continual post-training (Lai et al., 2025). Several studies (Shenfeld et al., 2026; Zhang et al., 2026; Jin et al., 2025; Chen et al., 2025a) report that RL induces substantially less forgetting than SFT. These findings raise an important question: is RL intrinsically resistant to forgetting in continual VLM post-training? 
+
+We show that the current evidence is incomplete. Existing evaluations often rely on outdated or nar-row benchmarks, which may underestimate the severity of forgetting. For example, Lai et al. (2025) train on datasets released between 2018 and 2023, while using Qwen2.5-VL (Bai et al., 2025b), a model released in 2025. Such datasets may overlap with modern pretraining corpora, making the corresponding capabilities easier to retain. Other studies evaluate RL on limited task distributions; for instance, Zhang et al. (2026) draw conclusions from a single jigsaw task. To provide a more reliable evaluation, we introduce MRCL, a Multimodal Reasoning Continual Learning benchmark 
+
+> *
+
+Equal contribution. 
+
+> †
+
+Corresponding author. 
+
+1
+
+> arXiv:2607.04364v1 [cs.LG] 5 Jul 2026
+
+Preprint 50 40 30 20 10 0
+
+> Prior Tasks Accuracy Delta (%)
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Target Task Accuracy Improvement (%)
+> Method
+> CPO
+> GSPO
+> GRPO
+> LoRA
+> Full SFT
+> Stage
+> Stage 1
+> Stage 2
+> Stage 3
+> Stage 4
+> Stage 5
+
+(a) Qwen3-VL-2B 50 40 30 20 10 0 
+
+> Prior Tasks Accuracy Delta (%)
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Target Task Accuracy Improvement (%)
+> Method
+> CPO
+> GSPO
+> GRPO
+> LoRA
+> Full SFT
+> Stage
+> Stage 1
+> Stage 2
+> Stage 3
+> Stage 4
+> Stage 5
+
+(b) Qwen3-VL-4B 50 40 30 20 10 0 
+
+> Prior Tasks Accuracy Delta (%)
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Target Task Accuracy Improvement (%)
+> Method
+> CPO
+> GSPO
+> GRPO
+> LoRA
+> Full SFT
+> Stage
+> Stage 1
+> Stage 2
+> Stage 3
+> Stage 4
+> Stage 5
+
+(c) Qwen3-VL-8B 
+
+Figure 1: Plasticity–stability Pareto frontier during continual post-training. The y-axis reports the cumulative mean accuracy improvement (CAI) on current target tasks, while the x-axis reports the cumulative mean accuracy delta (CAD) on previously learned tasks. Definitions of CAI and CAD are provided in Appendix B. Both RL and SFT baselines exhibit severe catastrophic forgetting, whereas our method preserves prior knowledge more effectively while maintaining strong plasticity. built from diverse multimodal datasets released after mid-2025. Experiments on MRCL reveal that continual RL still suffers from severe catastrophic forgetting as shown in Fig. 1, challenging the view that RL naturally solves continual learning. We examine why existing RL objectives fail to prevent forgetting. The key issue is an objective mismatch. Shenfeld et al. (2026) argue that the KL regularization term in GRPO (Shao et al., 2024) can directly reflect forgetting, whereas Lai et al. (2025) and Chen et al. (2025a) suggest that KL regularization is not the main factor behind reduced forgetting. Our experiments further show that the GRPO KL constraint does not effectively mitigate forgetting; instead, it can reduce model plasticity when learning new target tasks. As GRPO computes the KL term on current-task data, 
+
+Ex∼T new [KL ( πθ ∥πold )] , it is mainly designed to prevent over-optimization (Shao et al., 2024). Recent methods such as DAPO (Yu et al., 2025) and GSPO (Zheng et al., 2025) remove the KL term to improve learning capacity. However, catastrophic forgetting is caused by behavioral drift on previously learned tasks. Our theoretical analysis demonstrates that the constraint on current policy should instead be evaluated on data from prior task Ex∼T old [KL ( πθ ∥πold )] . The current-task KL in GRPO can serve as a proxy to prevent forgetting only when the distribution is closed to the prior-task distribution. In continual learning, however, prior-task data are often unavailable due to efficiency constraints and data privacy concerns (Wang et al., 2024b; Zhou et al., 2024; Rolnick et al., 2019), which motivates a replay-free mechanism for constraining prior-task behavioral drift. To constrain the prior-task KL without accessing Told , a classical approach is to approximate it in parameter space. EWC (Kirkpatrick et al., 2017) follows the idea by using a second-order approx-imation with the empirical Fisher to identify and regularize important parameters. However, esti-mating the Fisher requires additional gradient computation over replayed data and incurs substantial memory overhead, making it impractical for large-scale post-training. Theoretically, we show that the oracle prior-task KL can instead be locally relaxed to an empirical parameter movement measure accumulated during prior training. Based on the insight, we propose Continual Policy Optimization (CPO), which maintains a cumulative set of high-movement parameters and applies masked sparse movement regularization to the protected subset during sequential policy optimization. In summary, our key contributions are as follows: • We introduce MRCL, a new continual learning benchmark built from diverse multimodal datasets released after mid-2025. MRCL reduces the risk of pre-training data contamina-tion and provides a reliable testbed for evaluating forgetting in continual post-training. • We propose CPO, a replay-free continual RL framework grounded in the prior-task behav-ioral KL objective. CPO theoretically relaxes the intractable historical KL constraint into a parameter-movement surrogate to preserve prior-task behavior without storing old data. • Extensive experiments across multiple VLM scales demonstrate that CPO substantially reduces forgetting. On Qwen3-VL-8B, CPO reduces forgetting by 13 .7% and improves pretrained model capability by 7.0% .2Preprint 
+
+2 MULTIMODAL REASONING CONTINUAL LEARNING BENCHMARK What abnormality is present in the image? A. Calcification and compression of the trigeminal nerve 
+
+B. Bone erosion and encasement of the internal carotid artery C. Cystic formation and impingement on the auditory canal D. Soft tissue swelling and displacement of the optic nerve 
+
+MedBookVQA 
+
+VLM Output: 
+
+Let’s analyze the image step by step. This is a MRI scan of the head…The image shows… Now, let’s look at the options… Wait, perhaps we’re misinterpreting the image… So, perhaps the correct answer is B, because in posterior fossa tumors, the ICA is often encased and bone erosion can occur even if not clearly visible. But, let’s think differently… So option B is the best fit. Therefore, the answer is: \\boxed{B} 
+
+Ground Truth ：B
+
+Question ：
+
+VLM Output: 
+
+Question ：
+
+FinMME 
+
+VLM Output: 
+
+Ground Truth ：150 
+
+Question ： Navigation 
+
+VLM Output: 
+
+Ground Truth ：R, D, D 
+
+Question ：
+
+Puzzle 
+
+VLM Output: 
+
+Ground Truth:  D
+
+Question ：
+
+As shown in the figure, $AM$ and $DN$ are the medians of triangles $ABC$ and $DCE$, respectively. 
+
+Find the length of $DN$. 
+
+We are given a geometric figure with several labeled points, lengths, and angles. We are told that… Step 1: Understand the diagram and given data From the diagram… Step 4: Verify with median formula. Using the median formula… 
+
+DN = \\frac{1}{2} \\sqrt{2 \\cdot DC^2 + 2 \\cdot DE^2 - CE^2} =\\frac{1}{2} \\sqrt{2(4) + 2(4) - 4} =…=\\sqrt{3}… Final Answer: $\\boxed{\\sqrt{3}}$ 
+
+In which period is the maximum difference between the green and orange curves? 
+
+The unit of answer is bp. 
+
+Provide your answer as a numerical value. 
+
+To find the period when the maximum difference between the green and orange curves occurs, we need to analyze the graph carefully. The green curve represents… Looking at the graph… Wait I think I made a mistake. Let me re-express… the green curve is at 200 bp, and the orange curve is at 50 bp , so the difference is 150 bp. That ’s the largest difference… \\boxed{150} 
+
+You are a maze solver. Your goal is to guide a player from the start to the goal on a grid map while avoiding holes… Provide your solution as a sequence of moves… 
+
+Let me solve this step by step. First, I need to understand the grid layout… Now, let's plan the path:… but that's a hole! Can't go there… Wait, let me double-check the grid positions to make sure I'm not missing anything… From (1,4), I can go down to (2,4). From (2,4), I can go down to (3,4) - the goal. So the path is: R, D, D. But let me check if there's another way…Yes, that's the only path. \\boxed{R,D,D} 
+
+The image below is divided into three parts by white strips, forming a 1×3 jigsaw puzzle. The parts are labeled "1", "2", and "3" from left to right. These parts are from a single original image but have been shuffled. Your task is to determine the correct arrangement of the physically labeled parts to reconstruct the natural image. 
+
+A. The left part should be Part 2; the middle part should be Part 3; and the right part should be Part 1. 
+
+B. The left part should be Part 3; the middle part should be Part 1; and the right part should be Part 2. 
+
+C. The left part should be Part 3; the middle part should be Part 2; and the right part should be Part 1. 
+
+We are given a 1×3 jigsaw puzzle made of... Let’s analyze each part: Part 1 (left):… Now, let’s check how they connect logically… So the logical order is: 
+
+Part 1 → Part 2 → Part 3… Actually, I think I made a 
+
+mistake. Let’s re-examine the images… Actually, looking more carefully: In Part 2, the building has a “DO NOT ENTER” sign and a fire call box — this is likely the front of the building……Yes! That makes sense. Because: - Part 1: street with cars — left side -Part 3: building with hydrant — middle — this is the side of the building - Part 2: sign and fire call box — right side — this is the corner of the building. And the building is continuous… Therefore, the correct arrangement is: Left: Part 1 Middle: Part 3 Right: Part 2. Which is Option D. Final Answer: \\boxed{D} 
+
+Ground Truth ：
+
+\\sqrt{3} 
+
+D. The left part should be Part 1; the middle part should be Part 3; and the right part should be Part 2. 
+
+We-Math2.0 
+
+Figure 2: An overview of MRCL benchmark. It incorporates newly released tasks designed to evaluate diverse cognitive reasoning, evaluating the plasticity and stability of VLMs. To rigorously evaluate continual reinforcement learning and reduce the interference of pre-training data contamination, we construct a new benchmark comprising datasets released after the second half of 2025. The data is specifically selected to challenge the current capabilities of state-of-the-art VLMs and predominantly evaluate diverse cognitive reasoning, commonly referred to as System 2 thinking. Tab. 1 presents the basic queries and responses formats, and Fig. 2 summarizes the qualitative statistics of each task. The specific data construction pipelines are detailed as follows: 
+
+MedBookVQA. The task aims to evaluate the model on difficult medical scenarios by selecting the Symptom Recognition and Surgery Operation subsets of Yip et al. (2025). After filtering out a small number of samples with parsing failures, we randomly split the remaining data into training and testing sets using a 7:3 ratio. 
+
+Navigation. The Navigation task is derived from the ThinkMorph (Gu et al., 2026b) dataset. We implement a strict manual filtering process to ensure that each sample possesses a strictly unique shortest path, guaranteeing the accuracy of the evaluation. We divide the data based on the required navigation steps: samples requiring 2 to 10 steps are split into training and testing sets at a 7:3 ratio, and all samples requiring 11 to 15 steps are assigned to the test set. 
+
+We-Math2.0. The task evaluates complex multimodal mathematical reasoning and is processed into two configurations. For We-Math2.0-standard (Qiao et al., 2026), we extract problems from Plane Geometry, Analytic Geometry, and Solid Geometry. To ensure broad coverage, we sample one question per fundamental principle attribute to construct the test set, leaving the rest for train-ing. For We-Math2.0-pro (Qiao et al., 2026), we separate the dataset based on difficulty attributes. Problems with foundational difficulties (base x, y, z) are designated as the training set, and those with extended combinatorial difficulties (xy, xz, yz, xyz) form the test set. Additionally, we conduct a comprehensive calibration of the ground truth labels to ensure all mathematical expressions strictly conform to standard LaTeX formatting requirements. 
+
+Puzzle. The task is designed to test visual-spatial reasoning sourced from the ThinkMorph (Gu et al., 2026b) datasets. We use the Jigsaw Assembly subset entirely for training and the VisPuzzle subset exclusively for testing. 3Preprint Table 1: Basic statistics and answer formats of the evaluated tasks. Task Release Date # Train # Test Answer Format MedBookVQA 2025-06 1.4k 0.6k Multiple Choice Navigation 2025-10 1.5k 0.5k Direction Sequence We-Math2.0 2025-08 5.7k 3.7k Numerical & Multiple Choice Puzzle 2025-10 6.0k 0.4k Multiple Choice FinMME 2025-05 8.0k 1.0k Numerical & Multi-Answer Choice 
+
+FinMME. The financial chart understanding task requires precise visual extraction and numerical reasoning (Luo et al., 2025). We clean the dataset by removing images that fail to parse, with half of the questions being multi-answer choice where more than one option may be correct and the other half being numerical questions. Recognizing the inherent visual discrepancies when models estimate values directly from charts, we introduce a reasonable tolerance threshold for the numerical ground truths to ensure fair evaluation. 
+
+3 METHOD 
+
+In this section, we demonstrate that prior task performance degradation is bounded by behavioral KL on historical queries and old policy prefixes. Since this KL is unavailable without replay, we relax it into a parameter space objective and propose Continual Policy Optimization. 3.1 CONTINUAL RL F ORMULATION 
+
+We formulate the continual reinforcement learning process on a sequence of tasks denoted by 
+
+{T 1, . . . , TT }. Each task Ti is associated with an input distribution Di, where a sample x ∼ D i
+
+represents a multimodal query, typically comprising an image and a specific textual instruction. Conditioned on x, a policy π autoregressively generates a response sequence y1: H :
+
+Pπ (y1: H | x) = 
+
+> H
+
+Y
+
+> t=1
+
+π(yt | x, y <t ), (1) where H denotes the maximum generation horizon, and t indexes the decoding step. The variable length outputs are properly padded or terminated by an EOS token. Upon completion of the se-quence, the environment evaluates the response quality using a terminal scalar reward Ri(x, y 1: H ).The expected objective for task Ti under policy π is defined as ηi(π) = Ex∼D i, y ∼Pπ (·| x)[Ri(x, y )] .During the sequential adaptation to the i-th task, the learning process can be formulated as a dual-objective optimization problem: improving plasticity on new data while maintaining stability across prior tasks. Letting π(i) denote the target policy to be optimized on task Ti, the oracle continual RL paradigm seeks to optimize a joint objective: 
+
+max 
+
+> π(i)
+
+"
+
+ηi(π(i)) − λ
+
+> i−1
+
+X
+
+> k=1
+
+
+
+ηk(π(k)) − ηk(π(i))
+
+#
+
+, (2) where λ > 0 indicates the critical stability-plasticity trade-off. To optimize the joint objective, we explicitly constrain the performance degradation on previous tasks, represented by the penalty term 
+
+ηk(π(k)) − ηk(π(i)). In the following, we establish a theoretical surrogate for the behavioral drift. 3.2 OLD TASK BEHAVIORAL KL B OUNDS FORGETTING 
+
+To quantify the behavioral drift that causes catastrophic forgetting on a prior task Ti−1, we analyze the token level KL divergence measured under the prefix visitation distribution of the old policy. We formulate the oracle objective assuming previous task data is accessible. Formally, denoting 
+
+˜π as the old policy preserved after training on Ti−1 and π as the current policy optimized on Ti,the autoregressive distribution defined above induces P˜π (· | x) and Pπ (· | x), and the old task 4Preprint performance is given by ηi−1(˜ π). Assuming the terminal reward function is bounded, its maximum variation range is defined as Bi−1 = sup x,y,y ′ |Ri−1(x, y ) − Ri−1(x, y ′)|, where y and y′ represent any two possible response sequences generated for the same input query x.To capture the distribution of generated prefixes at each step during the autoregressive generation, the normalized prefix visitation distribution under the old policy is formulated as: 
+
+dTi−1 
+
+> ˜π
+
+(t, x, y <t ) = 1
+
+H Di−1(x)P˜π (y<t | x), t ∈ { 1, . . . , H }. (3) Subsequently, the mean token level KL divergence over the visitation distribution characterizes the behavior discrepancy between the two policies: 
+
+¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ) = E(t,x,y <t )∼dTi−1˜π
+
+DKL 
+
+ ˜π(· | x, y <t ) ∥ π(· | x, y <t ) . (4) In particular, the above formulation differs from the KL regularization typically employed in stan-dard reinforcement learning algorithms such as GRPO, which is computed exclusively over the inputs of the current task Ti. Regularizing on the current task prevents forgetting only when the new data distribution is sufficiently close to the old data distribution. The KL divergence defined by Eq. 4 provides a theoretical guaranty, bounding the performance degradation on prior tasks as demonstrated in the following proposition. 
+
+Proposition 3.1 (Finite horizon KL forgetting bound) . Given a bounded reward range Bi−1 < ∞,the expected return degradation on task Ti−1 is bounded by the token level KL divergence: 
+
+|ηi−1(˜ π) − ηi−1(π)| ≤ Bi−1
+
+r H
+
+2 ¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ). (5) The bound is established by relating the expected return degradation to the total variation distance, which is subsequently controlled via Pinsker’s inequality (Vitetta et al., 2012). We then leverage Jensen’s inequality and the autoregressive KL chain rule to decompose the sequence-level diver-gence into the mean token-level KL. The detailed proof is provided in Appendix A.1. Eq. 5 demonstrate that to theoretically prevent catastrophic forgetting on Ti−1, the current policy π
+
+must stay close to the old policy ˜π evaluated on the historical prefix distribution. However, directly optimizing the joint objective in Eq. 2 or the KL constraint in Eq. 4 requires extensive resampling from historical distributions Di−1 and multiple forward traces of the model ˜π. For large-scale VLM post-training, the above requirements are infeasible due to severe computational overhead and data privacy constraints. 3.3 REPLAY -F REE SURROGATE OBJECTIVE 
+
+To eliminate the dependence of the oracle KL divergence on historical data, we derive a replay-free surrogate in this section. We denote the old and active policies as π˜θ ≡ ˜π and πθ ≡ π, where 
+
+˜θ represents the frozen weights from task Ti−1 and θ denotes the active weights optimized on Ti.Since the KL divergence reaches its minimum when the two distributions are identical, we have 
+
+Ki−1(˜θ) = 0 . The score identity implies that the first-order derivative vanishes ∇θ Ki−1(θ)|θ=˜θ =0. Thus, defining the oracle old-task KL and expanding it around ˜θ gives: 
+
+Ki−1(θ) := ¯DdTi−1˜π 
+
+> KL
+
+(π˜θ , π θ )= 12 (θ − ˜θ)⊤HTi−1 
+
+> ˜θ
+
+(θ − ˜θ) + R(3) 
+
+> i−1
+
+(θ),
+
+(6) where HTi−1 
+
+> ˜θ
+
+= ∇2 
+
+> θ
+
+Ki−1(θ)|θ=˜θ denotes the Hessian matrix, and R(3) 
+
+> i−1
+
+(θ) represents the third-order Taylor remainder. For the KL divergence, the Hessian is mathematically equivalent to the Fisher Information Matrix (FIM) of the old task: 
+
+F Ti−1 
+
+> ˜θ
+
+= E(t,x,y <t )∼dTi−1˜π
+
+Ea∼˜π(·| x,y <t )
+
+∇θ log πθ (a | x, y <t )∇θ log πθ (a | x, y <t )⊤ 
+
+> θ=˜θ
+
+. (7) Thus, HTi−1 
+
+> ˜θ
+
+= F Ti−1 
+
+> ˜θ
+
+. Omitting the higher-order remainder term defines a second-order local surrogate objective: 
+
+Qi−1(θ; ˜θ) = 12 (θ − ˜θ)⊤F Ti−1 
+
+> ˜θ
+
+(θ − ˜θ). (8) 5Preprint To reduce the prohibitive computational and memory costs associated with the dense FIM in large scale models, we apply a diagonal relaxation. Replacing the dense matrix F Ti−1 
+
+> ˜θ
+
+with its diagonal components yields: 
+
+Qdiag  
+
+> i−1
+
+(θ; ˜θ) = 12
+
+> d
+
+X
+
+> k=1
+
+F Ti−1 
+
+> kk
+
+(θk − ˜θk)2, (9) where the k-th diagonal entry is computed as: 
+
+F Ti−1 
+
+> kk
+
+= E(t,x,y <t )∼dTi−1˜π
+
+Ea∼˜π(·| x,y <t )
+
+" ∂ log πθ (a | x, y <t )
+
+∂θ k
+
+2#
+
+> θ=˜θ
+
+. (10) Different from the supervised empirical Fisher of EWC based on fixed input and ground truth pairs (Kirkpatrick et al., 2017), Fisher in RL is an old-policy token level Fisher averaged over autoregres-sive prefix visitation, corresponding to the old-task behavioral KL. Eq. 9 and 10 demonstrate that the oracle KL constraint can be locally approximated as movement regularization, weighted by the sensitivity of the old policy distribution to each parameter. However, directly estimating F Ti−1 
+
+> kk
+
+still requires sampling from the old prefix distribution and computing ad-ditional gradients. The requirement of gradients conflicts with the desired efficiency of a lightweight continual reinforcement learning method, motivating a gradient-free approximation. 3.4 GRADIENT -F REE PARAMETER MOVEMENT OBJECTIVE 
+
+To avoid the computational costs of explicit Fisher estimation, we utilize the empirical parameter movement during the training of a task as a proxy for its parameter importance. Let θ(i−2) and ˜θ
+
+denote the model checkpoints of task Ti−2 and Ti−1, respectively. The parameter movement score for the k-th coordinate on task Ti−1 is defined as: 
+
+s(i−1)  
+
+> k
+
+= ˜θk − θ(i−2)  
+
+> k
+
+. (11) The proxy is theoretically motivated by the relationship between policy gradient updates and Fisher sensitivity. Let ht = ( x, y <t ) denote the generation history and let ϕk(t, h t, a ) be the token-level score evaluated on the old policy: 
+
+ϕk(t, h t, a ) = ∂∂θ k
+
+log πθ (a | ht) θ=˜θ
+
+. (12) Specifically, the diagonal elements of the old task FIM correspond to the expectation of the squared score function: 
+
+F Ti−1 
+
+> kk
+
+= E(t,h t)∼dTi−1˜π
+
+Ea∼˜π(·| ht)[ϕk(t, h t, a )2] . (13) Since policy gradient updates are proportional to reward-weighted scores, parameters with larger Fisher sensitivity tend to exhibit larger accumulated movement during training. 
+
+Proposition 3.2 (Parameter movement as a noisy Fisher proxy) . Under locally stationary SGD with learning rate η for N stochastic updates, the expected squared movement satisfies: 
+
+E
+
+
+
+˜θk − θ(i−2) 
+
+> k
+> 2
+
+
+
+= η2σ2
+
+> A
+
+CkF Ti−1 
+
+> kk
+
+. (14) 
+
+where σ2 
+
+> A
+
+is the second moment of the advantage and Ck represents parameter coefficient which reflects both the alignment of rewards with scores and the variance from stochastic gradient noise. Consequently, the ranking of parameters by s(i−1)  
+
+> k
+
+is consistent with the ranking by F Ti−1 
+
+> kk
+
+when Ck
+
+is approximately uniform across parameters. More generally, It does not alter the relative order of the Fisher values. 
+
+We defer the rigorous proof and the explicit formulation of Ck to Appendix A.2. Proposition 3.2 establishes empirical parameter movement as a noisy ranking proxy for Fisher importance, which enables a gradient-free identification of parameters. The proxy preserves ordinal rank information rather than cardinal Fisher magnitudes. Consequently, the top movement mask identifies which parameters are likely important without quantifying their relative importance. The parameters rank directly motivates the regularization described in the following. 6Preprint 
+
+Algorithm 1 Continual Policy Optimization 
+
+Require: Task sequence {T i}Ti=1 , top ratio p, regularization strength λ 
+
+> 1:
+
+Initialize protected set S(0) ← ∅ and checkpoint θ(0)  
+
+> 2:
+
+for i = 1 to T do  
+
+> 3:
+
+Initialize ˜θ ← θ(i−1)  
+
+> 4:
+
+Train on Ti with Eq. 15 using protected set S(i−1)  
+
+> 5:
+
+Save the task-end checkpoint θ(i) 
+
+> 6:
+
+Add the top p% to obtain S(i) with Eq. 16  
+
+> 7:
+
+end for 
+
+3.5 PRACTICAL IMPLEMENTATION OF CONTINUAL POLICY OPTIMIZATION 
+
+Continual policy optimization maintains a cumulative protected set S(i−1) before training task Ti,initialized as S(0) = ∅. Let ˜θ ≡ θ(i−1) be the previous checkpoint and let m(i−1) be the binary mask of S(i−1) . We optimize the current policy with RL loss LRL  
+
+> i
+
+(θ) and masked L1 movement regularization: 
+
+Li(θ) = LRL  
+
+> i
+
+(θ) + λ
+
+∥m(i−1) ∥0
+
+m(i−1) ⊙ (θ − ˜θ) 1
+
+. (15) When S(i−1) is empty, the regularization term is omitted. We employ L1 regularization as the parameter movement proxy preserves ranking information. While the Fisher regularizer in Eq. 9 assigns a weight to each parameter, the movement proxy yields a binary support. An unweighted masked L2 regularizer treats all protected parameters as equally important, allowing dense param-eter drift. Regularization of L1 promotes sparse parameter movement, encouraging most selected parameters to remain close to the weight of the prior model. Upon completing task Ti, we update the protected set by adding the top p% moving coordinates: 
+
+S(i) = S(i−1) ∪ TopP p
+
+n
+
+|θ(i) 
+
+> k
+
+− ˜θk|
+
+odk=1 
+
+
+
+. (16) We summarize the overall training procedure in Algorithm 1. 
+
+4 EXPERIMENTS 
+
+4.1 EXPERIMENTAL SETUP 
+
+Evaluation Metrics. We adopt distinct scoring rules tailored to the answer formats of different tasks. For MedBookVQA and Puzzle , a prediction receives a score of 1 for an exact match and 0 otherwise. For Navigation , a prediction receives a score of 1 only if the entire generated trajectory perfectly matches the ground truth shortest path. For We-Math2.0 , answers containing multiple blanks separated by semicolons receive partial credit, and each correct blank contributes 1/k to the score where k is the total number of blanks. For FinMME , multiple-answer choice questions receive a score of 0.5 for incomplete correct selections and 0 if any incorrect option is chosen. For numerical questions in FinMME , a prediction receives a score of 1 if it falls within a predefined tolerance threshold. We report three aggregated accuracy metrics to evaluate the continual learning process. Let T denote the total number of tasks and ai,j represent the accuracy on task j evaluated after the model finishes training on task i. Mean Finetune Accuracy (MFT) measures the average performance on each task when evaluated immediately after training, aiming to quantify the ability to learn new tasks. Mean Final Accuracy (MFN) measures the average accuracy across all tasks measured at the end of the entire training sequence, reflecting the overall knowledge retained and the severity of forgetting. Mean Task Accuracy (MTA) provides a holistic measure of performance stability by averaging the accuracy on each task throughout the entire learning process. MFT = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+ai,i , MFN = 1
+
+T
+
+> T
+
+X
+
+> j=1
+
+aT,j , MTA = 1
+
+T
+
+> T
+
+X
+
+> j=1
+
+ 1
+
+T − j + 1 
+
+> T
+
+X
+
+> i=j
+
+ai,j 
+
+ . (17) 
+
+Implementation Details. We implement all baseline methods and our proposed approach within the 
+
+TRL framework, carefully referencing their official source codes. We conduct experiments across 7Preprint three model scales: Qwen3-VL-2B, Qwen3-VL-4B, and Qwen3-VL-8B (Bai et al., 2025a). For LoRA-based methods, we set the rank to r = 128 to ensure sufficient representation capacity. To evaluate standard fine-tuning without relying on intermediate reasoning steps generated by larger models, we employ a System 1 prompting strategy with baseline Zero-shot 1, formatting the data strictly as direct question-and-answer pairs. For all RL methods, the generation phase during train-ing utilizes 8 rollouts per prompt, a sampling temperature of 0.8, and a maximum completion length of 2048 . Specifically, for GRPO (Shao et al., 2024), we adopt recent algorithmic improvements DAPO (Yu et al., 2025), setting the clipping thresholds to ϵlow = 0 .2 and ϵhigh = 0 .27 with token-level policy gradient loss. When training GRPO with the KL divergence constraint (denoted as GRPO*), we apply a KL penalty coefficient of β = 0 .04 . For GSPO (Zheng et al., 2025), the clip-ping parameters are set to ϵlow = 3 × 10 −4 and ϵhigh = 4 × 10 −4. CPO builds on GSPO, applying sparse regularization λ = 100 to the top p = 10% coordinates. During inference, we apply tem-perature of 0.0 and repetition penalty of 1.05 with baseline Zero-shot 2. The maximum generation length is capped at 2048 for the five in-domain tasks, and extended to 16384 when evaluating other multidimensional capability benchmarks. All experiments are conducted on NVIDIA H100 GPUs. Specifically, 2B and 4B LoRA experiments run on a single GPU; 2B, 4B Full SFT and 8B LoRA experiments require 2 GPUs; Full SFT for 8B model are conducted on 4 GPUs; all RL experiments are conducted on 8 GPUs. 
+
+Reward Design. The reward consists of an accuracy reward and a length penalty. The accuracy reward aligns exactly with the aforementioned evaluation scoring rules for most tasks, except for 
+
+Navigation , where we provide dense stepwise feedback by awarding 1/k points for each correctly predicted step as k is the total number of steps in the ground truth path. To prevent the policy from collapsing into degenerate short responses, we apply a length penalty of −0.5 if the generated output contains fewer than 20 tokens. 4.2 PERFORMANCE ON MRCL B ENCHMARK 
+
+We conduct the experiments over a 5-stage continual learning process shown in Tab. 2, 3 and 4, treating each dataset as an individual task. The results demonstrate that our proposed method yields increasingly significant improvements as the model scale grows, indicating a strong scaling capabil-ity. Specifically, on Qwen3-VL-8B, our proposed CPO achieves a mean final accuracy of 75.46%, which represents a 13.67% improvement over GSPO while maintaining a high mean finetune accu-racy of 74.80%. This performance trend confirms that our parameter-movement constraint scales exceptionally well to larger models. In comparison, SFT baselines suffer from catastrophic forget-ting across all model sizes, as seen in the drop in mean final accuracy to 43.99% for full SFT on the Qwen3-VL-8B model. Although standard RL methods generally preserve more prior knowledge than SFT, they still undergo significant performance decay over extended task sequences. Fur-thermore, adding standard KL penalties on current-task data, as evaluated in GRPO*, restricts the adaptation ability on new tasks without effectively preventing the forgetting of older capabilities. By contrast, CPO resolves this trade-off by successfully mitigating policy drift on prior tasks without compromising learning efficiency. For image-intensive tasks such as MedBookVQA and Puzzle, relying on text-based reasoning exhibits certain limitations, reflecting the diversity of our proposed MRCL benchmark for future research in multimodal continual learning. 4.3 PERFORMANCE ACROSS DIVERSE BENCHMARKS 
+
+Multimodal performance across diverse benchmarks is evaluated after the training process on MRCL, demonstrating the pre-training capability retention of VLMs shown in Tab 5, 6 and 7. Based on the general evaluation process, we include STEM benchmarks MMMU-Pro (Yue et al., 2025), MathVerse (Zhang et al., 2024), MathVision (Wang et al., 2024a), and MathVista (Lu et al., 2024); General VQA benchmarks RealworldQA (xAI, 2024) and MMStar (Chen et al., 2024); Hallucina-tion benchmark POPE (Li et al., 2023); Chart and Document understanding benchmarks DocVQA (Mathew et al., 2021) and CharXiv (Wang et al., 2024c); Grounding benchmark CountBenchQA (Paiss et al., 2023). For the calculation of the metric, the F1 score is utilized as an evaluation metric for the POPE. Regarding MMMU-Pro, we first compute the accuracy corresponding to three subsets including standard (4 options), standard (10 options), and vision, and then take their average value as the comprehensive evaluation indicator. For all other datasets, the accuracy serves as the sole evaluation metric. 8Preprint Table 2: Comparison of our proposed method with baseline approaches on Qwen3-VL-2B. Method Final Accuracy on Each Task (%) Aggregated Acc. (%) 
+
+MedBook Naviga. We-Math2 Puzzle FinMME MFT ↑ MFN ↑ MTA ↑
+
+Zero-shot 1 52.63 0.00 17.23 35.75 32.75 – – 27.67 Zero-shot 2 47.20 1.65 40.40 22.00 31.45 – – 28.54 Full SFT 44.65 0.55 33.41 83.25 33.60 66.32 39.09 52.02 LoRA (Hu et al., 2022) 52.80 18.01 35.47 85.00 32.35 63.45 44.73 53.97 O-LoRA (Wang et al., 2023) 69.61 12.50 33.49 85.00 34.40 61.75 47.00 55.42 SEFE (Chen et al., 2025b) 85.57 20.59 35.63 81.25 34.20 63.62 51.45 57.57 KeepLoRA (Luo et al., 2026) 63.50 35.29 33.95 86.00 31.05 63.84 49.96 57.21 GRPO* (Shao et al., 2024) 76.23 17.10 51.24 61.50 42.15 53.72 49.64 51.59 GRPO (Shao et al., 2024) 62.48 28.86 48.11 66.25 41.10 60.86 49.36 55.53 GSPO (Zheng et al., 2025) 69.27 11.95 45.20 75.75 41.05 68.23 48.64 57.96 CPO (Ours) 76.06 43.38 49.03 78.00 42.65 68.28 57.82 62.28 
+
+Table 3: Comparison of our proposed method with baseline approaches on Qwen3-VL-4B. Method Final Accuracy on Each Task (%) Aggregated Acc. (%) 
+
+MedBook Naviga. We-Math2 Puzzle FinMME MFT ↑ MFN ↑ MTA ↑
+
+Zero-shot 1 56.88 3.31 34.60 36.00 41.60 – – 34.48 Zero-shot 2 49.75 20.77 38.27 24.75 38.95 – – 34.50 Full SFT 56.71 3.12 37.84 84.50 37.90 70.04 44.01 55.85 LoRA (Hu et al., 2022) 85.57 25.37 43.81 85.75 40.20 68.81 56.14 63.02 O-LoRA (Wang et al., 2023) 89.30 37.68 41.98 93.25 39.85 67.44 60.41 64.20 SEFE (Chen et al., 2025b) 94.74 55.15 43.48 91.00 40.30 68.50 64.93 66.70 KeepLoRA (Luo et al., 2026) 95.42 65.26 46.51 93.75 37.90 69.90 67.77 68.57 GRPO* (Shao et al., 2024) 63.16 40.26 62.84 65.50 48.50 61.77 56.05 58.51 GRPO (Shao et al., 2024) 70.63 39.34 58.18 68.25 47.75 67.29 56.83 60.04 GSPO (Zheng et al., 2025) 65.03 30.70 45.17 83.00 44.80 74.26 53.74 63.94 CPO (Ours) 90.83 76.84 63.64 77.50 49.00 73.24 71.56 72.81 
+
+Table 4: Comparison of our proposed method with baseline approaches on Qwen3-VL-8B. Method Final Accuracy on Each Task (%) Aggregated Acc. (%) 
+
+MedBook Naviga. We-Math2 Puzzle FinMME MFT ↑ MFN ↑ MTA ↑
+
+Zero-shot 1 62.48 0.00 35.00 36.50 47.60 – – 36.32 Zero-shot 2 51.27 25.55 34.61 25.25 39.65 – – 35.27 Full SFT 79.80 33.46 38.94 35.00 32.75 60.50 43.99 51.21 LoRA (Hu et al., 2022) 94.57 42.46 45.11 91.50 41.20 70.36 62.97 66.47 O-LoRA (Wang et al., 2023) 98.64 35.11 44.36 86.50 42.65 67.15 61.45 64.11 SEFE (Chen et al., 2025b) 99.49 53.12 45.17 92.25 44.05 70.79 66.82 68.26 KeepLoRA (Luo et al., 2026) 100.00 63.05 49.00 94.25 40.95 73.90 69.45 70.52 GRPO (Shao et al., 2024) 73.51 6.62 55.43 72.25 45.80 64.99 50.72 57.06 GSPO (Zheng et al., 2025) 78.61 44.67 53.45 85.25 46.95 76.48 61.79 69.24 CPO (Ours) 96.94 90.99 64.87 74.00 50.50 74.80 75.46 74.69 
+
+Our method demonstrates a robust capacity to preserve pre-training knowledge, consistently outper-forming other post-training baselines and even surpassing the base model on several out-of-domain datasets. At the Qwen3-VL-2B scale, CPO achieves a comprehensive average of 46.94%, which is notably higher than the GRPO baseline at 42.69% and the GSPO baseline at 43.31%. On math-oriented datasets like MathVista, CPO even improves upon the base model performance, raising the 9Preprint accuracy from 48.00% to 56.70%. This advantage becomes increasingly pronounced as the model scale expands. On the Qwen3-VL-4B model, CPO achieves an average score of 64.14%, signifi-cantly exceeding both the base model average of 59.50% and the GSPO baseline of 49.55%. Sim-ilarly, on the Qwen3-VL-8B model, CPO reaches an average score of 66.68%, outperforming the base model score of 59.71% and the GSPO score of 52.51%. In contrast, full SFT baselines exhibit severe performance degradation across all scales, with the average score dropping to 44.14% on the Qwen3-VL-8B model. These results indicate that while naive SFT and RL post-training severely degrade the original capabilities of the base model, CPO successfully maintains and in some cases enhances pre-trained capabilities through structured parameter-movement regularization, demon-strating strong scaling properties. Table 5: Comparison of Qwen3-VL-2B multimodal performance under different fine-tuning settings across diverse benchmarks. 
+
+Dimension Benchmark Qwen3-VL-2B Base FFT LoRA GRPO GSPO CPO 
+
+STEM MMMU pro full 33.74 23.35 27.65 30.41 27.69 29.48 MathVista mini 48.00 41.60 51.30 52.40 51.60 56.70 
+
+MathVision TEST 14.87 15.99 16.91 17.43 18.19 19.93 
+
+MathVerse mini 31.12 22.84 26.32 32.51 32.16 36.12 
+
+General VQA RealworldQA 57.78 51.11 54.25 54.51 46.01 54.77 
+
+MMStar 52.80 48.60 53.27 53.47 50.53 53.13 Hallucination POPE 85.61 82.98 85.62 83.39 81.41 84.47 Chart/Document Understanding DocVQA VAL 56.50 55.21 69.74 43.84 42.81 48.10 CharXiv (DQ) 60.98 38.70 46.02 41.60 42.38 45.75 CharXiv (RQ) 26.70 21.00 25.20 22.20 23.60 21.90 Grounding CountBenchQA 83.30 62.32 71.28 37.88 60.08 65.99 
+
+Average 50.13 42.15 47.96 42.69 43.31 46.94 Table 6: Comparison of Qwen3-VL-4B multimodal performance under different fine-tuning settings across diverse benchmarks. 
+
+Dimension Benchmark Qwen3-VL-4B Base FFT LoRA GRPO GSPO CPO 
+
+STEM MMMU pro full 51.20 25.70 39.67 40.56 33.12 49.59 
+
+MathVista mini 56.90 51.70 62.70 65.20 57.40 73.90 
+
+MathVision TEST 33.78 18.39 21.88 29.81 22.43 45.00 
+
+MathVerse mini 45.61 29.49 33.65 45.61 37.84 57.69 
+
+General VQA RealworldQA 68.24 51.63 61.70 43.40 58.17 64.58 
+
+MMStar 58.93 55.27 61.93 63.20 51.20 67.73 
+
+Hallucination POPE 87.16 85.49 87.09 83.17 84.99 86.93 Chart/Document Understanding DocVQA VAL 65.04 53.51 75.19 63.47 53.88 77.08 
+
+CharXiv (DQ) 71.63 41.98 55.23 48.93 42.15 75.15 
+
+CharXiv (RQ) 33.10 23.70 32.80 31.60 27.70 39.20 
+
+Grounding CountBenchQA 82.89 61.30 80.24 70.26 76.17 68.64 
+
+Average 59.50 45.29 55.64 53.20 49.55 64.14 
+
+5 RELATED WORKS 
+
+Continual post-training has emerged as a crucial paradigm for VLMs (Yu et al., 2026; Wang et al., 2024b). While prior research has focused mainly on mitigating catastrophic forgetting within the framework of SFT, recent research interests have increasingly shifted attention toward the stability of continual reinforcement learning. 10 Preprint Table 7: Comparison of Qwen3-VL-8B multimodal performance under different fine-tuning settings across diverse benchmarks. 
+
+Dimension Benchmark Qwen3-VL-8B Base FFT LoRA GRPO GSPO CPO 
+
+STEM MMMU pro full 56.71 24.91 41.98 40.56 31.41 53.70 
+
+MathVista mini 50.80 47.40 64.40 61.10 64.90 76.00 
+
+MathVision TEST 36.78 18.82 23.98 31.78 26.35 51.61 
+
+MathVerse mini 43.17 28.22 34.92 44.19 42.84 57.51 
+
+General VQA RealworldQA 66.93 55.29 64.84 27.45 59.48 63.27 MMStar 55.87 51.93 64.13 59.47 61.67 71.67 
+
+Hallucination POPE 76.73 82.02 85.81 82.51 83.20 85.43 Chart/Document Understanding DocVQA VAL 68.16 54.16 79.92 40.77 47.86 66.83 CharXiv (DQ) 82.00 36.30 58.60 50.62 50.25 77.53 
+
+CharXiv (RQ) 32.70 23.40 36.70 28.80 30.00 44.20 
+
+Grounding CountBenchQA 86.97 63.14 70.67 64.15 79.63 85.74 Average 59.71 44.14 56.90 48.31 52.51 66.68 
+
+Reinforcement learning aims to optimize models based on reward signals, which has proven partic-ularly beneficial for eliciting deep cognitive reasoning capabilities, commonly referred to as System 2 thinking. In the context of large models, post-training RL has witnessed rapid evolution from Proximal Policy Optimization (PPO) (Schulman et al., 2017) to Group Relative Policy Optimization (GRPO) (Shao et al., 2024), followed by further algorithmic improvements such as DAPO (Yu et al., 2025) and GSPO (Zheng et al., 2025). Consequently, there is growing interest in understanding the capability of RL to support continual learning (Shenfeld et al., 2026; Abel et al., 2023). A series of recent studies (Shenfeld et al., 2026; Zhang et al., 2026; Chen et al., 2025a; Lai et al., 2025) show that RL naturally exhibits stronger resistance to catastrophic forgetting compared to SFT. Furthermore, Jin et al. (2025) found that RL fine-tuning can heal out-of-distribution forgetting previously induced by SFT. However, the underlying mechanisms behind the robustness remain highly debated. Shenfeld et al. (2026) empirically attributes the resistance to forgetting to the KL divergence penalty inherent in standard RL algorithms such as GRPO (Shao et al., 2024), while empirical evaluations by Chen et al. (2025a) and Lai et al. (2025) demonstrate that KL regularization plays a negligible role in preventing forgetting. Instead, Zhang et al. (2026) and Chen et al. (2025a) argue that the retention of prior knowledge stems from the on-policy data generation process during RL, rather than intrinsic algorithmic differences. A recent study (Lou et al., 2026) highlights that RL still suffers from non-negligible forgetting on classification tasks. Despite these observations, how catastrophic forgetting occurs in complex System 2 reasoning tasks where modern RL is most typically applied. And the fundamental essence of the forgetting phe-nomenon in continual RL remains largely unexplored. 
+
+6 CONCLUSION 
+
+In this work, we revisit the assumption that reinforcement learning is inherently robust to forget-ting in continual VLM post-training. We introduce MRCL, a Multimodal Reasoning Continual Learning benchmark built from recent and diverse multimodal tasks, and show that continual RL still suffers from severe catastrophic forgetting under more realistic evaluation settings. To address this challenge, we propose Continual Policy Optimization, a replay-free framework grounded in the prior-task behavioral KL objective. By relaxing the intractable historical KL constraint into a parameter-movement surrogate, CPO preserves prior-task behavior with negligible additional com-putational and memory overhead, making it scalable to large VLMs. Together, MRCL and CPO provide both a more faithful benchmark and a principled replay-free optimization framework for studying continual post-training in modern vision-language models. 11 Preprint 
+
+REFERENCES 
+
+David Abel, Andr´ e Barreto, Benjamin Van Roy, Doina Precup, Hado P van Hasselt, and Satinder Singh. A definition of continual reinforcement learning. Advances in Neural Information Pro-cessing Systems , 36:50377–50407, 2023. Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Ale-man, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025a. Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-vl technical report. arXiv preprint arXiv:2502.13923 , 2025b. Howard Chen, Noam Razin, Karthik Narasimhan, and Danqi Chen. Retaining by doing: The role of on-policy data in mitigating forgetting. arXiv preprint arXiv:2510.18874 , 2025a. Jinpeng Chen, Runmin Cong, Yuzhi Zhao, Hongzheng Yang, Guangneng Hu, Horace Ho Shing Ip, and Sam Kwong. Sefe: Superficial and essential forgetting eliminator for multimodal contin-ual instruction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025b. Lin Chen, Jinsong Li, Xiaoyi Dong, Pan Zhang, Yuhang Zang, Zehui Chen, Haodong Duan, Jiaqi Wang, Yu Qiao, Dahua Lin, et al. Are we on the right way for evaluating large vision-language models? Advances in Neural Information Processing Systems , 37:27056–27087, 2024. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capa-bilities. arXiv preprint arXiv:2507.06261 , 2025. Robert M French. Catastrophic forgetting in connectionist networks. Trends in cognitive sciences ,3(4):128–135, 1999. Hao Gu, Mao-Lin Luo, Zi-Hao Zhou, Han-Chen Zhang, Min-Ling Zhang, and Tong Wei. Spec-tral imbalance causes forgetting in low-rank continual adaptation. In Forty-third International Conference on Machine Learning , 2026a. Jiawei Gu, Yunzhuo Hao, Huichen Will Wang, Linjie Li, Michael Qizhe Shieh, Yejin Choi, Ranjay Krishna, and Yu Cheng. Thinkmorph: Emergent properties in multimodal interleaved chain-of-thought reasoning. In The Fourteenth International Conference on Learning Representations ,2026b. Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. Hangzhan Jin, Sitao Luan, Sicheng Lyu, Guillaume Rabusseau, Reihaneh Rabbany, Doina Pre-cup, and Mohammad Hamdaqa. RL fine-tuning heals ood forgetting in sft. arXiv preprint arXiv:2509.12235 , 2025. James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcom-ing catastrophic forgetting in neural networks. Proceedings of the national academy of sciences ,114(13):3521–3526, 2017. Muhammad Rifki Kurniawan, Xiang Song, Zhiheng Ma, Yuhang He, Yihong Gong, Yang Qi, and Xing Wei. Evolving parameterized prompt memory for continual learning. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2024. 12 Preprint Song Lai, Haohan Zhao, Rong Feng, Changyi Ma, Wenzhuo Liu, Hongbo Zhao, Xi Lin, Dong Yi, Qingfu Zhang, Hongbin Liu, et al. Reinforcement fine-tuning naturally mitigates forgetting in continual post-training. arXiv preprint arXiv:2507.05386 , 2025. Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and Ji-Rong Wen. Evaluating object hal-lucination in large vision-language models. In Proceedings of the 2023 conference on empirical methods in natural language processing , pp. 292–305, 2023. Meng Lou, Hanzhong Guo, Linwei Chen, and Yizhou Yu. Overcoming catastrophic forgetting in visual continual learning with reinforcement fine-tuning. arXiv preprint arXiv:2605.09640 , 2026. Pan Lu, Hritik Bansal, Tony Xia, Jiacheng Liu, Chunyuan Li, Hannaneh Hajishirzi, Hao Cheng, Kai-Wei Chang, Michel Galley, and Jianfeng Gao. Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts. In International Conference on Learning Representations ,volume 2024, pp. 23439–23554, 2024. Junyu Luo, Zhizhuo Kou, Liming Yang, Xiao Luo, Jinsheng Huang, Zhiping Xiao, Jingshu Peng, Chengzhong Liu, Jiaming Ji, Xuanzhe Liu, et al. Finmme: Benchmark dataset for financial multi-modal reasoning evaluation. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 29465–29489, 2025. Mao-Lin Luo, Zi-Hao Zhou, Yi-Lin Zhang, Yuanyu Wan, Min-Ling Zhang, and Tong Wei. KeepLoRA: Continual learning with residual gradient adaptation. In The Fourteenth Interna-tional Conference on Learning Representations , 2026. Minesh Mathew, Dimosthenis Karatzas, and CV Jawahar. Docvqa: A dataset for vqa on document images. In Proceedings of the IEEE/CVF winter conference on applications of computer vision ,pp. 2200–2209, 2021. Roni Paiss, Ariel Ephrat, Omer Tov, Shiran Zada, Inbar Mosseri, Michal Irani, and Tali Dekel. Teaching clip to count to ten. In Proceedings of the IEEE/CVF international conference on com-puter vision , pp. 3170–3180, 2023. Runqi Qiao, Qiuna Tan, Peiqing Yang, Yanzi Wang, Xiaowan Wang, Enhui Wan, Guanting Dong, Shiqiang Lang, Sitong Zhou, Yida Xu, Yuchen Zeng, Jie Wang, Chong Sun, Chen Li, and Hong-gang Zhang. We-math 2.0: A versatile mathbook system for incentivizing visual mathematical reasoning. In The Fourteenth International Conference on Learning Representations , 2026. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. David Rolnick, Arun Ahuja, Jonathan Schwarz, Timothy Lillicrap, and Gregory Wayne. Experience replay for continual learning. Advances in neural information processing systems , 32, 2019. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Idan Shenfeld, Jyothish Pari, and Pulkit Agrawal. RL’s razor: Why online reinforcement learning forgets less. In The Fourteenth International Conference on Learning Representations , 2026. Giorgio Vitetta, Desmond P. Taylor, Giulio Colavolpe, Fabrizio Pancaldi, and Philippa A. Martin. 
+
+Elements of Information Theory . Wiley Telecom, 2012. doi: 10.1002/9781118576618.ch7. Ke Wang, Junting Pan, Weikang Shi, Zimu Lu, Houxing Ren, Aojun Zhou, Mingjie Zhan, and Hong-sheng Li. Measuring multimodal mathematical reasoning with math-vision dataset. Advances in Neural Information Processing Systems , 37:95095–95169, 2024a. 13 Preprint Liyuan Wang, Xingxing Zhang, Hang Su, and Jun Zhu. A comprehensive survey of continual learning: Theory, method and application. IEEE transactions on pattern analysis and machine intelligence , 46(8):5362–5383, 2024b. Xiao Wang, Tianze Chen, Qiming Ge, Han Xia, Rong Bao, Rui Zheng, Qi Zhang, Tao Gui, and Xuan-Jing Huang. Orthogonal subspace learning for language model continual learning. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2023 , pp. 10658–10671, 2023. Zirui Wang, Mengzhou Xia, Luxi He, Howard Chen, Yitao Liu, Richard Zhu, Kaiqu Liang, Xindi Wu, Haotian Liu, Sadhika Malladi, et al. Charxiv: Charting gaps in realistic chart understanding in multimodal llms. Advances in Neural Information Processing Systems , 37:113569–113697, 2024c. xAI. Realworldqa: A benchmark for real-world spatial understanding. https:// huggingface.co/datasets/xai-org/RealworldQA , 2024. Accessed: 2025-04-26. Sau Lai Yip, Sunan He, Yuxiang Nie, Shu Pui Chan, Yilin Ye, Sum Ying Lam, and Hao Chen. Medbookvqa: A systematic and comprehensive medical benchmark derived from open-access book. arXiv preprint arXiv:2506.00855 , 2025. Dianzhi Yu, Xinni Zhang, Yankai Chen, Aiwei Liu, Yifei Zhang, Philip S Yu, and Irwin King. Recent advances of multimodal continual learning: A comprehensive survey. IEEE Transactions on Neural Networks and Learning Systems , 2026. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al. DAPO: An open-source LLM reinforcement learning sys-tem at scale. In The Thirty-ninth Annual Conference on Neural Information Processing Systems ,2025. Xiang Yue, Tianyu Zheng, Yuansheng Ni, Yubo Wang, Kai Zhang, Shengbang Tong, Yuxuan Sun, Botao Yu, Ge Zhang, Huan Sun, et al. Mmmu-pro: A more robust multi-discipline multimodal understanding benchmark. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 15134–15186, 2025. Renrui Zhang, Dongzhi Jiang, Yichi Zhang, Haokun Lin, Ziyu Guo, Pengshuo Qiu, Aojun Zhou, Pan Lu, Kai-Wei Chang, Yu Qiao, et al. Mathverse: Does your multi-modal llm truly see the diagrams in visual math problems? In European Conference on Computer Vision , pp. 169–186. Springer, 2024. Zhihao Zhang, Qiaole Dong, Qi Zhang, Enyu Zhou, Jun Zhao, Zhiheng Xi, Senjie Jin, Xiaoran Fan, Yuhao Zhou, Mingqi Wu, Yanwei Fu, Tao Ji, Tao Gui, Xuanjing Huang, and Kai Chen. Why reinforcement fine-tuning enables MLLMs preserve prior knowledge better: A data perspective. In The Fourteenth International Conference on Learning Representations , 2026. Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao, Kai Dang, Yuqiong Liu, Rui Men, An Yang, et al. Group sequence policy optimization. arXiv preprint arXiv:2507.18071 , 2025. Da-Wei Zhou, Qi-Wei Wang, Zhi-Hong Qi, Han-Jia Ye, De-Chuan Zhan, and Ziwei Liu. Class-incremental learning: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence ,46(12):9851–9873, 2024. 14 Preprint 
+
+A THEORETICAL PROOFS 
+
+A.1 FINITE -H ORIZON TERMINAL -R EWARD KL F ORGETTING BOUND 
+
+Proposition A.1 (Finite horizon KL forgetting bound) . Consider an old task Ti−1 with prompts 
+
+x ∼ D i−1, finite-horizon autoregressive generations y1: H , and terminal reward Ri−1(x, y 1: H ). Let 
+
+˜π be the policy obtained after training on Ti−1 and let π be the policy after subsequent adaptation. Their sequence distributions are 
+
+P˜π (y1: H | x) = 
+
+> H
+
+Y
+
+> t=1
+
+˜π(yt | x, y <t ), Pπ (y1: H | x) = 
+
+> H
+
+Y
+
+> t=1
+
+π(yt | x, y <t ). (18) 
+
+Define the task return 
+
+ηi−1(π) = Ex∼D i−1, y ∼Pπ (·| x)[Ri−1(x, y )] (19) 
+
+and assume the terminal reward has bounded range 
+
+Bi−1 = sup 
+
+> x,y,y ′
+
+|Ri−1(x, y ) − Ri−1(x, y ′)| < ∞. (20) 
+
+Let the normalized old-policy prefix visitation distribution be 
+
+dTi−1 
+
+> ˜π
+
+(t, x, y <t ) = 1
+
+H Di−1(x)P˜π (y<t | x), t ∈ { 1, . . . , H }, (21) 
+
+and define the corresponding mean token-level KL divergence as 
+
+¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ) = E(t,x,y <t )∼dTi−1˜π
+
+DKL 
+
+ ˜π(· | x, y <t )∥π(· | x, y <t ) . (22) 
+
+Then the old-task return degradation is bounded by 
+
+|ηi−1(˜ π) − ηi−1(π)| ≤ Bi−1
+
+r H
+
+2 ¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ). (23) 
+
+Moreover, the sequence-level KL and the normalized mean token-level KL satisfy 
+
+Ex∼D i−1
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) = H ¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ). (24) 
+
+Proof. We prove the result in three steps: first controlling terminal-reward difference by sequence-level KL, then expanding sequence-level KL by the autoregressive chain rule, and finally substituting the normalized mean token-level KL. 
+
+Step 1: terminal reward difference is controlled by sequence-level KL. Fix a prompt x and abbreviate 
+
+P = P˜π (· | x), Q = Pπ (· | x), R(y) = Ri−1(x, y ). (25) If Bi−1 = 0 , then Ri−1(x, y ) is constant in y for every x, so the left-hand side of Eq. 23 is zero and the proposition is immediate. Hence assume Bi−1 > 0.For this fixed prompt, let 
+
+R− 
+
+> x
+
+= inf  
+
+> y
+
+Ri−1(x, y ), fx(y) = Ri−1(x, y ) − R−
+
+> x
+
+Bi−1
+
+. (26) By the definition of Bi−1, 0 ≤ fx(y) ≤ 1 for all y. Since P 
+
+> y
+
+P (y) = P 
+
+> y
+
+Q(y) = 1 , subtracting the constant R− 
+
+> x
+
+does not change the difference of expectations: 
+
+EP [R(y)] − EQ[R(y)] = X
+
+> y
+
+(P (y) − Q(y)) R(y) (27) 
+
+= X
+
+> y
+
+(P (y) − Q(y))( R(y) − R− 
+
+> x
+
+) (28) 
+
+= Bi−1
+
+X
+
+> y
+
+(P (y) − Q(y)) fx(y) (29) 
+
+= Bi−1 (EP [fx] − EQ[fx]) . (30) 15 Preprint Using the variational characterization of total variation, 
+
+DTV (P, Q ) = sup  
+
+> 0≤f≤1
+
+|EP [f ] − EQ[f ]| , (31) we obtain 
+
+|EP [R(y)] − EQ[R(y)] | ≤ Bi−1DTV (P, Q ). (32) Pinsker’s inequality further gives 
+
+DTV (P, Q ) ≤
+
+r 12 DKL (P ∥Q). (33) Combining the previous two inequalities and returning to the original notation yields, for every prompt x,
+
+Ey∼P˜π (·| x)[Ri−1(x, y )] − Ey∼Pπ (·| x)[Ri−1(x, y )] ≤ Bi−1
+
+r 12 DKL 
+
+ P˜π (· | x)∥Pπ (· | x). (34) Now expand the task-return difference: 
+
+ηi−1(˜ π) − ηi−1(π) = Ex∼D i−1
+
+Ey∼P˜π (·| x)[Ri−1(x, y )] − Ey∼Pπ (·| x)[Ri−1(x, y )]  . (35) Taking absolute values, using |E[Z]| ≤ E[|Z|], and applying Eq. 34, 
+
+|ηi−1(˜ π) − ηi−1(π)| ≤ Ex∼D i−1
+
+ EP˜π (·| x)[Ri−1(x, y )] − EPπ (·| x)[Ri−1(x, y )]  (36) 
+
+≤ Bi−1Ex∼D i−1
+
+"r 12 DKL 
+
+ P˜π (· | x)∥Pπ (· | x)#
+
+. (37) Because u 7 → √u is concave on R≥0, Jensen’s inequality implies 
+
+Ex
+
+hp Zx
+
+i
+
+≤ pEx[Zx] for Zx ≥ 0. (38) With Zx = 12 DKL 
+
+ P˜π (· | x)∥Pπ (· | x), this gives 
+
+|ηi−1(˜ π) − ηi−1(π)| ≤ Bi−1
+
+r 12 Ex∼D i−1
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) . (39) 
+
+Step 2: sequence-level KL equals the sum of token-level KLs. For a fixed prompt x, start from the definition of sequence-level KL: 
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) = X
+
+> y1: H
+
+P˜π (y1: H | x) log P˜π (y1: H | x)
+
+Pπ (y1: H | x) . (40) By autoregressive factorization, 
+
+P˜π (y1: H | x)
+
+Pπ (y1: H | x) =
+
+> H
+
+Y
+
+> t=1
+
+˜π(yt | x, y <t )
+
+π(yt | x, y <t ) , (41) and therefore 
+
+log P˜π (y1: H | x)
+
+Pπ (y1: H | x) =
+
+> H
+
+X
+
+> t=1
+
+log ˜π(yt | x, y <t )
+
+π(yt | x, y <t ) . (42) Substituting this identity into the sequence KL and exchanging the finite sums gives 
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) =
+
+> H
+
+X
+
+> t=1
+
+X
+
+> y1: H
+
+P˜π (y1: H | x) log ˜π(yt | x, y <t )
+
+π(yt | x, y <t ) . (43) For a fixed t, decompose the sequence as (y<t , y t, y >t ). Under P˜π ,
+
+P˜π (y1: H | x) = P˜π (y<t | x)˜ π(yt | x, y <t )P˜π (y>t | x, y ≤t). (44) 16 Preprint The log-ratio term in Eq. 43 depends only on (x, y <t , y t), so summing over future tokens gives 
+
+X
+
+> y>t
+
+P˜π (y>t | x, y ≤t) = 1 . (45) Thus the t-th term becomes 
+
+X
+
+> y1: H
+
+P˜π (y1: H | x) log ˜π(yt | x, y <t )
+
+π(yt | x, y <t ) (46) 
+
+= X
+
+> y<t
+
+P˜π (y<t | x) X
+
+> yt
+
+˜π(yt | x, y <t ) log ˜π(yt | x, y <t )
+
+π(yt | x, y <t ) (47) 
+
+= X
+
+> y<t
+
+P˜π (y<t | x)DKL 
+
+ ˜π(· | x, y <t )∥π(· | x, y <t ) (48) 
+
+= Ey<t ∼P˜π (·| x)
+
+DKL 
+
+ ˜π(· | x, y <t )∥π(· | x, y <t ) . (49) Consequently, 
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) =
+
+> H
+
+X
+
+> t=1
+
+Ey<t ∼P˜π (·| x)
+
+DKL 
+
+ ˜π(· | x, y <t )∥π(· | x, y <t ) . (50) 
+
+Step 3: convert the chain rule into the normalized mean token-level KL. First verify that dTi−1
+
+> ˜π
+
+is normalized: 
+
+> H
+
+X
+
+> t=1
+
+X
+
+> x
+
+X
+
+> y<t
+
+dTi−1 
+
+> ˜π
+
+(t, x, y <t ) = 1
+
+H
+
+> H
+
+X
+
+> t=1
+
+X
+
+> x
+
+Di−1(x) X
+
+> y<t
+
+P˜π (y<t | x) (51) 
+
+= 1
+
+H
+
+> H
+
+X
+
+> t=1
+
+X
+
+> x
+
+Di−1(x) (52) 
+
+= 1 . (53) Therefore, by the definition of the mean token-level KL, 
+
+H ¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ) = 
+
+> H
+
+X
+
+> t=1
+
+Ex∼D i−1, y <t ∼P˜π (·| x)
+
+DKL 
+
+ ˜π(· | x, y <t )∥π(· | x, y <t ) (54) 
+
+= Ex∼D i−1
+
+DKL 
+
+ P˜π (· | x)∥Pπ (· | x) , (55) where the second equality uses Eq. 50. This proves Eq. 24. Substituting Eq. 24 into Eq. 39 gives 
+
+|ηi−1(˜ π) − ηi−1(π)| ≤ Bi−1
+
+r H
+
+2 ¯DdTi−1˜π 
+
+> KL
+
+(˜ π, π ), (56) which is the desired result. A.2 PARAMETER MOVEMENT AS A NOISY FISHER PROXY 
+
+Proposition A.2 (Parameter movement as a noisy Fisher proxy) . Consider training on task Ti−1
+
+under a locally stationary approximation, so that the policy, normalized prefix-token distribution, Fisher diagonal, and reward-score moments are treated as fixed over the interval in which parameter movement is measured. Let ht = ( x, y <t ) and define the token score 
+
+ϕk(t, h t, a ) = ∂∂θ k
+
+log πθ (a | ht). (57) 
+
+The task Fisher diagonal is 
+
+F Ti−1 
+
+> kk
+
+= E(t,h t)∼dTi−1
+
+> θ
+
+Ea∼πθ (·| ht)[ϕk(t, h t, a )2] . (58) 
+
+For terminal-reward policy-gradient training, define the token-sampled gradient contribution 
+
+zk = A(x, y )ϕk(t, h t, y t), (59) 17 Preprint 
+
+where A(x, y ) is a terminal reward or baseline-centered terminal advantage, and (t, h t, y t) is sam-pled from the normalized prefix-token distribution. Let 
+
+μk = E[zk], Vk = Var( zk), σ2 
+
+> A
+
+= E[A2], (60) 
+
+and, for F Ti−1 
+
+> kk
+
+> 0, define 
+
+qk = E[A2ϕ2
+
+> k
+
+]
+
+σ2
+
+> A
+
+F Ti−1
+
+> kk
+
+, ρk = μk
+
+σA
+
+q
+
+F Ti−1
+
+> kk
+
+. (61) 
+
+Then 
+
+Vk = σ2
+
+> A
+
+(qk − ρ2
+
+> k
+
+)F Ti−1 
+
+> kk
+
+. (62) 
+
+Under SGD with learning rate η for N stochastic updates, if the parameter gradient samples have mean μk and martingale-difference noise with variance Vk, the expected squared movement satisfies 
+
+E[|∆θk|2] = η2σ2
+
+> A
+
+N 2ρ2 
+
+> k
+
++ N (qk − ρ2
+
+> k
+
+) F Ti−1 
+
+> kk
+
+. (63) 
+
+Equivalently, with 
+
+Ck = N 2ρ2 
+
+> k
+
++ N (qk − ρ2
+
+> k
+
+), (64) 
+
+we have 
+
+E[|∆θk|2] = η2σ2
+
+> A
+
+CkF Ti−1 
+
+> kk
+
+. (65) 
+
+Thus, ranking parameters by expected squared movement is consistent with ranking by F Ti−1 
+
+> kk
+
+if Ck
+
+is constant across coordinates, and is pairwise consistent whenever, for F Ti−1 
+
+> kk
+
+> F Ti−1 
+
+> ℓℓ
+
+,
+
+Cℓ
+
+Ck
+
+< F Ti−1
+
+> kk
+
+F Ti−1
+
+> ℓℓ
+
+. (66) 
+
+In the noise-dominated regime, this requires approximate homogeneity of qk − ρ2
+
+> k
+
+; in the bias-dominated regime, it requires approximate homogeneity of |ρk|.Proof. We first relate the terminal-reward policy gradient to token-level scores. For the task return 
+
+ηi−1(θ) = Ex∼D i−1, y ∼Pθ (·| x)[Ri−1(x, y )] , (67) the likelihood-ratio identity gives 
+
+∇θk ηi−1(θ) = E
+
+"
+
+A(x, y )
+
+> H
+
+X
+
+> t=1
+
+ϕk(t, h t, y t)
+
+#
+
+, (68) where subtracting any action-independent baseline from the terminal reward does not change the policy-gradient expectation. If t is sampled uniformly from {1, . . . , H } after drawing a trajectory, then 
+
+zk = A(x, y )ϕk(t, h t, y t) (69) satisfies E[zk] = H−1∇θk ηi−1(θ). The factor H is shared across coordinates and therefore does not affect coordinate ranking. Next, by definition of qk and ρk,
+
+E[z2
+
+> k
+
+] = E[A2ϕ2
+
+> k
+
+] = σ2
+
+> A
+
+qkF Ti−1 
+
+> kk
+
+, μ2 
+
+> k
+
+= σ2
+
+> A
+
+ρ2
+
+> k
+
+F Ti−1 
+
+> kk
+
+. (70) Therefore, 
+
+Vk = Var( zk) = E[z2
+
+> k
+
+] − μ2 
+
+> k
+
+= σ2
+
+> A
+
+(qk − ρ2
+
+> k
+
+)F Ti−1 
+
+> kk
+
+, (71) which proves Eq. 62. Now consider N locally stationary SGD updates in coordinate k:
+
+θr+1 ,k = θr,k − ηz r,k , zr,k = μk + ξr,k , (72) where E[ξr,k | F r−1] = 0 and E[ξ2 
+
+> r,k
+
+| F r−1] = Vk. The total movement is 
+
+∆θk = θN,k − θ0,k = −η
+
+> N
+
+X
+
+> r=1
+
+zr,k = −η(N μ k + MN,k ), MN,k =
+
+> N
+
+X
+
+> r=1
+
+ξr,k . (73) 18 Preprint Using the martingale-difference property, 
+
+E[MN,k ] = 0 , E[M 2
+
+> N,k
+
+] = 
+
+> N
+
+X
+
+> r=1
+
+E[ξ2
+
+> r,k
+
+] = N V k, (74) where cross terms vanish because E[ξr,k ξs,k ] = 0 for r̸ = s. Hence 
+
+E[|∆θk|2] = η2E (N μ k + MN,k )2 (75) 
+
+= η2N 2μ2 
+
+> k
+
++ 2 η2N μ kE[MN,k ] + η2E[M 2
+
+> N,k
+
+] (76) 
+
+= η2N 2μ2 
+
+> k
+
++ η2N V k. (77) Substituting the expressions for μ2 
+
+> k
+
+and Vk proves Eq. 63. Finally, for two coordinates k and ℓ,
+
+E[|∆θk|2] > E[|∆θℓ|2] ⇐⇒ CkF Ti−1 
+
+> kk
+
+> C ℓF Ti−1 
+
+> ℓℓ
+
+. (78) If Ck is constant over coordinates, expected movement and Fisher diagonal induce the same ranking. More generally, when F Ti−1 
+
+> kk
+
+> F Ti−1 
+
+> ℓℓ
+
+, the Fisher ranking is preserved for the pair (k, ℓ ) exactly under Eq. 66. The coefficient Ck = N 2ρ2 
+
+> k
+
++ N (qk − ρ2
+
+> k
+
+) separates two regimes. If N 2ρ2 
+
+> k
+
+≪ N (qk − ρ2
+
+> k
+
+), then 
+
+Ck ≈ N (qk − ρ2
+
+> k
+
+), so rank consistency requires the noise coefficient qk − ρ2 
+
+> k
+
+to be sufficiently homogeneous or at least not large enough to violate Eq. 66. If N 2ρ2 
+
+> k
+
+≫ N (qk − ρ2
+
+> k
+
+), then Ck ≈
+
+N 2ρ2
+
+> k
+
+, so rank consistency requires the normalized reward-score alignment magnitude |ρk| to be sufficiently homogeneous. Since 
+
+|ρk| = |E[Aϕ k]|
+
+pE[A2]pE[ϕ2
+
+> k
+
+] ≤ 1 (79) by Cauchy-Schwarz, ρk measures the normalized alignment between terminal advantage and the token score of coordinate k.The realized movement |∆θk| is therefore a noisy proxy for F Ti−1 
+
+> kk
+
+: it is governed by the Fisher diagonal in expectation, but its ranking is mediated by Ck and by stochastic-gradient fluctuations. Under bounded or sub-Gaussian martingale noise, standard concentration inequalities imply that the realized ranking agrees with the expected ranking whenever the pairwise expected movement gap is larger than the corresponding concentration error. 
+
+B METRICS USED IN FIG . 1 
+
+To quantify the dynamics of plasticity and stability visualized in Fig. 1, we introduce two trajectory metrics corresponding to the axes: Cumulative mean Accuracy Improvement (CAI) and Cumulative mean Accuracy Delta (CAD). Let T denote the total number of tasks, ai,j denote the accuracy on task j after training on task i, and zj denote the zero-shot accuracy on task j.The Cumulative mean Accuracy Improvement measures the average performance gain immediately after training on each task compared to its zero-shot baseline, accumulated from the first task through the current task i:CAI i = 1
+
+T
+
+> i
+
+X
+
+> j=1
+
+(aj,j − zj ) (80) The Cumulative mean Accuracy Delta measures the accumulated performance reduction on previ-ously learned tasks. In each sequential stage k from 2 to i, we compute the average accuracy delta for all previous tasks j < k after learning the new task k:CAD i =
+
+> i
+
+X
+
+> k=2
+
+1
+
+k − 1
+
+> k−1
+
+X
+
+> j=1
+
+(ak,j − ak−1,j ) (81) A negative CAD i value indicates cumulative forgetting, while a positive value suggests backward transfer that improves performance on previous tasks. 19 Preprint CPO    
+
+> Stage 2 Stage 3 Stage 4 Stage 5
+> CPO with L2
+> 0.0e+00
+> 5.0e-05
+> 1.0e-04
+> 1.5e-04
+> 2.0e-04
+> | |
+
+Figure 3: Parameter movement heatmaps of CPO and its masked L2 variant on Qwen3-VL-2B. Masked L2 induces dense movement across many top movement parameters, especially in later continual stages, while masked L1 keeps most top movement parameters close to the previous check-point and produces a sparse movement pattern. 0 150 300 450 600                              
+
+> 0.01
+> 0.02
+> 0.03
+> Ours
+> Stage 2
+> 0150 300 450 600
+> 0.01
+> 0.02
+> 0.03
+> Stage 3
+> 0150 300 450 600
+> 0.015
+> 0.030
+> Stage 4
+> 0150 300 450 600
+> 0.01
+> 0.02
+> 0.03
+> Stage 5
+> 0150 300 450 600
+> Step
+> 0.0008
+> 0.0016
+> 0.0024
+> Ours with L2
+> 0150 300 450 600
+> Step
+> 0.0008
+> 0.0016
+> 0.0024
+> 0150 300 450 600
+> Step
+> 0.002
+> 0.004
+> 0.006
+> 0150 300 450 600
+> Step
+> 0.003
+> 0.006
+> 0.009
+> Ours Ours with L2
+
+Figure 4: Regularization loss curves of CPO with masked L1 movement regularization and its masked L2 variant on Qwen3-VL-2B. The L1 coefficient is set to 1e2 and the L2 coefficient is set to 1e5. Both regularization losses remain active during training, indicating that the inferior per-formance of the L2 variant is not due to an inactive regularization signal. 
+
+C ADDITIONAL RESULTS 
+
+Effect of L1 versus L2 movement regularization. We further compare CPO with masked L1
+
+movement regularization against a masked L2 variant on Qwen3-VL-2B. Fig. 4 shows that both reg-ularization terms are active during training, as their losses consistently rise and decay across contin-ual stages. Therefore, the performance gap is not caused by an ineffective L2 regularization signal. Instead, the difference lies in the induced movement pattern. As shown in Fig. 3, masked L2 causes dense movement across many top movement parameters, especially in later stages, whereas masked 
+
+L1 keeps most top movement parameters nearly unchanged and yields a much sparser movement pattern. In terms of continual learning performance, replacing masked L1 with masked L2 decreases MFN and MTA by 23% and 15% , respectively. 20 Preprint 
+
+D DETAILED RESULTS 
+
+This section provides the complete stage-by-stage evaluation results for all compared methods on the MRCL benchmark. Tab. 8, 9, and 10 present the detailed accuracy matrices across the sequential post-training stages for Qwen3-VL-2B, Qwen3-VL-4B, and Qwen3-VL-8B respectively. In each matrix, each row represents the model performance evaluated on a series of tasks after complet-ing the training on the task of that specific stage, illustrating the exact trajectory of learning new capabilities along with the retention of learned knowledge. Table 8: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-2B model. Each row represents the performance trained after the corresponding task. 
+
+> (a) FFT
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 97.96 Navigation 90.66 67.28 We-Math2 84.04 45.22 40.52 Puzzle 48.56 12.32 28.81 92.25 FinMME 44.65 0.55 33.41 83.25 33.60 
+
+> (b) LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 94.40 Navigation 93.04 63.42 We-Math2 88.46 36.40 36.81 Puzzle 78.61 13.05 34.86 90.25 FinMME 52.80 18.01 35.47 85.00 32.35 
+
+> (c) O-LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 94.40 Navigation 94.23 52.21 We-Math2 92.02 39.89 36.99 Puzzle 84.21 27.57 34.22 90.75 FinMME 69.61 12.50 33.49 85.00 34.40 
+
+> (d) SEFE
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 94.40 Navigation 92.70 63.24 We-Math2 92.87 47.06 36.76 Puzzle 90.32 33.27 35.73 89.50 FinMME 85.57 20.59 35.63 81.25 34.20 
+
+> (e) KeepLoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 98.13 Navigation 92.53 62.68 We-Math2 92.19 49.45 38.60 Puzzle 79.97 40.07 33.93 88.75 FinMME 63.50 35.29 33.95 86.00 31.05 
+
+> (f) GSPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 89.98 Navigation 86.08 66.91 We-Math2 85.40 38.79 56.72 Puzzle 79.12 27.57 46.19 86.50 FinMME 69.27 11.95 45.20 75.75 41.05 21 Preprint Table 8: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-2B model. (Continued) 
+
+> (g) GRPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 88.62 Navigation 83.19 47.24 We-Math2 71.65 45.96 57.08 Puzzle 70.63 37.87 53.79 70.25 FinMME 62.48 28.86 48.11 66.25 41.10 
+
+> (h) GRPO*
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 78.95 Navigation 75.72 25.74 We-Math2 75.38 27.76 53.26 Puzzle 78.10 18.20 50.66 68.50 FinMME 76.23 17.10 51.24 61.50 42.15 
+
+> (i) CPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 89.98 Navigation 88.96 68.01 We-Math2 86.25 46.32 55.02 Puzzle 85.40 42.65 50.38 85.75 FinMME 76.06 43.38 49.03 78.00 42.65 Table 9: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-4B model. Each row represents the performance trained after the corresponding task. 
+
+> (a) FFT
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 98.47 Navigation 95.25 75.00 We-Math2 87.44 42.10 49.08 Puzzle 47.20 21.51 38.35 89.75 FinMME 56.71 3.12 37.84 84.50 37.90 
+
+> (b) LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 98.13 Navigation 97.96 65.62 We-Math2 96.43 57.72 47.60 Puzzle 91.68 36.76 44.99 92.50 FinMME 85.57 25.37 43.81 85.75 40.20 
+
+> (c) O-LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 98.13 Navigation 96.94 61.03 We-Math2 96.77 54.41 45.44 Puzzle 92.87 44.67 44.21 92.75 FinMME 89.30 37.68 41.98 93.25 39.85 
+
+> (d) SEFE
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 98.13 Navigation 97.62 67.46 We-Math2 97.45 60.48 44.59 Puzzle 95.93 60.11 44.30 92.00 FinMME 94.74 55.15 43.48 91.00 40.30 22 Preprint Table 9: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-4B model.(Continued) 
+
+> (e) KeepLoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 96.26 Navigation 95.42 74.82 We-Math2 96.77 69.85 47.01 Puzzle 96.26 64.34 46.69 93.50 FinMME 95.42 65.26 46.51 93.75 37.90 
+
+> (f) GSPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 92.53 Navigation 87.61 81.62 We-Math2 83.19 75.55 65.10 Puzzle 78.27 35.66 47.38 87.25 FinMME 65.03 30.70 45.17 83.00 44.80 
+
+> (g) GRPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 91.51 Navigation 86.08 55.88 We-Math2 70.29 39.52 62.55 Puzzle 66.21 32.35 59.94 78.75 FinMME 70.63 39.34 58.18 68.25 47.75 
+
+> (h) GRPO*
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 67.74 Navigation 66.72 60.66 We-Math2 63.16 53.68 62.69 Puzzle 61.46 42.83 63.11 69.25 FinMME 63.16 40.26 62.84 65.50 48.50 
+
+> (i) CPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 92.53 Navigation 93.04 82.54 We-Math2 92.19 86.03 64.13 Puzzle 91.34 80.33 63.85 78.00 FinMME 90.83 76.84 63.64 77.50 49.00 Table 10: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-8B model. Each row represents the performance trained after the corresponding task. 
+
+> (a) FFT
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 100.00 Navigation 100.00 84.19 We-Math2 99.32 77.02 50.06 Puzzle 39.73 52.02 38.87 35.50 FinMME 79.80 33.46 38.94 35.00 32.75 
+
+> (b) LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 100.00 Navigation 100.00 68.20 We-Math2 99.49 52.21 48.66 Puzzle 97.45 51.29 46.31 93.75 FinMME 94.57 42.46 45.11 91.50 41.20 23 Preprint Table 10: Accuracy of a series of fine-tuning methods on the MRCL benchmark, evaluated on the Qwen3-VL-8B model.(Continued) 
+
+> (c) O-LoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 100.00 Navigation 99.83 53.49 We-Math2 99.66 42.28 46.84 Puzzle 99.49 42.46 45.03 92.75 FinMME 98.64 35.11 44.36 86.50 42.65 
+
+> (d) SEFE
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 100.00 Navigation 99.83 69.30 We-Math2 100.00 58.46 46.36 Puzzle 99.83 52.39 46.06 94.25 FinMME 99.49 53.12 45.17 92.25 44.05 
+
+> (e) KeepLoRA
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 100.00 Navigation 100.00 83.82 We-Math2 100.00 64.15 49.22 Puzzle 100.00 59.93 48.96 95.50 FinMME 100.00 63.05 49.00 94.25 40.95 
+
+> (f) GSPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 95.93 Navigation 92.87 83.64 We-Math2 92.53 83.64 67.90 Puzzle 83.36 47.24 56.20 88.00 FinMME 78.61 44.67 53.45 85.25 46.95 
+
+> (g) GRPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 90.83 Navigation 81.49 43.38 We-Math2 85.06 20.96 62.70 Puzzle 77.25 14.89 59.28 82.25 FinMME 73.51 6.62 55.43 72.25 45.80 
+
+> (h) CPO
+> MedBook
+> Navigation
+> We-Math2
+> Puzzle
+> FinMME
+
+MedBook 95.76 Navigation 94.91 90.07 We-Math2 95.93 86.58 64.66 Puzzle 96.10 87.13 65.02 73.00 FinMME 96.94 90.99 64.87 74.00 50.50 24 Preprint 
+
+E PROMPT TEMPLATES 
+
+In the experiments, two prompt strategies are used. Under the Direct Prompts setting, the model is restricted to output only the final answer. The CoT Prompts elicits explicit step-by-step reasoning from the model before yielding the prediction, where the final answer is enclosed within boxed {} .Concretely, we apply the Direct Prompts to the Zero-shot 1, Full Fine-Tuning and LoRA-based meth-ods. The CoT Prompts are deployed for Zero-shot 2, GRPO, GSPO and CPO. 
+
+Direct Prompts: 
+
+MedBookVQA: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please output the answer directly and NO extra thinking. Rules for the final answer: - Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). 
+
+{question }”
+
+Navigation: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please output the answer directly and NO extra thinking. Note: There is one and only one shortest path. Rules for the final answer: - Only provide your solution as a sequence of capital letter which should be comma-separated. 
+
+{question }”
+
+We-Math2: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please output the answer directly and NO extra thinking. Rules for the final answer: - Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). - Yes/No: Output Yes or No ONLY. - Numerical: Output the number ONLY. - Fill-in-the-blank: Output the answer phrase or word directly. - Math Formula: Output the LaTeX expression enclosed in single dollar signs (e.g., x = y). 
+
+{question }”
+
+Puzzle: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please output the answer directly and NO extra thinking. Rules for the final answer: - Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). 
+
+{question }”
+
+FinMME: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please output the answer directly and NO extra thinking. Rules for the final answer: - Multiple Choice: If one or more options are correct, output the uppercase option letter(s) ONLY. If there are multiple answers, separate them with commas (e.g., A,C,D). - Numerical: Output the number ONLY. 
+
+{question }”
+
+25 Preprint 
+
+CoT Prompts: 
+
+MedBookVQA: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please think step-by-step and put the final answer in \\boxed{{}} .Rules for the final answer in \\boxed{{}} :- Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). 
+
+{question }”
+
+Navigation: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please think step-by-step and put the final answer in \\boxed{{}} .Hints: You need to first determine the size of the grid, then determine the coordinates of the hole, player, and gift, and finally perform path planning. Note: There is one and only one shortest path. Rules for the final answer in \\boxed{{}} :- Only provide your solution as a sequence of capital letter which should be comma-separated. 
+
+{question }”
+
+We-Math2: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please think step-by-step and put the final answer in \\boxed{{}} .Rules for the final answer in \\boxed{{}} :- Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). - Yes/No: Output Yes or No ONLY. - Numerical: Output the number ONLY. - Fill-in-the-blank: Output the answer phrase or word directly. - Math Formula: Output the LaTeX expression enclosed in single dollar signs (e.g., x = y). 
+
+{question }”
+
+Puzzle: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please think step-by-step and put the final answer in \\boxed{{}} .Rules for the final answer in \\boxed{{}} :- Multiple Choice: Output the uppercase option letter ONLY (e.g., A, B, C, D, E...). 
+
+{question }”
+
+FinMME: 
+
+”You are an AI assistant helping to solve the following problem based on the image(s). Instructions: Please think step-by-step and put the final answer in \\boxed{{}} .Rules for the final answer in \\boxed{{}} :- Multiple Choice: If one or more options are correct, output the uppercase option letter(s) ONLY. If there are multiple answers, separate them with commas (e.g., A,C,D). - Numerical: Output the number ONLY. 
+
+{question }”
+
+F CASE STUDY 
+
+This section presents a qualitative case study across diverse datasets to illustrate the evolution of model behavior during continual post-training. We compare model responses to identical test sam-ples when evaluated immediately after learning each specific task versus after completing the en-tire sequential training process. The results show that while GSPO successfully acquires correct problem-solving strategies when evaluated immediately after training on a task, it subsequently suf-fers from severe cognitive collapse on those same tasks as the sequence progresses. For example, after finishing the final FinMME stage, the GSPO model fails to maintain mathematical precision, misinterprets grid dimensions in navigation, and generates heavily hallucinated answers on medical 26 Preprint datasets. In contrast, CPO consistently preserves both the step-by-step reasoning structure and the visual comprehension acquired during earlier stages without degrading its logical chain. 
+
+TASK: Puzzle 
+
+Question : 
+
+The image below is divided into four parts by white strips, forming a 2 × 2 jigsaw puzzle. The parts are labeled “1” (top-left), “2” (top-right), “3” (bottom-left), and “4” (bottom-right). These parts are from a single original image but have been shuffled. Your task is to determine the correct arrangement of the physically labeled parts to reconstruct the natural image. A. The top-left part should be Part 1; the top-right part should be Part 2; the bottom-left part should be Part 4; and the bottom-right part should be Part 3. B. The top-left part should be Part 2; the top-right part should be Part 1; the bottom-left part should be Part 3; and the bottom-right part should be Part 4. C. The top-left part should be Part 4; the top-right part should be Part 1; the bottom-left part should be Part 3; and the bottom-right part should be Part 2. D. The top-left part should be Part 3; the top-right part should be Part 1; the bottom-left part should be Part 2; and the bottom-right part should be Part 4. 
+
+GSPO (train after Puzzle): 
+
+Looking at the image, we see a 2x2 grid with four labeled parts. The question asks us to arrange them logically. Alternative D says: Top left = Part 3 (bedroom corner) Top right = Part 1 (lamp) Bottom left = Part 2 (nightstand) Bottom right = Part 4 (rug) But looking at the correct answer, the question might be testing logical reasoning. Assuming D is a logical arrangement, let me pick D. Answer: D \\ boxed {D} ✔
+
+GSPO (train after FinMME): 
+
+Looking at the logical arrangement: We see that the question might be testing reasoning. Al-ternative answer might be logical Answer: B or D Answer: B \\ boxed {B} (based on logical reasoning) ✗
+
+CPO (train after FinMME): 
+
+Looking at the four provided images: -Part 1: Shows a lamp next to a bed with a black headboard, against a light wall. - Part 2: Shows the bottom edge of a dark bed with a white base. - Part 3: Shows a bed with a white headboard and dark patterned pillows, next to a mirror or glass door. - Part 4: Shows the floor area with a black nightstand and the corner of a red bed. Now let’s try to logically arrange them into a 2x2 grid. The most logical arrangement would be: Top row: -Left: Part 1 — because it has the lamp and wall, likely the upper part of the room. - Right: Part 3 — because it has the white headboard and appears more “upper” in the room layout. Bottom row: - Left: Part 2 — because it shows the bed base, which is lower. - Right: Part 4 — because it shows the floor and nightstand, also lower. Wait — let’s reconsider. Actually, looking closely, Part 3 seems to be the largest and most complete upper section with the headboard and pillows. It likely belongs in the top-left or top-right. Let’s try arranging: Top-left : Part 3 — because it has the white headboard and looks like the main bed area. Top-right: Part 1 — because it has the lamp and wall, which might be adjacent to the bed. Bottom-left: Part 2 — because it shows the bed base, which is lower. Bottom-right: Part 4 — because it shows the floor and nightstand. This gives us: Top row: [Part 3] [Part 1] Bottom row: [Part 2] [Part 4] This matches option D: > D. The top-left part should be Part 3; the top-right part should be Part 1; the bottom-left part should be Part 2; and the bottom-right part should be Part 4. This arrangement makes sense visually. Therefore, the correct answer is \\ boxed {D}. ✔
+
+27 Preprint 
+
+TASK: We-Math2.0 
+
+Question : 
+
+In the parking lot of a large supermarket, staff plan to set up a circular charging station area. It is known that the center of the charging station area is located on an east-west marking line x = 2 
+
+(the straight line 2 meters east from the parking lot entrance) inside the parking lot. The supermarket has set up two signs, A and B, in the parking lot to guide vehicles into the charging station area. The staff found that signs A and B are symmetric with respect to a north-south marking line y = −3 (the straight line 3 meters south from the parking lot entrance). If the coordinates of sign A are (0 , −2) (in meters), please help the staff calculate the standard equation of the circle for the circular charging station area, so as to reasonably plan the area. 
+
+GSPO (train after We-Math2): 
+
+We are given: - Sign A is at (0 , −2) . - Signs A and B are symmetric with respect to the line 
+
+y = −3. - So, we reflect point A(0 , −2) across the line y = −3. - Distance from (0 , −2) to 
+
+y = −3 is | − 2 − (−3) | = 1 unit down. - Reflecting across y = −3: go 1 unit further below 
+
+y = −3: y = −3 − 1 = −4. - So, point B is at (0 , −4) . Now, we need to find the center and radius of the circle. - The center lies on x = 2 (east-west marking line). - So, center is at (2 , k ) for some k. - We also know that the circle must pass through both points A(0 , −2) 
+
+and B(0 , −4) — because these are the positions of signs A and B, which are symmetric and should be equidistant from the center, and also the circle should be centered along x = 2 and symmetric about y = −3 (which is the axis of symmetry between A and B). Let’s assume the center is at (2 , −3) — which is exactly midway between y = −2 and y = −4, and also lies on 
+
+x = 2 — so it’s a good candidate. Distance from center (2 , −3) to point A(0 , −2) : Distance = p(2 − 0) 2 + ( −3 + 2) 2 = √4 + 1 = √5 So, radius is √5. Standard equation of the circle: 
+
+(x − 2) 2 + ( y + 3) 2 = 5 But wait — let’s double check if there’s another possibility. Is there a different center? For example, if we consider other centers on x = 2 , but we want the circle to be centered such that it passes through both A and B — and we already have a center at (2 , −3) 
+
+which is equidistant to both points (distance √5), so this is the best choice. So, the standard equation is: (x − 2) 2 + ( y + 3) 2 = 5 Final Answer: \\ boxed {(x − 2) 2 + ( y + 3) 2 = 5 }. ✔
+
+GSPO (train after FinMME): 
+
+We see that we have a circle centered on x = 2 , and we want to find the radius. We know that the signs are symmetric about y = −3. A(0 , −2) The reflection of A over y = −3 would be: The difference between −2 and −3 is 1 So the reflection would be at y = −3 − 1 = −4 But the question might be phrasing a reasonable circle around the entrance. Alternative answer might be logical Answer: Circle centered at (2 , −3) with radius 1 Equation: (x − 2) 2 + ( y + 3) 2 = 1 
+
+Answer: (x − 2) 2 + ( y + 3) 2 = 1 \\ boxed {(x − 2) 2 + ( y + 3) 2 = 1 }. ✗
+
+CPO (train after FinMME): 
+
+We are given: -The center of the circle lies on the vertical line x = 2 . -Signs A and B are symmetric with respect to the horizontal line y = −3. - Coordinates of sign A: (0 , −2) . Step 1: Find coordinates of sign B Since A and B are symmetric with respect to y = −3, we reflect point A across this line. The formula for reflection over a horizontal line y = k is: (x, y ) → (x, 2k −y)
+
+Here, k = −3, so: (0 , −2) → (0 , 2( −3) − (−2)) = (0 , −6 + 2) = (0 , −4) So, sign B is at (0 , −4) . Step 2: Find the center of the circle The center must lie on x = 2 , and since the circle is centered on the line x = 2 , and the signs A and B are symmetric about y = −3, the center should lie on the midpoint of A and B vertically, because the symmetry line is y = −3.Midpoint of A and B: 
+
+ 0+0 2 , −2+( −4) 2
+
+
+
+= (0 , −3) But the center must lie on x = 2 , so the center is at (2 , −3) . Step 3: Find the radius The distance from the center (2 , −3) to point A (0 , −2) :
+
+r = p(2 − 0) 2 + ( −3 − (−2)) 2 = p22 + ( −1) 2 = √4 + 1 = √5 Step 4: Write the standard equation of the circle Standard form: (x − h)2 + ( y − k)2 = r2 Center: (2 , −3) , radius √5 So: 
+
+(x − 2) 2 + ( y + 3) 2 = 5 . Final Answer: \\ boxed {(x − 2) 2 + ( y + 3) 2 = 5 }. ✔
+
+28 Preprint 
+
+TASK: Navigation 
+
+Question : 
+
+You are a maze solver. Your goal is to guide a player from the start to the goal on a grid map while avoiding holes. The player can move one square at a time in the directions left (L), right (R), up (U), or down (D). The frozen lake is not slippery; the player will always move in the in-tended direction. Moving off the edge or falling into a hole results in failure. Reaching the goal means success. Provide your solution as a sequence of moves, such as L,R,U,D. The moves should be comma-separated. 
+
+GSPO (train after Navigation): 
+
+First, let’s map the grid to find the positions of the player, the gift (goal), and the holes. The grid is 4x4. Labeling the rows as R0, R1, R2, R3 and columns as C0, C1, C2, C3. From the image: - The gift (goal) is at R1,C0. - The player (start) is at R3,C1. - The holes (frozen lakes) are at R0,C3, R1,C1, R2,C1. - The rest are walkable tiles. The shortest path from the player at R3,C1 to the gift at R1,C0 must avoid the holes. Let’s trace a possible path: Start at R3,C1. Move Up to R2,C1 — but R2,C1 is a hole → cannot move there. Move Left to R3,C0. Move Up to R2,C0. Move Up to R1,C0 — the gift! Alternative path: Move Up from R3,C1 to R2,C1 — hole →
+
+blocked. So, the only safe path is: Start at R3,C1 Move Left to R3,C0 Move Up to R2,C0 Move Up to R1,C0 Yes! R2,C0 is walkable, and R1,C0 is the gift. No holes were encountered along this path. Answer: L, U, U \\ boxed {L, U, U } ✔
+
+GSPO (train after FinMME): 
+
+Looking at the grid: We see a 3x3 grid. Row 0: - [Gift box at [0,0] - Ice at [0,1] - Ice at [0,2] Row 1: - Ice at [1,0] - Empty Row 2: - Player at [2,0] - Empty The goal is the gift box at [0,0], the player at [2,0] Shortest path from [2,0] to [0,0]: Move UP, but we might need to avoid ice. Alternative answer might be logical Answer: U, U, U or R, L, etc. Let me say: Move UP from [2,0] to [1,0] but [1,0] is ice, so might be different approach Answer: Let me be precise Answer: U, U, U \\ boxed {U,U,U } (answer might be phrasing differently) \\ boxed {U,U,U } is the answer based on logical reasoning \\ boxed {U,U,U } ✗
+
+CPO (train after FinMME): 
+
+We are given a 4x4 grid. Let’s label the rows and columns for clarity: Row 0: [0,0] [0,1] [0,2] [0,3] Row 1: [1,0] [1,1] [1,2] [1,3] Row 2: [2,0] [2,1] [2,2] [2,3] Row 3: [3,0] [3,1] [3,2] [3,3] From the image: - Gift (goal) is at [1,0] - Player is at [3,1] - Holes are at [0,3], [1,1], [2,1] Player must go from [3,1] to [1,0], avoiding [1,1] and [2,1]. Possible path: Start at [3,1] → Move UP to [2,1] → blocked by hole → invalid → Move LEFT to [3,0] → Move UP to [2,0] → Move UP to [1,0] → goal!Path: [3,1] → [3,0] → [2,0] → [1,0] Moves: Left (L), Up (U), Up (U) So the sequence is: L, U, U Final answer: L,U,U \\ boxed {L,U,U } ✔
+
+29 Preprint 
+
+TASK: MedBookVQA 
+
+Question : 
+
+What anatomical structure is involved in the surgical proce-dure shown in the image? A. Upper nasal cavity B. Right mandible C. Inferior alveolar nerve D. Left maxilla 
+
+GSPO (train after MedBookVQA): 
+
+The image shows a radiographic view of a dental or maxillofacial surgical field. The anatomical region highlighted by the surgical context — particularly the presence of bone, teeth, and surgical instruments — indicates that this is a maxillofacial area. The image appears to be a radiograph, likely a panoramic or periapical view, showing the left side of the maxilla (as indicated by the anatomical landmarks and surgical field). In many such cases, especially when dealing with sur-gical procedures involving the maxilla (e.g., osteotomy, implant placement, or tumor resection), the left maxilla is often the focus due to its anatomical prominence or surgical access. Thus, the correct answer is: D. Left maxilla \\ boxed {D}. ✔
+
+GSPO (train after FinMME): 
+
+Looking at the image, we see a cross-sectional view of a dental or facial region, with some small structures around the teeth. The question might be testing logical reasoning. Alternative answer might be phrasing Answer: Let me say Answer: B or C might be wrong Answer: Let me estimate Answer: A or B Answer: D might be the answer \\ boxed {A} might be incorrect. Let me be precise. Answer: B. Answer: \\ boxed {B} is not logical. Alternative answer might be different. Answer: \\ boxed {C} is not correct. Answer: \\ boxed {A} is answer. Answer: 
+
+\\ boxed {A} or \\ boxed {B}. Answer: \\ boxed {D} might be answer. Answer: \\ boxed {A}
+
+is answer. Answer: \\ boxed {A} (answer might be multiple choice). Answer: \\ boxed {A} or 
+
+\\ boxed {B}. Answer: \\ boxed {A} is answer. \\ boxed {A} is answer. Answer: \\ boxed {A}
+
+(based on logical reasoning). \\ boxed {A}. ✗
+
+CPO (train after FinMME): 
+
+Looking closely at the provided panoramic radiograph, we can observe the dental arches and bone structure. The image clearly shows the lower jaw (mandible) with teeth and implants, as well as the upper jaw (maxilla) with dental work. However, the question asks about the anatom-ical structure involved in the surgical procedure shown. The key feature in the image is the presence of dental implants and surgical hardware in the upper jaw, which is the maxilla. The term “Left maxilla” refers to the left side of the upper jaw, which is visible in the image. Given the options: A. Upper nasal cavity — not directly visible or involved in this surgical context. B. Right mandible — the mandible is the lower jaw; it’s visible but not the primary focus here. C. Inferior alveolar nerve — a nerve, not a major surgical site in this context. D. Left maxilla — this is correct because the upper jaw (maxilla) is the area where the dental implants and surgical hardware are located, and the left side is clearly depicted. Therefore, the correct answer is D. Left maxilla. \\ boxed {D} ✔
+
+30

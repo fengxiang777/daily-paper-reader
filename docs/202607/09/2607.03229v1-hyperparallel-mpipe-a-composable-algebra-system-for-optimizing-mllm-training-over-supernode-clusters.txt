@@ -1,0 +1,403 @@
+Title: HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters
+
+URL Source: https://arxiv.org/pdf/2607.03229v1
+
+Published Time: Tue, 07 Jul 2026 00:52:41 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+# Chong Li 1, Zhengdao Yu 1, Nelson Lossing 1, Thibaut Tachon 1,Pierre Leca 1, Etienne Filhol 1, Yujie Yuan 1, Chong Bao 2, Teng Su 21Huawei Fourier Research Center, Paris, France 
+
+> 2
+
+# Huawei Technologies Co., Ltd, Hangzhou, China 
+
+# Abstract 
+
+Modern AI applications have expanded beyond text-only interaction into a wide range of multimodal scenarios, making multimodal large language models (MLLMs) crucial for both research and industry. However, compared with traditional decoder-only LLM training, large-scale MLLM training often shows much lower MFU. We analyze the key pain points in MLLM training and introduce Mpipe, which uses a schedule algebra to derive concrete runtime behavior from a compact schedule specification. From this algebra, Mpipe derives transpose, a multimodal-aware heterogeneous parallel schedule that remaps modality-encoder computation into otherwise idle pipeline regions. On Ascend 910C NPU clusters, Mpipe achieves 2.70 × speedup in a small-scale setting and 1.21 × speedup in a 512-card large-scale setting. 
+
+# 1. Introduction 
+
+Modern AI applications are no longer limited to text-only interaction. In many widely used scenarios, such as visual question answering, document understanding, video anal-ysis, embodied agents, and content generation, models are expected to jointly understand language together with im-ages, videos, and other modal inputs. This trend has made multimodal large language models (MLLMs) an increas-ingly important direction in both research and industry. As model parameters rapidly scale, training frontier mod-els increasingly depends on large accelerator clusters. For example, Llama 3 reports production training on clusters with up to 16K GPUs (Grattafiori et al., 2024). MLLMs further increase this demand beyond decoder-only LLMs. In addition to the language backbone, they must process high-resolution images, videos, and other modality inputs through extra model components, which increases compu-tation, memory footprint, and data movement. However, large-scale MLLM training often achieves much lower MFU (model FLOPs utilization) than decoder-only LLM training (Zhang et al., 2025). Figure 1 compares the MFU of representative LLM and MLLM training work-loads. The dominant source of this gap is the modality encoder, which sits at the input side of the pipeline: its highly vari-able work depends only on data available before the LLM pipeline begins. Such source-side variance need not be chased at runtime, by per-iteration schedule search (Xue et al., 2026b) or data-dependent parallelism (Xue et al., 2026a). It can instead be relocated off the critical path into the pipeline’s intrinsic warmup bubbles by a single static placement. We propose Mpipe, which formalizes parallel schedules as a small composable algebra and derives trans-pose , a schedule that places encoder computation in those bubbles, as one point in that algebra. The resulting sched-ule stays static and invariant to the modality mix, with no runtime scheduling overhead. Our contributions are: • A schedule algebra for parallel training. We for-malize parallel pipeline schedules as a small com-posable algebra in which a schedule is a list of per-region skeletons, and a single derivation maps a cut, schedule, and model to concrete runtime behavior: de-vice placement, collective communication, and exe-cution order, from which we read a cost model that predicts the step makespan. We prove a backward-footprint lemma and a schedule-invariance corollary: one schedule is correct whether the modality encoder is frozen or trained. • Transpose. From this algebra Mpipe derives trans-pose , a static schedule that replicates the encoder across pipeline ranks, runs it inside the warmup bub-bles, and gathers its output into the first LLM stage. The placement is decided once, adds no runtime scheduling overhead, and is invariant to the modality mix. 1
+
+> arXiv:2607.03229v1 [cs.DC] 3 Jul 2026 HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters
+> LLM LLaMA3
+> LLM DeepSeek
+> MLLM QwenVL2
+> MLLM ViT+LLaMA3 +SD
+
+0% 
+
+20% 
+
+40% 
+
+60%  
+
+> 41 %44 .57 %
+> 13 .5%
+> 20 %
+
+MFU (Model FLOPs Utilization)        
+
+> Figure 1. MFU comparison between representative LLM and MLLM training workloads. The MLLM measurements are sourced from OrchMLLM (Zheng et al., 2025) and Dist-Train (Zhang et al., 2025).
+
+• End-to-end results. On Ascend 910C NPU clusters, Mpipe delivers 2.70 × speedup in a small-scale setting and 1.21 × at 512 cards, with no change to the training loss. 
+
+# 2. From LLM to MLLM Training 
+
+Beyond traditional NLP tasks, MLLMs must handle di-verse inputs such as images, videos, or audio before the lan-guage model can reason over them. A typical MLLM there-fore contains modality encoders for parsing these inputs, an LLM backbone for reasoning, and sometimes modal-ity generators for output synthesis. Between these compo-nents, projector layers are commonly used to align modal-ity representations with the LLM backbone feature space (e.g., NExT-GPT (Wu et al., 2024)). MLLM training also often proceeds in multiple stages: to align feature spaces across modalities, some modules may be frozen while pro-jector or alignment layers are updated. The key structural change is that MLLMs no longer exe-cute a single homogeneous Transformer stack. They sep-arate modality parsing from language reasoning, and this separation naturally introduces components with different functional roles. A ViT-style encoder (Dosovitskiy et al., 2021) extracts and aligns modality features, the aligned tokens are then reasoned over in the LLM backbone, and the reasoning result may be passed to modality generators such as U-Net (Ronneberger et al., 2015) or DiT (Peebles & Xie, 2023) to synthesize modality-specific outputs. There-fore, the encoder, projector, LLM backbone, and genera-tor have naturally different responsibilities and process dif-ferent workloads; they are not interchangeable copies of the same repeated block, but form a heterogeneous model pipeline. The input side adds another source of difficulty. Modal-                    
+
+> Table 1. Approximate component heterogeneity under one MLLM training configuration. ViT computation is measured with visual length fixed to 4×the LLM backbone sequence length, where the LLM backbone sequence length is 8K.
+> Component Parameter memory Activation memory Computation (per layer) (recomputed) (FLOPs) LLM backbone ∼4.95 GB ∼1.79 GB ∼4.76 ×10 18
+> ViT encoder ∼0.01 GB ∼1.63 GB ∼2.88 ×10 17
+
+ity content is often much heavier than text: a long text sequence may only occupy a few kilobytes, while a high-resolution image can occupy tens of megabytes and high-definition video can reach gigabytes. It is also more vari-able: images may have different resolutions, videos may have different lengths, and some samples may be pure text with no additional modality content at all. After prepro-cessing, these differences become different modality token sequence lengths. Since attention-based encoder computa-tion depends strongly on sequence length, high-resolution images or long videos can require much more computation and activation memory than small images or text-only sam-ples. In MLLM training, both the ratio and the workload of modality content can vary across samples. For example, vision-language corpora often mix images with very dif-ferent resolutions, such as high-resolution photographs and low-resolution web images, making the encoder workload vary dynamically from one microbatch to the next. At the component level, modality encoders are often much narrower than the LLM backbone, but they can still in-troduce comparable activation memory and non-negligible computation. Table 1 gives one representative profile: the LLM backbone dominates parameter memory, while the ViT encoder has much smaller parameter memory but com-parable activation memory and non-negligible computa-tion. In our 512-NPU training traces, under pipeline par-allel (PP) execution, microbatches with few or no images spend only about 200–300 ms in encoder-stage compu-tation, whereas image-heavy microbatches can take more than 1 s. Such instability inserts dynamic bubbles into the pipeline. In summary, efficient MLLM training faces two challenges. First, component heterogeneity : modality encoders and LLM backbones have different memory and computation profiles. Second, dynamic encoder workloads : multimodal inputs change the amount of encoder computation and acti-vation memory at microbatch granularity. These challenges motivate the system-level comparison in the next section. 
+
+# 3. Limitations of Existing MLLM Training Systems 
+
+Training MLLMs in practice usually relies on AI training frameworks, such as PyTorch (Li et al., 2020), Megatron-2HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+LM (Shoeybi et al., 2019), and Hyper-Parallel 1. These frameworks manage low-level training details and expose reusable parallelism templates for deploying large mod-els. This abstraction works well for repeated Transformer stacks, but becomes challenging when applied to heteroge-neous and dynamic MLLM workloads. Tensor parallelism (Shoeybi et al., 2019) is effective for splitting large hidden matrices in a repeated Transformer stack, but the same partition may provide little mem-ory relief for a much narrower encoder. Pipeline paral-lelism (Huang et al., 2019) distributes layers across stages, but encoder stages and LLM backbone stages can carry very different workloads, injecting substantial bubbles into the pipeline. Dynamic encoder workloads further compli-cate standard parallel execution and amplify the pipeline ef-fect above. Data parallelism (Dean et al., 2012) assigns dif-ferent input subsets to different replicas, so an image-heavy replica can become a straggler while a text-only replica waits. Sequence and context parallelism (Korthikanti et al., 2023; Liu et al., 2024) can reduce long-sequence attention memory, but applying the same sequence split to small or empty modality inputs may introduce communication with-out much useful memory reduction. The preceding section identifies two challenges for effi-cient MLLM training: component heterogeneity and dy-namic encoder workloads. Beyond these general-purpose templates, existing MLLM training systems approach these challenges from three directions. 
+
+Spatial resource partitioning. DistTrain (Zhang et al., 2025) assigns hardware resources separately to encoders, LLM backbones, and generators according to their module-level load, and customizes parallel strategies for different modules. This cluster-level partitioning can match a spe-cific encoder workload, but such load-specific partitioning is hard to keep effective under dynamic encoder workloads. 
+
+Temporal bubble exploitation. Optimus (Feng et al., 2025) adjusts the temporal schedule to exploit LLM back-bone pipeline bubbles for MLLM training. It first analyzes computation dependencies, then profiles encoder computa-tion, decomposes it into kernel-level units, and temporally schedules these units into LLM backbone pipeline bubbles. This fine-grained scheduling can reduce exposed bubbles by overlapping encoder computation with otherwise idle pipeline slots. However, this schedule depends on the pro-filed encoder workload. When encoder workloads change dynamically, the values obtained from a static profile be-come less reliable, making the pre-planned overlap less ef-fective and leading to suboptimal results. 
+
+Runtime load balancing. DIP (Xue et al., 2026b) parti-
+
+> 1https://atomgit.com/mindspore/ hyper-parallel
+
+tions the encoder and backbone into dedicated, modality-aware pipeline segments across the same ranks to alleviate the load imbalance between encoder stages and LLM back-bone stages. It also prefetches metadata for upcoming mi-crobatches and splits large modality workloads to improve balance. Nevertheless, DIP still keeps the encoder coupled inside the LLM backbone pipeline. It mitigates the mis-match through this placement and runtime load balancing, but the architectural heterogeneity of MLLMs remains part of the pipeline itself. Moreover, runtime metadata prefetch-ing, workload splitting, and schedule search are overlapped off the critical path at the scales DIP evaluates, so their cost at much larger cluster scale remains undemonstrated. Across these three directions, the encoder remains coupled inside the LLM backbone pipeline, and each system pays for heterogeneity and dynamic workloads through profil-ing, search, or runtime balancing. As a result, a static plan must either be recomputed every iteration or risks being invalidated by the next microbatch. Mpipe takes a differ-ent direction: it relocates encoder computation out of the critical path and into the pipeline’s intrinsic warmup bub-bles through a single static placement, so it requires no per-iteration profiling or search and absorbs the dynamic work-load rather than planning around it. We present this design in the next section. 
+
+# 4. Mpipe 
+
+Mpipe trains MLLMs, which pair a modality encoder with an LLM backbone. The two blocks are heterogeneous, and that is the difficulty. The encoder is a source block. Its cost depends on the input, such as image resolution, se-quence length, or the number of tiles. The LLM layers are uniform. If the encoder runs as a normal pipeline stage, its variance is exposed on the critical path: it stretches the stage it occupies, and the resulting bubble spreads down the pipeline. Mpipe removes this exposure with transpose . Transpose replicates the encoder on every pipeline rank and runs each rank’s encodes inside the warmup bubble. Encoder work then overlaps the pipeline fill instead of taking its own stage (Figure 2). We derive transpose from a small schedule al-gebra (§4.1). A schedule is a list of per-region skeletons ,one skeleton per depth region. A derivation maps it to run-time behavior and fixes three things: where each region runs (placement), which collectives cross region bound-aries, and the order of forward and backward events, in-cluding the warmup and cooldown slots. In this algebra Mpipe is ⟨transpose , 1f1b ⟩: a transpose skeleton on the en-coder, 1F1B on the backbone. The derivation gates back-ward work on the model’s trainable bits, not on the sched-ule. So one transpose schedule serves a frozen or a trained encoder, unchanged. Section 4.2 develops transpose as a 3HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 1                                                                  
+
+> 2
+> 3
+> 4
+> 5
+> 6
+> 11
+> 2
+> 3
+> 4
+> 5
+> 6
+> 23456
+> 234561
+> 234561
+> 234561
+> 234561
+> 234561
+> 23451
+> 2341
+> 231
+> 21
+> 1
+> 112233445566
+> 123456
+> 234561
+> 234561
+> 234561
+> 234561
+> 2341
+> 231
+> 21
+> 1
+> DataLoad
+> Encoder
+> LLM
+
+Figure 2. Transpose overview. Instead of exposing modality encoder computation as a regular pipeline stage, Mpipe trans-poses encoder execution into otherwise idle warmup bubbles of the LLM pipeline. 
+
+method. 
+
+4.1. Schedule Algebra 
+
+A schedule applies one skeleton to each depth region of the model. A model is a sequence of layers U = ⟨u1, . . . , u L⟩.The algebra does not depend on a region’s role. This paper uses the encoder / LLM-backbone split and leaves generator (sink) regions to future work. Two inputs de-fine a parallelization. A cut sets k−1 interior bound-aries c1 < · · · < ck−1 in (0 , L ), with c0 = 0 and 
+
+ck = L. It splits U into k contiguous regions Π1, . . . , Πk,one per interval. A schedule σ = ⟨σ1, . . . , σ k⟩ gives one skeleton to each region. Composition is region concate-nation. Each seam in Table 2 is a layout change. The pair Replicated → Replicated is the only one with no change: two replicated regions share one ByMicrobatch 
+
+owner, so the seam is the identity and the two regions collapse into one. We therefore drop this seam and for-bid adjacent replicated regions. Every valid schedule then has a normal form in which transposes are separated by a sharded region. A schedule is valid when its cut tiles 
+
+U and it is in normal form. Both checks use (c, σ ) only. So ⟨transpose , 1f1b ⟩ and ⟨transpose , 1f1b , transpose ⟩ are valid, while ⟨transpose , transpose ⟩ reduces to ⟨transpose ⟩.The function derive maps a valid (c, σ ) and the model to runtime behavior. 
+
+skeleton ::= 1f1b | gpipe | transpose 
+
+schedule ::= ⟨skeleton 1, . . . , skeleton k⟩
+
+derive : cut × schedule × model 
+
+→ placement × collectives × order 
+
+A skeleton fixes a region’s forward/backward order. Its one derived property is the layout : layout( transpose ) = 
+
+Replicated , and layout( 1f1b ) = layout( gpipe ) =
+
+Sharded . We write layout j := layout( σj ) for region j.A Sharded region pipelines its layers across the ranks. A 
+
+Replicated region ( transpose ) puts the whole region on ev-ery rank and runs data parallelism over the microbatches. Its forwards run in the warmup bubble, and its backwards, when trainable, in the cooldown. Different schedules are points in one space. VPP-3 is ⟨1f1b , 1f1b , 1f1b ⟩: three 
+
+Sharded regions woven into one wavefront. Mpipe is 
+
+⟨transpose , 1f1b ⟩.
+
+Notation. P is the number of pipeline ranks ( rank ∈{0, . . . , P −1}) and M the number of microbatches ( mb ∈{1, . . . , M }). A region is in {1, . . . , k }, and a slab is a con-tiguous layer interval. [X] is a list of X. X? is an optional 
+
+X, present only when trainability allows it (Lemma 1). The derivation reads the model in two places: each region’s layer count, which with the cut gives the per-rank slabs, and its trainable bit, which gates all backward work. It then emits three outputs. 
+
+layout ::= Sharded | Replicated 
+
+owner ::= ByLayer (rank → slab )
+
+| ByMicrobatch (mb → rank )
+
+comm ::= Gather | Scatter | Send | RecvGrad 
+
+group ::= ReplicaGroup | DataGroup 
+
+seam : region × region event ::= Fwd (region , rank , mb )
+
+| Bwd (region , rank , mb )
+
+| Coll (comm , seam , mb )
+
+| DpReduce (region , group )
+
+| Loss (mb ) | StepBarrier 
+
+edge ::= Activation | Gradient | Turnaround 
+
+| Accumulate | Sequence 
+
+placement : region → layout × owner collectives : { seams : [ seam ×comm ×comm ?],
+
+reduces : [ region ×group ] }
+
+order : { nodes : rank → [event ], edges : [ edge ] }
+
+The unit of placed work is a stage : the pair (region , rank )
+
+that one rank runs. The runtime numbers it stage index =
+
+rank + ( region −1) P , so VPP-3’s three regions are the three virtual stages each rank interleaves. A Sharded 
+
+region emits one Fwd (region , r, m ) per rank r, on its 
+
+ByLayer slab. A Replicated region emits one at r =
+
+ByMicrobatch (m). Placement gives each region its layout and an owner that splits its work; the ByMicrobatch owner assigns a replicated region’s microbatches to ranks. Col-lectives is a derived view of adjacent layouts. Each seam’s forward comm comes from the layout pair (Table 2). Its backward comm ? fires under Lemma 1. The reduces field records each trainable region’s weight reduction over its 4HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+group : ReplicaGroup for a transposed region, DataGroup 
+
+for a sharded one. A DataGroup reduce is a no-op when that axis has one member, i.e. pure pipeline parallelism. 
+
+Order is one dependency graph over the stage-indexed events. nodes (r) is its projection onto rank r, and edges 
+
+are its five typed arcs. The graph is acyclic by construc-tion, so there is no cyclic-wait deadlock, and it fixes the forward/backward turnaround and every activation’s live interval.                         
+
+> Table 2. Seam collective for each pair of adjacent layouts. The two cross-layout rows are mirrors. Replicated →Replicated has no layout change, so its seam is the identity. We omit it and forbid adjacent replicated regions. This is the only missing entry, and it is what makes validity, and hence composition, non-trivial.
+> layout j→layout j+1 fwd bwd
+> Replicated →Sharded Gather Scatter Sharded →Sharded Send RecvGrad Sharded →Replicated Scatter Gather Replicated →Replicated identity (omitted)
+
+Lemma 1 (Backward footprint) . A region’s backward work is fixed by the model, through three trainability gates. Order the regions input-to-loss as Π1, . . . , Πk. For 
+
+Πj : (i) Πj sends its input-activation gradient upstream (the reverse collective on its input seam (Π j−1, Πj )) iff 
+
+∃ i < j : trainable(Π i); (ii) Πj receives a gradient from downstream (the reverse collective on its output seam 
+
+(Π j , Πj+1 )) iff ∃ i ≤ j : trainable(Π i); (iii) Πj reduces weight gradients iff trainable(Π j ). The send and receive gates differ by one region. Πj receives but does not send exactly when it is trainable and no region before it is: the trainable source .Proof. A region’s input-activation gradient is used only up-stream, by Πj−1 and earlier. A frozen region still passes it through. So Πj sends iff some region before it is trainable (∃ i < j ). Πj receives iff it runs any backward at all, that is iff Πj or some region before it is trainable ( ∃ i ≤ j). The two index sets differ only at i = j. Finally, Πj ’s receive is Πj+1 ’s send (the collective carries exactly Πj+1 ’s input-activation gradient), so the seam gate and the region gate are one predicate. □
+
+Corollary 1 (Schedule-invariance) . Gates (i) through (iii) use only trainable( ·) and the cut, never σ. So a re-gion’s backward footprint does not depend on the sched-ule: the encoder has the same footprint whether it is transposed ( Replicated ) or pipelined ( Sharded ). The foot-print says which backward events fire. The collective 
+
+type for each one still depends on σ through Table 2. One transpose schedule therefore needs no per-trainability variant: derive reads trainable , not σ.
+
+Instantiation. Take Mpipe, ⟨transpose , 1f1b ⟩. The en-coder is enc = Π 1 (Replicated ) and the backbone is llm =Π2 (Sharded ). A (·)? is present only when the encoder is trainable. 
+
+placement : enc 7 → (Replicated , ByMicrobatch ),
+
+llm 7 → (Sharded , ByLayer )
+
+collectives :
+
+seams : [(( enc , llm ), Gather , Scatter ?)] 
+
+reduces : [( enc , ReplicaGroup )?, (llm , DataGroup )] 
+
+order edges (microbatch m, rank dropped ) : 
+
+Fwd (enc , m ) → Coll (Gather , (enc , llm ), m )
+
+→ Fwd (llm , m ) → Loss (m) → Bwd (llm , m ),
+
+Bwd (llm , m ) forks: 
+
+⇝ DpReduce (llm , DataGroup ) → StepBarrier 
+
+⇝ Coll (Scatter , (enc , llm ), m )? → Bwd (enc , m )?
+
+→ DpReduce (enc , ReplicaGroup )? → StepBarrier 
+
+The chain gives the edges for one microbatch, with the rank index dropped; ⇝ marks a fork into independent branches. 
+
+Fwd (enc , m ) stands for Fwd (enc , ByMicrobatch (m), m ),and Fwd (llm , m ) for the family over the llm slabs on every rank. The per-rank schedule nodes (r) is this graph pro-jected onto rank r; Figure 2 shows it schematically. For-ward arcs are Activation edges. The Loss → Bwd pivot is a Turnaround . Each Bwd emits an Accumulate edge to its 
+
+DpReduce . When its region has a trainable strict predeces-sor (Lemma 1(i)), it also emits a Gradient edge into its re-verse seam. The two DpReduce → StepBarrier arcs are in-dependent Sequence edges, with no order between the two reduces. Bwd (llm , m ) is never gated, since the backbone is always trainable. But its Gradient edge, the Scatter ? that ships the LLM’s input-activation gradient back to the en-coder, fires only when the encoder is trainable (Lemma 1(ii) at enc equals Lemma 1(i) at llm ). The encoder is the train-able source of Lemma 1. It receives the Scatter ? and runs its weight backward Bwd (enc , m )?. This is an Accumulate 
+
+edge only: the encoder has no predecessor, so no Gradient 
+
+edge, and it sends nothing upstream. The Activation edge from each warmup Fwd (enc , m ) to its cooldown consumer is the long-lived encoder state. 
+
+A second derivation. derive is not tied to one schedule. VPP-3, ⟨1f1b , 1f1b , 1f1b ⟩, places ev-ery region as (Sharded , ByLayer ) and gives two interior seams, ((Π 1, Π2), Send , RecvGrad ?) and 
+
+((Π 2, Π3), Send , RecvGrad ?). The seam argument of 
+
+Coll is what tells them apart, which is why it is not op-tional. Each rank owns one slab of all three regions, so the stage-indexed events are the interleaved 1F1B wavefront. 5HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+Π1 again sends no input-activation gradient. The same six events and five edges describe both schedules; only the cut and the skeletons differ. 
+
+The same schedule, two footprints. Schedule-invariance (Corollary 1) is one axis. Freezing is the other. Freezing the encoder leaves σ, the placement, and the forward order unchanged, but deletes every (·)?. The order collapses to Fwd (enc , m ) → Coll (Gather , . . . ) →
+
+Fwd (llm , m ) → Loss (m) → Bwd (llm , m ) →
+
+DpReduce (llm , DataGroup ) → StepBarrier , with no reverse Scatter , no Bwd (enc ), and no replica reduce. The schedule comes from the user; the footprint comes from the model. 
+
+Memory as a derived view. Memory is read off 
+
+(placement , order ) with no extra output. An activation is live from when it is produced to its last use, and a rank’s peak is the running sum of live sizes. The transposed en-coder is one long Activation edge, live across the whole LLM span; transpose hides it in the warmup bubble instead of paying for an extra sharded stage with the same lifetime. 
+
+Applicability. The two composition axes, a depth cut with one skeleton per region and an owner map that weaves 
+
+Sharded regions into one wavefront, are enough for ev-ery schedule we use: 1F1B, GPipe, interleaved VPP, and 
+
+⟨transpose , 1f1b ⟩. The algebra also extends in three graded steps. A fold (a reflected ByLayer owner plus a wave skele-ton) reaches Hanayo (Liu et al., 2023). An event split 
+
+(a split backward plus a fused forward-backward node) reaches DualPipeV (DeepSeek-AI, 2025). Both are conser-vative: the present algebra is the degenerate case. A bidi-rectional feed , as in DualPipe (DeepSeek-AI, 2024), needs a new input and stays outside. Our use-case sits inside the closed core. We treat 1f1b , gpipe , and transpose as com-posable parallel skeletons in the sense of Cole (Cole, 1989), applied to the execution schedule of a fixed model rather than to an algorithm. 2
+
+4.2. Transpose 
+
+Transpose is the Replicated skeleton of §4.1, read as a sys-tems mechanism. Replicating the encoder on every rank is a scatter-gather step in the sense of SGL (Li & Hains, 2012). The replication scatters the microbatches across the ranks. Each rank runs the encoder forward for the micro-batches its ByMicrobatch owner gives it, on its own, in-side its warmup bubble. The Replicated → Sharded seam then gathers the per-rank encoder outputs into the first LLM stage (Figure 2). Encoder work overlaps the pipeline fill  
+
+> 2The derivation is defined for every valid cut. The present instantiation uses the two-region encoder/LLM cut; intermediate cuts are future work.
+
+instead of taking an extra stage on the critical path. The owner map is a free choice, which Mpipe uses to match heavier encodes to longer warmup slots. This PP-internal replication is not the same as a separate data-parallel group for the encoder. The encoder forward runs in the same pipeline group, and its output feeds the first LLM stage at once through the seam gather. So Mpipe adds no global aggregation and no cross-group synchro-nization on the encoder path. The encoder output is used where it is made, inside the pipeline that needs it. We keep the locality and independence of data-parallel work without a second collective domain. 
+
+4.3. Cost Model 
+
+The same two outputs that give memory, placement and 
+
+order , also give a cost model. We weight each event with a duration cost : event → R≥0 and read the step time off the order graph, so a schedule’s cost is computed, not mea-sured. A compute event runs on one rank and costs the roofline of its slab; a collective moves an n-byte payload over its group at the α-β rate of the SGL bridging model (Li & Hains, 2012): 
+
+cost( Fwd ) = cost( Bwd ) = max  W/F, D/B ,
+
+cost( Coll ) = cost( DpReduce ) = α + β n, 
+
+where W is the slab’s FLOPs at peak rate F , D its HBM traffic at bandwidth B, and n the payload bytes. These weights turn order into a weighted graph in which each rank’s events follow their nodes (r) order. The step 
+
+makespan is its longest path, and a rank’s bubble is its idle time: 
+
+T = max   
+
+> p∈paths( order )
+
+X
+
+> e∈p
+
+cost( e),
+
+bub( r) = T − X
+
+> e∈nodes (r)
+
+cost( e).
+
+SGL sums its supersteps in sequence; a pipeline overlaps them, so T is a longest path, not a sum of stage times. Be-cause T comes from the schedule alone, it can be checked against the measured step time. This makes transpose quantitative. Write wr for the warmup bubble on rank r, its idle time before the first LLM forward, and Er for the encoder work that rank runs, 
+
+Er = P  
+
+> m:ByMicrobatch (m)= r
+
+cost( Fwd (enc , r, m )) . Trans-pose places Er in that window, so it hides min( Er , w r ) and exposes 
+
+spill r = max  0, E r − wr
+
+
+
+on the critical path. When every Er ≤ wr the encoder is free, and the step pays only the worst rank’s overflow, 6HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+max r spill r . The ByMicrobatch owner is the assignment that minimizes this exposed spill, a min-max balancing of encoder work against per-rank warmup slack; matching heavier encodes to longer warmup slots is its greedy form. The model predicts where transpose helps. When the en-coder is small against the warmup slack, as when the back-bone dominates at scale, Er ≤ wr and the encoder leaves the step untouched off the bubble; when it is large against the slack, the residual max r spill r is exposed and the gain shrinks. This is the trend we measure in §5. 
+
+Compositional cost. The longest path above is a global property of the assembled graph, but it can also be read compositionally. Give each schedule a timing denotation 
+
+JσK: a function that maps the arrival times of its inputs, one per rank and microbatch, to the completion times of its outputs. Each such function is monotone and linear in the 
+
+(max , +) semiring, since a completion time is the maxi-mum of an input-ready time and a resource-free time, plus a duration. Concatenating two schedules σ and σ′ com-poses their denotations, with the seam Coll as the transfer function between them: Jσ′K ◦ JColl K ◦ JσK. Cost is there-fore a homomorphism from schedules to (max , +) trans-fer functions, on the same composition the algebra already uses. The step makespan is this composed function applied to the microbatch injection times, and its steady-state pe-riod is the function’s (max , +) eigenvalue, the bottleneck stage. Transpose needs no special case: the warmup slack 
+
+w is just when the LLM region becomes ready on each rank, part of the arrival times the composition already car-ries, so the spill max(0 , E −w) is what its transfer function returns rather than a separate rule. For our acyclic, single-orientation order , the makespan read this way equals the operational longest path above, the standard agreement be-tween longest paths in a timed event graph and (max , +) 
+
+linear behavior (Baccelli et al., 1992). We state this as a re-mark and leave the contention-aware proof, which threads the per-rank state through the composition, to future work. 
+
+Scope. Mpipe handles the main, source-side form of MLLM data variance: the encoder workload. The sched-ule algebra (§4.1) moves it into pipeline bubbles as a static schedule that does not depend on the modality mix. Three cases fall outside this, and the same algebra states each one. (i) When a microbatch’s encoder work is larger than the warmup slack, part of it spills onto the critical path; the owner map reduces this spill but cannot remove it. (ii) 
+
+Variance in the LLM sequence length makes the backbone stages themselves data-dependent. This is interior to the pipeline and is handled by sequence bucketing or packing, not by placement. (iii) Output-side generators are pipeline sinks. Their input comes from the backbone, not from the start of the step, so they cannot be transposed into a bub-              
+
+> Table 3. Experiment A: average end-to-end step time on a production-scale MLLM workload.
+> Model Baseline Avg. Step Time Mpipe Avg. Step Time Speedup ViT+DeepSeek 16.26 s 13.42 s 1.21 ×
+> Table 4. Experiment B: average end-to-end step time on an 8-device workload.
+> Model Baseline Avg. Step Time Mpipe Avg. Step Time Speedup Qwen3.5 MLLM 11.01 s 4.07 s 2.70 ×
+
+ble. In the algebra they are just another Sharded region, for example ⟨transpose , 1f1b , 1f1b ⟩, and are pipelined rather than moved. Runtime systems cover these cases with per-iteration search (Xue et al., 2026b) or data-dependent paral-lelism (Xue et al., 2026a). Mpipe keeps the schedule static and loss-preserving. It trades that coverage for near-zero scheduling overhead and reproducible runs, and we evalu-ate it in the encoder-bound case where this trade pays off. 
+
+# 5. Experiments 
+
+We conduct experiments to evaluate the overall perfor-mance of Mpipe on MLLM training workloads. 
+
+Environment. We implement and evaluate Mpipe in Hyper-Parallel. The evaluation runs on a 512-device CloudMatrix384 (Zuo et al., 2025). Mpipe runs inside the framework’s existing pipeline runtime: derive lowers a schedule to the placement, collectives, and order of §4.1, and the Replicated → Sharded gather uses CANN/HCCL, with no change to the LLM backbone’s pipeline kernels. 
+
+Experiment A: production-scale MLLM workload. We design this experiment to simulate the effect of Mpipe under practical industry MLLM training workloads. The model is deployed on the full 512-device environment and uses the ViT encoder from Qwen2-VL (Wang et al., 2024) together with a DeepSeek-V3 (DeepSeek-AI, 2024) LLM backbone. The dataset is an internal multimodal dataset. Since DistTrain has not released its implementation, we construct a DistTrain-like baseline in our environment: one pipeline stage is allocated to the encoder with a customized parallel strategy, while the LLM backbone applies conven-tional 5D parallelism. Table 3 shows that Mpipe achieves 1.21 × speedup over this baseline. 
+
+Experiment B: generality study. To quickly validate the generality of Mpipe, we also run an 8-device experiment with a recently released Qwen3.5-based MLLM (Qwen Team, 2026) on the CapsFusion image-text dataset (Yu et al., 2024). The baseline follows Megatron-LM (Shoeybi et al., 2019). As shown in Table 4, Mpipe reduces the av-erage step time from 11.01 s to 4.07 s, achieving 2.70 ×
+
+speedup. 7HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+Analysis. The relative speedup of transpose depends on the encoder’s share of the step and on how much warmup bub-ble is available to absorb it (§4.3). This is why the two set-tings differ in magnitude: in Experiment A the large back-bone dominates the step, so relocating the smaller encoder yields 1.21 ×, whereas in the controlled setting of Exper-iment B the encoder is a larger share of the step and the gain reaches 2.70 ×. Because the two settings also differ in model and baseline, they are not a controlled scaling study; a sweep that isolates scale and the resulting encoder-to-bubble ratio is left to future work. In both cases the gain comes from a single static schedule with no per-iteration scheduling cost, and transpose leaves the training loss un-changed, since it only relocates computation. 
+
+# 6. Related Work 
+
+Pipeline schedules. Pipeline parallelism partitions amodel into stages and streams microbatches through them. GPipe (Huang et al., 2019) flushes each batch; 1F1B and interleaved (VPP) schedules reduce the bub-ble at fixed memory; recent work pushes further with wave-like (Hanayo (Liu et al., 2023)), zero-bubble (Du-alPipeV (DeepSeek-AI, 2025)), and bidirectional (Du-alPipe (DeepSeek-AI, 2024)) schedules. Mpipe does not propose one more schedule in isolation. It treats these as points in a single algebra: 1F1B, GPipe, and inter-leaved VPP are instances, and the recent schedules are short, named extensions of it (§4.1). Within that alge-bra, ⟨transpose , 1f1b ⟩ is the schedule that handles the en-coder/LLM heterogeneity of MLLM training. 
+
+MLLM training systems. DistTrain (Zhang et al., 2025), Optimus (Feng et al., 2025), and DIP (Xue et al., 2026b) target encoder/backbone heterogeneity through spatial partitioning, temporal bubble profiling, and runtime load balancing respectively; OrchMLLM (Zheng et al., 2025) and MegaScale-Omni (Xue et al., 2026a) adapt re-sources and parallelism to dynamic multimodal workloads in production. As discussed in §3, all of these keep the encoder coupled inside the backbone pipeline and pay for heterogeneity and dynamism at runtime. Mpipe instead re-locates the encoder out of the pipeline with a single static placement, which removes the per-iteration cost and is in-variant to the modality mix. 
+
+Schedules as composable skeletons. Mpipe’s view of schedules as composable parallel patterns follows the line of parallel algorithmic skeletons (Cole, 1989), which hide orchestration behind structured collectives rather than raw point-to-point messaging (Gorlatch, 2004), and the BSP-structured, cost-predictable skeleton libraries (Loulergue et al., 2005; Javed & Loulergue, 2009; Li & Hains, 2012). The difference is one of level: those compose skeletons to express an algorithm, whereas we compose them to express the execution schedule of a fixed model. 
+
+# 7. Conclusion 
+
+MLLM training exposes component heterogeneity and dy-namic encoder workloads that make conventional LLM parallelism less effective at scale. Mpipe casts parallel schedules as a small schedule algebra and derives their con-crete pipeline behavior, including transpose, a heteroge-neous parallel schedule for MLLM training. Experiments on Ascend 910C NPU clusters show that Mpipe reduces end-to-end training step time on both small-scale and 512-card settings. 
+
+Limitations and future work. When per-microbatch en-coder work exceeds the warmup slack, part of it spills onto the critical path; the static owner map reduces this spill but cannot remove it, and a loss-preserving metadata-guided reordering that closes the residual is left to future work. We also instantiate transpose only on the two-region encoder/LLM cut with 1F1B; the algebra supports richer schedules (a fold toward Hanayo, an event split toward Du-alPipeV, a bidirectional feed toward DualPipe), whose eval-uation we leave to future work. 
+
+# References 
+
+Baccelli, F., Cohen, G., Olsder, G. J., and Quadrat, J.-P. 
+
+Synchronization and Linearity: An Algebra for Discrete Event Systems . Wiley, 1992. Cole, M. I. Algorithmic Skeletons: Structured Manage-ment of Parallel Computation . Research Monographs in Parallel and Distributed Computing. Pitman/MIT Press, London, 1989. Dean, J., Corrado, G. S., Monga, R., Chen, K., Devin, M., Mao, M., Ranzato, M., Senior, A., Tucker, P., Yang, K., Le, Q. V., and Ng, A. Y. Large scale distributed deep networks. In Advances in Neural Information Processing Systems , volume 25. Curran Associates, Inc., 2012. DeepSeek-AI. DeepSeek-V3 technical report. arXiv preprint arXiv:2412.19437 , 2024. URL https:// arxiv.org/abs/2412.19437 .DeepSeek-AI. DualPipe: A bidirectional pipeline paral-lelism algorithm for computation-communication over-lap in DeepSeek-V3/R1 training. https://github. com/deepseek-ai/DualPipe , 2025. DualPipeV schedule; accessed 2026-06-24. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., and Houlsby, 8HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+N. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representations , 2021. URL https:// openreview.net/forum?id=YicbFdNTTy .Feng, W., Chen, Y., Wang, S., Peng, Y., Lin, H., and Yu, M. Optimus: Accelerating large-scale multi-modal llm training by bubble exploitation. In Proceedings of the 2025 USENIX Conference on USENIX Annual Technical Conference , USENIX ATC ’25, USA, 2025. USENIX Association. ISBN 978-1-939133-48-9. Gorlatch, S. Send-receive considered harmful: Myths and realities of message passing. ACM Transactions on Pro-gramming Languages and Systems (TOPLAS) , 26(1):47– 56, 2004. doi: 10.1145/963778.963780. Grattafiori, A., Dubey, A., Jauhri, A., Pandey, A., Ka-dian, A., et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. URL https:// arxiv.org/abs/2407.21783 .Huang, Y., Cheng, Y., Bapna, A., Firat, O., Chen, M. X., Chen, D., Lee, H., Ngiam, J., Le, Q. V., Wu, Y., and Chen, Z. GPipe: Efficient training of giant neural net-works using pipeline parallelism. In Proceedings of the 33rd International Conference on Neural Information Processing Systems , Red Hook, NY, USA, 2019. Curran Associates Inc. Javed, N. and Loulergue, F. OSL: Optimized bulk syn-chronous parallel skeletons on distributed arrays. In Ad-vanced Parallel Processing Technologies (APPT) , vol-ume 5737 of LNCS , pp. 436–451. Springer, 2009. Korthikanti, V. A., Casper, J., Lym, S., McAfee, L., An-dersch, M., Shoeybi, M., and Catanzaro, B. Reduc-ing activation recomputation in large transformer mod-els. In Proceedings of Machine Learning and Systems ,volume 5, 2023. Li, C. and Hains, G. SGL: towards a bridging model for heterogeneous hierarchical platforms. International Journal of High Performance Computing and Network-ing (IJHPCN) , 7(2):139–151, 2012. Li, S., Zhao, Y., Varma, R., Salpekar, O., Noordhuis, P., Li, T., Paszke, A., Smith, J., Vaughan, B., Damania, P., and Chintala, S. PyTorch Distributed: Experiences on accelerating data parallel training. Proceedings of the VLDB Endowment , 13(12):3005–3018, 2020. doi: 10. 14778/3415478.3415530. Liu, H., Zaharia, M., and Abbeel, P. RingAttention with blockwise transformers for near-infinite context. In 
+
+International Conference on Learning Representations ,2024. URL https://openreview.net/forum? id=WsRHpHH4s0 .Liu, Z., Cheng, S., Zhou, H., and You, Y. Hanayo: Harness-ing wave-like pipeline parallelism for enhanced large model training efficiency. In Proceedings of the Inter-national Conference for High Performance Computing, Networking, Storage and Analysis (SC ’23) . Association for Computing Machinery, 2023. doi: 10.1145/3581784. 3607073. Loulergue, F., Gava, F., and Billiet, D. Bulk synchronous parallel ML: Modular implementation and performance prediction. In International Conference on Computa-tional Science (ICCS) , volume 3515 of LNCS , pp. 1046– 1054. Springer, 2005. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In International Conference on Computer Vision , pp. 4195–4205, 2023. Qwen Team. Qwen3.5-Omni technical report. arXiv preprint arXiv:2604.15804 , 2026. URL https:// arxiv.org/abs/2604.15804 .Ronneberger, O., Fischer, P., and Brox, T. U-Net: Con-volutional networks for biomedical image segmentation. In Medical Image Computing and Computer-Assisted In-tervention , pp. 234–241. Springer, 2015. Shoeybi, M., Patwary, M., Puri, R., LeGresley, P., Casper, J., and Catanzaro, B. Megatron-LM: Training multi-billion parameter language models using model paral-lelism. arXiv preprint arXiv:1909.08053 , 2019. URL 
+
+https://arxiv.org/abs/1909.08053 .Wang, P., Bai, S., Tan, S., Wang, S., Fan, Z., Bai, J., Chen, K., Liu, X., Wang, J., Ge, W., Fan, Y., Dang, K., Du, M., Ren, X., Men, R., Liu, D., Zhou, C., Zhou, J., and Lin, J. Qwen2-VL: Enhancing vision-language model’s perception of the world at any reso-lution. arXiv preprint arXiv:2409.12191 , 2024. URL 
+
+https://arxiv.org/abs/2409.12191 .Wu, S., Fei, H., Qu, L., Ji, W., and Chua, T.-S. NExT-GPT: Any-to-any multimodal llm. In Proceedings of the 41st International Conference on Machine Learning ,ICML’24. JMLR.org, 2024. Xue, C., Chen, Y., Jiang, J., Zheng, N., Feng, J., Chen, J., Zhao, S., Yan, S., Lin, Y., Shi, L., Wang, Z., Luo, L., Wu, F., Lin, H., Liu, X., Peng, Y., and Chen, Q. Megascale-omni: A hyper-scale, workload-resilient sys-tem for multimodal llm training in production. In Pro-ceedings of the 21st European Conference on Computer Systems (EuroSys ’26) . Association for Computing Ma-chinery, 2026a. doi: 10.1145/3767295.3803587. Xue, Z., Hu, H., Chen, X., Jiang, Y., Song, Y., Mi, Z., Zhu, Y., Jiang, D., Xia, Y., and Chen, H. DIP: Efficient large 9HyperParallel-Mpipe: A Composable Algebra System for Optimizing MLLM Training over Supernode Clusters 
+
+multimodal model training with dynamic interleaved pipeline. In Proceedings of the 31st ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 , ASPLOS ’26, pp. 618–632, New York, NY, USA, 2026b. Associ-ation for Computing Machinery. ISBN 9798400723599. doi: 10.1145/3779212.3790154. URL https://doi. org/10.1145/3779212.3790154 .Yu, Q., Sun, Q., Zhang, X., Cui, Y., Zhang, F., Cao, Y., Wang, X., and Liu, J. CapsFusion: Rethinking image-text data at scale. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 14022–14032, Seattle, WA, USA, 2024. doi: 10.1109/ CVPR52733.2024.01330. Zhang, Z., Zhong, Y., Jiang, Y., Hu, H., Sun, J., Ge, Z., Zhu, Y., Jiang, D., and Jin, X. DistTrain: Ad-dressing model and data heterogeneity with disaggre-gated training for multimodal large language mod-els. In Proceedings of the ACM SIGCOMM 2025 Conference , pp. 24–38. ACM, 2025. doi: 10.1145/ 3718958.3750472. URL https://doi.org/10. 1145/3718958.3750472 .Zheng, Y., Xiao, B., Shi, L., Li, X., Wu, F., Li, T., Xiao, X., Zhang, Y., Wang, Y., and Liu, S. OrchMLLM: Orchestrate multimodal data with batch post-balancing to accelerate multimodal large language model training. 
+
+arXiv preprint arXiv:2503.23830 , 2025. URL https: //arxiv.org/abs/2503.23830 .Zuo, P., Lin, H., Deng, J., Zou, N., Yang, X., Diao, Y., Gao, W., Xu, K., Chen, Z., Lu, S., et al. Serv-ing large language models on Huawei CloudMatrix384. 
+
+arXiv preprint arXiv:2506.12708 , 2025. URL https: //arxiv.org/abs/2506.12708 .10
