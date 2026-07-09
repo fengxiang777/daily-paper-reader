@@ -1,0 +1,1717 @@
+Title: Unbiased Alignment for Large Language Models with Noisy Preferences
+
+URL Source: https://arxiv.org/pdf/2607.03248v1
+
+Published Time: Tue, 07 Jul 2026 00:54:20 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Jialiang Wang 1 2 Xianming Liu 1 Xiong Zhou 1 Hui Liu 2 Haoliang Li 2
+
+## Abstract 
+
+The alignment of large language models with hu-man preferences is commonly achieved through Reinforcement Learning from Human Feedback or Direct Preference Optimization. However, these methods are vulnerable to the significant noise prevalent in real-world preference datasets. To address this critical issue, we present a theo-retical framework for unbiased alignment, intro-ducing the Unbiased Reward Model (URM) loss and the Unbiased Direct Preference Optimiza-tion (UDPO) loss. By mathematically correcting the distortion induced by preference noise, our novel objectives enable unbiased model training directly from noisy datasets, without requiring clean ground-truth supervision. We provide rig-orous theoretical analyses demonstrating that our methods are noise-tolerant, parameter downward compatible, and classification-calibrated. Com-prehensive experiments across diverse datasets demonstrate that our approaches outperform state-of-the-art baselines. Code available at: https://github.com/cswjl/unbiased-alignment. 
+
+## 1. Introduction 
+
+Large language models (LLMs) have achieved remarkable progress in various fields (Naveed et al., 2025; Li et al., 2025). The preference alignment following pre-training and supervised fine-tuning has become a standard stage in LLM training pipelines (Ouyang et al., 2022; Liu et al., 2024). This stage plays a crucial role in improving the model’s abil-ity to follow human preferences and enhancing its overall performance (Rafailov et al., 2023) However, real-world preference datasets often contain a significant proportion of noisy preference pairs, usually ranging from 20% to 40% (Gao et al., 2024). As illustrated in Figure 1, noisy pref-erences from annotators can introduce ambiguity into the 
+
+> 1
+
+Harbin Institute of Technology 2City University of Hong Kong. Correspondence to: Xianming Liu <csxm@hit.edu.cn >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+Figure 1. An illustration of noisy preferences in LLM alignment. 
+
+learning signal. These noisy preferences often stem from a lack of professional knowledge, human carelessness, or so-cial bias, significantly reducing the performance and safety of LLMs (Zhang et al., 2017; Gao et al., 2024). Therefore, aligning with noisy preferences presents a critical challenge during the post-training phase of LLMs (Gao et al., 2024; Chowdhury et al., 2024; Wu et al., 2025). While several methods for alignment with noisy preferences have been proposed recently, they often suffer from signifi-cant limitations. Specifically, these approaches either fail to achieve full noise-tolerance (Wu et al., 2025; Liang et al., 2025) or require a precise estimation of the noise rate in the dataset (Mitchell, 2023; Chowdhury et al., 2024), which is unfeasible in reality. In this work, we independently propose a unified theoretical framework for unbiased align-ment. Our core insight is that preference noise follows a statistically modeled transition; by mathematically inverting this process, we can recover the unbiased model even when training solely on noisy data. We consider the two dominant paradigms for LLM alignment: Reinforcement Learning from Human Feedback (RLHF) (Christiano et al., 2017; Ouyang et al., 2022) and Direct Preference Optimization (DPO) (Rafailov et al., 2023). We separately explore how to achieve unbiased alignment of these two strategies using similar theoretical ideas. For the RLHF paradigm, preference noise primarily affects the reward model training stage, where a noisy reward model can propagate erroneous signals to the subsequent RL phase. We characterize the distortion of reward signals caused by noisy preferences and establish a mathematical transfor-mation relationship between unbiased and noisy reward models. Based on this analysis, we derive the Unbiased Reward Model (URM) loss. This loss function enables the training of an unbiased reward model directly from noisy data, effectively mitigating noise-induced bias at the first 1
+
+> arXiv:2607.03248v1 [cs.LG] 3 Jul 2026 Unbiased Alignment for Large Language Models with Noisy Preferences
+
+stage of RLHF. For the DPO paradigm, which simplifies RLHF by directly optimizing the policy without an explicit reward model, noisy preferences can also substantially bias the learned pol-icy. We demonstrate how noise distorts the implicit reward signal and establish the transformation relationship between the unbiased and noisy policy models. Subsequently, we de-rive the Unbiased Direct Preference Optimization (UDPO) loss. This loss allows for the direct optimization of an unbi-ased policy model, maintaining the simplicity of DPO while imparting robust capability. The key to the success of DPO lies in satisfying the mathe-matical equivalence with RLHF. We demonstrate that this equivalence extends to our proposed URM and UDPO ob-jectives, providing a unified unbiased alignment framework. Under this framework, we conduct a rigorous theoretical analysis encompassing gradient analysis, parameter down-ward compatibility, classification calibration, and the excess risk bound. These results substantiate our method’s robust-ness, parameter generalization, and its capacity to recover a Bayes optimal classifier. Our contributions are summarized as follows: • For the RLHF paradigm, we develop a noisy reward model correction theory and derive a robust Unbiased Reward Model (URM) loss. • For the DPO paradigm, we develop a noisy policy model correction theory and derive a robust Unbiased Direct Preference Optimization (UDPO) loss. • We thoroughly explore the theoretical properties of the proposed unbiased alignment framework, demonstrat-ing the robustness and practical utility of our method. • We conduct extensive experiments across multiple datasets and model families, empirically demonstrating the superiority of our proposed framework. 
+
+## 2. Related Work 
+
+Modern LLM training typically follows a three-stage pipeline (Ouyang et al., 2022; Bai et al., 2023; Grattafiori et al., 2024; Yang et al., 2025): 1) Pre-Training (Brown et al., 2020): The model is trained on a large-scale corpus by maximizing the likelihood of the next token. 2) Super-vised Fine-Tuning (SFT) (Raffel et al., 2020; Wang et al., 2023): The pre-trained model is fine-tuned on high-quality instruction data, yielding the SFT model πsft . 3) Preference Alignment (Christiano et al., 2017; Ouyang et al., 2022; Rafailov et al., 2023): The SFT model is further trained on preference data to align with human values and preferences. This work focuses specifically on the preference alignment stage. 
+
+Preference Alignment. RLHF (Christiano et al., 2017; Ouyang et al., 2022) is the foundational paradigm for pref-erence alignment. It traditionally involves training a reward model from preference data, followed by policy optimiza-tion using an RL algorithm, most notably PPO (Schulman et al., 2017) and GRPO (Shao et al., 2024). However, the RLHF pipeline is often criticized for its substantial compu-tational overhead and optimization instability. To address these challenges, DPO (Rafailov et al., 2023) has emerged as a compelling alternative that streamlines RLHF by di-rectly optimizing the policy from preference pairs. This has inspired a growing body of work on supervised preference optimization, such as SLiC-HF (Zhao et al., 2023), IPO (Azar et al., 2024), KTO (Ethayarajh et al., 2024), SimPO (Meng et al., 2024), and DiscoPOP (Lu et al., 2024). More recently, increasing attention has been devoted to alignment under noisy preferences, which is the central focus of this paper. rDPO (Chowdhury et al., 2024) proposes a provably robust alignment objective, but it requires a precise estima-tion of the dataset noise rate, which is difficult to obtain in practice. Other methods, such as ROPO (Liang et al., 2025) and Dr.DPO (Wu et al., 2025), introduce alternative loss functions to mitigate the impact of noisy preferences, but they remain limited in achieving full noise-tolerance. 
+
+## 3. Preliminary 
+
+In this section, we elaborate on two mainstream paradigms for preference alignment: RLHF (Christiano et al., 2017; Ouyang et al., 2022) and DPO (Rafailov et al., 2023), which form the foundations of our work. We also introduce the noisy preference model used in our analysis. 
+
+RLHF. RLHF typically consists of two stages. In the first stage, a reward model rϕ is trained on a static preference dataset D = {x(i), y (i) 
+
+> w
+
+, y (i) 
+
+> l
+
+}Ni=1 , where yw denotes the response preferred over yl for the prompt x, written as 
+
+yw ≻ yl. Under the widely used Bradley-Terry (BT) model (Bradley & Terry, 1952), human preference is modeled as: 
+
+p(yw ≻ yl|x) = σ r(x, y w) − r(x, y l), (1) where σ is the sigmoid function. Following standard prac-tice, we assume that the ground-truth preference p∗(yw ≻
+
+yl) = 1 . The reward model rϕ is optimized by maximum likelihood estimation, minimizing the following reward model (RM) loss: 
+
+LRM = − log σ rϕ(x, y w) − rϕ(x, y l). (2) In the second stage, the policy πθ is optimized to maximize the learned reward. To prevent the policy from deviating excessively from the reference model πref , a KL-divergence 2Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+penalty is incorporated (Jaques et al., 2017; 2020): 
+
+max 
+
+> πθ
+
+Ex∼D ,y ∼πθ (y|x) [rϕ(x, y )] −βDKL [πθ (y|x) ∥ πref (y|x)] ,
+
+(3) where β is a hyperparameter. In practice, both πθ and πref 
+
+are initialized from the SFT model πsft . Due to the dis-crete nature of the language generation, this objective is non-differentiable and is typically optimized using an RL algorithm. 
+
+DPO. DPO simplifies the RLHF pipeline by directly op-timizing the policy model πθ on preference data through a supervised preference objective, eliminating the need to train an explicit reward model and employ an RL algorithm. Rafailov et al. (2023) show that the optimal solution to the RLHF objective in Equation 3 can be expressed in closed form as: 
+
+r(x, y ) = β log π∗(y|x)
+
+πref (y|x) + β log Z(x), (4) where Z(x) = P 
+
+> y
+
+πref (y|x) exp   1 
+
+> β
+
+r(x, y ) is the partition function. By substituting Equation 4 into the BT model in Equation 1, the partition function Z(x) cancels out. This allows for optimizing the policy via a maximum likelihood loss: 
+
+LDPO = − log σ
+
+
+
+β log πθ (yw|x)
+
+πref (yw|x) − β log πθ (yl|x)
+
+πref (yl|x)
+
+
+
+= − log σ
+
+
+
+β log πθ (yw|x)πref (yl|x)
+
+πθ (yl|x)πref (yw|x)
+
+
+
+.
+
+(5) 
+
+Noisy Preference Model. We assume that the samples in the dataset Dη are not drawn from the unbiased human pref-erence distribution P∗, but rather from a noisy distribution 
+
+Pη influenced by factors such as cognitive errors and social biases: 
+
+pη (yw ≻ yl|x) = (1 −η)p∗(yw ≻ yl|x)+ ηp ∗(yl ≻ yw|x),
+
+(6) where η ∈ [0 , 12 ) denotes the noise rate, while pη and p∗ are the preference probabilities under the distributions Pη and 
+
+P∗, respectively. 
+
+## 4. Unbiased Alignment 
+
+Since real-world preference datasets often contain noise, standard approaches such as RLHF and DPO may struggle to achieve ideal performance. To address this challenge, we investigate the theoretical foundations of noise model correction and propose principled methods for unbiased alignment. Detailed proofs are provided in the Appendix A. 
+
+4.1. Unbiased Reward Model Learning 
+
+We first explore the reward model learning stage in RLHF. When preference data is contaminated with noise, the reward model exhibits a systematic bias, yielding a reward signal that is distorted by the underlying noise distribution. This relationship is characterized as follows: 
+
+Lemma 4.1. Under noisy preferences, the normal reward model loss −E(x,y w ,y l)∼P η
+
+log σ rϕ(x, y w) − rϕ(x, y l) 
+
+is equivalent to the following noisy optimization loss: 
+
+− E(x,y w ,y l)∼P ∗
+
+(1 − η) log σ rϕ(x, y w) − rϕ(x, y l)
+
++ η log σ rϕ(x, y l) − rϕ(x, y w) . (7) 
+
+The corresponding optimal noisy reward model satisfies 
+
+σ rηϕ(x, y w) − rηϕ(x, y l) =(1 − η) p∗(yw ≻ yl|x) + η p ∗(yl ≻ yw|x). (8) 
+
+Noisy Reward Model Correction. To address the issue of noise, following Lemma 4.1, we demonstrate that unbiased reward signals can be derived from their noisy counterparts. 
+
+Theorem 4.2. For any (x, y w, y l) ∼ P ∗, if rηϕ(x, y ) is the optimal noisy reward model, then the optimal unbiased reward model r∗
+
+> ϕ
+
+(x, y ) satisfies: 
+
+r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l) = log 
+
+" exp  rηϕ(x, y w) − rηϕ(x, y l) − a
+
+1 − a · exp  rηϕ(x, y w) − rηϕ(x, y l)#
+
+, (9) 
+
+where a = η 
+
+> 1−η
+
+is a constant. 
+
+It is evident that the unbiased reward signal r∗
+
+> ϕ
+
+(x, y ) can be recovered from its noisy counterpart rηϕ(x, y ). For in-stance, in the case where the noisy reward model is unbiased (a = 0 ), the relationship reduces to r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l) = 
+
+rηϕ(x, y w) − rηϕ(x, y l), signifying an absence of confound-ing. Conversely, when the noisy model is completely in-verted relative to true preferences (as a → ∞ ), we obtain 
+
+r∗
+
+> ϕ
+
+(x, y w)−r∗
+
+> ϕ
+
+(x, y l) = rηϕ(x, y l)−rηϕ(x, y w), representing a state of complete confounding. 
+
+Unbiased Reward Model Loss. However, during the re-inforcement learning phase, we utilize only the prompts x
+
+from the dataset. Since the static preference pairs (yw, y l)
+
+are absent during this stage, we cannot directly apply The-orem 4.2 to recover the unbiased reward signal r∗
+
+> ϕ
+
+(x, y )
+
+for policy guidance. To address this, we require a robust loss function that trains the unbiased reward model r∗ 
+
+> ϕ
+
+di-rectly from the noisy preference dataset. By leveraging Theorem 4.2, we can establish a mathematical relationship between rη and r∗. Given that the normal RM loss LRM 
+
+3Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+optimizes the noisy reward model rη , substituting rη with its representation in terms of the unbiased r∗ allows us to optimize r∗ directly. The unbiased reward model loss is derived as follows: 
+
+Corollary 4.3. Unbiased Reward Model (URM) loss: 
+
+LURM = − log exp  rϕ(x, y w) − rϕ(x, y l) + a
+
+exp  rϕ(x, y w) − rϕ(x, y l) + 1 . (10) 
+
+Using the URM loss, we can directly train the unbiased reward model r∗ 
+
+> ϕ
+
+from the noisy preference Pη .
+
+Mathematically, a is defined as η 
+
+> 1−η
+
+. However, because the true value of η is unobservable in practice, we treat a as a tunable hyperparameter during training. By adjusting the parameter a, we can directly train an unbiased reward model. Then, during the second stage of RL training, the interfer-ence from the noisy preference will no longer occur. Our method is orthogonal to specific RL algorithms and can be combined with any RL algorithm, such as PPO (Schulman et al., 2017) and GRPO (Shao et al., 2024). The specific RL algorithms are not the focus of this paper. 
+
+4.2. Unbiased Direct Preference Optimization 
+
+DPO directly supervises policy model training using pref-erence data, so noisy preferences can significantly impact model performance. Similar to the discussion of unbiased reward model learning, we first obtain the optimal solution for normal DPO in the presence of noisy preferences. 
+
+Lemma 4.4. Under noisy preferences, the normal DPO loss 
+
+−E(x,y w ,y l)∼P η log σ
+
+
+
+β log πθ (yw |x)πref (yl|x)  
+
+> πθ(yl|x)πref (yw|x)
+
+
+
+is equiva-lent to the following noisy optimization loss: 
+
+E(x,y w ,y l)∼P ∗ log 
+
+σ
+
+
+
+β log πθ (yw |x)πref (yl|x)   
+
+> πθ(yl|x)πref (yw|x)
+
+η−1
+
+σ
+
+
+
+β log πθ (yl|x)πref (yw |x)   
+
+> πθ(yw|x)πref (yl|x)
+
+η . (11) 
+
+The corresponding optimal noisy policy model satisfies: 
+
+σ
+
+
+
+β log πηθ (yw|x)πref (yl|x)
+
+πηθ (yl|x)πref (yw|x)
+
+
+
+=(1 − η) p∗(yw ≻ yl|x) + η p ∗(yl ≻ yw|x). (12) 
+
+Noisy DPO Model Correction. Based on Lemma 4.4, the noisy policy model πηθ obtained through DPO under noisy preferences can be corrected in the following: 
+
+Theorem 4.5. For any (x, y w, y l) ∼ P ∗, if πηθ (y|x) is the optimal noisy policy model, then the optimal unbiased policy model π∗ 
+
+> θ
+
+(y|x) satisfies: 
+
+ π∗ 
+
+> θ
+
+(yw|x) πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x) πref (yw|x)
+
+β
+
+=
+
+ πηθ (yw |x) πref (yl|x)   
+
+> πηθ(yl|x)πref (yw|x)
+
+β
+
+− a
+
+1 − a ·
+
+ πηθ (yw |x) πref (yl|x)   
+
+> πηθ(yl|x)πref (yw|x)
+
+β .
+
+(13) 
+
+where a = η 
+
+> 1−η
+
+is a constant. 
+
+Consequently, the unbiased policy π∗ 
+
+> θ
+
+(y|x) can be re-covered from the noisy policy πηθ (y|x). Notably, when 
+
+a = 0, the policy ratios coincide: π∗       
+
+> θ(yw|x)πref (yl|x)
+> π∗
+> θ(yl|x)πref (yw|x)
+
+=       
+
+> πηθ(yw|x)πref (yl|x)
+> πηθ(yl|x)πref (yw|x)
+
+, indicating that the noisy policy is un-confounded. In contrast, as a → ∞, the relationship flips: π∗       
+
+> θ(yw|x)πref (yl|x)
+> π∗
+> θ(yl|x)πref (yw|x)
+
+= πηθ (yl|x) πref (yw |x)    
+
+> πηθ(yw|x)πref (yl|x)
+
+, corresponding to complete confounding, where the noisy policy effectively inverts the true human preferences. 
+
+Unbiased DPO Loss. In practical training, ground-truth labels are often unavailable, so we cannot determine which response is truly preferred in a noisy dataset. As a result, Theorem 4.5 cannot be applied directly to policy optimiza-tion. Motivated by Theorem 4.5, we instead establish a relationship between the noisy policy πηθ and the unbiased policy π∗ 
+
+> θ
+
+. Specifically, we can express πηθ in terms of π∗
+
+> θ
+
+(the desired unbiased model) and substitute this equivalent into the objective. This yields an unbiased loss function for optimizing π∗ 
+
+> θ
+
+under noisy preferences as follows: 
+
+Corollary 4.6. Unbiased Direct Preference Optimization (UDPO) loss: 
+
+LUDPO = − log 
+
+ πθ (yw|x)πref (yl|x)
+
+πθ (yl|x)πref (yw|x)
+
+β
+
++ a
+
+ πθ (yw|x)πref (yl|x)
+
+πθ (yl|x)πref (yw|x)
+
+β
+
++ 1 
+
+. (14) 
+
+Using the UDPO loss, we can directly train the unbiased policy model π∗ 
+
+> θ
+
+from the noisy preference Pη .
+
+By adjusting the parameter a, we can obtain an unbiased policy model using supervised preference training. 
+
+4.3. Further Theoretical Analysis 
+
+In this subsection, we further analyze the properties of the proposed URM and UDPO losses. 
+
+A Unified Framework. Although the URM and UDPO losses are derived independently from the normal RM and DPO losses, respectively, our resulting formulations show that they still preserve the fundamental transformation be-tween explicit and implicit reward models in DPO and RLHF (Rafailov et al., 2023): rϕ(x, y w) − rϕ(x, y l) = 
+
+β log πθ (yw |x)  
+
+> πref (yw|x)
+
+− β log πθ (yl|x) 
+
+> πref (yl|x)
+
+. For notational simplic-ity, we define the reward margin as ∆ = rϕ(x, y w) −
+
+rϕ(x, y l) = β log πθ (yw |x)  
+
+> πref (yw|x)
+
+− β log πθ (yl|x) 
+
+> πref (yl|x)
+
+. This shared representation enables us to analyze both the URM and UDPO losses within a unified framework by using the unbi-ased loss: 
+
+Lunbiased (∆) = − log exp(∆) + a
+
+exp(∆) + 1 . (15) 4Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Gradient Analysis. For the normal RM loss LRM =
+
+− log σ rϕ(x, y w) − rϕ(x, y l) and the normal DPO loss 
+
+LDPO = − log σ
+
+
+
+β log πθ (yw |x)  
+
+> πref (yw|x)
+
+− β log πθ (yl|x)
+
+> πref (yl|x)
+
+
+
+, we can also simplify them to L(∆) = − log σ(∆) . We have the gradient as follows: 
+
+∂L(∆) 
+
+∂∆ = σ(∆) − 1. (16) The gradient magnitude ∂L(∆)  
+
+> ∂∆
+
+approaches 0 as ∆ ≫ 0
+
+and approaches 1 as ∆ ≪ 0. This means that samples that are “highly misranked” (i.e., with large negative ∆)receive the largest optimization weight. However, noisy or mislabeled pairs often fall into this regime (Wei et al., 2023), making the model prone to overfitting spurious or inaccurate preferences. For the URM loss and the UDPO loss Lunbiased (∆) =
+
+− log exp(∆)+ a 
+
+> exp(∆)+1
+
+, we have the gradient as follows: 
+
+∂Lunbiased (∆) 
+
+∂∆ = exp(∆) exp(∆) + 1 − exp(∆) exp(∆) + a (17) Notably, the gradient magnitude | ∂Lunbiased (∆)  
+
+> ∂∆
+
+| vanishes as 
+
+∆ ≪ 0, allowing the optimization process to effectively avoid fitting to noisy samples. Similarly, as ∆ ≫ 0, the gradient approaches 0 in a manner consistent with the nor-mal loss function. The gradient reaches its maximum value of 1−√a 
+
+> 1+ √a
+
+at the intermediate point ∆ = 12 log a. This indi-cates that, during optimization, the unbiased loss primarily focuses on pairs that are difficult to distinguish. 
+
+Parameter downward Compatibility. In practical training, we set a = ˆη 
+
+> 1−ˆη
+
+, with 0 ≤ a < 1. Our derivations show that the proposed loss is inherently robust when the true noise rate η∗ matches the estimate ˆη. Moreover, we prove that the loss remains an unbiased optimal solution when the data are cleaner than assumed, i.e., when η∗ ≤ ˆη.
+
+Corollary 4.7. Let a = ˆη 
+
+> 1−ˆη
+
+, where 0 ≤ a < 1. If the true noise rate satisfies 0 ≤ η∗ ≤ ˆη, then the unbiased loss function Lunbiased attains an unbiased optimal solution. 
+
+In practice, the exact noise rate of a dataset is often un-known. This downward compatibility property highlights the practical utility of our method: as long as a is set high to cover the potential noise, the model achieves strong re-sults. In contrast, existing methods such as label smoothing (Mitchell, 2023) and rDPO (Chowdhury et al., 2024) lack this property; an inappropriate parameter choice in those methods can lead to performance that is inferior to standard RM or DPO loss. 
+
+Classification Calibration and Excess Risk Bound. The alignment task can be formulated as a specific instance of binary classification. Let Y ∈ {− 1, +1 } denote the preference label. Here, Y = +1 indicates (y1 ≻ y2|x),while Y = −1 indicates (y1 ≺ y2|x). Given an input 
+
+X = ( x, y 1, y 2), the model outputs the score difference 
+
+f (X) = ∆ = r(x, y 1)−r(x, y 2). The classification margin is u = Y f (X). The margin-based form of the unbiased loss for classification is Lunbiased (u) = − log exp( u)+ a 
+
+> exp( u)+1
+
+.Classification calibration (Bartlett et al., 2006), also known as Fisher consistency (Lin, 2004), is an important property ensuring that minimizing a surrogate loss can obtain the Bayes-optimal classifier in binary classification. 
+
+Definition 4.8. A loss function L is classification-calibrated if the classifier which minimizes this surrogate loss function is identical to the Bayes optimal classifier that minimizes the 0-1 loss (classification error). We demonstrate that our proposed loss satisfies this condi-tion. 
+
+Theorem 4.9. Unbiased loss function Lunbiased is classification-calibrated. 
+
+Based on classification calibration, we establish a rela-tionship between the excess risks with respect to the 0–1 loss and with respect to our unbiased loss. In particu-lar, let R(f ) denote the risk based on 0–1 loss, and let 
+
+R∗ = inf f R(f ) denote the Bayes risk. Similarly, let 
+
+RL(f ) = E(X,Y )L(Y f (X)) be called the L-risk and let 
+
+R∗L = inf f RL(f ) denote the optimal L-risk. 
+
+Corollary 4.10. The 0-1 loss excess risk R(f ) − R∗ and the Lunbiased excess risk RLunbiased (f ) − R∗Lunbiased satisfy: 
+
+ψ(R(f ) − R∗) ≤ RLunbiased (f ) − R∗Lunbiased , (18) 
+
+where ψ : [0 , 1] → [0 , ∞) is a piecewise convex function: 
+
+ψ(ρ) = 
+
+(
+
+log 2 − H bin 
+
+  1+ ρ
+
+> 2
+
+ if 0 ≤ ρ < 1−a
+
+> 1+ a
+
+log 21+ a + 1−ρ 
+
+> 2
+
+log a if 1−a 
+
+> 1+ a
+
+≤ ρ ≤ 1 , (19) 
+
+and Hbin (p) = −p log p − (1 − p) log(1 − p) is the binary entropy function. 
+
+This bound implies classification consistency: if a hypothe-sis f achieves the optimal surrogate risk, i.e., RLunbiased (f ) = 
+
+R∗Lunbiased , then it must also achieve the Bayes-optimal clas-sification risk, i.e., R(f ) = R∗. Furthermore, we analyze the behavior of ψ(ρ). For Hbin , we perform a Taylor ex-pansion around p = 12 : Hbin (p) ≈ H bin ( 12 ) + H′
+
+> bin
+
+( 12 )( p − 
+
+> 12
+
+) + 12 H′′ 
+
+> bin
+
+( 12 )( p − 12 )2 = log 2 − 2( p − 12 )2. Substituting 
+
+p = 1+ ρ 
+
+> 2
+
+, we obtain Hbin 
+
+  1+ ρ
+
+> 2
+
+ ≈ log 2 − ρ2 
+
+> 2
+
+. Conse-quently, in the interval 0 ≤ ρ < 1−a 
+
+> 1+ a
+
+, ψ(ρ) ≈ ρ2 
+
+> 2
+
+, similar to Logistic loss or Quadratic loss. Conversely, in the interval  
+
+> 1−a
+> 1+ a
+
+≤ ρ ≤ 1, ψ(ρ) is linear with respect to ρ, similar to Hinge loss. This hybrid behavior suggests that the unbi-ased loss inherits desirable properties from both regimes: a 5Unbiased Alignment for Large Language Models with Noisy Preferences 0 1000 2000 3000 4000 5000      
+
+> Steps
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Pref. Probability  p(yw  yl|x) a= 0
+> a=0.20.8
+> a=0.40.6
+
+(a) URM with η = 0 .20 1000 2000 3000 4000 5000       
+
+> Steps
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Pref. Probability  p(yw  yl|x) a= 0
+> a=0.20.8
+> a=0.40.6
+
+(b) URM with η = 0 .40 1000 2000 3000 4000 5000       
+
+> Steps
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Policy Probability  π(yw |x)
+> a= 0
+> a=0.20.8
+> a=0.40.6
+
+(c) UDPO with η = 0 .20 1000 2000 3000 4000 5000       
+
+> Steps
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Policy Probability  π(yw |x) a= 0
+> a=0.20.8
+> a=0.40.6
+
+(d) UDPO with η = 0 .4
+
+Figure 2. (a) & (b): Trained preference probability p(yw ≻ yl|x) for reward model using URM loss with η ∈ { 0.2, 0.4}. (c) & (d): Trained policy probability π(yw |x) for policy model using UDPO loss with β = 0 .5 and η ∈ { 0.2, 0.4}.
+
+quadratic or Logistic-like region that provides smooth, fine-grained optimization near the optimum, and a hinge-like linear region that can be more robust to high-error (poten-tially noisy or outlier) samples. As a result, the loss can mitigate the impact of noisy data while preserving sufficient fitting ability. 
+
+Property Visualization. We conduct a synthetic experi-ment to validate our theories and illustrate the properties of our method. Specifically, we sample preferences from one triplet (x, y w, y l) with noise rate η ∈ { 0.2, 0.4}. We train a reward model rϕ using URM loss, setting a to 0 (normal RM loss), 0.20.8 (corresponding η = 0 .2), and 0.40.6
+
+(corresponding η = 0 .4), respectively. Similarly, we apply the UDPO loss to train a policy model πθ under these same values of a, while fixing β = 0 .5 and employing a uniform distribution for πref . The models are trained for 5000 steps using the Adam optimizer with a learning rate of 0.01 and a batch size of 4096. The results are visualized in Figure 2. It can be seen that the preference probability p(yw ≻
+
+yl|x) = σ(rϕ(x, y w) − rϕ(x, y l)) obtained via the normal RM loss is significantly biased by the noise rate, converg-ing toward the value of 1 − η. In contrast, our URM loss demonstrates both noise-tolerance and parameter downward compatibility. Specifically, when a = 0.20.8 , the model re-mains robust to the 0.2 noise rate; when a = 0.40.6 , it main-tains robustness across both 0.2 and 0.4 noise rates. For the UDPO loss, the preference probability p(yw ≻ yl|x) = 
+
+σ
+
+
+
+β log πθ (yw |x)πref (yl|x)  
+
+> πθ(yl|x)πref (yw|x)
+
+
+
+exhibits behavior identical to that of the URM loss. To further illustrate the specific characteristics of the UDPO loss, we report the policy prob-ability πθ (yw|x), which likewise exhibits noise-tolerance and parameter downward compatibility. These visualiza-tions remain consistent with our theoretical analysis. 
+
+Normalized Unbiased Loss. Gradient analysis reveals that the maximum gradient magnitude of the unbiased loss, 
+
+max ∆ | ∂Lunbiased (∆)  
+
+> ∂∆
+
+| = 1−√a 
+
+> 1+ √a
+
+, decreases as a increases. This reduction may imply that, relative to the normal loss, op-timizing the unbiased loss may require a larger learning rate to achieve comparable update magnitudes. To avoid additional learning rate adjustments, we can normalize the unbiased loss by a constant α = 1+ √a 
+
+> 1−√a
+
+. With this scaling, the maximum gradient magnitude is preserved as 
+
+max ∆ | ∂Lunbiased (∆)  
+
+> ∂∆
+
+| = 1 . We refer to the normalized vari-ants as α-URM and α-UDPO. Since this modification is merely a constant rescaling of the objective, it does not alter the theoretical properties of URM and UDPO. 
+
+Instance-Dependent Noise. Our theory can naturally ex-tend to instance-dependent noise. Specifically, let ηx denote the noise rate for instance x, and define the corresponding constant ax as ηx 
+
+> 1−ηx
+
+. Since the proofs of the noise correc-tion process in Theorem 4.2 and Theorem 4.5 are derived pointwise, the instance-dependent versions follow directly by replacing the constant a with ax. Although the ηx of each instance is unknown, our parameter downward compatibility further implies that it suffices to use a single global param-eter ˆa satisfying ˆa ≥ sup x ax (equivalently, ˆη ≥ sup x ηx). In this case, the unbiased loss still recovers the unbiased optimal solution. 
+
+## 5. Experiments 
+
+In this section, we validate the effectiveness of our proposed methods through comprehensive experiments, spanning re-ward model training and supervised preference training. De-tailed experimental settings are provided in the Appendix B. 
+
+Datasets. We evaluate our methods on three widely used real-world datasets, including the dialogue dataset Anthropic-HH (helpful-base) (Bai et al., 2022), the sum-marization dataset Reddit TL;DR (V ¨olske et al., 2017), and the comprehensive dataset UltraFeedback Binarized (UFB) (Cui et al., 2023). 
+
+Baselines. We compare our method with several state-of-the-art approaches, with a particular focus on robustness-oriented methods. For reward model training, we consider the standard RM (Christiano et al., 2017), label smoothing (cRM), and rRM (Chowdhury et al., 2024). For supervised 6Unbiased Alignment for Large Language Models with Noisy Preferences  
+
+> Table 1. Win rates (%) of different reward model learning methods vs. the SFT model under different manual flip rates (0%, 20%, 40%). The top-2 best results are in bold.
+
+Models Methods HH TL;DR Average 0% 20% 40% 0% 20% 40% Llama-3.2-3B RM 80.0 78.3 69.7 79.4 76.4 69.1 75.5 cRM 80.7 76.1 70.1 80.8 76.5 69.9 75.7 rRM 79.9 78.3 72.4 77.3 77.7 68.6 75.7 
+
+URM 81.4 78.9 72.6 82.8 83.2 77.5 79.4 
+
+α-URM 82.5 81.4 74.3 83.4 81.9 76.1 79.9 
+
+Qwen-3-1.7B RM 63.4 55.5 43.9 81.3 76.2 63.3 63.9 cRM 64.2 56.0 46.2 80.4 76.6 66.4 65.0 rRM 65.7 62.5 52.1 76.8 73.6 64.7 65.9 
+
+URM 67.6 61.8 58.2 81.5 80.0 71.6 70.1 
+
+α-URM 66.9 61.6 57.9 82.9 79.2 68.9 69.6  
+
+> Table 2. Win rates (%) of different supervised preference learning methods vs the SFT model under different manual flip rates (0%, 20%, 40%). The top-2 best results are in bold.
+
+Models Methods HH TL;DR Average 0% 20% 40% 0% 20% 40% Llama-3.2-3B DPO 85.4 80.4 69.8 72.2 64.6 56.1 71.4 cDPO 85.3 80.2 70.9 69.6 61.0 57.0 70.7 IPO 85.6 89.3 80.0 86.5 80.3 69.3 81.8 rDPO 88.0 89.3 84.4 85.9 83.5 77.3 84.7 Dr.DPO 88.2 88.2 81.6 86.8 84.3 82.9 85.0 
+
+UDPO 90.8 90.4 85.6 86.3 85.3 77.2 85.9 
+
+α-UDPO 90.4 89.8 85.7 87.2 86.4 78.2 86.1 
+
+Qwen-3-1.7B DPO 75.4 68.2 58.2 73.9 65.4 54.5 65.9 cDPO 72.8 70.1 59.3 67.2 60.5 51.9 63.6 IPO 71.7 68.7 63.3 82.1 78.9 67.1 72.0 rDPO 78.8 72.9 68.1 84.3 72.4 70.2 74.5 Dr.DPO 80.2 77.7 68.2 82.9 80.1 70.5 76.6 
+
+UDPO 83.4 81.2 73.0 84.6 83.0 71.3 79.4 
+
+α-UDPO 81.3 80.3 73.2 86.3 84.9 71.5 79.6 
+
+preference training, we consider DPO (Rafailov et al., 2023), label smoothing (cDPO), IPO (Azar et al., 2024), rDPO (Chowdhury et al., 2024), and Dr.DPO (Wu et al., 2025). We search for the optimal hyperparameter for each baseline to ensure a fair comparison. 
+
+5.1. Evaluations on HH and TL;DR 
+
+We first conduct evaluations on the dialogue dataset HH and the summarization dataset TL;DR. 
+
+Setup. We use the Llama-3.2-3B (Grattafiori et al., 2024) and Qwen-3-1.7B (Yang et al., 2025) as the base models. To obtain the SFT model, we fine-tune the base model exclu-sively on preferred completions similar to (Rafailov et al., 2023). For reward model evaluation, following (Nakano et al., 2021; Gao et al., 2023), we employ a best-of-n sam-pling strategy. Specifically, we let the SFT model generate 
+
+n = 20 responses, and then use the reward model to select the highest-scoring response, which is compared with the default output of the SFT model. The best-of-n metric offers a more stable comparison of reward model quality. For su-pervised preference training evaluation, following (Rafailov et al., 2023), we compare the responses generated by the trained policy model against those of the SFT model. We employ GPT-5 (GPT-5-chat-latest) as the judge to calcu-late the win rate. Beyond the inherent noise in the HH and TL;DR datasets, we also investigate scenarios with 20% and 7Unbiased Alignment for Large Language Models with Noisy Preferences 0% 20% 40%    
+
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> 95
+> Win rate (%)
+> DPO
+> a= 0 .4
+> a= 0 .6
+> a= 0 .8
+
+(a) UDPO 0% 20% 40%     
+
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> 95
+> Win rate (%)
+> DPO
+> a= 0 .4
+> a= 0 .6
+> a= 0 .8
+
+(b) α-UDPO 
+
+Figure 3. The ablation results of UDPO and α-UDPO using Llama-3.2-3B on HH with different manual flip rates (0%, 20%, 40%). The best results in each case are highlighted with a red border. 
+
+40% manually flipped labels to simulate higher noise levels. Please note that the original dataset already contains noise; therefore, a manual flip rate of 0% does not imply no noise. 
+
+Results. We report the win rates for reward model training and supervised preference learning in Table 1 and Table 2, respectively. For reward model learning (Table 1), our pro-posed URM and α-URM losses consistently outperform all baselines in the original setting (0% flip rate), indicating that they effectively mitigate intrinsic noise in real-world data. As we inject additional synthetic noise, our methods remain more robust. For example, with Llama-3.2-3B on TL;DR at a 40% flip rate, URM and α-URM improve win rates by approximately 8% over the baselines. Relative to the normal RM loss, cRM and rRM do not yield a mean-ingful improvement in average win rate. In contrast, across both Llama-3.2-3B and Qwen-3-1.7B, our methods exceed the SOTA baseline by roughly 4% in average win rate. For supervised preference learning (Table 2), our methods have achieved the best results in most cases. The average win rate of UDPO and α-UDPO exceeded that of normal DPO by around 15%. This substantial gap confirms that normal DPO is prone to overfitting noisy preferences, while our unbiased framework successfully recovers the unbiased pol-icy. UDPO and α-UDPO consistently achieve the highest average win rates across all datasets, which further vali-dates their effectiveness in both naturally noisy and highly corrupted environments. 
+
+Ablation Experiment. It can be observed that the unbiased loss and the normalized unbiased loss achieve comparable strong performance. We further report the hyperparameter ablation results using UDPO and α-UDPO of Llama-3.2-3B on the HH dataset, as shown in Figure 3. The results indi-cate that UDPO is more sensitive to hyperparameter choices, whereas the normalized α-UDPO consistently attains op-timal performance across settings when using a larger a.This behavior is consistent with our parameter downward compatibility theory. 
+
+Table 3. Win rates (%) of different reward model learning methods vs. the SFT model on UFB. The top-2 best results are in bold. 
+
+Methods UFB Llama-3.1-8B Qwen-3-8B RM 68.9 54.3 cRM 66.5 52.9 rRM 63.6 63.9 
+
+URM 72.5 64.6 
+
+α-URM 72.3 64.9 
+
+Table 4. Win rates (%) of different supervised preference learning methods vs the SFT model on UFB. The top-2 best results are in bold. 
+
+Methods UFB Llama-3.1-8B Qwen-3-8B DPO 65.4 56.3 cDPO 63.1 55.1 IPO 72.7 57.8 rDPO 72.1 58.3 Dr.DPO 65.8 56.5 
+
+UDPO 74.3 60.6 
+
+α-UDPO 73.0 60.7 5.2. Evaluations on UFB. 
+
+We conduct experiments using larger models on the more complex dataset UFB. 
+
+Setup. We use the Llama-3.1-8B (Grattafiori et al., 2024) and Qwen-3-8B (Yang et al., 2025) as the base models. To obtain the SFT model, we fine-tune the base model on the instruct dataset Capybara (Daniele & Deeprasit, 2023). The assessment method is consistent with HH and TL;DR. 
+
+Results. We report the win rates for reward model training and supervised preference training in Table 3 and Table 4, respectively. For reward model learning (Table 3), our pro-posed URM and α-URM losses consistently outperform all baselines. Notably, on the Qwen-3-8B model, while the normal RM performs poorly with a 54.3% win rate, our URM and α-URM achieve significantly higher win rates of 64.6% and 64.9% respectively, surpassing the normal RM loss. For supervised preference learning (Table 4), UDPO and α-UDPO consistently achieve the best results. Our methods outperform the SOTA methods by approximately 2% on both models. These results on the complex UFB dataset with larger models further validate the scalability and robustness of our unbiased alignment framework. 8Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+## 6. Conclusion 
+
+This work introduces an unbiased alignment framework for LLM alignment with noisy preferences. By modeling pref-erence corruption as a mathematical transition process and analytically inverting the distortion, we derive two practical objectives: the Unbiased Reward Model (URM) loss for reward learning in RLHF, and the Unbiased Direct Prefer-ence Optimization (UDPO) loss for supervised preference optimization. We further show that both objectives admit a unified margin-based form that preserves the fundamental RLHF-DPO equivalence, constituting a unified framework. Our theoretical analysis establishes noise-tolerance, param-eter downward compatibility, and classification calibration. Extensive experiments demonstrate that our methods show consistent improvements over strong baselines. Overall, our work offers a concise, interpretable, and effective route to robust LLM alignment. 
+
+## Impact Statement 
+
+This work presents a novel advance in LLM robust align-ment, with positive implications for developing safe and reliable AI systems. This work is not expected to have a negative social impact. 
+
+## Acknowledgement 
+
+This work was supported by National Natural Science Foun-dation of China under Grants 62525107. 
+
+## References 
+
+Azar, M. G., Guo, Z. D., Piot, B., Munos, R., Rowland, M., Valko, M., and Calandriello, D. A general theoretical paradigm to understand learning from human preferences. In International Conference on Artificial Intelligence and Statistics , pp. 4447–4455. PMLR, 2024. Bai, J., Bai, S., Chu, Y., Cui, Z., Dang, K., Deng, X., Fan, Y., Ge, W., Han, Y., Huang, F., et al. Qwen technical report. arXiv preprint arXiv:2309.16609 , 2023. Bai, Y., Jones, A., Ndousse, K., Askell, A., Chen, A., Das-Sarma, N., Drain, D., Fort, S., Ganguli, D., Henighan, T., et al. Training a helpful and harmless assistant with rein-forcement learning from human feedback. arXiv preprint arXiv:2204.05862 , 2022. Bartlett, P. L., Jordan, M. I., and McAuliffe, J. D. Convexity, classification, and risk bounds. Journal of the American Statistical Association , 101(473):138–156, 2006. Bradley, R. A. and Terry, M. E. Rank analysis of incom-plete block designs: I. the method of paired comparisons. 
+
+Biometrika , 39(3/4):324–345, 1952. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. 
+
+Advances in neural information processing systems , 33: 1877–1901, 2020. Chowdhury, S. R., Kini, A., and Natarajan, N. Provably ro-bust dpo: Aligning language models with noisy feedback. In International Conference on Machine Learning , pp. 42258–42274. PMLR, 2024. Christiano, P. F., Leike, J., Brown, T., Martic, M., Legg, S., and Amodei, D. Deep reinforcement learning from human preferences. Advances in neural information pro-cessing systems , 30, 2017. Cui, G., Yuan, L., Ding, N., Yao, G., Zhu, W., Ni, Y., Xie, G., Liu, Z., and Sun, M. Ultrafeedback: Boosting language models with high-quality feedback, 2023. Daniele, L. and Deeprasit, S. Amplify-instruct: Syn-thetically generated diverse multi-turn conversations for efficient llm training. arXiv Preprint. Retrieved from https://huggingface. co/datasets/LDJnr/Capybara , 2023. Ethayarajh, K., Xu, W., Muennighoff, N., Jurafsky, D., and Kiela, D. Model alignment as prospect theoretic optimiza-tion. In Forty-first International Conference on Machine Learning , 2024. Gao, L., Schulman, J., and Hilton, J. Scaling laws for reward model overoptimization. In International Conference on Machine Learning , pp. 10835–10866. PMLR, 2023. Gao, Y., Alon, D., and Metzler, D. Impact of preference noise on the alignment performance of generative lan-guage models. In First Conference on Language Model-ing , 2024. Grattafiori, A., Dubey, A., Jauhri, A., Pandey, A., Kadian, A., Al-Dahle, A., Letman, A., Mathur, A., Schelten, A., Vaughan, A., et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. Jaques, N., Gu, S., Bahdanau, D., Hern ´andez-Lobato, J. M., Turner, R. E., and Eck, D. Sequence tutor: Conserva-tive fine-tuning of sequence generation models with kl-control. In International Conference on Machine Learn-ing , pp. 1645–1654. PMLR, 2017. Jaques, N., Shen, J. H., Ghandeharioun, A., Ferguson, C., Lapedriza, A., Jones, N., Gu, S., and Picard, R. Human-centric dialog training via offline reinforcement learn-ing. In Proceedings of the 2020 conference on empirical methods in natural language processing (EMNLP) , pp. 3985–4003, 2020. 9Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Li, Z., Wu, X., Du, H., Nghiem, H., and Shi, G. Bench-mark evaluations, applications, and challenges of large vision language models: A survey. arXiv preprint arXiv:2501.02189 , 1, 2025. Liang, X., Chen, C., Qiu, S., Wang, J., Wu, Y., Fu, Z., Chen, H., Wu, F., and Ye, J. ROPO: Robust preference optimization for large language models. In Forty-second International Conference on Machine Learning , 2025. Lin, Y. A note on margin-based loss functions in classi-fication. Statistics & probability letters , 68(1):73–82, 2004. Liu, A., Feng, B., Xue, B., Wang, B., Wu, B., Lu, C., Zhao, C., Deng, C., Zhang, C., Ruan, C., et al. Deepseek-v3 technical report. arXiv preprint arXiv:2412.19437 , 2024. Lu, C., Holt, S., Fanconi, C., Chan, A., Foerster, J., van der Schaar, M., and Lange, R. Discovering preference opti-mization algorithms with and for large language models. 
+
+Advances in Neural Information Processing Systems , 37: 86528–86573, 2024. Meng, Y., Xia, M., and Chen, D. Simpo: Simple preference optimization with a reference-free reward. Advances in Neural Information Processing Systems , 37:124198– 124235, 2024. Mitchell, E. A note on dpo with noisy preferences & rela-tionship to ipo, 2023. Nakano, R., Hilton, J., Balaji, S., Wu, J., Ouyang, L., Kim, C., Hesse, C., Jain, S., Kosaraju, V., Saunders, W., et al. Webgpt: Browser-assisted question-answering with hu-man feedback. arXiv preprint arXiv:2112.09332 , 2021. Naveed, H., Khan, A. U., Qiu, S., Saqib, M., Anwar, S., Usman, M., Akhtar, N., Barnes, N., and Mian, A. Acomprehensive overview of large language models. ACM Transactions on Intelligent Systems and Technology , 16 (5):1–72, 2025. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems , 35:27730–27744, 2022. Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., et al. Pytorch: An imperative style, high-performance deep learning library. Advances in neural information processing systems , 32, 2019. Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D., Ermon, S., and Finn, C. Direct preference optimiza-tion: Your language model is secretly a reward model. 
+
+Advances in neural information processing systems , 36: 53728–53741, 2023. Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S., Matena, M., Zhou, Y., Li, W., and Liu, P. J. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of machine learning research , 21 (140):1–67, 2020. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al. Deepseekmath: Push-ing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. V ¨olske, M., Potthast, M., Syed, S., and Stein, B. Tl; dr: Min-ing reddit to learn automatic summarization. In Proceed-ings of the Workshop on New Frontiers in Summarization ,pp. 59–63, 2017. von Werra, L., Belkada, Y., Tunstall, L., Beeching, E., Thrush, T., Lambert, N., Huang, S., Rasul, K., and Gal-lou ´edec, Q. TRL: Transformers Reinforcement Learning, 2020. Wang, Y., Kordi, Y., Mishra, S., Liu, A., Smith, N. A., Khashabi, D., and Hajishirzi, H. Self-instruct: Aligning language models with self-generated instructions. In 
+
+Proceedings of the 61st annual meeting of the association for computational linguistics (volume 1: long papers) , pp. 13484–13508, 2023. Wei, H., Zhuang, H., Xie, R., Feng, L., Niu, G., An, B., and Li, Y. Mitigating memorization of noisy labels by clip-ping the model prediction. In International Conference on Machine Learning , pp. 36868–36886. PMLR, 2023. Wu, J., Xie, Y., Yang, Z., Wu, J., Chen, J., Gao, J., Ding, B., Wang, X., and He, X. Towards robust alignment of language models: Distributionally robustifying direct preference optimization. In The Thirteenth International Conference on Learning Representations , 2025. Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Gao, C., Huang, C., Lv, C., et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Zhang, C., Bengio, S., Hardt, M., Recht, B., and Vinyals, O. Understanding deep learning requires rethinking gen-eralization. In International Conference on Learning Representations , 2017. Zhao, Y., Joshi, R., Liu, T., Khalman, M., Saleh, M., and Liu, P. J. Slic-hf: Sequence likelihood calibration with human feedback. arXiv preprint arXiv:2305.10425 , 2023. 10 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+## A. Proofs 
+
+Proof of Lemma 4.1 
+
+Proof. Let ˆp(yw ≻ yl|x) = σ rϕ(x, y w) − rϕ(x, y l), under the noisy preference, we have: 
+
+LRM = −(1 − η) log σ rϕ(x, y w) − rϕ(x, y l) + η log σ rϕ(x, y l) − rϕ(x, y w) 
+
+= −(1 − η) log ˆ p(yw ≻ yl|x) + η log ˆ p(yl ≻ yw|x). (20) Hence, for the gradient ∇L ∇ ˆp(yw ≻yl|x) , we have: 
+
+∇L ∇ˆp(yw ≻ yl|x) = −(1 − η) 1ˆp(yw ≻ yl|x) + η 11 − ˆp(yw ≻ yl|x) . (21) Let ∇L ∇ ˆp(yw ≻yl|x) = 0 , because p∗(yw ≻ yl|x) = 1 and p∗(yl ≻ yw|x) = 0 , we have the optimal solution ˆp(yw ≻ yl|x) = 1 − η = (1 − η)p∗(yw ≻ yl|x) + ηp ∗(yl ≻ yw|x).
+
+Proof of Theorem 4.2 
+
+Proof. Referencing Lemma 4.1, we know the relationship between the noisy preference probability and the unbiased preference probability is: 
+
+σ(rηϕ(x, y w) − rηϕ(x, y l)) =(1 − η) · σ(r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) + η · σ(r∗
+
+> ϕ
+
+(x, y l) − r∗
+
+> ϕ
+
+(x, y w)) =(1 − η) · σ(r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) + η · (1 − σ(r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l))) =(1 − 2η) · σ(r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) + η
+
+(22) To simplify the symbols, we set ∆η = rηϕ(x, y w) − rηϕ(x, y l) and ∆∗ = r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l). Opening the sigmoid function 
+
+σ, we have: 
+
+exp( rηϕ(x, y w)) exp( rηϕ(x, y w)) + exp( rηϕ(x, y l)) = (1 − 2η) · exp( r∗
+
+> ϕ
+
+(x, y w)) exp( r∗
+
+> ϕ
+
+(x, y w)) + exp( r∗
+
+> ϕ
+
+(x, y l)) + η
+
+⇒ exp(∆ η )exp(∆ η ) + 1 = (1 − 2η) · exp(∆ ∗)exp(∆ ∗) + 1 + η
+
+⇒ exp(∆ η )(exp(∆ ∗) + 1) = (exp(∆ η ) + 1)[ η + (1 − η) exp(∆ ∗)] 
+
+⇒ exp(∆ ∗)[exp(∆ η ) − (1 − η) exp(∆ η ) − (1 − η)] = η exp(∆ η ) + η − exp(∆ η )
+
+⇒ exp(∆ ∗) = η exp(∆ η ) + η − exp(∆ η )exp(∆ η ) − (1 − η) exp(∆ η ) − (1 − η)
+
+⇒ exp(∆ ∗) = (η − 1) exp(∆ η ) + ηη exp(∆ η ) − (1 − η) = exp(∆ η ) − η
+
+> 1−η
+
+1 − η 
+
+> 1−η
+
+exp(∆ η )
+
+⇒∆∗ = log 
+
+" exp(∆ η ) − η
+
+> 1−η
+
+1 − η 
+
+> 1−η
+
+exp(∆ η )
+
+#
+
+.
+
+⇒r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l) = log 
+
+" exp  rηϕ(x, y w) − rηϕ(x, y l) − a
+
+1 − a · exp  rηϕ(x, y w) − rηϕ(x, y l)#
+
+,
+
+(23) where a = η 
+
+> 1−η
+
+is a constant. 
+
+Proof of Corollary 4.3 
+
+11 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Proof. Refer to Theorem 4.2, we have : 
+
+exp(∆ ∗) = exp(∆ η ) − a
+
+1 − a · exp(∆ η )
+
+⇒ exp(∆ ∗)(1 − a · exp(∆ η )) = exp(∆ η ) − a
+
+⇒ exp(∆ ∗) − a · exp(∆ ∗) exp(∆ η ) = exp(∆ η ) − a
+
+⇒ exp(∆ η ) + a · exp(∆ ∗) exp(∆ η ) = exp(∆ ∗) + a
+
+⇒ exp(∆ η ) = exp(∆ ∗) + a
+
+1 + a · exp(∆ ∗)
+
+⇒∆η = log  exp(∆ ∗) + a
+
+1 + a · exp(∆ ∗)
+
+.
+
+⇒rηϕ(x, y w) − rηϕ(x, y l) = log  exp( r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) + a
+
+1 + a · exp( r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) 
+
+
+
+(24) Under the noise preference, the normal reward model loss LRM optimize the noisy reward model rηϕ, i.e. LRM =
+
+− log σ(rηϕ(x, y w) − rηϕ(x, y l)) . Therefore, by replacing rηϕ(x, y w) − rηϕ(x, y l) as log  exp( r∗  
+
+> ϕ(x,y w)−r∗
+> ϕ(x,y l))+ a
+> 1+ a·exp( r∗
+> ϕ(x,y w)−r∗
+> ϕ(x,y l))
+
+, we can directly optimize the unbiased reward model r∗
+
+> ϕ
+
+. Our unbiased reward model loss as follows: 
+
+LURM = − log σ  log  exp( r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)) + a
+
+1 + a · exp( r∗
+
+> ϕ
+
+(x, y w) − r∗
+
+> ϕ
+
+(x, y l)
+
+ 
+
+= − log 11 + 1+ a·exp(∆ ∗)exp(∆ ∗)+ a
+
+= − log exp(∆ ∗) + a
+
+exp(∆ ∗) + a + 1 + a · exp(∆ ∗)= − log exp(∆ ∗) + a
+
+(a + 1)(exp(∆ ∗) + 1) = −[log exp(∆ ∗) + a
+
+exp(∆ ∗) + 1 − log( a + 1)] .
+
+(25) Since log( a + 1) is a constant, we can disregard it. Therefore, our final loss for training is LURM =
+
+− log exp( rϕ(x,y w )−rϕ(x,y l))+ a  
+
+> exp( rϕ(x,y w)−rϕ(x,y l))+1
+
+. The derivation of Equation 25 enables us to perform less operations of σ and log when calculating the loss. 
+
+Proof of Lemma 4.4 
+
+Proof. Let ˆp(yw ≻ yl|x) = σ
+
+
+
+β log πθ (yw |x)πref (yl|x)  
+
+> πθ(yl|x)πref (yw|x)
+
+
+
+, under the noisy preference, we have: 
+
+LDPO = −(1 − η) log σ
+
+
+
+β log πθ (yw|x)πref (yl|x)
+
+πθ (yl|x)πref (yw|x)
+
+
+
++ η log σ
+
+
+
+β log πθ (yl|x)πref (yw|x)
+
+πθ (yw|x)πref (yl|x)
+
+ 
+
+= −(1 − η) log ˆ p(yw ≻ yl|x) + η log ˆ p(yl ≻ yw|x).
+
+(26) Hence, for the gradient ∇L ∇ ˆp(yw ≻yl|x) , we have: 
+
+∇L ∇ˆp(yw ≻ yl|x) = −(1 − η) 1ˆp(yw ≻ yl|x) + η 11 − ˆp(yw ≻ yl|x) . (27) Let ∇L ∇ ˆp(yw ≻yl|x) = 0 , because p∗(yw ≻ yl|x) = 1 and p∗(yl ≻ yw|x) = 0 , we have the optimal solution ˆp(yw ≻ yl|x) = 1 − η = (1 − η)p∗(yw ≻ yl|x) + ηp ∗(yl ≻ yw|x).12 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Proof of Theorem 4.5 
+
+Proof. Referencing Lemma 4.4, we know the relationship between the noisy preference probability and the unbiased preference probability is: 
+
+σ(β log πηθ (yw|x)πref (yl|x)
+
+πηθ (yl|x)πref (yw|x) ) = (1 − η)σ(β log π∗
+
+θ (yw|x)πref (yl|x)
+
+π∗
+
+θ (yl|x)πref (yw|x) ) + ησ (β log π∗
+
+θ (yl|x)πref (yw|x)
+
+π∗
+
+θ (yw|x)πref (yl|x) ) (28) To simplify the symbols, we set U η = ( πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )β and U ∗ = ( π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )β . Opening the sigmoid function σ,we have: 
+
+exp( β log πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )1 + exp( β log πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) ) = (1 − η) exp( β log π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )1 + exp( β log π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) ) + η
+
+1 − exp( β log π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )1 + exp( β log π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )
+
+
+
+⇒ U η
+
+1 + U η = (1 − η) U ∗
+
+1 + U ∗ + η
+
+
+
+1 − U ∗
+
+1 + U ∗
+
+
+
+⇒ U η
+
+1 + U η = (1 − η) U ∗
+
+1 + U ∗ + η 11 + U ∗
+
+⇒ U η
+
+1 + U η = (1 − η)U ∗ + η
+
+1 + U ∗
+
+⇒U η (1 + U ∗) = (1 + U η )((1 − η)U ∗ + η)
+
+⇒U η + U η U ∗ = (1 − η)U ∗ + η + (1 − η)U η U ∗ + ηU η
+
+⇒U η U ∗ − (1 − η)U ∗ − (1 − η)U η U ∗ = η + ηU η − U η
+
+⇒U ∗(U η − (1 − η) − (1 − η)U η ) = η − (1 − η)U η
+
+⇒U ∗(ηU η − 1 + η) = η − (1 − η)U η
+
+⇒U ∗ = η − (1 − η)U η
+
+ηU η − (1 − η) = U η − η
+
+1−η
+
+1 − η
+
+1−η U η
+
+⇒( π∗
+
+θ (yw|x)πref (yl|x)
+
+π∗
+
+θ (yl|x)πref (yw|x) )β = ( πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )β − a
+
+1 − a · ( πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )β
+
+,
+
+(29) where a = η
+
+1−η is a constant. 
+
+Proof of Corollary 4.6 
+
+Proof. Refer to Theorem 4.5, we have: 
+
+( π∗
+
+θ (yw|x)πref (yl|x)
+
+π∗
+
+θ (yl|x)πref (yw|x) )β = ( πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )β − a
+
+1 − a · ( πηθ (yw |x)πref (yl|x)
+
+πηθ (yl|x)πref (yw |x) )β
+
+⇒U ∗(1 − aU η ) = U η − a
+
+⇒U ∗ − aU ∗U η = U ∗ − a
+
+⇒U ∗ + a = U η (1 + aU ∗)
+
+⇒U η = U ∗ + a
+
+1 + aU ∗
+
+⇒( πηθ (yw|x)πref (yl|x)
+
+πηθ (yl|x)πref (yw|x) )β = ( π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )β + a
+
+1 + a · ( π∗ 
+
+> θ
+
+(yw |x)πref (yl|x)
+
+π∗ 
+
+> θ
+
+(yl|x)πref (yw |x) )β
+
+(30) 13 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+The standard DPO loss optimizes the model likelihood against the preference dataset. Under noisy preferences, the standard DPO loss minimizes the negative log-likelihood of the noisy probability distribution, i.e., LDPO = − log σ(β log πηθ (yw |x)πref (yl|x)   
+
+> πηθ(yl|x)πref (yw|x)
+
+) = − log[ σ(log( πηθ (yw |x)πref (yl|x)   
+
+> πηθ(yl|x)πref (yw|x)
+
+)β )] 
+
+To obtain the unbiased loss, we substitute ( πηθ (yw |x)πref (yl|x)   
+
+> πηθ(yl|x)πref (yw|x)
+
+)β with its expression in terms of ( π∗     
+
+> θ(yw|x)πref (yl|x)
+> π∗
+> θ(yl|x)πref (yw|x)
+
+)β (the unbiased model we wish to train): 
+
+LUDPO = − log[ σ(log ( π∗     
+
+> θ(yw|x)πref (yl|x)
+> π∗
+> θ(yl|x)πref (yw|x)
+
+)β + a
+
+1 + a · ( π∗     
+
+> θ(yw|x)πref (yl|x)
+> π∗
+> θ(yl|x)πref (yw|x)
+
+)β )] = − log   
+
+> U∗+a
+> 1+ aU ∗
+
+1 + U ∗+a 
+
+> 1+ aU ∗
+
+!
+
+= − log 
+
+ U ∗ + a
+
+(1 + aU ∗) + ( U ∗ + a)
+
+
+
+= − log 
+
+ U ∗ + a
+
+(1 + a)(1 + U ∗)
+
+
+
+= − log 
+
+ U ∗ + aU ∗ + 1 
+
+
+
++ log(1 + a)
+
+(31) Since log(1 + a) is a constant with respect to θ, it can be discarded during optimization. Substituting the full expression for 
+
+U ∗ =
+
+ πθ (yw |x)πref (yl|x)  
+
+> πθ(yl|x)πref (yw|x)
+
+β
+
+. We arrive at the final objective function: LUDPO = − log           
+
+> πθ(yw |x)πref (yl|x)
+> πθ(yl|x)πref (yw |x)
+> β
+> +a
+> πθ(yw |x)πref (yl|x)
+> πθ(yl|x)πref (yw |x)
+> β
+> +1
+
+. This formula allows for training the unbiased policy π∗ 
+
+> θ
+
+directly using the noisy preference dataset. The derivation of Equation 31 enables us to perform less operations of σ and log when calculating the loss. 
+
+Proof of Corollary 4.7 
+
+Proof. Based on Corollary 4.3 and Corollary 4.6 When η∗ = ˆ η, it is clearly proof. We prove the case where η∗ < ˆη.Under the noisy preference distribution, the total unbiased loss is LPη (∆) = (1 − η) ∗ L unbiased (∆) + ηLunbiased (−∆) , the gradient is: 
+
+∂LPη (∆) 
+
+∂∆ = −(1 − η∗)(1 − a) exp(∆) (exp(∆) + a)(exp(∆) + 1) + η∗(1 − a) exp( −∆) (exp( −∆) + a)(exp( −∆) + 1) . (32) We need to prove that: when ˆη > η ∗, for any ∆, the gradient ∂LPη (∆)  
+
+> ∂∆
+
+is always less than 0. This implies that the objective function LPη (∆) is monotonically decreasing, and thus the optimal solution is achieved when ∆ → +∞.The term exp( −∆) (exp( −∆)+ a)(exp( −∆)+1) = exp( −∆) exp(2∆) [(exp( −∆)+ a) exp(∆)][(exp( −∆)+1) exp(∆)] = exp(∆) (1+ a exp(∆))(1+exp(∆)) . Therefore, we have: Sign 
+
+ ∂LPη
+
+∂∆
+
+
+
+= Sign 
+
+
+
+η∗ exp(∆) (1 + a exp(∆))(1 + exp(∆)) − (1 − η∗) exp(∆) (exp(∆) + a)(exp(∆) + 1) 
+
+
+
+, (33) where term (1 − a) > 0 is overlooked. Eliminating the common positive terms exp(∆) 1+exp(∆) , we need to prove the following inequality: 
+
+η∗
+
+1 + a exp(∆) < 1 − η∗
+
+exp(∆) + a
+
+⇒η∗(exp(∆) + a) < (1 − η∗)(1 + a exp(∆)) 
+
+⇒η∗ exp(∆) + η∗a < 1 − η∗ + a exp(∆) − aη ∗ exp(∆) 
+
+⇒ exp(∆)( η∗ − a(1 − η∗)) < 1 − η∗(1 + a).
+
+(34) We have η∗ − a(1 − η∗) = η∗−ˆη 
+
+> 1−ˆη
+
+< 0 and 1 − η∗(1 + a) = 1 − η∗ 
+
+> 1−ˆη
+
+> 0. Therefore, Inequality 34 always holds true. 14 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Proof of Theorem 4.9 
+
+Proof. Follow the definitions in (Bartlett et al., 2006), the generic conditional L-risk is defined as Cη (u) = (1 −
+
+η)L(u) + ηL(−u). The optimal conditional L-risk is defined as H(η) = inf u∈R Cη (u). Furthermore, we define 
+
+H−(η) = inf u(1 −2η)≤0 Cη (u) as the optimal risk under the constraint that the sign of u is opposite to that of 1 − 2η. In this scenario, we consider 0 ≤ η ≤ 1 to ensure classification calibration while maintaining 0 ≤ a < 1.We have Cη (u) for Lunbiased (u) = − log exp( u)+ a 
+
+> exp( u)+1
+
+is: 
+
+Cη (u) = (1 − η)[log(1 + exp( u)) − log( a + exp( u))] + η[log(1 + exp( −u)) − log( a + exp( −u))] = (1 − η) log 1 + exp( u)
+
+a + exp( u) + η log 1 + exp( u)1 + a exp( u)= log(1 + exp( u)) − (1 − η) log( a + exp( u)) − η log(1 + a exp( u)) 
+
+(35) Take the derivative of u to 0: 
+
+∂C η (u)
+
+∂u = exp( u)1 + exp( u) − (1 − η) exp( u)
+
+a + exp( u) − ηa exp( u)1 + a exp( u) = 0 (36) Let z = exp( u), and then rearrange the equation: 
+
+11 + z = 1 − ηa + z + ηa 
+
+1 + az 
+
+⇒(a + z)(1 + az ) = (1 − η)(1 + z)(1 + az ) + ηa (1 + z)( a + z)
+
+⇒az 2 + ( a2 + 1) z + a = az 2 + ( a + 1)[1 + η(a − 1)] z + (1 − η + ηa 2)
+
+⇒z · [−(1 − a)( a − η(a + 1))] = (1 − a)[1 − η(1 + a)] 
+
+⇒z = 1 − η(1 + a)
+
+η(1 + a) − a .
+
+(37) In order to ensure that z > 0 (which means that the u has a real solution), we have a 
+
+> 1+ a
+
+< η < 11+ a .If a 
+
+> 1+ a
+
+< η < 11+ a , substituting the optimal solution z, we have: 
+
+H(η) = η[log(1 + z) − log( z + a)] + (1 − η)[log(1 + z) − log(1 + az )] = Hbin (η) − log(1 + a), (38) where Hbin (η) = −η log η − (1 − η) log(1 − η) is the binary entropy function. If η ≤ a 
+
+> 1+ a
+
+, the optimal solution is u → +∞, so we have H(η) = −η log a.If η ≥ 11+ a , the optimal solution is u → −∞ , so we have H(η) = −(1 − η) log a.For η ≤ a 
+
+> 1+ a
+
+and η ≥ 11+ a , since H(η) is symmetric with respect to η = 1 /2, we can uniformly write it as: 
+
+H(η) = − min( η, 1 − η) log a. 
+
+For H−(η) = inf u(1 −2η)≤0 Cη (u), we have u ≤ 0 when η < 12 , and u ≥ 0 when η > 12 Therefore, the constrained optimal solution must be achieved at the boundary u = 0 . Thus, we have: 
+
+H−(η) = Cη (0) = ηϕ (0) + (1 − η)ϕ(0) = ϕ(0) = log 21 + a . (39) Based on (Bartlett et al., 2006), A loss function is classification-calibrated if and only if for any η̸ = 1 /2, it holds that 
+
+H−(η) > H (η).15 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+In the middle region ( a 
+
+> 1+ a
+
+< η < 11+ a ), the inequality H−(η) > H (η) becomes: 
+
+log 2 − log(1 + a) > Hbin (η) − log(1 + a) ⇐⇒ log 2 > Hbin (η). (40) The binary entropy function Hbin (η) attains its maximum value of log 2 at η = 1 /2. Therefore, for η̸ = 1 /2, the inequality holds strictly. In the boundary regions ( η ≤ a 
+
+> 1+ a
+
+and η ≥ 11+ a ), we observe that the boundary values are symmetric. Specifically, when 
+
+η = a 
+
+> 1+ a
+
+or η = 11+ a , the function reaches a maximum of: H(η) = − a 
+
+> 1+ a
+
+log a. We must prove the following inequality: 
+
+log 21 + a > − a
+
+1 + a log a. (41) Define the auxiliary function g(a) := log 21+ a + a 
+
+> 1+ a
+
+log a. Our objective is to show that g(a) > 0 for a ∈ (0 , 1) . We have g′(a) = log a 
+
+> (1+ a)2
+
+. Since 0 < a < 1, it follows that log a < 0, and consequently g′(a) < 0. This demonstrates that g(a) is strictly monotonically decreasing on the interval (0 , 1) . Finally, we check the boundary condition at a = 1 :
+
+g(1) = log 22 + 12 log 1 = 0 . Because a < 1, we have g(a) > 0.
+
+Proof of Corollary 4.10 
+
+Proof. Define ˜ψ(ρ) = H−( 1+ ρ 
+
+> 2
+
+) − H( 1+ ρ 
+
+> 2
+
+), where ρ ∈ [0 , 1] . Since H(η) is defined piecewise, ˜ψ(ρ) is also piecewise. Since 1+ ρ 
+
+> 2
+
+≥ 12 , we identify the transition point ρ0 by setting 1+ ρ0 
+
+> 2
+
+= 11+ a , which yields ρ0 = 1−a 
+
+> 1+ a
+
+.For 0 ≤ ρ < 1−a 
+
+> 1+ a
+
+, we have: 
+
+˜ψ(ρ) = (log 2 − log(1 + a)) − (Hbin (η) − log(1 + a)) = log 2 − H bin 
+
+ 1 + ρ
+
+2
+
+
+
+. (42) For 1−a 
+
+> 1+ a
+
+≤ ρ ≤ 1, we have: 
+
+˜ψ(ρ) = log 21 + a −
+
+
+
+− 1 − ρ
+
+2 log a
+
+
+
+= log 21 + a + 1 − ρ
+
+2 log a. (43) Convexity analysis: the first part log 2 − H bin ( 1+ ρ 
+
+> 2
+
+) is convex. The second part is linear (and also convex). At ρ0 = 1−a 
+
+> 1+ a
+
+,the function values and first derivatives of the two parts are equal (continuous and smooth). Therefore, ˜ψ(ρ) is a convex function over the domain [0 , 1] . We define ψ as the convex hull of ˜ψ; thus, ψ = ˜ψ.According to Theorem 1 in (Bartlett et al., 2006), we have: 
+
+ψ(R(f ) − R∗) ≤ RLunbiased (f ) − R∗Lunbiased . (44) 
+
+## B. Experiments 
+
+B.1. Experiment Details. Experiment Setting. All experiments are based on Pytorch (Paszke et al., 2019) and TRL (von Werra et al., 2020) libraries, using 8 NVIDIA Pro 6000 (96GB) GPUs. For all the training, we use the AdamW optimizer, warmup ratio 0.1, batch size 128, maximum gradient norm 10. For SFT model training, we train the model for 1 epoch with learning rate 2e-5. For reward model training, we train the model for 3 epochs with learning rate 1e-5. For supervised preference training, we train the policy for 3 epochs with learning rate 5e-6 for Llama-3.2-3B and Qwen-3-1.7B, and 1e-6 for Llama-3.1-8B and Qwen-3-8B. For each dataset, we use the first 1000 different test samples as the test set. 16 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Baseline Hyperparameters. For the regularization parameter β, following (Rafailov et al., 2023), we set it to 0.1 for the dialogue datasets HH and UFB, and 0.5 for the summarization dataset TL;DR. We conduct a hyperparameter search for each baseline on all noise level cases to ensure a completely fair experiment. For reward model training, we search 
+
+ϵ ∈ { 0.1, 0.2, 0.4} for cRM and rRM, and a ∈ { 0.4, 0.6, 0.8} for URM and α-URM. For supervised preference training, we search ϵ ∈ { 0.1, 0.2, 0.4} for cDPO and rDPO, β′ ∈ { 0.5, 1, 2} for Dr.DPO, and a ∈ { 0.4, 0.6, 0.8} for UDPO and 
+
+α-UDPO. For practitioners, simply using α-URM/ α-UDPO with a = 0 .8 is usually sufficient to achieve strong performance. 
+
+B.2. Additional Experiments Human Evaluation. We conduct human evaluation on the case of Qwen-3-1.7B and HH with a 40% flip rate. We use the first 100 samples from the test set, and the human evaluation is independently performed by three annotators. The results are reported in Table 5. As shown, the human evaluation results are consistent with those obtained from GPT-5.  
+
+> Table 5. Win rates (%) of different methods vs. the SFT model using GPT-5 and human judges. The top-2 best results are in bold.
+
+HH 40% GPT-5 Human DPO 62.0 62.6 ± 2.8 
+
+UDPO 71.0 67.6 ± 2.0 
+
+α-UDPO 68.0 69.0 ± 2.9 Instance-Dependent Noise. We conduct experiments for instance-dependent noise. We first use a trained standard RM to obtain normalized reward scores for each sample in the HH dataset. For each sample, we define ηx as min {r(x,y w ),r (x,y l)}  
+
+> r(x,y w)+ r(x,y l)
+
+.
+
+Intuitively, answer pairs with more similar reward scores are more likely to be mislabeled. We then flip labels according to 
+
+ηx, with the noise rates rescaled to average corruption levels of 20% and 40%. The results using Qwen-3-1.7B are reported in Table 6. The results highlight the excellent performance of our methods under instance-dependent noise.  
+
+> Table 6. Win rates (%) of different methods vs. the SFT model under instance-dependent noise. The top-2 best results are in bold.
+
+HH IDN 20% IDN 40% RM 56.8 46.0 rRM 58.0 48.2 
+
+URM 59.5 54.6 
+
+α-URM 60.2 55.2 
+
+HH IDN 20% IDN 40% DPO 68.7 56.4 rDPO 73.3 63.7 
+
+UDPO 77.9 68.0 
+
+α-UDPO 78.2 67.6 Closed Loop RLHF. We evaluate the effectiveness of URM within the full RLHF loop. We use GRPO as the RL algorithm and conduct experiments using Qwen-3-1.7B on the HH dataset. We set the number of generations to 2 and train for 3 epochs. The results are reported in Table 7. These results demonstrate that our methods significantly improve the final RL policy performance in the closed loop RLHF.  
+
+> Table 7. Win rates (%) of different methods using GRPO vs. the SFT model. The top-2 best results are in bold.
+
+GRPO HH 0% HH 20% HH 40% RM 55.0 54.0 48.5 
+
+URM 60.3 58.7 56.5 
+
+α-URM 61.6 58.2 57.0 
+
+17 Unbiased Alignment for Large Language Models with Noisy Preferences 
+
+Larger Model. We conduct an experiment using Qwen-3-14B on the UFB dataset, comparing our UDPO/ α-UDPO against standard DPO. The results are reported in Table 8. It can be observed that our methods remain highly effective on the larger model.  
+
+> Table 8. Win rates (%) of different methods vs. the SFT model. The top-2 best results are in bold.
+
+UFB Qwen-3-14B DPO 65.7 
+
+UDPO 73.0 
+
+α-UDPO 73.8 
+
+18

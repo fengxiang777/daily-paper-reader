@@ -1,0 +1,628 @@
+Title: Mitigating Position Bias in Transformers via Layer-Specific Positional Embedding Scaling
+
+URL Source: https://arxiv.org/pdf/2606.27705v1
+
+Published Time: Mon, 29 Jun 2026 00:22:50 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Mitigating Position Bias in Transformers via Layer-Specific Positional Embedding Scaling 
+
+Changze Lv *1,3 , Zhenghua Wang *1,3 , Yiran Ding *2 , Yixin Wu 1,3 , Tianlong Li 1,3 ,Zhibo Xu 1,3 , Muling Wu 1,3 , Tianyuan Shi 1,3 , Shizheng Li 1,3 , Qi Qian 1,3 ,Xuanjing Huang 1,3 , Xiaoqing Zheng † 1,3 1Fudan University, 2Westlake University 
+
+> 3
+
+Shanghai Key Laboratory of Intelligent Information Processing  
+
+> {zhenghuawang23, czlv24 }@m.fudan.edu.cn {yiran.ding }@hdu.edu.cn
+> {xjhuang,zhengxq }@fudan.edu.cn
+
+Abstract 
+
+Large Language Models (LLMs) still struggle with the “lost-in-the-middle” problem, where critical information located in the middle of long-context inputs is often underrepresented or lost. While existing methods attempt to address this by combining multi-scale rotary position embeddings (RoPE), they typically suffer from high latency or rely on subopti-mal hand-crafted scaling strategies. To over-come these limitations, we introduce a layer-specific positional embedding scaling (LPES) method that assigns distinct scaling factors to each layer. LPES achieves a more balanced at-tention distribution without fine-tuning model parameters or increasing inference delay. Aspecially designed genetic algorithm is em-ployed to efficiently select the optimal scaling factors for each layer by incorporating Bézier curves to significantly reduce the search space. Extensive experiments demonstrate that LPES effectively mitigates positional attention bias and delivers consistent improvements across multiple long-context benchmarks, yielding up to an 11 .2% accuracy gain on the key-value retrieval dataset. 
+
+1 Introduction 
+
+Enabling Large Language Models (LLMs) to pro-cess long inputs is essential for supporting com-plex tasks such as long-text summarization (Feng et al., 2021; Zhang et al., 2021), code generation (Zheng et al., 2023; Liu et al., 2024a), and long-context question-answering (Li et al., 2024). Ro-tary position embeddings (RoPE) (Su et al., 2021), widely adopted in transformer-based LLMs, were designed to encode relative distances between in-put tokens, facilitating more effective processing of long-context inputs. However, as the context length increases, RoPE-based LLMs continue to 
+
+> *Equal contribution.
+> †Corresponding Author.
+
+suffer from positional bias. A representative man-ifestation of this issue is the well-known lost-in-the-middle phenomenon (Liu et al., 2024b), where models tend to over-attend to tokens near the be-ginning and the end of the input, while relatively neglecting information located in the middle. Several approaches have been proposed to ad-dress the position bias problem by combining mul-tiple RoPEs with different bases or scaling factors (Chen et al., 2023b; Zhang et al., 2024; Lin et al., 2024). Chen et al. (2023b) observed that RoPE with different bases induces attention troughs at specific positions, which impairs the model’s abil-ity to capture the corresponding content. To mit-igate this, they introduced a method, named At-tention Buckets, that combines multiple RoPEs with different bases to achieve a more balanced at-tention distribution. Similarly, Lin et al. (2024) proposed an MoICE method that assigns multi-ple RoPE bases to each attention head and aggre-gates the outputs through a weighted sum. How-ever, these methods rely heavily on manually de-signed rules to determine scaling factors or base values, and require multiple forward passes during inference—one for each specific base or scaling factor—followed by ensembling the results. Al-though some operations can be parallelized, this procedure inevitably increases inference time and computational cost. Varying RoPE bases across the entire model can be seen as model-level ensembling, while applying multiple bases to individual attention heads corresponds to module-level ensembling (Figure 1). Model-level ensembling requires mul-tiple model inferences, incurring substantial com-putational overhead, whereas module-level scal-ing suffers from a large search space due to fine-grained granularity, limiting the applicability of automatic search algorithms. To balance effi-ciency and flexibility, we apply multiple scaled RoPEs at the layer level, achieving competitive or    
+
+> arXiv:2606.27705v1 [cs.CL] 26 Jun 2026 (b)MoICE
+
+...                              
+
+> Attentio
+> Multi-Head
+> n
+> FeedForward
+> Add&Norm
+> Add&Norm
+> L
+> x
+> ModelPassNWithSN
+> ti-HeaMul d
+> Attention
+> FeedForward
+> Add&Norm
+> Add&Norm
+> L
+> x
+> ModelPass1WithS1
+> Model-levelEnsemble
+> AttentionHeadCalculate
+> AttentionPassNWith
+> SN
+> AttentionHeadCalculation
+> AttentionPass1With
+> S1
+
+...                                            
+
+> Module-levelEnsemble
+> (c)LPES
+> Onlyasinglepassisrequried
+> （LowInferenceTime）
+> layer0with
+> S0
+> layer15with
+> S15
+> layer1with
+> S1
+> layerL-1with
+> SL-1
+> layerLwith
+> SL
+> Bézier
+> Curve
+> NoEnsemble
+> Multiplepassesthroughattentionmodules
+> （HighlnferenceTime）
+> Multiplepassesthroughentiremodel
+> （HighlnferenceTime）
+> (a)AttentionBuckets
+
+Figure 1: Comparison of the proposed LPES with two representative existing methods. (a) Attention Buckets combines multiple RoPEs with different bases through model parallels. (b) MoICE assigns multiple bases to each attention head. Unlike these existing methods which require multiple forward passes during inference, our LPES (c) achieves superior performance with a single forward pass, significantly reducing inference time. 
+
+superior performance with a single forward pass, thus avoiding the associated inference overhead. Choosing an appropriate scaling factor for each layer is still a non-trivial problem. Let L denote the number of layers in a transformer-based net-work, and M the number of possible values for the scaling factors; the total number of combinations is M L, which makes an exhaustive search compu-tationally intractable. Determining optimal scal-ing factors is inherently a combinatorial optimiza-tion problem, and thus cannot be easily solved by gradient-based methods. To overcome this, we leverage the Bézier curve, which defines a smooth, continuous mapping between layer depth and scal-ing factors using a small set of discrete control points. Letting C denote the number of control points, the search space is reduced to (M ×L)C . In addition to reducing the search space, we find that the smoothness of curve-based scaling preserves layer-wise representational structure and serves as a beneficial inductive bias. We further develop a curve-constrained genetic algorithm to solve this combinatorial optimization problem. By restrict-ing the search space to Bézier curves, we can effi-ciently optimize layer-specific scaling factors, typ-ically within 3 to 4 hours using only a few hun-dred examples (e.g., 200 instances) on four H100 GPUs. In long-text tasks, our method introduces no additional inference latency while delivering superior performance over existing approaches. This study makes the following contributions: • We propose a layer-specific positional embed-ding scaling method, termed LPES, which effec-tively mitigates the position bias without incur-ring additional inference latency. LPES achieves significant speedups, 2.42 × faster than MoICE (Lin et al., 2024) and 1.45 × faster than Ms-PoE (Zhang et al., 2024), while also improving the model’s ability to handle long-context tasks. • We introduce an efficient genetic search algo-rithm in which the search space is constrained by Bézier curves, enabling rapid optimization of layer-specific scaling factors using only a small set of examples. • Extensive experiments on multiple benchmark datasets demonstrate that our method preserves the model’s general capabilities while producing a more balanced attention distribution without costly fine-tuning, making it broadly applicable across different models and tasks. 
+
+2 Related Work 
+
+Chen et al. (2023b) observed that RoPE with dif-ferent bases can produce attention troughs at spe-cific positions, which is called “Attention Waves”, thereby impairing the model’s ability to capture the relevant content. To address this, their “At-tention Buckets” method integrates multiple RoPE bases through model-parallel inference to achieve a more uniform attention distribution. Zhang et al. (2024) suggested that the long-term decay in atten-tion may contribute to the position bias, and pro-posed Ms-PoE that assigns distinct scaling factors to attention heads based on their relative sensitiv-ity to positional information. MoICE (Lin et al., 2024), building on the work of Chen et al. (2023b), employs gradient descent to learn the weights for combining results from different bases at the level of individual attention heads. However, a ma-jor limitation of these approaches is their high computational cost and inference latency. Specifi-cally, Attention Buckets requires multiple forward passes, while both Ms-PoE and MoICE require re-Searching                     
+
+> scales
+> Assigning
+> scales
+> Layer 0: S0= 1.400
+> Layer 30:
+> S30 =1.319
+> Layer 15: S15 = 1.553
+> Layer 1: S1= 1.427
+> QKV
+> S0
+> FFN
+> QKV
+> S0
+> Head HHead 1
+> Layer 0
+> Layer 31 Layer 31:
+> S31 =1.300
+> QKV
+> S31
+> FFN
+> QKV
+> S31
+> Head HHead 0
+> Layer 31 ...
+> Assigning S= 1.553 to layer 15
+
+Figure 2: Illustration of the proposed layer-specific positional embedding scaling (LPES) method. Left: Bézier curves can represent a wide variety of shapes. Middle: An optimized Bézier curve found by our search algorithm, which defines a smooth, continuous curve using a limited set of discrete control points. Right: The relationship between the scaling factors and the optimized Bézier curve, and their application within the attention mechanism of a transformer-based network. 
+
+peated attention computations to integrate multi-scale RoPE information. They also rely on heuris-tic or hand-crafted rules to select bases or scaling factors. By contrast, our method achieves supe-rior performance with a single forward pass and proposes an automatic search algorithm, which ef-fectively determines optimal scaling factors using only a few hundred examples. 
+
+3 Method 
+
+3.1 Problem Definition 
+
+In this study, we focus on RoPE, which is defined as follows: 
+
+⟨f (q, i ), f (k, j )⟩ = qTR(i − j)k (1) where f (x, i ) denotes a position-dependent ro-tation applied at position i to the query q, and 
+
+f (k, j ) represents the RoPE-rotated key at posi-tion j. The notation ⟨· , ·⟩ denotes the inner prod-uct between the two position-aware vectors, and 
+
+R(∆) is the rotation corresponding to the relative offset ∆ = i − j. This equation shows that the in-ner product depends only on the vectors q, k, and the relative distance between them. Chen et al. (2023a) showed that the context window can be extended by applying a scaling factor s to the po-sition index as follows: 
+
+f ′(x, i ) = f (x, i/s ) (2) We further show that the scaling factors can miti-gate long-term decay and induce diverse attention patterns (Appendix A). Accordingly, our goal is to search for a unique scaling factor s for each layer to combine information from multiple scaled RoPEs, alleviating long-term decay and attention wave effects, and thereby reducing positional bias. We model layer depth and scaling factors using Bézier curves, which drastically reduce the search space by determining all layer scales from a few control points. The details are analyzed in Ap-pendix B. Furthermore, in Section 4.2, we show that the smooth and continuous nature of curve-based modeling preserves layer-wise representa-tional structure. Brute-force search demonstrates that smooth scaling naturally emerges as a high-performing configuration, highlighting continuity across layers as a beneficial inductive bias. As illustrated in Figure 2, a Bézier curve can be viewed as a smooth curve that connects all the scaling factors in a two-dimensional plane. The problem of selecting scaling factors for all layers can then be transformed into searching for an ap-propriate Bézier curve. Fortunately, Bézier curves can model a wide variety of shapes using only a small set of discrete control points, which signifi-cantly reduces the search space. A Bézier curve of degree d, with d + 1 control points, is defined as follows (Mortenson, 1999): 
+
+B(t) = 
+
+> d
+
+X
+
+> k=0
+
+bdk(t)Pk, 0 ≤ t ≤ 1. (3) where t is the parametric coordinate controlling a point’s position along the curve, Pk are the control points for the curve, and bdk are the Bernstein basis polynomials, which are defined as: 
+
+bdk(t) = d!
+
+k!( d − k)! tk(1 − t)d−k, k = 0 , . . . , d. 
+
+(4) Once a Bézier curve is determined, the scaling fac-tor sh for layer h can be computed as follows: 
+
+sh = proj y [B(t(xh))] (5) where the notation proj y[·] denotes the opera-tion of extracting the y-coordinate of a two-dimensional point. The function t(·) maps xh
+
+to the corresponding parameter t (see Appendix D), where xh represents the position of layer h
+
+within the evenly spaced x-coordinates defined by the minimum and maximum values of the control points. The value of xh can be computed by: 
+
+xh = P x 
+
+> 0
+
++ P xd − P x
+
+> 0
+
+L − 1 ·h, h = 0 , . . . , L −1. (6) where L denotes the number of layers in a net-work, and P xt is the x-coordinates of the t-th con-trol point for the Bézier curve. Given a training dataset D = {(xi, y i)}Ni=1 con-sisting of N examples, where xi is an input to the large language model and yi is the corresponding ground-truth output, our goal is to maximize the following function: 
+
+LD(θ) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+I{LLM (xi, θ) ≃ yi} (7) where θ = ( P0, . . . , P d) denotes the set of con-trol points defining a Bézier curve of degree d
+
+(each control point Pk is a two-dimensional point), LLM (xi, θ) denotes the output of a language model given input xi, with all scaling factors de-termined according to Equation (5) based on the Bézier curve specified by θ, and I{·} is an indi-cator function with binary output 0 or 1. We con-structed the training dataset such that the content containing information useful for generating cor-rect answers appears at varying positions within the input, thereby encouraging the model to dis-tribute its attention more evenly across the input. 
+
+3.2 Optimization Algorithm 
+
+We can regard θ = ( P0, . . . , P d) as a set of newly introduced hyper-parameters that influence the be-havior of an LLM. Each Pk is a two-dimensional vector whose x- and y-coordinates can take mul-tiple values. Even though Bézier curves of degree 
+
+d = 3 which have d + 1 = 4 control points, are capable of representing a wide variety of curves, Selecting suitable control points is a combinato-rial optimization problem that is difficult to solve using gradient-based methods (Appendix C). Due to the high complexity of the search space, a brute-force approach for determining the scaling factors across layers is intractable; instead, we employ a specialized genetic algorithm to optimize the con-trol points of the Bézier curves. In our genetic algorithm, each individual is rep-resented as (P x 
+
+> 0
+
+, P y 
+
+> 0
+
+, . . . , P xd , P yd ), where P xk and 
+
+P yk denote the x- and y-coordinates of the k-th control point, and corresponds to a specific Bézier curve. The initial population is constructed as fol-lows. First, we initialize an individual in which 
+
+k-th control point is generated by: 
+
+(k(L − 1) /d, 1.5) , k ∈ { 0, . . . , d } (8) where L is the number of layers in a network. Based on the empirical results reported by Zhang et al. (2024), we set the y-coordinate values of all control points to 1.5. Subsequently, the remaining individuals are generated by applying a mutation operator (described below) to this initial individual until the population reaches the predefined size. The fitness of an individual θ =(P x 
+
+> 0
+
+, P y 
+
+> 0
+
+, . . . , P xd , P yd ) is evaluated by config-uring the layer-wise scaling factors of an LLM according to θ, running the LLM on a dataset 
+
+D, and calculating the resulting score LD(θ)
+
+as defined in Equation (7). When constructing the training dataset, we deliberately vary the position of relevant context within the input, which can generally be categorized into three types: the query-relevant content appears at the beginning, middle, or end of the input se-quence. We denote these three corresponding sub-datasets as DB, DM, and DE, respectively. Considering that original LLMs tend to allocate attention unevenly across different positions, we introduce three weights to reflect the relative importance of these sub-datasets when opti-mizing the model’s scaling factors. The final fitness of an individual is then computed as 
+
+λBLDB (θ) + λMLDM (θ) + λELDE (θ), where 
+
+λB ≥ 0, λM ≥ 0, λE ≥ 0, and λB + λM + λE = 1 .The crossover operator is performed by ran-domly selecting a pair of individuals with rela-tively high fitness scores as parents, choosing a single crossover point at random, and exchanging this point between the parents. This process pro-duces two offspring, from which we retain only the one with the higher fitness. The mutation operator modifies P x and P y
+
+within a specified range to prevent excessive vari-ations in the resulting curve, as shown in Equa-tion (9). Let Mx and My denote the maximum allowable change for the x- and y-coordinate, re-spectively. After mutation, the k-th control point ( ˆP xk , ˆP yk ) of an individual must remain within the following range:                                                    
+
+> ˆPxk∈
+> max(0 , P xk−Mx),min( Pxk+1 , P xk+Mx),k= 0 ,
+> max( Pxk−1, P xk−Mx),min( Pxk+1 , P xk+Mx),
+> 0< k < d,
+> max( Pxk−1, P xk−Mx),min( Pxk+Mx, L −1) ,k=d,
+> (9)
+> ˆPyk∈max(1 , P yk−My),min( Pyk+My,2) ,0≤k≤d.
+> (10)
+
+To ensure the smoothness of the curve and pre-vent undesirable abrupt changes in the scaling fac-tor (Ding et al., 2024), the x-coordinate values of all control points must increase monotonically. The following condition should therefore be sat-isfied when performing either crossover or mu-tation operations. Let P xi and P xj denote the x-coordinates of the i-th and j-th control points, re-spectively. Their relationship is required to satisfy: 
+
+0 ≤ P xi < P xj ≤ L − 1 if i < j (11) Offspring that fail to meet the above condition are discarded, and the crossover or mutation process is repeated until the condition is satisfied. Starting with the initial population, individuals are selected based on their fitness, followed by the application of the crossover and mutation opera-tors. This process is repeated iteratively until the maximum number of generations is reached. The complete process is summarized in Algorithm 1. 
+
+4 Experiments 
+
+The experiments are divided into three parts. First, we evaluate the impact of LPES on context utiliza-tion, inference latency, and general capabilities. The results show that LPES improves context uti-lization while preserving general capabilities and introducing no additional inference latency. Sec-ond, we analyze the effectiveness of curve-based modeling for layer-wise scaling factors from the perspectives of inter-layer representational struc-ture and inductive bias. Third, we conduct abla-tion studies to examine the effects of curve types and the number of control points. 
+
+4.1 Boosting Context Utilization Base Models We selected three RoPE-based LLMs for our experiments: Vicuna-7B-v 1.5 (Chi-ang et al., 2023), and StableBeluga-7B (Mahan et al., 2023), each with a 4k-token context win-dow, as well as Qwen 2.5-7B (Yang et al., 2024), which supports a 130 k-token context window. 
+
+Benchmarks MDQA (Liu et al., 2024c) is a popular multi-document question answering dataset. The key-value retrieval dataset (Liu et al., 2024c) features unique UUID key-value pairs, ideal for evaluating relevant information extrac-tion. ZeroSCROLLS (Shaham et al., 2023) in-cludes multiple open-ended long-text tasks, with sub-datasets and metrics summarized in Table 14. For closed-ended tasks, L-Eval (An et al., 2023) is used, as outlined in Table 13 (Appendix G). Fi-nally, MMLU (Hendrycks et al., 2020) and C-Eval (Huang et al., 2023) assess generalization ability across various tasks. 
+
+Baselines Positional Interpolation (PI) uses layer-agnostic scaling factors, which are the mean of the searched layer-wise scaling factors (Chen et al., 2023a). Attention Buckets performs multi-ple forward passes, each using a different RoPE base, and then aggregates the information from these passes (Chen et al., 2023b). Ms-PoE assigns scaling factors ranging from 1.2 to 1.8 to attention heads based on their sensitivity to relevant infor-mation (Zhang et al., 2024). Building on the work of Chen et al. (2023b), MoICE computes atten-tion scores using seven different RoPE bases and then performs a weighted sum of these scores us-ing learned weights (Lin et al., 2024). 
+
+Experimental Setup For LLMs with a 4k-token context window, we use 10 MDQA documents or 
+
+50 key–value pairs as context. To evaluate posi-tional bias under longer contexts, Qwen 2.5-7B is provided with 20 MDQA documents or 150 key– value pairs, and its accuracy is measured as the ground-truth information appears at different po-sitions within the context. For ZeroSCROLLS and L-Eval, the context window is set to 3,584 tokens, with a maximum of 512 decoded tokens. We ad-ditionally report the performance of LPES under a 16 K context window in Appendix H. To assess generalization, scaling factors learned on MDQA are transferred to ZeroSCROLLS and L-Eval, with additional evaluation on the MMLU and C-Eval benchmarks to measure generalization ability. During optimization, λB, λM, and λE are set to 
+
+0.2, 0.3, and 0.5, respectively, with detailed anal-ysis provided in Appendix E. Layer-wise scaling factors are learned by searching the control points Models Methods 0% 25 % 50 % 75 % 100 % Avg. 0% 20 % 40 % 60 % 80 % 100 % Avg. MDQA Key-Value Retrieval                                                                                                                                                                                                            
+
+> Vicuna-7B-v1.5 Baseline 70 .4 58 .055 .455 .460 .459 .9 95 .2 71 .681 .079 .077 .473 .480 .9
+> Positional Interpolation 71 .2 59 .658 .856 .456 .260 .4 98 .6 92 .883 .890 .085 .883 .089 .0
+> Attention Buckets 72.6 61 .460 .660 .859 .663 .0100 94.6 88 .691 .687 .665 .888 .0
+> Ms-PoE 72.6 61 .461 .862.0 59 .063 .5 95 .2 63 .284 .891 .687 .477 .883 .3
+> MoICE 71 .6 61 .260 .660 .862.4 63 .3100 93 .290.2 87 .489 .470 .088 .4
+> LPES (Ours) 71 .462.2 62.0 61 .061 .663.6 99 .4 92 .887 .893.6 90.4 88.8 92.1
+> StableBeluga-7B Baseline 67 .8 59 .259 .659 .468 .262 .8 90 .2 34 .244 .016 .659 .879 .454 .0
+> Positional Interpolation 69.6 58 .658 .260 .065 .462 .4 95 .2 53 .631 .828 .661 .683 .659 .1
+> Attention Buckets 69 .2 59 .059 .859 .267 .463 .0100 79 .854 .458 .268 .489 .275 .6
+> Ms-PoE 68 .4 57 .060 .261.0 68 .463 .0 90 .2 27 .227 .659.4 70 .489 .060 .6
+> MoICE 67 .4 60 .060 .260 .068.6 63 .2 99 .8 71 .252 .254 .874.4 91 .474 .0
+> LPES (Ours) 68 .860.0 60.8 61.0 68 .264.5 99 .282.4 57.2 56 .270 .489.6 75.8
+> Qwen2.5-7B Baseline 69 .4 61 .062 .658 .663 .663 .0 99 .8 88 .692 .690 .699 .099 .295 .0
+> Positional Interpolation 68 .6 62 .062 .258 .464 .063 .0100 93 .291 .288 .698 .699 .095 .1
+> Attention Buckets 69 .6 62 .263 .060 .262 .063 .4100 89 .291 .491 .698 .299 .294 .9
+> Ms-PoE 69 .4 61 .863 .460 .261 .463 .2100 94 .291 .293 .698 .099 .296 .0
+> MoICE 68 .4 61 .263 .061 .063 .863 .5 99 .8 88 .092 .691 .699 .099.4 95 .1
+> LPES (Ours) 69.6 64.8 69.2 63.0 65.4 66.4 99 .897.4 93.2 94.0 99.2 99 .297.1
+
+Table 1: Comparison of accuracy across varying positions of relevant information (e.g., 50% denotes the middle) against established baselines. LPES consistently exceeds all baseline performance, validating its efficacy in neu-tralizing positional bias. 
+
+of cubic Bézier curves using 200 samples from the MDQA or key–value retrieval datasets, and are evaluated on 500 held-out samples per dataset. 
+
+Result Analysis Layer-specific positional em-bedding scaling greatly mitigates position bias. 
+
+Table 1 shows that LPES consistently outperforms the baselines in average performance across differ-ent positions, notably boosting Vicuna’s average accuracy by 11 .2% in key-value retrieval. LPES demonstrates strong transferability when apply-ing MDQA-optimized scaling factors to Zero-SCROLLS and L-Eval (Table 2). The results con-firm that these factors generalize robustly across diverse models and long-text tasks. Furthermore, the results on longer context windows and larger model scales (detailed in Appendix H) further validate the applicability of LPES. Additionally, LPES preserves the model’s general capabilities, as shown in Table 3. Notably, the scaling factors are treated as hyperparameters rather than train-able model parameters. Their adjustment is there-fore considered optimization rather than training. In machine learning, training typically refers to updating model weights and biases using gradient-based methods. In contrast, our approach does not modify model parameters and can thus be re-garded as a training-free method. This property avoids catastrophic forgetting (De Lange et al., 2021) caused by large-scale parameter updates and makes the method particularly suitable for already deployed models. 
+
+LPES yields a more balanced attention distri-bution without additional inference cost. Ms-PoE and MoICE are sample-dependent, their scaling factors cannot be precomputed and must be deter-mined for each input. Specifically, Ms-PoE entails an additional attention pass to assess head sensi-tivity, whereas MoICE requires parallel compu-tations across seven RoPE bases alongside serial routing weight calculations. To demonstrate the advantage in inference effi-ciency, we sample 500 examples from the MDQA dataset and report the average inference time of Vicuna on a single H100 GPU. For a fair compari-son, FlashAttention-2 (Dao, 2023) was used as the attention backend for all methods. As shown in Table 4, LPES is roughly 1.45 × faster than Ms-PoE and 2.42 × faster than MoICE. 
+
+4.2 Motivation for Curve-Based Modeling Preserved Representational Structure The smooth and continuous nature of the Bézier curve enforces gradual variations in scaling across layers, which helps preserve the coherence of the model’s layer-wise representational structure. We compare against several intuitive baselines: 
+
+uniform scaling , where all layers share a single scaling factor which is the mean of the searched layer-wise scaling factors; noisy Bézier scaling ,which adds independent uniform noise sampled from U(−0.1, 0.1) to each layer’s Bézier-derived scale; shuffled scaling , which randomly permutes the layer-wise scaling factors while preserving Open-ended Long-Text Tasks Closed-ended Long-Text Tasks Model Method GovRpt Qasper SumScrFd Qmsum NarrQA Squality SpcDgst Avg. Coursera QuALITY TOEFL SFiction Avg.                                                                               
+
+> Vicuna-7B-v1.5 Baseline 18.44 22.82 18.42 14.50 10.98 16.56 21.39 16.91 37.21 38.12 38.00 57.90 42.81 MoICE 22.29 32.34 13.31 14.79 13.61 16.22 22.60 19.30 42.35 43.71 39.33 57.20 45.65
+> LPES (Ours) 21.47 33.37 14.39 15.53 11.52 16.91 22.24 19.35 40.41 42.57 40.67 58.20 45.46 Qwen2.5-7B Baseline 24.76 22.92 14.69 16.25 9.78 14.85 53.66 22.42 45.47 62.43 66.00 60.87 58.69 MoICE 25.56 23.51 15.12 23.19 10.64 16.92 53.81 24.11 48.13 64.28 67.33 66.00 61.44 LPES (Ours) 27.56 23.91 16.18 23.19 11.97 14.92 53.81 25.51 48.51 66.43 69.28 66.42 62.66
+
+Table 2: Performance comparison on open-ended and closed-ended long-text benchmarks. Open-ended tasks are reported on the left, while closed-ended tasks are shown on the right. 
+
+Model Method MMLU C-Eval 
+
+Vicuna-7B-v1.5 Baseline 49 .90 49 .42 
+
+LPES (Ours) 49 .00 49 .33 
+
+StableBeluga-7B Baseline 51 .50 34 .78 
+
+LPES (Ours) 51 .30 34 .63 
+
+Table 3: General capability of models equipped with LPES on MMLU and C-Eval datasets. 
+
+Method Inference time per sample (s) 
+
+Baseline 0.71 
+
+Attention Buckets 3.38 
+
+Ms-PoE 1.03 
+
+MoICE 1.72 
+
+LPES (Ours) 0.71 
+
+Table 4: Comparison of inference efficiency between LPES and baseline methods. 
+
+their overall distribution; and fully random scal-ing , where each layer independently samples its scale from U(1 , 2) .Inspired by RSA (Kriegeskorte et al., 2008), which measures representational structure across input samples at a fixed layer using representa-tional similarity matrices (RSM), we focus instead on the layer dimension . Specifically, we construct a layer-wise RSM by computing pairwise dot-product similarities between the last-token hidden representations of different layers. Given the set of hidden states {Hl}Ll=1 , where Hl ∈ Rd denotes the representation at layer l, the entries of the RSM are defined as: 
+
+RSM ij = H⊤ 
+
+> i
+
+Hj , 1 ≤ i, j ≤ L, (12) where RSM ij quantifies the similarity between the i-th and j-th layers. This matrix captures the global structural organization of representations across the model’s depth. We quantify represen-tational stability via the representational structure deviation D, which measures the average absolute difference between the RSM of a perturbed model (RSM p) and that of a vanilla configuration with-
+
+Figure 3: Comparison of representational structure deviation under different scaling strategies. Vanilla B’ezier curve achieves smaller representational devi-ation while effectively integrating information from multiple base RoPE configurations. 
+
+out scaling ( RSM v) as follows: 
+
+D = 1
+
+L2
+
+> L
+
+X
+
+> i=1
+> L
+
+X
+
+> j=1
+
+RSM p 
+
+> i,j
+
+− RSM v 
+
+> i,j
+
+, (13) This metric captures global changes in inter-layer relationships across layers, rather than at indi-vidual layers. Experiments are conducted us-ing Vicuna-v1.5-7B on 500 randomly sampled MDQA examples, with results averaged over 16 random seeds. As shown in Figure 3, the smooth Bézier-based scaling consistently yields smaller structural deviations, indicating minimal disrup-tion to the model’s internal representations. 
+
+Empirical Convergence Behavior We conduct a brute-force genetic algorithm search using the fitness function defined above over 200 randomly sampled MDQA inputs, where each individual represents a set of layer-wise scaling factors, ini-tialized uniformly from U(1 , 2) to avoid introduc-ing any prior smoothness bias. During the search, we track both performance—measured by the av-erage fitness of the best 1, 2, 4, and 8 individ-uals—and smoothness, quantified by a second-Figure 4: Trend of fitness and smoothness over brute-force search epochs. The population progressively evolves toward smoother scaling factors across layers, indicating that the smoothness of curves serves as an effective inductive bias. 
+
+order metric: 
+
+S = 1
+
+L − 2
+
+> L−1
+
+X
+
+> l=2
+
+∥sl+1 − 2sl + sl−1∥2 , (14) where L is the total number of layers, and sl de-notes the scaling factor at layer l. Here, S quan-tifies the local curvature, with smaller values indi-cating smoother transitions. As shown in Figure 4, higher-performing configurations consistently ex-hibit lower S, indicating that smooth variation emerges during the search. This finding suggests that smoothness constitutes a beneficial inductive bias, motivating the use of smooth curve model-ing—such as Bézier curves—to efficiently param-eterize high-performing scaling configurations. 
+
+4.3 Ablation Studies 
+
+In this section, we present three ablation stud-ies using Vicuna-v1.5-7B on MDQA. First, we demonstrate that Bézier curves outperform alter-native curves in determining layer-specific scaling factors. Next, we examine the impact of control point counts on convergence quality and speed. We further provide an ablation study on the hy-perparameter λ in Appendix E. 
+
+Curve Type Bézier curves provide a com-pact, low-dimensional parameterization capable of approximating a wide variety of curve shapes (Nuntawisuttiwong and Dejdumrong, 2021). To demonstrate the advantages of Bézier curve mod-eling, we consider two alternative approaches with                    
+
+> Method 0% 25% 50% 75% 100% Average
+> Baseline 70 .4 58 .0 55 .4 55 .460 .459 .92
+> LPES (Linear Curve) 71.8 61 .062.2 60 .060 .663 .12
+> LPES (Step Curve) 71 .6 60 .2 59 .4 59 .260 .462 .16
+> LPES (Bézier curve) 71 .462.2 62 .061.0 61.6 63.64
+
+Table 5: Performance comparison of different curve types for determining layer-wise scaling factors. Bézier curves achieve superior performance. 
+
+the same number of control points: linear inter-polation between control points and step-function modeling based on these control points. Al-though these alternatives differ in their curve for-mulations, they also serve as layer-specific scal-ing strategies within our framework. While lin-ear interpolation offers slightly higher computa-tional efficiency, which can be neglected in the search procedure (Appendix E), we ultimately adopt Bézier curves due to their superior perfor-mance. As shown in Table 5, Bézier curves outper-form other curve-fitting methods, and the minor additional cost required to determine the scaling factors is fully offset by the inference-time perfor-mance gains. 
+
+Number of Control Points Setting the maxi-mum iterations to 20 , we vary the number of con-trol points to evaluate performance—measured by the mean and variance of accuracy across posi-tions—and convergence speed. While more con-trol points improve Bézier curve fitting precision and the likelihood of finding optimal scaling fac-tors, they also expand the search space, slowing convergence. As shown in Table 6, using four control points provides a favorable trade-off be-tween performance and convergence speed. In contrast, brute-force search shows little tendency to converge within the limited number of itera-tions, further demonstrating the efficiency of our curve-constrained genetic algorithm.                   
+
+> Control Points Accuracy (Std) Epochs to Convergence
+> Baseline 59 .9(±5.56 )−−
+> Brute-Force 60 .2(±4.69 )20 260 .6(±4.55 )3362 .2(±3.97 )5463 .6(±3.90 )9563 .8(±3.87 )16
+
+Table 6: Performance comparison of different numbers of control points. Additional points improve accuracy and reduce positional bias, but slow convergence due to the increased computational cost of optimization. Overall, experimental results indicate a performance insensitivity to the number of control points used. 5 Conclusion 
+
+We present layer-specific positional embedding scaling (LPES), a method that mitigates position bias in transformer-based LLMs by assigning dis-tinct scaling factors to each layer, achieving bal-anced attention over input without fine-tuning or extra latency. Optimal scaling factors are effi-ciently identified via a Bézier-constrained genetic algorithm, reducing the search space and con-verging with only a few hundred examples. Ex-periments show that LPES consistently improves long-context performance, preserves general capa-bilities, and requires only a single forward pass, achieving up to 2.42 × speedup over MoICE and 
+
+1.45 × over Ms-PoE, which makes LPES a broadly applicable and efficient solution. 
+
+Limitations 
+
+In this work, we adopt a training-free strategy that assigns different scaling factors across lay-ers to encourage a more balanced attention dis-tribution. While this design enables straightfor-ward and efficient deployment, we do not explore the behavior of our method in training-based set-tings. Extending the proposed approach to training or fine-tuning pipelines could potentially yield fur-ther gains, which we leave for future work. Never-theless, this limitation does not diminish the prac-tical effectiveness or applicability of our method in real-world scenarios. 
+
+References 
+
+Chenxin An, Shansan Gong, Ming Zhong, Xingjian Zhao, Mukai Li, Jun Zhang, Lingpeng Kong, and Xipeng Qiu. 2023. L-eval: Instituting standardized evaluation for long context language models. arXiv preprint arXiv:2307.11088 .Shouyuan Chen, Sherman Wong, Liangjian Chen, and Yuandong Tian. 2023a. Extending context window of large language models via positional interpola-tion. arXiv preprint arXiv:2306.15595 .Yuhan Chen, Ang Lv, Ting-En Lin, Changyu Chen, Yuchuan Wu, Fei Huang, Yongbin Li, and Rui Yan. 2023b. Fortify the shortest stave in atten-tion: Enhancing context awareness of large lan-guage models for effective tool use. arXiv preprint arXiv:2312.04455 .Wei-Lin Chiang, Zhuohan Li, Ziqing Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E Gonzalez, and 1 others. 2023. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality. See https://vicuna. lmsys. org (accessed 14 April 2023) ,2(3):6. Tri Dao. 2023. Flashattention-2: Faster attention with better parallelism and work partitioning. arXiv preprint arXiv:2307.08691 .Matthias De Lange, Rahaf Aljundi, Marc Masana, Sarah Parisot, Xu Jia, Aleš Leonardis, Gregory Slabaugh, and Tinne Tuytelaars. 2021. A continual learning survey: Defying forgetting in classification tasks. IEEE transactions on pattern analysis and machine intelligence , 44(7):3366–3385. Yiran Ding, Li Lyna Zhang, Chengruidong Zhang, Yuanyuan Xu, Ning Shang, Jiahang Xu, Fan Yang, and Mao Yang. 2024. Longrope: Extending llm context window beyond 2 million tokens. arXiv preprint arXiv:2402.13753 .Xiachong Feng, Xiaocheng Feng, and Bing Qin. 2021. A survey on dialogue summarization: Re-cent advances and new frontiers. arXiv preprint arXiv:2107.03175 .Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Stein-hardt. 2020. Measuring massive multitask language understanding. arXiv preprint arXiv:2009.03300 .Yuzhen Huang, Yuzhuo Bai, Zhihao Zhu, Junlei Zhang, Jinghan Zhang, Tangjun Su, Junteng Liu, Chuancheng Lv, Yikai Zhang, Yao Fu, and 1 others. 2023. C-eval: A multi-level multi-discipline chinese evaluation suite for foundation models. Advances in Neural Information Processing Systems , 36:62991– 63010. Nikolaus Kriegeskorte, Marieke Mur, and Peter A Ban-dettini. 2008. Representational similarity analysis-connecting the branches of systems neuroscience. 
+
+Frontiers in systems neuroscience , 2:249. Tianle Li, Ge Zhang, Quy Duc Do, Xiang Yue, and Wenhu Chen. 2024. Long-context llms strug-gle with long in-context learning. arXiv preprint arXiv:2404.02060 .Hongzhan Lin, Ang Lv, Yang Song, Hengshu Zhu, Rui Yan, and 1 others. 2024. Mixture of in-context ex-perts enhance llms’ long context awareness. Ad-vances in Neural Information Processing Systems ,37:79573–79596. Jiawei Liu, Chunqiu Steven Xia, Yuyao Wang, and Lingming Zhang. 2024a. Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation. Advances in Neural Information Processing Systems , 36. Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024b. Lost in the middle: How language models use long contexts. Transactions of the Asso-ciation for Computational Linguistics , 12:157–173. Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024c. Lost in the middle: How language models use long contexts. Transactions of the Asso-ciation for Computational Linguistics , 12:157–173. Dakota Mahan, Ryan Carlow, Louis Castricato, Nathan Cooper, and Christian Laforte. 2023. Stable beluga models. M.E. Mortenson. 1999. Mathematics for Computer Graphics Applications . G - Reference,Information and Interdisciplinary Subjects Series. Industrial Press. Taweechai Nuntawisuttiwong and Natasha Dejdum-rong. 2021. An approximation of bézier curves by a sequence of circular arcs. Information Technology and Control , 50(2):213–223. Uri Shaham, Maor Ivgi, Avia Efrat, Jonathan Be-rant, and Omer Levy. 2023. Zeroscrolls: A zero-shot benchmark for long text understanding. arXiv preprint arXiv:2305.14196 .Ning Shang, Li Lyna Zhang, Siyuan Wang, Gaokai Zhang, Gilsinia Lopez, Fan Yang, Weizhu Chen, and Mao Yang. 2025. Longrope2: Near-lossless llm context window scaling. arXiv preprint arXiv:2502.20082 .Jianlin Su, Yu Lu, Shengfeng Pan, Bo Wen, and Yun-feng Liu. 2021. Roformer: Enhanced transformer with rotary position embedding. Cornell University - arXiv,Cornell University - arXiv .Qi Sun, Edoardo Cetin, and Yujin Tang. 2025. Transformer 2: Self-adaptive llms. arXiv preprint arXiv:2501.06252 .Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-bert, Amjad Almahairi, Yasmine Babaei, Niko-lay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, and 1 others. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 .An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayi-heng Liu, Fei Huang, Haoran Wei, and 1 others. 2024. Qwen2. 5 technical report. arXiv preprint arXiv:2412.15115 .Yusen Zhang, Ansong Ni, Ziming Mao, Chen Henry Wu, Chenguang Zhu, Budhaditya Deb, Ahmed H Awadallah, Dragomir Radev, and Rui Zhang. 2021. Summˆ n: A multi-stage summarization framework for long input dialogues and documents. arXiv preprint arXiv:2110.10150 .Zhenyu Zhang, Runjin Chen, Shiwei Liu, Zhewei Yao, Olatunji Ruwase, Beidi Chen, Xiaoxia Wu, and Zhangyang Wang. 2024. Found in the middle: How language models use long contexts better via plug-and-play positional encoding. arXiv preprint arXiv:2403.04797 .Qinkai Zheng, Xiao Xia, Xu Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Zihan Wang, Lei Shen, Andi Wang, Yang Li, and 1 others. 2023. Codegeex: A pre-trained model for code genera-tion with multilingual evaluations on humaneval-x. corr abs/2303.17568 (2023). arXiv preprint arXiv:2303.17568 , 10. A Long-Term Decay and Attention Wave in RoPE 
+
+Zhang et al. (2024) observed that the long-term decay of RoPE causes the model to focus more on the end of a sequence. As the relative dis-tance grows, attention scores drop rapidly, leading the model to overemphasize nearby tokens during autoregressive decoding while neglecting distant ones. To mitigate this issue, they scale RoPE by a factor s > = 1 (Figure 5), which effectively re-duces the relative distance to 1/s of its original value (Figure 6). This adjustment slows the de-cay rate, enabling the model to attend not only to nearby tokens but also to more distant ones, par-ticularly those in the middle of the sequence. To demonstrate that scaling RoPE can indeed enhance the model’s attention to middle posi-tions, we use the Vicuna-7B-v1.5 (Chiang et al., 2023) and LLaMA-2-7B-hf (Touvron et al., 2023) which both consist of 32 transformer layers to con-duct experiments on the validation dataset of QM-Sum (Shaham et al., 2023). We split the context into three parts and calculate the attention scores to the middle-part tokens at different scales. In Figure 7, an increase in the scale factor leads to higher attention scores, demonstrating that scaling RoPE allows the model to focus more on middle-part content during autoregressive decoding. Chen et al. (2023b) analyze the phenomenon of oscillatory “attention waves” in Transformer mod-els, where attention fluctuates across tokens in-stead of being smoothly distributed. These os-cillations, mainly induced by the mechanisms of RoPE, can cause the model to under-attend to im-portant information located at attention troughs, limiting long-context utilization and potentially introducing instability. To address this issue, the authors propose the Attention Buckets approach, which runs multiple model parallels with different bases in RoPE and combines the decoded logits across these bases, producing complementary at-tention wave patterns. The method enhances the model’s sensitivity to context across all positions. 
+
+B Search Space and Time Complexity Analysis 
+
+We follow Ding et al. (2024), discretizing the continuous search space to enable more efficient searching. Assume the control points of the Bézier curve are (P x, P y), where P x ∈ [0 , L − 1] (L
+
+is the number of scaled layers) and P y ∈ [1 , 2] .The values of P x are discretized with a step size of 1, and the values of P y are discretized with a step size of 0.1. Given that the model consists of 
+
+32 layers, there are 32 possible selections in P X ,while the scaling factor chosen from the P Y set offers 11 options as shown in Table 7. The to-tal number of choices for the brute-force search is 
+
+11 32 . If a Cubic Bezier curve is used, each control point has 32 ×11 possible combinations. With four control points, the total search space is 352 4 which approximately narrows the search space by a sig-nificant factor 10 20 compared to the brute-force search.                                     
+
+> Coordinate Search Space
+> Px{0,1,2,3,4,5,6,7,8,. . . ,n−4,n−3,n−2,n−1}
+> Py{1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0}
+
+Table 7: Search space for the control point of Bézier curves. 
+
+In our method, the dominant cost of the genetic algorithm arises from evaluating the fitness func-tion, which requires running model inference to assess the effectiveness of different scaling fac-tors. In contrast, the computational overhead of other GA operations—such as assignment, muta-tion, and crossover—is negligible. Using 4 ×H100 GPUs, we measured the per-epoch time cost of each operation as follows:      
+
+> Operation Type Time (s)
+> Assigning scaling factor from curve 5.2
+> Mutation 4.5
+> Crossover 2.3
+> Computing fitness via model inference 1167 .4
+
+Table 8: Measured runtime per epoch of each operation in the genetic algorithm when using 4 ×H100 GPUs. Model inference dominates the total cost. 
+
+Assume the algorithm runs for at most M
+
+epochs and generates N new individuals per epoch, and the search uses S samples. Each in-dividual requires three inference runs (placing the correct document at different positions). Thus, the total number of inference calls is 3N M S . In practice, we perform data-parallel inference using 
+
+Ncard GPUs with batch size B, which reduces the effective runtime to O((3 M N S )/(Ncard · B)) .
+
+C Limitations of Gradient-Based Methods 
+
+We also attempted to determine the layer-specific scaling factors using gradient descent, but ob-Normal Attention Scaled Attention                       
+
+> Softmax
+> RoPE
+> (Scaling Factor =
+> s)
+> Query Key Value
+> 0
+> 10
+> 210
+> 3210
+> 43210
+> 0
+> 1/s 0
+> 2/ s1/s 0
+> 3/s 2/s 1/s 0
+> 4/s 3/s 2/s 1/s 0
+
+Figure 5: We obtain multi-scale RoPE by scaling the positional indices. 
+
+Figure 6: The rapid decay of RoPE prioritizes local focus, and the attention waves may cause the model to overlook crucial information at attention troughs, whereas the scaling operation can slow this decay and generate diverse wave patterns. 
+
+Figure 7: The attention score to the middle part across some layers. The scaling operation can enhance the model’s attention to middle positions. Hyperparameter Value Description 
+
+Population_size Nps 32 Number of individuals in initial population generation. 
+
+Parents_size Npa 12 Number of individuals selected as parents. 
+
+Max_epoch T 20 Maximum number of generatios. 
+
+Mutation_numbers Nmu 16 Number of offspring generated through mutation. 
+
+Crossover_numbers Ncr 4 Number of offspring generated through crossover. 
+
+Max_crossover_try Nct 4 Maximum attempts allowed to produce valid offspring during crossover. 
+
+Mx 2 Perturbation magnitude of the control point’s x-coordinate ( P x). 
+
+My 0.2 Perturbation magnitude of the control point’s y-coordinate ( P y). 
+
+> Table 9: Hyperparameter settings of the constrained genetic algorithm
+
+served poor convergence behavior. This may also shed light on why LongRoPE (Ding et al., 2024) and LongRoPE2 (Shang et al., 2025) employ ge-netic algorithms rather than backpropagation to determine the scaling factors across RoPE di-mensions. Although the genetic algorithm incurs higher computational overhead compared to di-rectly optimizing hyperparameters via backprop-agation, it consistently converges to a more favor-able set of scaling parameters. Furthermore, in-corporating Bézier curves significantly accelerates the convergence process. In the gradient-based setting , we construct three datasets from the MDQA, each containing 
+
+2, 000 samples in which the correct document is placed at a different position (i.e., first, middle, or last). In each epoch, a total of 2, 000 samples are drawn from these datasets based on the value of λ
+
+as specified in Section §4.1, where a larger λ in-dicates a higher probability of sampling from the corresponding dataset. For stable training, we use a batch size of 32 , a learning rate of 1e − 5, and train the model for a total of 30 epochs. For the gradient-based method, we observed that even with a large batch size and a small learn-ing rate, the optimization of scaling factors via backpropagation failed to converge. A possible reason is the limited number of trainable param-eters (Sun et al., 2025). We evaluated the model at the 30th epoch and found a significant degradation in performance, as shown in Table 10. 
+
+D Cubic Bézier Curve Parameterization for Layer Assignment 
+
+Consider a cubic Bézier curve with four control points: 
+
+P0 = ( x0, y 0), P1 = ( x1, y 1),P2 = ( x2, y 2), P3 = ( x3, y 3). (15)             
+
+> Model Method 0% 25% 50% 75% 100%
+> Vicuna-7B-v1.5 Baseline 70 .4 58 .0 55 .4 55 .460 .4
+> Gradient-Based 67 .4 54 .0 51 .2 52 .855 .8
+> Qwen2.5-7B Baseline 69 .4 61 .0 62 .6 58 .663 .6
+> Gradient-Based 68 .7 56 .6 57 .6 55 .857 .8
+> Table 10: Gradient-based methods lead to accuracy degradation in the MDQA dataset.
+
+where the x-coordinates are strictly increasing since Equation 11: 
+
+x0 < x 1 < x 2 < x 3. (16) The parametric form of the cubic Bézier curve is                     
+
+> x(t) = (1 −t)3x0+ 3(1 −t)2tx 1+ 3(1 −t)t2x2+t3x3,y(t) = (1 −t)3y0+ 3(1 −t)2ty 1+ 3(1 −t)t2y2+t3y3,
+> (17)
+
+where t ∈ [0 , 1] .Since the xi are strictly increasing, the function 
+
+x(t) is typically monotonic. This property allows the use of a binary search over the interval [0 , 1] 
+
+to efficiently find the parameter t corresponding to any given target value x, which defines the func-tion t(x).
+
+E Hyperparameters of the constrained genetic algorithm 
+
+In our experiments, we observed that when scal-ing RoPE, the model tends to improve perfor-mance at early positions while neglecting perfor-mance at later positions. Consequently, when setting λ, we favor assigning larger weights to later positions. Here, we define ⟨λB, λ M, λ E⟩
+
+as the weights assigned to the accuracy of the beginning, middle, and end positions, respec-tively, in the genetic algorithm’s fitness func-tion. In this study, we compare three weighting schemes: ⟨0.333 , 0.333 , 0.333 ⟩, ⟨0.1, 0.3, 0.6⟩,and ⟨0.2, 0.3, 0.5⟩.
+
+Method 0% 25% 50% 75% 100% Average 
+
+Baseline 70 .4 58 .0 55 .4 55 .4 60 .4 59 .9
+
+⟨0.333 , 0.333 , 0.333 ⟩ 73.2 62.4 60 .2 58 .8 58 .2 62 .6
+
+⟨0.1, 0.3, 0.6⟩ 70 .6 60 .2 60 .8 61.0 62.0 63 .0
+
+⟨0.2, 0.3, 0.5⟩ 71 .4 62 .2 62.0 61.0 61 .6 63.2 
+
+Table 11: The impact of hyper-parameters λ on the op-timized layer-wise scaling factors, showing that perfor-mance is largely insensitive to their choice. 
+
+F Search Algorithm Robustness 
+
+In this section, we evaluate the robustness of the scaling factors under variations in the search dataset. On the MDQA dataset, we use Vicuna-1.5-7B and randomly sample 200 training in-stances to form the search set for each run. Across five independent runs with different search sets, the method achieves an average performance of 
+
+63 .68 with a sample variance of only 0.027 ,demonstrating that our approach is highly stable across different search sets. Overall, our method consistently outperforms prior approaches, high-lighting the robustness of the proposed search al-gorithm. 
+
+Method 0% 25% 50% 75% 100% Average 
+
+Baseline 70 .4 58 .0 55 .4 55 .4 60 .4 59 .9
+
+Attention Buckets 72.6 61 .4 60 .6 60 .8 59 .6 63 .0
+
+Ms-PoE 72.6 61 .4 61 .8 62 .0 59 .0 63 .5
+
+MoICE 71 .6 61 .2 60 .6 60 .8 62.4 63 .3
+
+LPES (run 1) 71 .4 62 .2 62 .0 61 .0 61 .6 63 .6
+
+LPES (run 2) 71 .6 62 .4 62.2 60 .8 61 .8 63 .8
+
+LPES (run 3) 71 .6 61 .8 61 .8 62 .0 61 .0 63 .6
+
+LPES (run 4) 72.6 61 .0 62 .0 63.2 61 .0 63.9 
+
+LPES (run 5) 72 .2 62.8 61 .0 61 .0 60 .4 63 .5
+
+Table 12: Performance of LPES across five runs com-pared with baseline methods. Percentages indicate the relative position of relevant documents in the context. 
+
+G Dataset Details 
+
+Dataset Question Style Domain Metric 
+
+Coursera Multiple Choice Advanced Courses Accuracy QuALITY Multiple Choice Gutenberg Accuracy TOEFL Multiple Choice English Test Accuracy SFiction True/False Questions Scientific Fiction Accuracy 
+
+Table 13: Overview and evaluation metrics of the sub-datasets in L-Eval. Write a high-quality answer for the given question using only the provided 
+
+> search results (some of which might be irrelevant).
+> {search_results}
+> Question: {question}
+> Answer:
+
+(a) MDQA prompt Extract the value corresponding to the specified key in the JSON object below. 
+
+> JSON data:
+> {formatted_kv_records}
+> Key: "{key}"
+> Corresponding value:
+
+(b) KV prompt 
+
+Figure 8: Prompt templates used in MDQA and Key-Value Retrieval datasets. 
+
+Dataset Description Metric 
+
+GovReport Summarization of long re-ports ROUGE-1/2/L SummScreenFD Summarization of TV show episode scripts ROUGE-1/2/L QMSum Query-based summa-rization over meeting transcripts ROUGE-1/2/L SQuALITY Question-focused summa-rization over stories ROUGE-1/2/L Qasper Question answering over research papers F1 NarrativeQA Question answering about entire books and movie scripts F1 SpaceDigest Aggregated sentiment clas-sification over 50 hotel re-views from Space Exp_similarity 
+
+Table 14: Overview and evaluation metrics of the sub-datasets in ZeroSCROLLS. 
+
+H Effectiveness of LPES on Longer Contexts 
+
+We conduct experiments on Vicuna-1.5-13B and Qwen-2.5-7B under a 16k-token context setting on L-Eval to verify the effectiveness of LPES in long-context scenarios. The decoding length is set to 512 tokens, so the maximum usable context window is limited to 15 ,872 tokens. As shown in Table 15 and 16, the results demonstrate that our method remains effective on larger models and extended context lengths, highlighting its strong scalability and robustness. Model Method Coursera QuALITY TOEFL SFiction Average 
+
+Vicuna-13B-v1.5-16k Baseline 69 .6 51 .4 33 .3 57 .1 52 .9
+
+MoICE 67 .4 55.6 35 .7 52 .6 52 .8
+
+LPES (Ours) 70.6 54 .4 36.0 59.4 55.1 
+
+Qwen2.5-7B Baseline 59 .8 66 .3 76 .6 71 .8 68 .6
+
+MoICE 59 .8 66 .3 78 .7 73.0 69 .5
+
+LPES (Ours) 63.8 69.1 80.9 72 .9 71.7 
+
+Table 15: Results under longer-context settings (16k tokens) on the L-Eval benchmark. LPES consistently im-proves performance over the baseline and MoICE on both Vicuna-13B-v1.5-16k and Qwen2.5-7B, demonstrating strong scalability to larger models and longer context windows. 
+
+Model Method GovRpt Qasper SumScrFd QMSum NarrQA SQuality SpcDgst Average 
+
+Qwen2.5-7B Baseline 25 .17 23 .33 14 .23 17 .36 6.00 17 .60 51 .12 22 .12 
+
+MoICE 38.77 18 .83 15 .21 17 .84 6.14 18 .06 53 .63 24 .07 
+
+LPES (Ours) 35 .77 24.63 15.91 20.84 8.02 19.06 53.77 25.43 
+
+Table 16: Performance comparison on ZeroSCROLLS benchmarks with a 16k context length using Qwen2.5-7B. LPES consistently improves average performance over both the baseline and MoICE across diverse tasks. 
+
+Algorithm 1 Scaling factor search algorithm 
+
+Input: an LLM M, a dataset D, population size Nps , the number of offspring generated by crossover Ncr ,zzzzzz the number of mutated individuals Nmu , and maximum number of generations T .1: S0 = Initial-Population-Generation( D, Nps ); // Randomly generate the initial population. 2: for i = 1 to T do 
+
+3: Evaluate-Fitness( Si−1, M, D); // Evaluate the fitness of all individuals in the population. 4: Spa = Select-Parents( Si−1); // Select the parent pool according to fitness values. 5: Scr = Crossover-Operator( Spa , Ncr ); // Produce offspring using the crossover operator. 6: Smu = Mutation-Operator( Spa , Nmu ); // Generate offspring using the mutation operator. 7: Si = Spa ∪ S cr ∪ S mu ; // Merge the individuals to form the next generation’s population. 8: end for 
+
+9: Return the individual with the highest fitness in ST .
