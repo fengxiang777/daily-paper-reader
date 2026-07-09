@@ -1,0 +1,521 @@
+Title: SILMM: Self-Improving Large Multimodal Models for Compositional Text-to-Image Generation
+
+URL Source: https://openaccess.thecvf.com/content/CVPR2025/papers/Qu_SILMM_Self-Improving_Large_Multimodal_Models_for_Compositional_Text-to-Image_Generation_CVPR_2025_paper.pdf
+
+Published Time: Mon, 02 Jun 2025 01:41:37 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# SILMM: Self-Improving Large Multimodal Models for Compositional Text-to-Image Generation 
+
+## Leigang Qu 1, Haochuan Li 1, Wenjie Wang 2*, Xiang Liu 1, Juncheng Li 3, Liqiang Nie 4, Tat-Seng Chua 1
+
+> 1
+
+National University of Singapore, 2University of Science and Technology of China, 3Zhejiang University, 
+
+> 4
+
+Harbin Institute of Technology (Shenzhen) 
+
+leigangqu@gmail.com, haochuan@u.nus.edu, wenjiewang96@gmail.com, liu.xiang@u.nus.edu junchengli@zju.edu.cn, nieliqiang@gmail.com, dcscts@nus.edu.sg 
+
+## Abstract 
+
+Large Multimodal Models (LMMs) have demonstrated im-pressive capabilities in multimodal understanding and gen-eration, pushing forward advancements in text-to-image generation. However, achieving accurate text-image align-ment for LMMs, particularly in compositional scenarios, remains challenging. Existing approaches, such as layout planning for multi-step generation and learning3 from hu-man feedback or AI feedback, depend heavily on prompt engineering, costly human annotations, and continual up-grading, limiting flexibility and scalability. In this work, we introduce a model-agnostic iterative self-improvement framework ( SILMM ) that can enable LMMs to provide helpful and scalable self-feedback and optimize text-image alignment via Direct Preference Optimization (DPO). DPO can readily applied to LMMs that use discrete visual to-kens as intermediate image representations; while it is less suitable for LMMs with continuous visual features, as ob-taining generation probabilities is challenging. To adapt SILMM to LMMs with continuous features, we propose a diversity mechanism to obtain diverse representations and a kernel-based continuous DPO for alignment. Extensive experiments on three compositional text-to-image genera-tion benchmarks validate the effectiveness and superiority of SILMM, showing improvements exceeding 30% on T2I-CompBench++ and around 20% on DPG-Bench. The code is available at https://silmm.github.io/ .
+
+## 1. Introduction 
+
+Large Multimodal Models (LMMs) are advancing rapidly, surpassing Large Language Models (LLMs) by embrac-ing multimodal capabilities for multimodal content percep-tion, understanding [34, 35, 48], and generation [19, 64]. 
+
+> *
+
+Corresponding author. ...         
+
+> Prompt: The yellow fluttering butterfly landed on
+> the purple fragrant flower and the thorny thistle.
+> Continuous LMMs
+> Decoder Decoder
+> Learnable
+> Embedding
+> Deterministic
+> Continuous
+> Feature
+> ...
+> Diverse Images One Image
+> (a) Text -image misalignment in compositional prompts
+> (b) Discrete & Continuous LMMs for text -to -image generation
+> Diverse
+> Discrete
+> Tokens
+> Attribute Binding Counting Error Relation Inaccuracy
+> a green leaf and a
+> yellow butterfly five balloons a bicycle on the
+> left of a man
+> Discrete LMMs (|)zx
+> Sample
+> Decoder Decoder
+
+Figure 1. Illustration of (a) text-image misalignment in compo-sitional prompts and (b) comparison of discrete and continuous LMMs for T2I. Given a prompt, discrete LMMs can sample di-verse token sequences from categorical distributions, while contin-uous LMMs can only produce a single deterministic feature vector. Note that the input learnable embeddings are optional for some continuous LMMs [64]. 
+
+In particular, LMMs demonstrate promising abilities in in-terpreting user input prompts for text-to-image generation (T2I) [55, 57], producing vivid and photorealistic images. However, as shown in Fig. 1(a), achieving precise text-image alignment between generated images and complex prompts remains challenging, especially for compositional prompts involving multiple objects, attributes, counting, and complex relationships [6, 16, 49]. To enhance text-image alignment, existing work falls This CVPR paper is the Open Access version, provided by the Computer Vision Foundation. Except for this watermark, it is identical to the accepted version; the final published version of the proceedings is available on IEEE Xplore. 18497 into two primary research lines. One line focuses on de-composing the T2I task into multiple stages. For example, some methods perform layout planning before generating the image [17, 37, 75]; while some split the image into sections for multi-step generation via multi-agent collabora-tion [46, 70]. However, these methods depend on extensive multi-step prompt engineering, which risks error accumu-lation. The second research line emphasizes learning from human feedback (RLHF [43]) to improve text-image align-ment [15, 31, 33, 67, 73], or using AI feedback (RLAIF) from strong evaluation approaches or reward models [3, 77]. Nevertheless, it is labor-intensive and costly to obtain ex-tensive high-quality human feedback, which is also often required to train external reward models [5]. Additionally, as LMMs evolve, the external evaluation approaches and reward models may require continual upgrading [44, 77]. To address the limitations, we consider utilizing LLMs’ inherent discriminative capabilities to self-improve their generation quality for text-image alignment. This offers a pathway for LMMs to evolve for T2I independently, with-out relying on human or external feedback. To pursue self-improvement, the key steps are: 1) generating diverse im-ages by LMMs based on a given prompt, ensuring the image diversity to facilitate subsequent self-assessment and opti-mization; 2) using LMMs to self-assess text-image align-ment in the generated images, producing alignment scores as self-feedback; and 3) adopting the self-feedback to opti-mize LMMs to generate superior visual tokens, resulting in images that better align with text prompts. However, achieving the above objectives faces signifi-cant challenges. In particular: 1) As shown in Fig. 1(b), LMMs typically generate interme-diate visual representations, i.e. , discrete visual tokens or continuous visual features, which are then converted into images by a decoder ( e.g. , a diffusion model) [19, 64]. For LMMs with discrete visual tokens [19, 68, 76], using ex-isting sampling strategies ( e.g. , adjusting temperature) in the autoregressive generation process can obtain diverse visual tokens. However, it is non-trivial for LMMs with deterministic continuous visual features, such as Dream-LLM [13], to sample diverse visual representations 1.2) Compositional prompts require LMMs to inspect object counts, attributes, and complex relationships in the gener-ated images. However, existing LMMs still struggle with compositional cross-modal assessment [7, 56], challeng-ing the generation of faithful self-feedback. 3) Optimizing LMMs with self-feedback is also intricate. Supervised Fine-Tuning (SFT) [11] and certain RLAIF methods [3, 77] require highly accurate self-feedback. Moreover, another representative method Direct Prefer-
+
+> 1Sampling diverse images at the decoder stage is inapplicable, as it can only optimize the decoder yet we aim to optimize LMMs to generate superior visual representations for text-image alignment in this work.
+
+ence Optimization (DPO) requires modeling generation distributions, from which we need to sample diverse im-ages to construct pairwise training data, which is chal-lenging for LMMs with continuous visual features. To tackle the above challenges, we propose an Self-Improving Large Multimodal Models ( SILMM ) framework for iterative optimization. As illustrated in Fig. 2, SILMM operates through five steps: 1) Compositional Prompt Gen-eration prompts an LMM to imagine compositional sce-narios and generate compositional prompts. 2) Diverse Image Generation . For discrete LMMs 2, we follow the sampling decoding strategy commonly used in LLM align-ment [43, 53]. For continuous LMMs [13, 64, 72], we pro-pose a diversification strategy named DropDiv , inspired by Monte Carlo (MC) Dropout [18], to perform dropout on the MLP layers of LMMs for diverse visual features, producing diverse images. 3) Decompositional Self-Questioning . To reduce the difficulty of compositional cross-modal assess-ment, LMMs can decompose a compositional prompt into atomic concepts and relations and generate questions for multi-step assessment. 4) VQA-based Self-Feedback . For each image generated in Step 2, LMMs can use the decom-posed questions to assess text-image alignment, and then aggregate the results to obtain reasonable self-feedback. 5) 
+
+Learning from Self-Feedback . For discrete LMMs, we di-rectly apply DPO based on pairwise samples from Step 2. As to continuous LMMs, we propose Kernel-based Contin-uous DPO ( KC-DPO ), inducing a quadruplet objective with kernel functions for pairwise distance regulation over con-tinuous visual features. The above five steps can iteratively repeat until self-improvement performance converges. In summary, our main contributions are threefold: • To our knowledge, we are the first to focus on the task of LMMs’ self-improvement for T2I. We propose a model-agnostic self-improvement framework to enable LMMs to achieve high-quality self-feedback and learning. • For continuous LMMs, we introduce a dropout-based strategy to diversify image representations, along with a continuous DPO approach, i.e. , KC-DPO, to optimize LMMs with preference representation pairs. • We conduct extensive experiments on three composi-tional T2I benchmarks, demonstrating the superiority of SILMM, e.g. , 30% improvements on T2I-CompBench++. 
+
+## 2. Related Work 
+
+Compositional Text-to-Image Generation . Diffusion models [55, 57] have marked a significant advancement in T2I generation due to their stability and scalability. How-ever, they still struggle with text-image alignment, such as attribute binding, counting error, and relation confu-   
+
+> 2For simplicity, we denote LLMs outputting discrete and continuous visual representations as discrete and continuous LMMs, respectively. 18498 You are an assistant dedicated to generating natural compositional
+> phrases, containing multiple objects (number ≥2) with several adj.
+> from {color, shape, texture} descriptions and spatial (left/right/
+> top/bottom/next to/near/on side of) or non -spatial relationships.
+> Please generate a compositional phrase or sentence.
+
+Step 1: Compositional Prompt Generation 
+
+> MLLMs Sampling
+
+... 
+
+... 
+
+> You are an assis ta nt dedicated to transforming a sentence into
+> several questions. You should first divide it into simple concepts
+> and relations, and then provide the corresponding questions.
+> Please generate questions for: The yellow fluttering butterfly
+> landed on the purple fragrant flower and the thorny thistle.
+
+Step 3: D ecompositional Self -Questioning  
+
+> q: The yellow fluttering butterfly landed on the purple
+> fragrant flower and the thorny thistle.
+
+Step 2: Diverse Representation and Image Generation 
+
+Step 4: V QA -based Self -Feedback         
+
+> •q1: Is there a yellow fluttering butterfly?
+> •q2: Is there a purple fragrant flower?
+> •q3: Is there a thorny thistle?
+> •q4: Does the butterfly land on
+> the flower and the thistle?
+> •q1: Is there a yellow fluttering butterfly?
+> •q2: Is there a purple fragrant flower?
+> •q3: Is there a thorny thistle?
+> •q4: Does the butterfly land on the flower
+> and the thistle?
+
+Next 
+
+Iteration 
+
+Diversity 
+
+Mechanisms  
+
+> Discrete Nucleus Sampling
+
+or           
+
+> Continuous DivDrop Sampling
+> q: The yellow fluttering butterfly
+> landed on the purple fragrant flower
+> and the thorny thistle.
+> q:The shiny black motorcycle
+> zoomed past the old rusty car. 1
+
+x2x1z2z3z1x1y2y3y1y2y3y
+
+> Large Multimodal Models (LMMs) 1
+
+x 
+
+> or
+> KC -DPO DPO
+> Input
+> or Ouput
+> LMMs
+> Forward
+> LMMs
+> Represen
+> tations
+> Online
+> Represen
+> tation
+> Reference
+> Chosen
+> Rejected
+> LMMs LoRA ref 
+
+( | )i jk H H
+
+> Question Generation
+
+Figure 2. Schematic illustration of SILMM, comprising five steps: 1) LMMs generate compositional prompts by sampling based on pro-vided instructions. 2) Diverse representations and images are generated using either discrete nucleus sampling or the proposed continuous DivDrop. 3) LMMs divide each compositional prompt into semantic units and generate questions for each unit. 4) VQA is conducted to answer these questions, with the answers and likelihoods aggregated into alignment scores as self-feedback. 5) For alignment tuning, DPO is applied for discrete LMMs, while the proposed KC-DPO is used for continuous LMMs. 
+
+sion [16, 51]. To enhance compositional T2I, some ap-proaches intervene in language structures [16] or cross-attention mechanisms [6]. Other methods [17, 37, 38, 49] incorporate layout planning by LLMs or use multi-agent collaboration [46, 70]. Inspired by alignment successes in LLMs, recent work [5, 15, 67] applies RLHF [43] to opti-mize diffusion models. Despite the progress, they rely on inductive biases, extensive prompt engineering, or labor-intensive annotations, limiting flexibility and scalability. 
+
+Large Multimodal Models . The pioneering LMMs [39, 79] integrate a visual encoder, e.g. , CLIP [52], with LLMs as the foundation, showing impressive multimodal under-standing capabilities. To extend LMMs to visual genera-tion, recent approaches align diffusion models [13, 19, 72] with LLMs or train a single transformer [62, 68, 74, 76]. According to the form of output visual features, they can be divided into discrete visual tokenization methods [19, 50, 62, 68] and continuous visual representation meth-ods [13, 64, 72]. While LLM integration enhances language understanding and supports flexible applications (e.g., inter-leaved multimodal generation [64]), compositional T2I in the context of LMMs remains underexplored. 
+
+Learning from AI Feedback . The high cost of collect-ing human preference has spurred research into RLAIF [3]. Benefiting from the convenience and scalability, there have been a series of studies adopting RLAIF to tackle a range of NLP tasks [10, 32, 78] and vision-language understand-ing [69, 77]. Despite the thrilling success, they only fo-cus on text generation, overlooking the potential of RLAIF in other modalities. In contrast, we explore self-improving LMMs by activating multimodal understanding abilities for T2I. Particularly, we propose continuous strategies meticu-lously tailored to continuous visual features. 
+
+## 3. Methodology 
+
+In this section, we elaborate on the proposed method, in-cluding the SILMM framework with five steps and the iter-ation strategy (Sec. 3.1), as illustrated in Fig. 2. Afterward, we introduce the continuous KC-DPO applied to LMMs with continuous visual features in Sec. 3.2. 
+
+3.1. Self-Improving Large Multimodal Models 
+
+Step 1: Compositional Prompt Generation . We first di-vide compositional scenarios into four categories: Attribute 
+
+(color, shape, texture), Layout (counting, spatial relation), 18499 Semantic Relation , and Complex Composition . Complex composition includes any possible composition of the first three. For attribute and layout, we prompt the LMM to sep-arately generate common objects, attributes, numbers, and spatial relations, and then use templates to compose these concepts. For semantic relation and complex composi-tion, we adopt in-context learning [12] to generate prompts. More details can be found in App. 6. 
+
+Step 2: Diverse Representation and Image generation .The purpose of this step is to sample diverse intermedi-ate visual representations from the LLM backbone π of an LMM, given a text prompt x, which would be decoded into images with different qualities. These representations are denoted as Z = {zi, ..., z M }, where zi ∼ π(z|x). For dis-crete LMMs [19], zi is a discrete visual sequence. We fol-low the common practice [43, 53] in language generation to obtain Z, by sampling with different random seeds dur-ing auto-regressive decoding. For continuous LMMs [13], the LLM can only output a fixed continuous visual feature, without diversity. To tackle this issue, we propose Drop-Div . First, we insert the dropout operations in the last few MLP layers of LLMs, which introduces randomness and en-ables LLMs for sampling. During inference, we activate these dropout operations to output diverse representations by sampling: zi ∼ π′(z|x), where zi denotes a continu-ous visual feature and π′ represents the LLM with activated dropout operations. Afterward, these diverse visual repre-sentations Z are decoded into images as Y = {y1, ..., y M }.
+
+Discussion . Unlike prior work [5, 15] focused on tuning diffusion models, our approach resorts to LLM backbones in LLMs to control image decoders ( e.g. , diffusion models) for better text-image alignment, centering on LLM back-bone optimization. Our approach offers three key advan-tages: 1) LLMs demonstrate superior proficiency in prompt comprehension over text encoders [52, 54] commonly em-ployed in diffusion models. Tuning LLM backbones may unlock their enormous potential for compositional T2I, es-pecially in complex scenarios. 2) Tuning diffusion models is often constrained by efficiency challenges inherent to it-erative likelihood estimation, whereas there have been well-established technologies [1, 40, 53] for LLM alignment. 3) Our method is orthogonal to existing methods to tune diffu-sion models, combining them may get further gains. 
+
+Step 3: Decompositional Self-Questioning . To provide helpful feedback to the generated images, the LMM should first accurately assess text-image alignment, which requires strong compositional reasoning abilities. However, cur-rent advanced LMMs still suffer from compositional rea-soning [42], such as spatial relation understanding [7] and counting [56]. To improve compositional reasoning, we introduce a divide-and-conquer strategy [77] for self-questioning. Specifically, the LMM first divides the given prompt x into atomic concepts ( e.g. , “a white harp”) and relations ( e.g. , “a pancake is on the left of a pasta”), and then generates questions Q = {q1, ..., q N }, each qi corre-sponding to a concept or relation. For simplicity, the gener-ated questions are constrained to be yes/no questions ( e.g. ,“Is there a while harp?”, “Is the pancake on the left of the pasta?”). Refer to App. 7 for more details on prompt tem-plates of self-questioning. 
+
+Step 4: VQA-based Self-Feedback . Taking a generated image y ∈ Y and all the questions Q as input, the LMM conducts the VQA task, and the average difference between the probabilities of answering “yes” and “no” serves as the text-image alignment score: 
+
+s(x, y ) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+[p(“ yes ”|y, q i) − p(“ no ”|y, q i)] . (1) Here we adopt the vision-language understanding abilities of LMMs via VQA to provide feedback to the images gen-erated by themselves, thus this step is named VQA-based self-feedback. We carry out this step through all the sam-pled images prompted by x and get all the scores S =
+
+{s(x, y j )|yj ∈ Y} .
+
+Step 5: Learning from Self-Feedback . Based on the self-feedback alignment scores, we sample representation pairs 
+
+(zw, z l) from Q, where zw and zl denote the chosen and the rejected representations and their corresponding decoded images should satisfy s(x, y w) > s (x, y l). With the prefer-ence data, we optimize the LLM backbone with DPO [53]: 
+
+LDPO = −E(x,z w ,z l)∼D 
+
+
+
+log σ
+
+
+
+β log πθ (zw|x)
+
+πref (zw|x) − β log πθ (zl|x)
+
+πref (zl|x)
+
+ 
+
+, (2) where D denotes the training set, and πθ and πref represent the policy and reference models, respectively. σ is the sig-moid function, and β is a hyperparameter controlling the deviation from the reference model. 
+
+Iterative Self-Improvement . After learning from self-feedback, the updated LMM becomes more likely to gen-erate preferred representations that are decoded into images better aligned with the prompt. This improvement in overall text-image alignment motivates us to iterate the above five steps with the updated LMM as the new reference model. The iteration mechanism continues until the alignment per-formance converges. As the process is independent of hu-man annotations and external models, it is cost-effective and scalable. More importantly, it showcases the potential for self-improvement in LMMs by harmonizing their under-standing and generation capabilities. 
+
+3.2. Continuous Direct Preference Optimization 
+
+At the step of learning from self-feedback, LMMs are op-timized using the DPO objective as shown in Eqn. (2). 18500 The difference between discrete and continuous LMMs in this learning process lies in the calculation of the likeli-hood π(z|x). For discrete LMMs, π(z|x) can be straight-forwardly obtained by the softmax categorical distribution. However, for continuous LMMs with unknown distribution modeling, calculating π(z|x) is intractable. 
+
+Predictive Distribution with MC Dropout . MC Dropout [18] enables predictive distribution estimation via Monte Carlo simulation to calculate π(z|x). Specifically, the dropout layers 3 in an LMM are activated during infer-ence and the LMM performs forward propagation multi-ple times to get multiple outputs. Assuming a Gaussian distribution, we can estimate its parameters and calculate the likelihood π(z|x) based on these outputs. However, such multi-forward estimation imposes a significant com-putational burden during training, making this approach in-sufficient and impractical. 
+
+Simplified Kernel-based Continuous DPO . Inspired by MC Dropout and motivated by its insufficiency issue, we propose a simplified method to achieve continuous DPO. Concretely, the intermediate representation z often per-forms as a feature matrix H ∈ RL×D where L and D de-note the sequence length and dimension. H can be attained by a Q-Former [13, 20] or from the last layer of the LMM in an autoregressive way [63, 64]. To estimate π(H|x), we first make a decomposition as: 
+
+π(H|x) = 
+
+> L
+
+Y
+
+> i=1
+
+π(hi|H<i , x ), (3) where hi ∈ RD denotes the i-th feature vector. Based on the Gaussian assumption, we have:            
+
+> π(hi|H<i , x ) = exp −12(hi−μi)⊤Σ−1
+> i(hi−μi)p(2 π)D|Σi|,(4)
+
+where μi and Σi denote the mean vector and the covari-ance matrix, respectively. Furthermore, we further sim-plify and approximate this formula: 1) the mean vector is estimated by the direct output of the continuous LMM, 
+
+i.e. , μi ≈ LMM( x)[ i], and 2) the Gaussian distribution is isotropic and all dimensions share the same variance value 
+
+¯σ, i.e. , Σi ≈ diag( σ1, ..., σ D) and σ1 = ... = σD = ¯ σ, and 
+
+¯σ can be learnable or viewed as a hyperparameter. We compute the simplified likelihood with Eqn. (4), ob-tain the joint one with Eqn. (3), and finally derive the con-tinuous DPO based on Eqn. (2):                       
+
+> LC-DPO =−E(x, Hw,Hl)∼D
+> "
+> log σ
+> β
+> 2¯ σ2(−∥ H−Hw∥2
+> F
+> +∥Hr−Hw∥2
+> F+∥H−Hl∥2
+> F− ∥ Hr−Hl∥2
+> F)
+> #
+> ,(5)
+> 3In fact, there is no dropout layer in most open-sourced LLMs ( e.g. ,LLaMA series [14, 65, 66]), and a compromise solution is to introduce additional dropout layers.
+
+where ∥ · ∥ F denotes the Frobenius norm, and H and Hr
+
+represent the continuous feature matrices from the policy and reference LMMs, respectively. Hw and Hl refer to the chosen and rejected feature matrices, respectively. Com-pared with the MC dropout method, this objective only re-quires one forward pass, which is more efficient. We rele-gate more details of the derivation to App. 8. From Eqn. (5), we can see that this objective aims to adjust the relative distances within the quadruple (H, Hr , Hw, Hl) and the distance metric is the Euclidean distance between two ma-trices. To further improve the flexibility, we generalize the continuous DPO objective to,                  
+
+> LKC-DPO =−E(x, Hw,Hl)∼D
+> "
+> log σ
+> 
+> γ(−k(H,Hw)+k(Hr,Hw) + k(H,Hl)−k(Hr,Hl))
+> #
+> ,(6)
+
+where γ = β 
+
+> 2¯ σ2
+
+controls the degree of adherence to the ref-erence model, k(·, ·) denotes a generalized distance mea-surement function. Considering it is similar to kernel meth-ods [22, 60], we name the objective Kernel-based Continu-ous DPO (KC-DPO). In the following experiments section, we will discuss different distance functions and their influ-ences on alignment performance. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Base Model Settings. We implement our method on DreamLLM (continuous LMM) [13] and SEED-LLaMA (discrete LMM) [19] for all experiments. We also apply our method to Emu-3 [68], the recent state-of-the-art discrete LMM. Details on DPO training are provided in App. 9. 
+
+Datasets. We curated a dataset of 16,000 prompts across four categories using LMM. In each DPO training iteration, images generated by the model in the previous iteration served as the training data for next DPO iteration, allow-ing for iterative self-improvement. Details on data creation are provided in App. 10. 
+
+Benchmarks. We evaluate our method on three text-to-image alignment benchmarks and follow their default set-tings. T2I-CompBench++ [28] consists of 8,000 compo-sitional text prompts organized into 4 main categories: at-tribute, layout, non-spatial, and complex compositions, fur-ther divided into 8 subcategories, including color, binding, binding, 2D/3D-spatial relationships, non-spatial relation-ships, numeracy, and complex compositions. TIFA [27] uses pre-generated question-answer pairs and a VQA model to evaluate generation results based on 4,081 diverse text prompts and 25,829 questions across 12 categories. DPG-Bench [26] comprises 1,065 densely descriptive prompts with an average token length of 83.91, presenting more complex scenarios with varied objects and rich adjectives. 18501 0   
+
+> 10
+> 20
+> 30
+> 40
+> 50
+> SEED-LLaMA + Ours
+> Iter. 0 Iter. 1 Iter. 2 Iter. 3
+> 10
+> 20
+> 30
+> 40
+> 50
+> DreamLLM + Ours
+> Color
+> Shape
+> Texture
+> Spatial
+> 3D Spatial
+> Numeracy
+> Non-spatial
+> Complex
+
+Figure 3. Performance improvement of iterative alignment tuning based on SEED-LLaMA and DreamLLM, across 8 detailed cat-egories of T2I-CompBench++. Iter. 0 denotes the base models without alignment tuning. 
+
+4.2. Performance Comparison 
+
+As shown in Tab. 1, we evaluate alignment performance of our method against T2I generative models and base LMMs on three compositional T2I benchmarks, including T2I-CompBench++ [28], DPG-Bench [26], and TIFA [27]. Key observations are as follows: 1) Although LMMs enable more flexible settings ( e.g. , in-context learning and inter-leaved multimodal generation) for image generation, they still underperform compared to specialized T2I models in terms of the basic alignment ability to follow prompts. It demonstrates that current LMMs may ignore the composi-tional text-image alignment during multimodal pre-training and fine-tuning. 2) Without human annotations or exter-nal models, the proposed SILMM method enhances align-ment performance across all categories in three benchmarks over the base LMMs, improving both the discrete SEED-LLaMA and the continuous DreamLLM, verifying the ef-fectiveness and the generalization of SILMM. 3) SEED-LLaMA shows greater self-improvement than DreamLLM, possibly due to its weaker baseline alignment and the stabil-ity of discrete DPO over continuous KC-DPO induced by a series of simplification, as discussed in Sec. 3.2. And 4) improvements are more challenging in layout, relation, and complex categories than in attribute categories. This dif-ficulty arises partly because the basic generative ability in these categories is weak, making it difficult to obtain high-quality chosen samples. Besides, understanding composi-tional concepts remains a challenge for LMMs [7, 56]. 
+
+4.3. In-depth Analysis 
+
+To explore the efficacy of SILMM, we conduct extensive ablation studies and hyperparameter analyses. We first in-vestigate the iteration process and data scaling, followed by an in-depth study of key components, including diversity strategies, decompositional self-questioning and answering for self-feedback, and KC-DPO. 
+
+Iterative Self-Improvment . As shown in Fig. 3, we conduct three iterations of self-improvement and assess performance changes across eight detailed categories of T2I-CompBench++ [28]. The results show that SILMM achieves effective, consistent, and continuous improve-ments in text-image alignment, across most compositional categories. Notably, attribute categories ( e.g. , color, shape, and texture) exhibit the most significant gains, whereas the non-spatial category shows slower improvement. This slower progress may stem from CLIP score [23], which is less sensitive than other metrics. Finally, as the iteration progresses, improvement rates gradually decrease, indicat-ing convergence. More iterative self-improvement experi-ments results can be found in App. 11. 1k 2k 4k 8k 16k       
+
+> 23
+> 24
+> 25
+> 26
+> 27
+> 28
+> 29
+> 30
+> Overall Score
+> Discrete DPO, SEED-LLaMA
+> Continuous DPO, DreamLLM
+> (a) Num. of Training Prompts 1x1 2x2 4x4 6x6 8x8 10x10
+> 20
+> 22
+> 24
+> 26
+> 28
+> 30
+> 32
+> Discrete DPO, SEED-LLaMA
+> Continuous DPO, DreamLLM (b) Num. of Pairs per Prompt
+
+Figure 4. Overall alignment scores of SEED-LLaMA with dis-crete DPO and DreamLLM with continuous KC-DPO, on T2I-CompBench++ with (a) varying numbers of generated prompts in the training data, and (b) different number of preference pairs sam-pled from 30 diverse generated images per prompt. N × N means we select the top-N and last-N images from 30 generated ones as the chosen and rejected, respectively. 
+
+Data Scale . The proposed SILMM method leverages self-synthesized data for tuning, allowing flexible adjustment of data scale according to practical needs and available computational resources. In Fig. 4, we investigate how data scale affects overall alignment performance (averaged across eight categories in T2I-CompBench++), focusing on two factors: the number of training prompts and the number of preference pairs per prompt. Results in Fig. 4a indicate that both LMMs show consistent improvement as data sam-ples increase, showing the strong scalability of the proposed method. Besides, we generate 30 representations and im-ages per prompt, and then select the top-N and last-N sam-ples to construct N × N preference pairs (see Fig. 4b). No-tably, the two LMMs perform differently. This may be be-cause the continuous feature space, being larger and denser than the discrete space, requires denser data pairs to stabi-lize the optimization dynamics. 
+
+Diversity Strategies . To synthesize high-quality prefer-ence pair data, the diversity strategy is crucial. An ef-fective diversity strategy should maximize the potential of LMMs while ensuring sufficient variation among generated images. To explore various strategies, we compare the pro-posed DropDiv with three alternatives: Rephrase the origi-nal prompt, Explain the original prompt with added imagi-native elements, and add Gaussian noises to the learnable 18502 Table 1. Performance comparison and improvement of the proposed method for compositional text-to-image generation on T2I-CompBench++ [28], DPG-Bench [26], and TIFA [27]. Alignment scores are calculated using expert understanding models ( e.g. , VQA or object detection models) recommended by these benchmarks. Prompt rewriting in Emu3 [68] was not used for fair comparison. 
+
+Method T2I-CompBench++ [28] DPG-Bench [26] TIFA [27] Attribute Layout Non-spatial Complex Global Entity Attribute Relation Other All All 
+
+Text-to-Image Generative Models 
+
+SD-v1.5 [55] 38.65 - - - 74.63 74.23 75.39 73.49 67.81 63.18 78.40 DALL-E 2 [55] 58.63 - - - - - - - - - -SD-v2 [55] 47.36 30.50 31.27 33.86 77.67 78.13 74.91 80.72 80.66 68.09 -SD-v2.1 [55] 50.57 - - - - - - - - - 82.00 SDXL [45] 52.88 35.62 31.19 32.37 83.27 82.43 80.91 86.76 80.41 74.65 -PixArt-α [8] 60.31 36.74 31.97 34.33 74.97 79.32 78.60 82.57 76.96 71.11 -DALL-E 3 [4] 70.09 41.63 30.03 37.73 90.97 89.61 88.39 90.58 89.83 83.50 -
+
+Large Multimodal Models 
+
+SEED-LLaMA [19] 19.20 20.29 28.86 21.46 65.59 55.87 61.96 62.77 59.46 47.12 66.74 SEED-LLaMA + Ours 39.60 25.11 29.82 28.28 73.55 70.48 68.49 74.79 68.64 57.31 73.74 %Improvment 106.25% 23.77% 3.33% 31.78% 12.14% 26.15% 10.54% 19.15% 15.44% 21.63% 10.49% DreamLLM [13] 22.94 23.74 28.76 23.01 74.47 65.86 63.80 74.24 46.00 53.93 69.91 DreamLLM + Ours 39.94 27.63 29.00 26.43 76.29 75.91 69.20 84.41 60.00 64.22 75.38 %Improvment 74.15% 16.40% 0.83% 14.86% 2.44% 15.26% 8.46% 13.70% 30.43% 19.08% 7.82% Emu3 [68] 44.79 32.30 30.15 31.32 84.19 80.81 82.75 87.23 50.80 74.19 81.86 Emu3 + Ours 59.71 36.03 30.51 33.93 84.19 81.57 84.52 89.01 64.80 77.45 85.11 %Improvment 33.30% 11.57% 1.19% 8.33% 0.00% 0.94% 2.14% 2.04% 27.56% 4.39% 3.97% 14    
+
+> 16
+> 18
+> 20
+> 22
+> 24
+> 26
+> 28
+> 30
+> 32
+> Attribute Score
+> Rephrase Explain Noisy DreamEmb DropDiv
+
+(a) Color, Shape, and Texture 16     
+
+> 18
+> 20
+> 22
+> 24
+> 26
+> 28
+> 30
+> 32
+> Layout Score
+> Rephrase Explain Noisy DreamEmb DropDiv
+
+(b) Spatial, 3D Spatial, and Numeracy 23.0     
+
+> 23.5
+> 24.0
+> 24.5
+> 25.0
+> 25.5
+> 26.0
+> 26.5
+> 27.0
+> 27.5
+> Non-Spatial and Complex Scores
+> Rephrase Explain Noisy DreamEmb DropDiv
+
+(c) Non-spatial and Complex 
+
+Figure 5. Comparison of four methods for diverse continuous representation generation, with alignment scores evaluated on the validation set of T2I-CompBench++. For each prompt, DreamLLM generates ten diverse representations and corresponding images. 29.2 27.8 26.6 30.7 26.3 27.2 29.9 26.7 26.9 30.2 23.0 25.7               
+
+> Att. Lay. N&C Att. Lay. N&C Att. Lay. N&C Att. Lay. N&C
+> %Drop = 0.1 %Drop = 0.3 %Drop = 0.5 %Drop = 0.7
+> 10
+> 15
+> 20
+> 25
+> 30
+> Attribute
+> Layout
+> Non-saptial & Complex
+> Alignment Score
+
+Figure 6. Distribution of alignment scores and variation of max-imum scores across different dropout rates (%Drop) of the pro-posed DropDiv method, evaluated on the T2I-CompBench++ val-idation set. For each prompt, DreamLLM generates ten diverse representations and corresponding images with DropDiv. 
+
+Dream Embeddings in DreamLLM [13] to create Noisy DreamEmb . As shown in Fig. 5, four strategies have differ-ent perturbation influences on different categories. For ex-ample, DropDiv could generate better samples in attribute, non-spatial, and complex categories, but compromise in layout categories. To further examine the effects of Drop-Div, we conduct experiments across different dropout rates as shown in Fig. 6. Results indicate that higher dropout rates enhance diversity, but the alignment quality could be im-paired. Therefore, achieving a good diversity-quality trade-off remains challenging. 
+
+Decompositional Self-Feedback . We perform ablation studies on question generation and alignment score calcula-tion, as shown in Tab. 2. Compared to two variants Prompt-Q (appending or replacing the period with “?” at the end of each prompt) and Phrase-Q (segmenting each prompt into phrases using NLP tools [24]), Self-Questioning (Self-Q) achieves better alignment performance across most cat-egories, demonstrating the effectiveness of leveraging lan-guage processing abilities of LMMs for text-image align-ment evaluation. Additionally, we compare the proposed alignment score calculation from Eqn. (1) with two vari-ants: Random Score and Ratio of “yes” (where a higher ra-tio indicates a higher score). Results show that our method 18503 Table 2. Ablation study on T2I-CompBench++ [28] and DPG-Bench [26] examining variations in Question Generation and 
+
+VQA-based Alignment Score Calculation methods for self-feedback. Prompt-Q adds a “?” or replaces the period with a “?” at the end of each prompt. Phrase-Q involves dividing a prompt into phrases, each followed by a “?”. Self-Q instructs the LMM to generate questions for each prompt using in-context examples. Diff. of Prob. denotes the proposed alignment score calculation approach described in Eqn. (1).                                         
+
+> Feedback T2I-CompBench++ DPG-Bench Attribute Layout Non-spatial Complex All
+> Baseline (DreamLLM [13])
+> -22.94 23.74 28.76 23.01 53.93
+> Question Generation
+> Prompt-Q 33.66 25.93 28.14 24.67 60.13 Phrase-Q 34.63 24.91 28.01 25.41 60.10 Self-Q 34.85 25.51 28.82 25.31 60.95
+> VQA-based Alignment Score Calculation
+> Random Score 23.41 24.81 28.67 22.95 53.89 Ratio of “yes” 25.36 23.51 28.73 24.00 54.68 Diff. of Prob. 34.85 25.51 28.82 25.31 60.95
+
+Table 3. Ablation study on T2I-CompBench++ [28] to investigate different instantiation of the Kernel Function to calculate the con-tinuous KC-DPO loss function to tune DreamLLM. Aggregation means we aggregate the 2D feature matrix ( e.g. , H) into 1D along the sequence dimension. Eucl. denotes Euclidean distance.                                                           
+
+> Aggregation Distance Attribute Layout Non-spatial Complex
+> Baseline (DreamLLM [13])
+> --22.94 23.74 28.76 23.01
+> Supervised Fine-tuning (SFT)
+> -Eucl. 12.25 0.75 16.41 11.71 -Cos 6.95 0.29 16.78 11.48 AvgPool Eucl. 23.31 23.89 28.76 23.22 AvgPool Cos 23.12 24.20 28.79 23.29
+> Continuous Kernel-based Direct Preference Optimization
+> -Eucl. 23.65 24.34 28.83 23.08 -Cos 23.97 24.11 28.77 23.21 MaxPool Eucl. 23.79 24.04 28.86 23.92 MaxPool Cos 29.18 25.01 18.72 12.27 AvgPool Eucl. 26.75 24.70 28.94 25.12 AvgPool Cos 34.85 25.51 28.82 25.31
+
+achieves superior performance by considering the relative confidence between “yes” and “no”. 
+
+Kernel-based Continuous DPO . In Sec. 3.2, we introduce the KC-DPO to fine-tune LMMs with continuous represen-tations. The implementation of kernel functions can be di-vided into Aggregation and Distance . To assess the impacts of different kernels, we conduct extensive comparison ex-periments, as shown in Tab. 3. We observe SFT slightly im-proves the alignment performance, while DPO yields more substantial gains across all metrics. These results show that kernel functions are crucial to KC-DPO, and an optimal choice could greatly enhance the efficiency of preference optimization in continuous feature space. Overall, AvgPool + Cos demonstrates the superior performance improvement. 
+
+4.4. Qualitative Results 
+
+To illustrate the improvements achieved by SILMM, Fig. 8 presents examples generated by SEED-LLaMA, Dream-24     
+
+> 28
+> 32
+> 36
+> 40
+> T2I-CompBench++ Score
+> Attribute
+> Layout
+> Non-spatial
+> Complex
+> 0.05 0.1 0.2 0.4 0.8
+
+(a) β in Discrete DPO 2 4 6 8 10   
+
+> 24
+> 28
+> 32
+> 36
+> 40 Attribute
+> Layout
+> Non-spatial
+> Complex
+
+(b) γ in Continuous KC-DPO 
+
+Figure 7. Hyperparameter sensitivity on four general categories of T2I-CompBench++, examining (a) β in discrete DPO for SEED-LLaMA, and (b) γ in continuous KC-DPO for DreamLLM. a brown elephant and a red        
+
+> suitcase
+> A black motorcycle is parked on
+> grey cobblestones .
+> Attribute Layout
+> a rabbit on the top of a candle
+> Non -spatial
+> The zookeeper is feeding the
+> animals in their care.
+> Complex
+> The green plant was on the
+> left of the yellow lamp .
+
++ Ours Seed -LLaMA + Ours DreamLLM         
+
+> a bicycle on the bottom of a girl
+> A person is looking at a rainbow
+> and marveling at its beauty.
+> The translucent sphere floated
+> near the opaque cube and the
+> metallic hexagon .
+
+Figure 8. Qualitative results from SEED-LLaMA, DreamLLM, and the proposed SILMM method, on T2I-CompBench++. 
+
+LLM, and SILMM, in Fig. 8 using prompts from T2I-CompBench++. These results showcase the effectiveness of SILMM across extensive compositional scenarios. 
+
+## 5. Conclusion 
+
+In this work, we present a self-improvement approach named SILMM to enhance text-image alignment within LMMs, introducing an iterative model-agnostic frame-work comprising five stages to enable high-quality self-feedback and alignment learning. For continuous LMMs, we propose a dropout-based strategy to di-versify image representations and a continuous DPO method, KC-DPO, for optimizing LMMs with prefer-ence representation pairs. Extensive experiments validate the effectiveness and superiority of our SILMM framework. 18504 References 
+
+[1] Mohammad Gheshlaghi Azar, Zhaohan Daniel Guo, Bi-lal Piot, Remi Munos, Mark Rowland, Michal Valko, and Daniele Calandriello. A general theoretical paradigm to un-derstand learning from human preferences. In International Conference on Artificial Intelligence and Statistics , pages 4447–4455. PMLR, 2024. 4 [2] Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, et al. Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862 , 2022. 15 [3] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. Con-stitutional ai: Harmlessness from ai feedback. arXiv preprint arXiv:2212.08073 , 2022. 2, 3 [4] James Betker, Gabriel Goh, Li Jing, Tim Brooks, Jianfeng Wang, Linjie Li, Long Ouyang, Juntang Zhuang, Joyce Lee, Yufei Guo, et al. Improving image generation with better captions. Computer Science. , 2(3):8, 2023. 7 [5] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforce-ment learning. In ICML Workshop on Structured Probabilis-tic Inference & Generative Modeling , 2023. 2, 3, 4 [6] Hila Chefer, Yuval Alaluf, Yael Vinker, Lior Wolf, and Daniel Cohen-Or. Attend-and-excite: Attention-based se-mantic guidance for text-to-image diffusion models. ACM Transactions on Graphics , 42(4):1–10, 2023. 1, 3 [7] Boyuan Chen, Zhuo Xu, Sean Kirmani, Brain Ichter, Dorsa Sadigh, Leonidas Guibas, and Fei Xia. Spatialvlm: Endow-ing vision-language models with spatial reasoning capabili-ties. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 14455–14465, 2024. 2, 4, 6 [8] Junsong Chen, Jincheng Yu, Chongjian Ge, Lewei Yao, Enze Xie, Yue Wu, Zhongdao Wang, James Kwok, Ping Luo, Huchuan Lu, et al. Pixart-α: Fast training of diffusion transformer for photorealistic text-to-image synthesis. arXiv preprint arXiv:2310.00426 , 2023. 7 [9] Xiaolin Chen, Xuemeng Song, Liqiang Jing, Shuo Li, Lin-mei Hu, and Liqiang Nie. Multimodal dialog systems with dual knowledge-enhanced generative pretrained language model. ACM Transactions on Information Systems , 42(2): 1–25, 2023. 17 [10] Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingx-iang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, et al. Ultrafeedback: Boosting language mod-els with scaled ai feedback. In International Conference on Machine Learning , 2024. 3 [11] Guanting Dong, Hongyi Yuan, Keming Lu, Chengpeng Li, Mingfeng Xue, Dayiheng Liu, Wei Wang, Zheng Yuan, Chang Zhou, and Jingren Zhou. How abilities in large lan-guage models are affected by supervised fine-tuning data composition. arXiv preprint arXiv:2310.05492 , 2023. 2 [12] Qingxiu Dong, Lei Li, Damai Dai, Ce Zheng, Jingyuan Ma, Rui Li, Heming Xia, Jingjing Xu, Zhiyong Wu, Tianyu Liu, et al. A survey on in-context learning. arXiv preprint arXiv:2301.00234 , 2022. 4 [13] Runpei Dong, Chunrui Han, Yuang Peng, Zekun Qi, Zheng Ge, Jinrong Yang, Liang Zhao, Jianjian Sun, Hongyu Zhou, Haoran Wei, et al. Dreamllm: Synergistic multimodal com-prehension and creation. In International Conference on Learning Representations , 2024. 2, 3, 4, 5, 7, 8, 15, 18 [14] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Ab-hishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 ,2024. 5 [15] Ying Fan, Olivia Watkins, Yuqing Du, Hao Liu, Moonkyung Ryu, Craig Boutilier, Pieter Abbeel, Moham-mad Ghavamzadeh, Kangwook Lee, and Kimin Lee. Re-inforcement learning for fine-tuning text-to-image diffusion models. Advances in Neural Information Processing Sys-tems , 36, 2024. 2, 3, 4 [16] Weixi Feng, Xuehai He, Tsu-Jui Fu, Varun Jampani, Ar-jun Reddy Akula, Pradyumna Narayana, Sugato Basu, Xin Eric Wang, and William Yang Wang. Training-free structured diffusion guidance for compositional text-to-image synthesis. In International Conference on Machine Learning , 2023. 1, 3, 17 [17] Weixi Feng, Wanrong Zhu, Tsu-jui Fu, Varun Jampani, Ar-jun Akula, Xuehai He, Sugato Basu, Xin Eric Wang, and William Yang Wang. Layoutgpt: Compositional visual plan-ning and generation with large language models. arXiv preprint arXiv:2305.15393 , 2023. 2, 3 [18] Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian approximation: Representing model uncertainty in deep learning. In international conference on machine learning ,pages 1050–1059. PMLR, 2016. 2, 5 [19] Yuying Ge, Sijie Zhao, Ziyun Zeng, Yixiao Ge, Chen Li, Xintao Wang, and Ying Shan. Making llama see and draw with seed tokenizer. In International Conference on Learn-ing Representations , 2024. 1, 2, 3, 4, 5, 7, 18 [20] Yuying Ge, Sijie Zhao, Jinguo Zhu, Yixiao Ge, Kun Yi, Lin Song, Chen Li, Xiaohan Ding, and Ying Shan. Seed-x: Mul-timodal models with unified multi-granularity comprehen-sion and generation. arXiv preprint arXiv:2404.14396 , 2024. 5, 15 [21] Yangyang Guo, Guangzhi Wang, and Mohan Kankanhalli. Pela: Learning parameter-efficient models with low-rank ap-proximation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 15699– 15709, 2024. 17 [22] Marti A. Hearst, Susan T Dumais, Edgar Osuna, John Platt, and Bernhard Scholkopf. Support vector machines. IEEE In-telligent Systems and their applications , 13(4):18–28, 1998. 5[23] Jack Hessel, Ari Holtzman, Maxwell Forbes, Ronan Le Bras, and Yejin Choi. Clipscore: A reference-free evaluation met-ric for image captioning. In Proceedings of the 2021 Confer-ence on Empirical Methods in Natural Language Processing ,pages 7514–7528, 2021. 6 [24] Matthew Honnibal, Ines Montani, Sofie Van Landeghem, 18505 and Adriane Boyd. spaCy: Industrial-strength Natural Lan-guage Processing in Python. 2020. 7 [25] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models. arXiv preprint arXiv:2106.09685 , 2021. 16 [26] Xiwei Hu, Rui Wang, Yixiao Fang, Bin Fu, Pei Cheng, and Gang Yu. Ella: Equip diffusion models with llm for enhanced semantic alignment. arXiv preprint arXiv:2403.05135 , 2024. 5, 6, 7, 8, 16, 17, 18, 21, 22 [27] Yushi Hu, Benlin Liu, Jungo Kasai, Yizhong Wang, Mari Ostendorf, Ranjay Krishna, and Noah A Smith. Tifa: Accu-rate and interpretable text-to-image faithfulness evaluation with question answering. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 20406– 20417, 2023. 5, 6, 7, 16, 18 [28] Kaiyi Huang, Kaiyue Sun, Enze Xie, Zhenguo Li, and Xihui Liu. T2i-compbench: A comprehensive bench-mark for open-world compositional text-to-image genera-tion. Advances in Neural Information Processing Systems ,36:78723–78747, 2023. 5, 6, 7, 8, 16, 17, 18, 19, 20 [29] Natasha Jaques, Shixiang Gu, Dzmitry Bahdanau, Jos´ e Miguel Hern´ andez-Lobato, Richard E Turner, and Douglas Eck. Sequence tutor: Conservative fine-tuning of sequence generation models with kl-control. In Interna-tional Conference on Machine Learning , pages 1645–1654. PMLR, 2017. 15 [30] Natasha Jaques, Judy Hanwen Shen, Asma Ghandehari-oun, Craig Ferguson, Agata Lapedriza, Noah Jones, Shixi-ang Shane Gu, and Rosalind Picard. Human-centric dialog training via offline reinforcement learning. arXiv preprint arXiv:2010.05848 , 2020. 15 [31] Yuval Kirstain, Adam Polyak, Uriel Singer, Shahbuland Ma-tiana, Joe Penna, and Omer Levy. Pick-a-pic: An open dataset of user preferences for text-to-image generation. 
+
+Advances in Neural Information Processing Systems , 36: 36652–36663, 2023. 2 [32] Harrison Lee, Samrat Phatale, Hassan Mansoor, Thomas Mesnard, Johan Ferret, Kellie Ren Lu, Colton Bishop, Ethan Hall, Victor Carbune, Abhinav Rastogi, et al. Rlaif vs. rlhf: Scaling reinforcement learning from human feedback with ai feedback. In International Conference on Machine Learn-ing , 2024. 3, 15 [33] Kimin Lee, Hao Liu, Moonkyung Ryu, Olivia Watkins, Yuqing Du, Craig Boutilier, Pieter Abbeel, Mohammad Ghavamzadeh, and Shixiang Shane Gu. Aligning text-to-image models using human feedback. arXiv preprint arXiv:2302.12192 , 2023. 2 [34] Yicong Li, Xiang Wang, Junbin Xiao, Wei Ji, and Tat-Seng Chua. Invariant grounding for video question answering. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 2928–2937, 2022. 1 [35] Yicong Li, Xiang Wang, Junbin Xiao, Wei Ji, and Tat-Seng Chua. Transformer-empowered invariant grounding for video question answering. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2023. 1 [36] Zhenyang Li, Fan Liu, Yinwei Wei, Zhiyong Cheng, Liqiang Nie, and Mohan Kankanhalli. Attribute-driven disentangled representation learning for multimodal recommendation. In 
+
+Proceedings of the 32nd ACM International Conference on Multimedia , page 9660–9669. ACM, 2024. 17 [37] Long Lian, Boyi Li, Adam Yala, and Trevor Darrell. Llm-grounded diffusion: Enhancing prompt understanding of text-to-image diffusion models with large language models. 
+
+arXiv preprint arXiv:2305.13655 , 2023. 2, 3 [38] Long Lian, Baifeng Shi, Adam Yala, Trevor Darrell, and Boyi Li. Llm-grounded video diffusion models. In Inter-national Conference on Learning Representations , 2024. 3 [39] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. arXiv preprint arXiv:2304.08485 ,2023. 3 [40] Yongshuai Liu, Jiaxin Ding, and Xin Liu. Ipo: Interior-point policy optimization under constraints. In Proceedings of the AAAI conference on artificial intelligence , pages 4940–4947, 2020. 4 [41] Gen Luo, Yiyi Zhou, Tianhe Ren, Shengxin Chen, Xiaoshuai Sun, and Rongrong Ji. Cheap and quick: Efficient vision-language instruction tuning for large language models. Ad-vances in Neural Information Processing Systems , 36, 2024. 17 [42] Chancharik Mitra, Brandon Huang, Trevor Darrell, and Roei Herzig. Compositional chain-of-thought prompting for large multimodal models. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 14420–14431, 2024. 4 [43] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Car-roll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Ad-vances in neural information processing systems , 35:27730– 27744, 2022. 2, 3, 4, 14, 15 [44] Jing-Cheng Pang, Pengyuan Wang, Kaiyuan Li, Xiong-Hui Chen, Jiacheng Xu, Zongzhang Zhang, and Yang Yu. Lan-guage model self-improvement by reinforcement learning contemplation. In International Conference on Learning Representations , 2024. 2 [45] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion mod-els for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. 7 [46] Jie Qin, Jie Wu, Weifeng Chen, Yuxi Ren, Huixia Li, Hefeng Wu, Xuefeng Xiao, Rui Wang, and Shilei Wen. Diffusiongpt: Llm-driven text-to-image generation system. arXiv preprint arXiv:2401.10061 , 2024. 2, 3 [47] Tianyi Qin, Bo Peng, Jianjun Lei, Jiahui Song, Liying Xu, and Qingming Huang. 3d-immc: Incomplete multi-modal 3d shape clustering via cross mapping and dual adaptive fu-sion. IEEE Transactions on Emerging Topics in Computa-tional Intelligence , 2024. 17 [48] Leigang Qu, Meng Liu, Jianlong Wu, Zan Gao, and Liqiang Nie. Dynamic modality interaction modeling for image-text retrieval. In Proceedings of the 44th International ACM SI-GIR Conference on Research and Development in Informa-tion Retrieval , pages 1104–1113, 2021. 1 18506 [49] Leigang Qu, Shengqiong Wu, Hao Fei, Liqiang Nie, and Tat-Seng Chua. Layoutllm-t2i: Eliciting layout guidance from llm for text-to-image generation. In Proceedings of the 31st ACM International Conference on Multimedia , pages 643– 654, 2023. 1, 3 [50] Leigang Qu, Haochuan Li, Tan Wang, Wenjie Wang, Yongqi Li, Liqiang Nie, and Tat-Seng Chua. Unified text-to-image generation and retrieval. arXiv preprint arXiv:2406.05814 ,2024. 3 [51] Leigang Qu, Wenjie Wang, Yongqi Li, Hanwang Zhang, Liqiang Nie, and Tat-Seng Chua. Discriminative probing and tuning for text-to-image generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7434–7444, 2024. 3 [52] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PMLR, 2021. 3, 4 [53] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-pher D Manning, Stefano Ermon, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. Advances in Neural Information Processing Systems , 36, 2024. 2, 4, 15 [54] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of machine learning research , 21(140):1–67, 2020. 4 [55] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image gener-ation with clip latents. arXiv preprint arXiv:2204.06125 , 1 (2):3, 2022. 1, 2, 7 [56] Sunayana Rane, Alexander Ku, Jason Baldridge, Ian Tenney, Tom Griffiths, and Been Kim. Can generative multimodal models count to ten? In Proceedings of the Annual Meeting of the Cognitive Science Society , 2024. 2, 4, 6 [57] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kamyar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, et al. Photorealistic text-to-image diffusion models with deep language understanding. Advances in Neural Information Processing Systems , 35:36479–36494, 2022. 1, 2 [58] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Rad-ford, and Oleg Klimov. Proximal policy optimization algo-rithms. arXiv preprint arXiv:1707.06347 , 2017. 15 [59] Yuzhang Shang, Mu Cai, Bingxin Xu, Yong Jae Lee, and Yan Yan. Llava-prumerge: Adaptive token reduction for efficient large multimodal models. arXiv preprint arXiv:2403.15388 ,2024. 17 [60] J Shawe-Taylor. Kernel methods for pattern analysis. Cam-bridge University Press google schola , 2:181–201, 2004. 5 [61] Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. Learning to summarize with human feed-back. Advances in Neural Information Processing Systems ,33:3008–3021, 2020. 15 [62] Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 , 2024. 3 [63] Quan Sun, Qiying Yu, Yufeng Cui, Fan Zhang, Xiaosong Zhang, Yueze Wang, Hongcheng Gao, Jingjing Liu, Tiejun Huang, and Xinlong Wang. Emu: Generative pretraining in multimodality. In International Conference on Learning Representations , 2023. 5, 15 [64] Quan Sun, Yufeng Cui, Xiaosong Zhang, Fan Zhang, Qiy-ing Yu, Yueze Wang, Yongming Rao, Jingjing Liu, Tiejun Huang, and Xinlong Wang. Generative multimodal mod-els are in-context learners. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 14398–14409, 2024. 1, 2, 3, 5 [65] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Baptiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. 
+
+arXiv preprint arXiv:2302.13971 , 2023. 5 [66] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023. 5, 15 [67] Bram Wallace, Meihua Dang, Rafael Rafailov, Linqi Zhou, Aaron Lou, Senthil Purushwalkam, Stefano Ermon, Caiming Xiong, Shafiq Joty, and Nikhil Naik. Diffusion model align-ment using direct preference optimization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8228–8238, 2024. 2, 3 [68] Xinlong Wang, Xiaosong Zhang, Zhengxiong Luo, Quan Sun, Yufeng Cui, Jinsheng Wang, Fan Zhang, Yueze Wang, Zhen Li, Qiying Yu, et al. Emu3: Next-token prediction is all you need. arXiv preprint arXiv:2409.18869 , 2024. 2, 3, 5, 7 [69] Yufei Wang, Zhanyi Sun, Jesse Zhang, Zhou Xian, Erdem Biyik, David Held, and Zackory Erickson. Rl-vlm-f: Rein-forcement learning from vision language foundation model feedback. arXiv preprint arXiv:2402.03681 , 2024. 3 [70] Zhenyu Wang, Enze Xie, Aoxue Li, Zhongdao Wang, Xihui Liu, and Zhenguo Li. Divide and conquer: Language mod-els can plan and self-correct for compositional text-to-image generation. arXiv preprint arXiv:2401.15688 , 2024. 2, 3 [71] Haokun Wen, Xuemeng Song, Xin Yang, Yibing Zhan, and Liqiang Nie. Comprehensive linguistic-visual composition network for image retrieval. In Proceedings of the 44th In-ternational ACM SIGIR Conference on Research and Devel-opment in Information Retrieval , pages 1369–1378, 2021. 17 [72] Shengqiong Wu, Hao Fei, Leigang Qu, Wei Ji, and Tat-Seng Chua. Next-gpt: Any-to-any multimodal llm. In Interna-tional Conference on Machine Learning , 2024. 2, 3 [73] Xiaoshi Wu, Keqiang Sun, Feng Zhu, Rui Zhao, and Hong-sheng Li. Better aligning text-to-image models with human preference. arXiv preprint arXiv:2303.14420 , 1(3), 2023. 2 [74] Jinheng Xie, Weijia Mao, Zechen Bai, David Junhao Zhang, Weihao Wang, Kevin Qinghong Lin, Yuchao Gu, Zhijie 18507 Chen, Zhenheng Yang, and Mike Zheng Shou. Show-o: One single transformer to unify multimodal understanding and generation. arXiv preprint arXiv:2408.12528 , 2024. 3 [75] Ling Yang, Zhaochen Yu, Chenlin Meng, Minkai Xu, Ste-fano Ermon, and CUI Bin. Mastering text-to-image dif-fusion: Recaptioning, planning, and generating with multi-modal llms. In International Conference on Machine Learn-ing , 2024. 2 [76] Lili Yu, Bowen Shi, Ramakanth Pasunuru, Benjamin Muller, Olga Golovneva, Tianlu Wang, Arun Babu, Binh Tang, Brian Karrer, Shelly Sheynin, et al. Scaling autoregressive multi-modal models: Pretraining and instruction tuning. arXiv preprint arXiv:2309.02591 , 2(3), 2023. 2, 3 [77] Tianyu Yu, Haoye Zhang, Yuan Yao, Yunkai Dang, Da Chen, Xiaoman Lu, Ganqu Cui, Taiwen He, Zhiyuan Liu, Tat-Seng Chua, et al. Rlaif-v: Aligning mllms through open-source ai feedback for super gpt-4v trustworthiness. arXiv preprint arXiv:2405.17220 , 2024. 2, 3, 4, 15 [78] Weizhe Yuan, Richard Yuanzhe Pang, Kyunghyun Cho, Sainbayar Sukhbaatar, Jing Xu, and Jason We-ston. Self-rewarding language models. arXiv preprint arXiv:2401.10020 , 2024. 3 [79] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mo-hamed Elhoseiny. Minigpt-4: Enhancing vision-language understanding with advanced large language models. arXiv preprint arXiv:2304.10592 , 2023. 3 [80] Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. Fine-tuning language models from human preferences. arXiv preprint arXiv:1909.08593 , 2019. 15 18508
