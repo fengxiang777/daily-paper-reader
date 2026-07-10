@@ -1,0 +1,319 @@
+Title: Structured Pruning of Large Language Models via Power Transformation and Sign-Preserving Score Aggregation with Adaptive Feature Retention
+
+URL Source: https://arxiv.org/pdf/2607.08027v1
+
+Published Time: Fri, 10 Jul 2026 00:20:26 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Structured Pruning of Large Language Models via Power Transformation and Sign-Preserving Score Aggregation with Adaptive Feature Retention 
+
+Ryota Kobayashi 1, Tsubasa Hirakawa 1, Takayoshi Yamashita 1, Hironobu Fujiyoshi 1,Yasunori Ishii 2, Tomoyuki Okuno 2, Kazuki Kozuka 21Chubu University 
+
+> 2
+
+Panasonic Holdings Corporation 
+
+## Abstract 
+
+This paper proposes an improved structured pruning method for large lan-guage models (LLMs) that addresses key challenges in adapting Adaptive Feature Retention (AFR), an unstructured pruning technique, to structured pruning. When applying AFR to structured pruning, three major problems arise: distribution mismatch between heterogeneous pruning scores, loss of sign information indicating optimization direction consistency, and in-fluence of outliers. To address these issues, we propose a unified approach combining power transformation for nonlinear distribution alignment, sign-preserving score aggregation, and percentile-based outlier removal. Experiments on Llama-3-8B, Vicuna-v1.5-13B, and LLaVA-v1.5-13B demon-strate that our method maintains accuracy comparable to unstructured pruning while achieving practical inference speedup through structured pruning. 
+
+## 1 Introduction 
+
+Large language models (LLMs) demonstrate remarkable performance across diverse tasks, yet their billions of parameters impose substantial computational costs and memory require-ments that hinder practical deployment. Pruning, which removes redundant weights, offers a promising approach to model compression. Pruning methods are categorized into unstructured and structured pruning. Unstructured pruning removes individual weights independently, achieving high accuracy but providing limited practical speedup due to irregular sparsity patterns. Structured pruning removes entire neurons or channels, enabling efficient acceleration on standard hardware but often suffering from larger performance degradation due to reduced pruning granularity. Adaptive Feature Retention (AFR) (Nitta et al., 2025) is an unstructured pruning method that combines feature-based ReFer (Nitta et al., 2024) and gradient-based SNIP (Lee et al., 2019) scores through standardization and summation, balancing preservation of pre-trained feature representations with adaptation to downstream tasks. When adapting AFR to struc-tured pruning by aggregating weight-level scores to neuron-level scores, several challenges arise: distribution mismatch between heterogeneous scores (ReFer exhibits wide value ranges while SNIP concentrates in [0, 1]), loss of sign information indicating optimization direction consistency, and influence of outliers that dominate simple averaging. To address these challenges, we propose an integrated approach combining power transfor-mation for nonlinear distribution alignment, sign-preserving aggregation, and percentile-based outlier removal. Experiments on Llama-3-8B, Vicuna-v1.5-13B (Zheng et al., 2023), and LLaVA-v1.5-13B (Liu et al., 2024) demonstrate that our method significantly outper-forms naive structured AFR and achieves comparable or superior performance to existing structured pruning methods while enabling 1.56-1.57 × inference speedup at 50% pruning rate. Our main contributions are summarized as follows: 1arXiv:2607.08027v1 [cs.CL] 9 Jul 2026 • We identify three fundamental challenges in adapting AFR to structured pruning: distribution mismatch between heterogeneous pruning scores, loss of sign informa-tion indicating optimization direction consistency, and influence of outliers during score aggregation. • We propose an integrated approach that addresses these challenges through (1) power transformation for nonlinear distribution alignment, (2) sign-preserving score aggregation to evaluate optimization direction consistency, and (3) percentile-based outlier removal for robust aggregation. • We conduct comprehensive experiments on three models (Llama-3-8B, Vicuna-v1.5-13B, and LLaVA-v1.5-13B) demonstrating that our method achieves substantial improvements over naive averaging (up to 21.27 points) and outperforms existing structured pruning methods while enabling practical inference speedup (1.56-1.57 ×
+
+at 50% pruning). 
+
+## 2 Background: Adaptive Feature Retention 
+
+Adaptive Feature Retention (AFR) (Nitta et al., 2025) is an unstructured pruning method for pre-trained models that combines ReFer (Nitta et al., 2024) and SNIP (Lee et al., 2019) to balance preservation of learned feature spaces with adaptation to downstream tasks. The AFR pruning score SAFR (θn) for weight θn is defined as: 
+
+SAFR (θn) = Z ∂ ∑Ll=1 Flsvd 
+
+∂θ n
+
+θn
+
+!
+
++ Z
+
+ ∂L
+
+∂θ n
+
+θn
+
+
+
+(1) where Z(·) denotes standardization (z-score normalization), the first term represents ReFer, and the second term represents SNIP. Here, Flsvd is the mean singular value from singular value decomposition of layer l’s output features, and L is the task-specific loss function. ReFer focuses on maintaining feature representations by measuring how each weight affects the feature space geometry captured during pre-training. It computes the sensitivity of feature space characteristics with respect to each weight, identifying parameters that are crucial for preserving the learned representations. However, while ReFer excels at maintaining pre-trained knowledge, it may inadvertently remove weights that are necessary for adapting to downstream tasks, as it does not directly consider task-specific objectives. SNIP, on the other hand, uses the product of loss gradients and weights as the pruning score, directly measuring each weight’s contribution to the task-specific loss function. This gradient-based approach naturally identifies parameters important for the current task. However, for pre-trained models, many weights have already converged to near-optimal values, resulting in small gradients ( ∂L 
+
+> ∂θ n
+
+≈ 0) that do not accurately reflect their importance. This makes SNIP alone insufficient for proper importance evaluation in the context of pre-trained models. By combining both scores through standardization and summation, AFR achieves effec-tive pruning that preserves pre-trained knowledge while enabling task adaptation. The standardization ensures that both scores contribute equally despite their different scales, allowing the combined score to capture both feature preservation and task relevance. 
+
+## 3 Challenges in adapting AFR to structured pruning 
+
+To enable inference acceleration with AFR, we apply its weight-level pruning scores to structured pruning. This section identifies the problems that arise in this adaptation. 
+
+3.1 Naive aggregation for structured pruning 
+
+To adapt the unstructured AFR method to structured pruning, we consider naive averaging for score aggregation as illustrated in Figure 1. First, we compute pruning scores for each 2𝑆𝑐𝑜𝑟𝑒 : 𝑊 !"#$     
+
+> 𝑆𝑐𝑜𝑟𝑒 :𝑊 %&
+> 𝑆𝑐𝑜𝑟𝑒 :𝑊 '()*
+> 𝑊𝑒𝑖𝑔ℎ𝑡 :
+> 𝑊 %& ,𝑊 !"#$ ,𝑊 '()*
+
+1
+
+0
+
+1
+
+1Keep    
+
+> top -k%
+> 𝑊𝑒𝑖𝑔ℎ𝑡 :𝑊 !"#$
+> 𝑊𝑒𝑖𝑔ℎ𝑡 :𝑊 %&
+> 𝑊𝑒𝑖𝑔ℎ𝑡 :𝑊 '()*
+> FFN
+> Mask Averag e
+
+Figure 1: Pruning score aggregation process for structured pruning. Table 1: Preliminary experimental results (accuracy %).                                   
+
+> Pruning Method WinoG HellaS ARC-e ARC-c MMLU
+> 0% Llama-3-8B 72.61 79.16 77.74 53.33 62.13 20% AFR (unstruct.) 71.59 73.79 76.94 48.38 58.85 AFR (naive avg.) 59.35 53.63 43.48 29.35 30.14 50% AFR (unstruct.) 60.62 50.64 55.35 32.94 35.07 AFR (naive avg.) 52.25 29.29 29.92 26.02 23.07
+
+element of the weight matrix. Then, we aggregate scores within each neuron and compute the average score ¯ Sj at the neuron level as: ¯Sj = 1
+
+m
+
+> m
+
+# ∑
+
+> i=1
+
+|Sij | (2) where Sij is the pruning score of the i-th weight in neuron j, and m is the number of weights per neuron. Finally, neurons with the lowest average scores are removed according to the target pruning rate. 
+
+3.2 Problems with naive aggregation 
+
+Table 1 shows that applying naive averaging to AFR on LLMs results in severe performance degradation on natural language benchmarks. We identify three underlying problems: 
+
+Problem 1: Distribution mismatch between heterogeneous scores. ReFer and SNIP scores have fundamentally different distribution characteristics. ReFer scores span a wide value range with relatively uniform distribution, while SNIP scores concentrate in the narrow [0, 1] range due to small gradients in pre-trained models. Simple standardization in Eq. equation 1 linearly amplifies the minute differences among SNIP’s densely clustered low-importance parameters, introducing noise into the AFR scores. This noise disrupts ReFer’s importance judgments and degrades pruning accuracy. 
+
+Problem 2: Loss of optimization direction consistency. ReFer and SNIP scores are com-puted as products of gradients and weights, where the sign encodes weight behavior during optimization. In the weight update rule θ ← θ − η ∂L 
+
+> ∂θ
+
+, positive scores indicate weights de-creasing in magnitude, while negative scores indicate increasing magnitude. For structured 3Count (log) Figure 2: Example distribution of AFR pruning scores showing concentration in the center with extreme outliers at the tails. pruning, the consistency of optimization directions within a neuron is critical. When all weights in a neuron optimize in the same direction, the neuron has a structurally coherent role. Conversely, mixed directions indicate internal cancellation effects and limited overall contribution. However, Eq. equation 2 takes absolute values before averaging, discarding this directional consistency information and preventing proper neuron-level importance evaluation. 
+
+Problem 3: Influence of outliers. Figure 2 shows the weight-level score distribution for ReFer in one layer. Most scores concentrate in a relatively narrow range, but extreme outliers exist at both tails. The full score range spans −2, 884 to 9 , 803 (width: 12 , 687), but removing the extreme 2% reduces the range width to 48.8. With naive averaging, the presence or absence of outliers can reverse the relative ordering of neuron-level scores, preventing proper importance evaluation. 
+
+## 4 Proposed method 
+
+We propose an integrated approach combining three techniques to address the problems identified above. 
+
+4.1 Nonlinear distribution alignment via power transformation 
+
+To address Problem 1, we apply power transformation to SNIP scores before standardization. For SNIP score sSNIP  
+
+> n
+
+, we apply: ˆsSNIP  
+
+> n
+
+=
+
+
+
+sSNIP 
+
+> n
+
+b
+
+(3) where b > 1. For 0 ≤ sSNIP  
+
+> n
+
+< 1, this transformation has two key properties that address the distribution mismatch problem. First, it provides noise suppression in the low-importance region. Since xb ≪ x for values near 0, minute differences in low-importance parameters are nonlinearly compressed, effectively filtering out noise from the densely clustered low-importance region of SNIP scores. Second, it enables signal preservation in the high-importance region. For values near 1, 
+
+xb ≈ x holds approximately, preserving information for high-importance parameters. This asymmetric behavior creates a soft thresholding effect, where noise suppression strength adjusts continuously according to importance magnitude. 40.000 0.005 0.010 0.015 0.020 0.025 0.030 0.035      
+
+> Value
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Frequency (log scale)
+> SNIP Histogram
+> Before
+> After
+> 0100 200 300 400 500
+> Value
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Frequency (log scale)
+> SNIP_std Histogram
+> Before
+> After
+
+Figure 3: Distribution comparison before and after power transformation ( b = 2.7). Left: SNIP score distributions before standardization show how power transformation com-presses the densely clustered low-value region. Right: Distributions after standardization demonstrate improved concentration, with the transformed distribution (orange) exhibit-ing reduced spread in the low-importance region while maintaining separation of high-importance values. After power transformation, we apply standardization to the transformed scores. To quantify the improvement in distribution quality, we analyze the signal-to-noise ratio (SNR). Let 
+
+μsignal denote the mean absolute value of high-importance scores (top 10% by magnitude) and σnoise denote the standard deviation of low-importance scores (bottom 50%). The SNR before and after power transformation can be expressed as: SNR original = μsignal 
+
+σnoise 
+
+, SNR transformed = μb
+
+> signal
+
+σb
+
+> noise
+
+(4) Since SNIP scores concentrate in [0, 1] with most values near 0, we have σnoise < μsignal < 1. For b > 1, the power function satisfies xb ≪ x for x ≪ 1 and xb ≲ x for x ≈ 1, which means σb 
+
+> noise
+
+≪ μb
+
+> signal
+
+. Therefore, the ratio SNR transformed /SNR original = ( μsignal /σnoise )b−1
+
+increases exponentially with b, demonstrating that power transformation amplifies the rela-tive distinction between signal and noise. Figure 3 illustrates this effect: the left histogram shows how power transformation compresses the low-value region before standardiza-tion, while the right histogram demonstrates how this compression leads to improved concentration after standardization. The power transformation reduces the variance σ2ˆS compared to the original scores, causing the standardization division to have a stronger stretching effect on the remaining distri-bution. However, critically, only the signal component remaining after transformation is stretched, while noise has already been suppressed in the preceding step. This improved SNR during scale adjustment enables more effective integration with ReFer scores. 
+
+4.2 Sign-preserving score aggregation 
+
+To address Problem 2, we propose aggregation with post-averaging absolute values. Instead of taking absolute values before averaging as in Eq. equation 2, we average the signed pruning scores within each neuron, then take the absolute value after averaging. This approach leverages sign information to evaluate optimization direction consistency. If all weights have consistent signs, the average retains a large magnitude. Conversely, if weights have mixed signs, the average approaches zero due to cancellation. This naturally quantifies the degree of directional consistency. Neurons with consistent optimization directions indicate structurally coherent roles where all weights cooperate toward the same objective, making them valuable for preservation. In contrast, neurons with mixed directions exhibit internal cancellation effects, suggesting 5Table 2: Statistical changes by outlier removal rate.                               
+
+> Removal Range Range Kurtosis IQR rate reduction (×10 3)0% 12,687 —16,488,324 91.72 1% 161.4 98.7% 60,133.04 89.23 2% 48.8 99.6% 3,504.79 86.71 3% 27.6 99.8% 1,581.82 84.25 5% 17.6 99.9% 891.48 79.46 10% 9.42 99.9% 544.83 68.20
+
+limited overall contribution. By preserving sign information during aggregation, our method enables proper evaluation of this structural property for structured pruning. 
+
+4.3 Percentile-based outlier removal 
+
+To mitigate Problem 3’s outlier influence, we introduce percentile-based outlier removal. To determine the optimal removal rate, we analyzed pruning score distribution statistics (Table 2). At 2% removal, the range decreases to 48.8, and kurtosis drops from 16,488,324 to 3,505 (a 99.98% reduction). Kurtosis quantifies distribution tail heaviness; the original distribution’s extremely high kurtosis indicates a long-tailed distribution. From 1% to 2% removal, kurtosis decreases by 94.2%, but from 2% to 3%, the decrease is only 54.9%, suggesting outlier removal effects saturate beyond 2%. The interquartile range (IQR) represents the spread of the central 50% of the distribution. Substantial IQR changes indicate removal of not just outliers but also central distribution information, suggesting information loss. The original IQR is 91.72, and at 2% removal it remains 86.71, preserving the structure, while at 10% removal it becomes 68.20. These results confirm that 2% removal optimally eliminates outlier influence (from range and kurtosis perspectives) while preserving original distribution information (from IQR perspective). Therefore, we compute the 2nd percentile P2 and 98th percentile P98 for each neuron’s score set and remove scores outside these thresholds. 
+
+4.4 Integrated approach 
+
+We combine the techniques from Sections 4.1–4.3 into a unified method: 1. Outlier removal. Remove scores outside the 2nd and 98th percentiles for each neuron’s ReFer and SNIP score sets. 2. Sign-preserving aggregation. Compute the mean of cleaned scores while maintain-ing signs, then take the absolute value to obtain neuron-level scores. 3. Power transformation. Apply power transformation (Eq. equation 3) to aggregated neuron-level SNIP scores. 4. Score combination. Sum transformed neuron-level SNIP scores with neuron-level ReFer scores to obtain final pruning scores. Concretely, for each neuron, we first remove weight-level scores outside the 2nd and 98th percentiles for both ReFer and SNIP. We then compute the average of the remaining scores while preserving signs, followed by taking absolute values to obtain neuron-level scores for ReFer and SNIP separately. The power transformation with exponent b is applied to the neuron-level SNIP score. Finally, we sum the transformed SNIP score with the ReFer score to obtain the final neuron-level pruning score. 6This integrated approach sequentially applies outlier suppression, sign consistency evalua-tion, and heterogeneous score distribution alignment. Each component addresses a specific problem while building upon the outputs of previous steps, enabling stable and accurate pruning score evaluation for structured pruning. 
+
+## 5 Experiments 
+
+We evaluate our proposed method on Llama-3-8B, Vicuna-v1.5-13B, and LLaVA-v1.5-13B. 
+
+5.1 Experimental setup 
+
+We apply structured pruning to the feed-forward networks (FFNs) in each block of the models. FFNs constitute a substantial portion of model parameters and are amenable to structured pruning due to their layer-wise independence. For Llama-3-8B and Vicuna-v1.5-13B, which are language-only models, we apply our method to all FFN layers across the transformer blocks. Each FFN consists of multiple linear layers that can be pruned at the neuron level. LLaVA-v1.5-13B presents a more complex scenario as it consists of a language part (Vicuna) and vision part (CLIP) connected through projection layers. For the language part where calibration data has ground-truth labels, we apply the full AFR method (combining ReFer and SNIP) to prune FFNs. For the vision part, CLIP functions as a feature extractor without direct downstream task supervision, making SNIP’s loss gradients undefined since there is no task-specific loss to differentiate through the vision encoder. Therefore, we prune CLIP’s fully connected layers using only the ReFer component, which relies solely on feature space geometry and does not require task-specific gradients. We evaluate at pruning rates of 20% and 50%, widely adopted in prior work as representa-tive of moderate and aggressive pruning scenarios. The power transformation exponent is set to b = 2.7 based on systematic ablation experiments described in Appendix A, which demonstrates that this value achieves optimal performance across multiple bench-marks. For Llama-3-8B and Vicuna-v1.5-13B, we use five benchmark datasets covering diverse language understanding capabilities: WinoGrande (Sakaguchi et al., 2020) for com-monsense reasoning, HellaSwag (Zellers et al., 2019) for commonsense natural language inference, ARC-easy and ARC-challenge (Clark et al., 2018) for question answering, and MMLU (Hendrycks et al., 2021) for multitask language understanding. For LLaVA-v1.5-13B, we use three vision-language benchmarks: GQA (Hudson & Manning, 2019) for visual reasoning, VizWiz (Gurari et al., 2018) for visual question answering, and ScienceQA (Lu et al., 2022) for multimodal science questions. Accuracy serves as the evaluation metric across all benchmarks. We compare against unstructured AFR, structured AFR with naive averaging, and existing structured pruning methods including LLM-Pruner (Ma et al., 2023), LoRAP (Li et al., 2024), and CFSP (Wang et al., 2025). 
+
+5.2 Comparison with existing methods 
+
+Tables 3, 4, and 5 present results for Llama-3-8B, Vicuna-v1.5-13B, and LLaVA-v1.5-13B, respectively. For Llama-3-8B, our method achieves 64.46 at 20% pruning and 47.24 at 50% pruning, representing improvements of 21.27 and 15.13 points over naive averaging. Compared to unstructured AFR, our method shows only 1.45 point difference at 20% and exceeds it by 0.32 points at 50%, maintaining performance comparable to unstructured pruning while enabling structured acceleration. Compared to existing structured methods, our method outperforms the average by 3.60 points at 20% and 9.04 points at 50%. At 50% pruning, the improvements are substantial: 12.37 points over LLM-Pruner, 8.49 points over LoRAP, and 6.47 points over CFSP. Similar trends appear for Vicuna-v1.5-13B. Our method achieves 63.70% at 20% and 52.91% at 50%, exceeding existing method averages by 1.76 and 6.40 points respectively. At 50% 7Table 3: Comparison with existing methods on Llama-3-8B (accuracy %).                                                                         
+
+> Pruning Method WinoG HellaS ARC-e ARC-c MMLU
+> 0% Llama-3-8B 72.61 79.16 77.74 53.33 62.13
+> 20% pruning
+> AFR (unstruct.) 71.59 73.79 76.94 48.38 58.85 AFR (naive avg.) 59.35 53.63 43.48 29.35 30.14 AFR (proposed) 74.03 72.62 68.86 45.73 61.05
+> LLM-Pruner 69.85 69.02 63.59 40.53 48.36 LoRAP 71.19 70.48 69.61 45.48 44.57 CFSP 68.67 68.06 67.63 42.92 50.71
+> 50% pruning
+> AFR (unstruct.) 60.62 50.64 55.35 32.94 35.07 AFR (naive avg.) 52.25 29.29 29.92 26.02 23.07 AFR (proposed) 61.80 46.38 45.20 30.29 52.51
+> LLM-Pruner 52.49 35.50 37.88 25.51 22.95 LoRAP 57.30 40.19 42.60 26.79 26.85 CFSP 57.06 43.13 48.53 28.50 26.61
+
+Table 4: Comparison with existing methods on Vicuna-v1.5-13B (accuracy %).                                                       
+
+> Pruning Method WinoG HellaS ARC-e ARC-c MMLU
+> 0% Vicuna-v1.5-13B 72.51 77.46 74.83 50.68 54.50 20% Proposed 69.61 73.91 72.94 48.29 54.03
+> LLM-Pruner 67.88 74.16 73.30 46.93 41.72 LoRAP 68.90 75.15 71.55 44.97 49.88 CFSP 68.82 73.86 71.21 45.14 50.93 50% Proposed 64.48 53.82 57.53 37.97 50.74
+> LLM-Pruner 58.48 42.23 57.45 32.08 23.00 LoRAP 60.46 43.81 55.89 33.62 29.59 CFSP 62.04 58.05 57.20 37.71 40.99
+
+pruning, our method maintains a clear advantage, with CFSP being the closest competitor at 51.20% average accuracy. For the vision-language model LLaVA-v1.5-13B, our method achieves 62.83% at 20% and 47.08% at 50%, demonstrating effectiveness across different model architectures including VLMs. At 20% pruning, performance slightly exceeds the original model by 0.06 points, indicating effective identification and removal of redundant parameters. The performance gains result from the synergistic combination of distribution alignment, sign consistency evaluation, and outlier suppression. The power transformation addresses heterogeneous score distributions, sign-preserving aggregation captures structural proper-ties of neuron-level optimization, and outlier removal ensures stable aggregation resistant to extreme values. Table 5: Evaluation results on LLaVA-v1.5-13B (accuracy %).                 
+
+> Pruning Method GQA VizWiz ScienceQA
+> 0% LLaVA-v1.5-13B 63.29 56.15 72.83 20% Proposed 60.34 58.28 70.05
+> 50% Proposed 29.19 48.50 63.56
+
+8Table 6: Resource reduction evaluation for Llama-3-8B.                   
+
+> Pruning Parameters VRAM (GB) Speed (ms/sample)
+> 0% 8.03B —16.06 —22.98 (1.0 ×)20% 6.90B 14.0% ↓13.08 14.0% ↓20.89 (1.10 ×)50% 5.21B 35.1% ↓10.42 35.1% ↓14.64 (1.57 ×)
+
+Table 7: Resource reduction evaluation for LLaVA-v1.5-13B.                   
+
+> Pruning Parameters VRAM (GB) Speed (ms/sample)
+> 0% 13.3B —34.04 —756.1 (1.0 ×)20% 11.4B 13.0% ↓30.05 11.7% ↓630.6 (1.20 ×)50% 8.98B 32.6% ↓25.55 24.9% ↓481.9 (1.56 ×)
+
+5.3 Resource reduction evaluation 
+
+Tables 6 and 7 show resource reduction effects for each pruning rate. For Llama-3-8B, 20% pruning achieves 14.0% parameter reduction (from 8.03B to 6.90B), 14.0% VRAM reduction (from 16.06GB to 13.08GB), and 1.10 × inference speedup. At 50% pruning, the reductions become more substantial: 35.1% parameter reduction (to 5.21B), 35.1% VRAM reduction (to 10.42GB), and 1.57 × inference speedup. For LLaVA-v1.5-13B, 20% pruning achieves 13.0% parameter reduction (from 13.3B to 11.4B), 11.7% VRAM reduction, and 1.20 × speedup. At 50% pruning, LLaVA-v1.5-13B achieves 32.6% parameter reduction (to 8.98B), 24.9% VRAM reduction (to 25.55GB), and 1.56 ×
+
+speedup. The speedup is less than the theoretical maximum (2 × for 50% pruning) because (1) only FFN layers are pruned while attention layers remain intact, and (2) memory access costs and kernel launch overhead become more significant proportionally. Nevertheless, the achieved speedups represent practical improvements for deployment scenarios. Structured pruning enables this acceleration without specialized sparse computation libraries, allowing the pruned models to run efficiently on standard hardware using dense matrix operations. 
+
+## 6 Conclusion 
+
+This paper proposes an improved structured pruning method that maintains accuracy while enabling inference acceleration. We identified three key challenges in adapting AFR to structured pruning: distribution mismatch between heterogeneous scores, loss of sign information, and outlier influence. To address these, we propose an integrated approach combining power transformation for nonlinear distribution alignment, sign-preserving aggregation, and percentile-based outlier removal. Experiments on Llama-3-8B, Vicuna-v1.5-13B, and LLaVA-v1.5-13B demonstrated the ef-fectiveness of our approach. Our method achieves substantial improvements over naive averaging (21.27 and 15.13 points at 20% and 50% pruning) and outperforms existing structured pruning methods. At 50% pruning on Llama-3-8B, our method achieves 35.1% parameter reduction and 1.57 × inference speedup. For LLaVA-v1.5-13B, we achieve 32.6% parameter reduction and 1.56 × speedup. Ablation studies confirm synergistic effects of all proposed components. Future work includes extending to attention modules, optimizing layer-wise adaptive pruning rates. 9References 
+
+Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try ARC, the AI2 reasoning challenge. arXiv preprint arXiv:1803.05457 , 2018. Danna Gurari, Qing Li, Abigale J. Stangl, Anhong Guo, Chi Lin, Kristen Grauman, Jiebo Luo, and Jeffrey P. Bigham. VizWiz grand challenge: Answering visual questions from blind people. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2018. Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. In International Conference on Learning Representations (ICLR) , 2021. Drew A. Hudson and Christopher D. Manning. GQA: A new dataset for real-world visual reasoning and compositional question answering. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. Namhoon Lee, Thalaiyasingam Ajanthan, and Philip H. S. Torr. SNIP: Single-shot net-work pruning based on connection sensitivity. In International Conference on Learning Representations (ICLR) , 2019. Guangyan Li, Yongqiang Zeng, Jun Huang, Zhiqiang Zhang, Zhaocheng Wang, Xiaox-ing Zhang, and Zhixuan Zhao. LoRAP: Transformer sub-layers deserve differentiated structured compression for large language models. arXiv preprint arXiv:2404.09695 , 2024. Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee. Improved baselines with visual instruction tuning. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 26286–26296, 2024. doi: 10.1109/CVPR52733.2024.02484. Pan Lu, Swaroop Mishra, Tony Xia, Liang Qiu, Kai-Wei Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, and Ashwin Kalyan. Learn to explain: Multimodal reasoning via thought chains for science question answering. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. Xinyin Ma, Gongfan Fang, and Xinchao Wang. LLM-Pruner: On the structural pruning of large language models. In Advances in Neural Information Processing Systems (NeurIPS) ,2023. Tsunemi Nitta, Hirokazu Kohama, Tsubasa Hirakawa, Takayoshi Yamashita, and Hironobu Fujiyoshi. Single-shot foresight pruning for maintaining feature representations of pre-trained models. In Meeting on Image Recognition and Understanding (MIRU) , 2024. Tsunemi Nitta, Tsubasa Hirakawa, Takayoshi Yamashita, and Hironobu Fujiyoshi. Single-shot foresight pruning balancing knowledge retention and downstream task adaptation for pre-trained models. In Meeting on Image Recognition and Understanding (MIRU) , 2025. Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. WinoGrande: An adversarial Winograd schema challenge at scale. In AAAI Conference on Artificial Intelligence (AAAI) , 2020. Yuxin Wang, Minghua Ma, Zhang Wang, Jingchang Chen, Liping Shan, Qing Yang, Dongliang Xu, Ming Liu, and Bing Qin. CFSP: An efficient structured pruning framework for LLMs with coarse-to-fine activation information. In Annual Meeting of the Association for Computational Linguistics (ACL) , 2025. Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. HellaSwag: Can a machine really finish your sentence? In Annual Meeting of the Association for Computational Linguistics (ACL) , 2019. Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Hao Zhang, Joseph E. Gonzalez, and Ion Stoica. Judging LLM-as-a-judge with MT-Bench and Chatbot Arena. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. 10 A Detailed analysis of power transformation exponent 
+
+This appendix provides comprehensive ablation experiments on the power transformation exponent b to support our choice of b = 2.7 in the main paper. 
+
+A.1 Experimental setup 
+
+We systematically evaluate different values of b ranging from 1.0 to 3.0 on Llama-3-8B at 20% pruning rate. For each value of b, we apply the full proposed method (power transformation + sign-preserving aggregation + outlier removal) and measure average accuracy across all five benchmark datasets (WinoGrande, HellaSwag, ARC-easy, ARC-challenge, MMLU). 
+
+A.2 Results 
+
+Figure 4 shows the relationship between the power transformation exponent b and pruning performance. Table 8 provides the detailed numerical results. The results demonstrate several key findings: 
+
+Low exponent region ( b < 1.5 ): When b is too small, the transformation provides insufficient noise suppression. At b = 1.0 (no transformation), the method achieves 61.29% average accuracy. Performance gradually improves as b increases: 61.39% at b = 1.1, 62.21% at 
+
+b = 1.2, reaching 63.82% at b = 1.4. In this region, the SNIP scores retain too much of their original densely-clustered distribution, and standardization amplifies noise from the low-importance region. 
+
+Transition region ( b = 1.5 –2.5 ): Performance continues to improve steadily, reaching 63.78% at b = 1.5 and peaking at 64.31% at b = 1.7. The curve shows some minor fluctuations but maintains an upward trend, with 64.15% at b = 2.0 and 64.31% at b = 2.5. 
+
+Optimal region ( b = 2.5 –3.0 ): Performance stabilizes at its highest level in this range. Starting from 64.31% at b = 2.5, accuracy reaches 64.35% at b = 2.6, peaks at 64.46% at 
+
+b = 2.7, and maintains 64.43% at b = 2.8, 64.35% at b = 2.9, and 64.44% at b = 3.0. This plateau demonstrates remarkable robustness, with all values in the range of 64.31–64.46% (a variation of only 0.15 percentage points). Within this range, the transformation optimally balances noise suppression and signal preservation. 
+
+Performance gain: Comparing the optimal value ( b = 2.7, 64.46%) with no transformation (b = 1.0, 61.29%), the power transformation contributes a 3.17 percentage point improve-ment, demonstrating its significant impact on pruning quality. 
+
+A.3 Analysis of the performance curve 
+
+The performance curve exhibits three distinct phases. In the initial phase ( b < 1.5), the transformation is too weak, and performance improves monotonically as b increases. The transition phase ( b = 1.5–2.5) shows continued improvement with minor fluctuations, suggesting the transformation is approaching its optimal compression level. Finally, the plateau phase ( b ≥ 2.5) demonstrates that the method has reached its performance ceiling, where further increasing b neither helps nor hurts significantly. Table 8: Detailed ablation results for power transformation exponent b on Llama-3-8B at 20% pruning (accuracy %).                                           
+
+> bWinoG HellaS ARC-e ARC-c MMLU Avg
+> 1.0 69.69 69.71 68.52 46.59 51.95 61.29 1.5 72.53 71.30 69.19 46.59 59.27 63.78 2.0 74.27 72.56 69.28 46.25 58.37 64.15 2.5 73.80 72.62 68.86 45.31 60.97 64.31
+> 2.7 74.03 72.62 68.86 45.73 61.05 64.46
+> 3.0 73.88 72.61 69.07 45.65 61.00 64.44
+
+11 40                          
+
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0 2.1 2.2 2.3 2.4 2.5 2.6 2.7 2.8 2.9 3.0
+> Accuracy
+> Power
+> winogrande hellaswag arc-easy arc-challenge mmlu average
+
+Figure 4: Ablation study of power transformation exponent b on Llama-3-8B at 20% pruning rate. The curve shows average accuracy across five benchmarks (WinoGrande, HellaSwag, ARC-easy, ARC-challenge, MMLU). Performance improves from 61.29% at b = 1.0 to a peak of 64.46% at b = 2.7, then plateaus in the range b = 2.5–3.0 with minimal variation (0.15 percentage points). Interestingly, even at b = 3.0, performance remains at 64.44%, only 0.02 percentage points below the peak. This robustness is practically valuable, as it means practitioners do not need precise tuning of b. Any value in the range [2.5, 3.0 ] will yield near-optimal results. 
+
+A.4 Implications 
+
+The existence of a clear optimal range with a relatively flat plateau has important practical implications. Users can apply b = 2.7 without extensive hyperparameter tuning, and small deviations ( ±0.3) have minimal impact on performance. This robustness makes the method practical for deployment across different models and datasets. 12

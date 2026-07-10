@@ -1,0 +1,534 @@
+Title: 2606.29459v1.pdf
+
+URL Source: https://arxiv.org/pdf/2606.29459v1
+
+Published Time: Tue, 30 Jun 2026 01:17:31 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+Interpretable Inverse Design of Metal-Organic Frameworks with Large Language Model Agents 
+
+Kyungmin Nam 1‡ , Seunghee Han 1‡ , and Jihan Kim 1* 
+
+1 Department of Chemical and Biomolecular Engineering, Korea Advanced Institute of Science and Technology, Daejeon 34141, Republic of Korea. 
+
+‡ These authors contributed equally 
+
+*Corresponding author:  jihankim@kaist.ac.kr ABSTRACT 
+
+Inverse design of metal-organic frameworks (MOFs) requires searching a combinatorially vast space where property labels are expensive and most machine-learning models reveal little about why a structure succeeds. We introduce LLM4MOF, a closed-loop framework in which language-model agents reason about chemistry, build candidate MOFs, and test them in simulation, refining hypotheses over ten autonomous iterations. One agent proposes interpretable design hypotheses over metal nodes, linkers, pore geometry, and functional chemistry, and a second translates them into constraints that select candidate MOFs, each made of a metal node, organic linker, and matching topology. Each hypothesis is tested through four diagnostic beams that apply different subsets of its constraints, so comparing them shows whether geometry, chemistry, or metal choice drives performance. Even when blind to the global property landscape of databases, LLM4MOF concentrates its search on top-performing structures across six adsorption, separation, and electronic-structure tasks within 400 property evaluations. The same loop also generates new MOFs de novo and validates them in live simulation, where it adapts the geometry to each requested condition, outperforming random search and a genetic algorithm at roughly $1 per campaign. LLM4MOF shows that language-model agents can run interpretable, simulation-grounded inverse design without training a model per objective. INTRODUCTION 
+
+Inverse design seeks to identify or construct materials that satisfy target properties before undertaking costly synthesis, characterization, or high-fidelity simulation. 1,2,3 Conventional genetic algorithms have been widely used to search candidate materials toward target properties, 4,5 and more recent generative models have expanded the ability to propose new candidates directly. 6 However, these approaches often require large property-labeled datasets, while reliable property labels are typically obtained from simulations or experiments. 7,8 In addition, although many machine-learning-based inverse-design workflows learn statistical associations between material structures and target properties, 9 these associations are not always directly interpretable as chemical design insight. As a result, they provide limited guidance on which chemical or structural features should be selected, modified, or avoided to satisfy a target objective. 10,11 
+
+These limitations are amplified in metal-organic frameworks (MOFs). MOFs span an exceptionally large chemical and structural space because they can be assembled from many possible combinations of metal nodes and organic linkers. 5,12 As a result, property-labeled MOF datasets remain limited because only a small subset of the vast combinatorial MOF design space has been evaluated. 13,14 Expanding these datasets is also costly because many MOFs contain large unit cells and structurally complex pore networks, making simulation or experimental characterization difficult to scale. 15,16 Genetic algorithms have been used to search MOF design spaces, but they often require many evaluated structures to train surrogate models and repeated simulation cycles to update the search. 17,18 Generative models offer an alternative route by learning from existing MOF databases and proposing new structures. 19,20 Yet they also depend on large training datasets, and the chemical basis for why a generated structure should satisfy a target objective is not always explicit. 
+
+To this end, large language models (LLMs) offer a promising route to address this bottleneck. Because LLMs are pretrained on broad corpora containing scientific and chemical knowledge, they can propose design hypotheses directly from a stated objective, without assembling a labeled property dataset or training a task-specific model. 21 Recent studies have shown that LLM agents can extract synthesis conditions from the literature, support experimental planning, optimize synthesis conditions, and enable autonomous research loops by connecting scientific knowledge with external tools and feedback. 22-27 LLMs have also been used for materials generation and modification, including the optimization of molecular or linker-level components. 28,29 However, directly generating MOFs from among billions of candidates is difficult for an LLM as it has not encountered most of these structures during pretraining, and it cannot reliably anticipate how a given metal node and linker combination will assemble into a framework with the desired pore geometry and shape. This motivates a framework in which LLMs provide chemically interpretable design reasoning, while structure construction, property evaluation, and feedback are handled by automated computational modules. 
+
+Here, we introduce LLM4MOF, a closed-loop multi-agent framework for MOF inverse design that separates chemical reasoning from structure construction. Given a natural-language target property or application objective, an LLM-based hypothesis generator proposes building-block-level hypotheses involving metal-node chemistry, linker functionality, framework connectivity, pore geometry, and other chemically interpretable features. Subsequently, a translator maps these hypotheses into concrete search constraints linked to valid MOF candidates. Candidate MOFs are then identified either by matching these constraints to precomputed MOF datasets or by constructing new structures for simulation-based evaluation, and the outcomes are converted into chemically interpretable feedback for the next design round. This closed-loop runs autonomously and requires no property-specific model to be trained for each new objective. We validate LLM4MOF in two complementary settings. In database mode, the agents are given no access to the property values, the best structures, or even the size of the search space, yet steer toward the highest-performing MOFs. Across six adsorption, separation, and electronic-structure tasks, the loop concentrates on top-performing structures within roughly 400 property evaluations. In discovery mode, the same loop runs on structures that do not yet exist, proposing and simulating new MOFs de novo, with no precomputed reference, and independently arrives at a compact-micropore design principle under live simulation, including at conditions absent from any database. Together, these results establish a closed-loop inverse design strategy in which language-model reasoning is grounded in simulation and every outcome is attributable to a specific design axis, enabled by the modular node-linker-topology structure of MOFs that allows hypotheses to be expressed and tested at the level of interpretable building blocks. RESULTS 
+
+# LLM4MOF: a closed-loop multi-agent reasoning system 
+
+We developed LLM4MOF as a closed-loop framework that converts a natural-language MOF design objective into a sequence of search and evaluation steps. As illustrated in Figure 1 , the workflow begins with a user-defined target query and proceeds through five stages: (1) hypothesis generation, (2) constraint translation, (3) candidate matching, (4) hypothesis testing, and (5) feedback-driven refinement, with the full cycle repeated for ten iterations per design task. 
+
+First, the hypothesis generator (Agent 1) generates and refines a structured design hypothesis from the target objective and the feedback from previous iterations, identifying candidate design principles at the level of metal nodes, linkers, pore geometry, and chemical functionality. Second, the constraint translator (Agent 2) converts this hypothesis into a constraint specification, including permitted metal identities, linker motifs, connectivity requirements, excluded chemical groups, and geometric preferences. Separating these two steps helps reduce invalid or ambiguous constraints while preserving interpretable design intent. 
+
+Third, the Matchmaker applies the translated constraints to the available candidate space and organizes the resulting candidates into four diagnostic beams: the full-hypothesis beam (Beam 1), the metal–linker chemistry beam (Beam 2), the metal-only beam (Beam 3), and a random baseline beam (Beam 4). This structure enables LLM4MOF to test whether performance improvements arise from the complete design hypothesis, the selected chemistry, the metal node alone, or unconstrained sampling. 
+
+Fourth, the Hypothesis Testing module evaluates the candidates in one of two modes (i.e. database mode and discovery mode). In database mode, the candidate properties are retrieved from the precomputed MOF property datasets, bypassing structure construction, so that the reasoning, translation, matching, and feedback loop can be validated without new simulations. In discovery mode, LLM4MOF instead proposes new candidate MOFs, constructs the corresponding structures, and evaluates them via automated simulations, and thereby testing whether the same loop can guide discovery when both structures and property values must be produced on demand. The two execution modes are schematically summarized in Figure S1. 
+
+Finally, the Feedback Generator compares the evaluated beams, identifies which chemical or geometric constraints are associated with successful candidates, and returns this evidence to Agent 1 as interpretable feedback. At the start of each new iteration, Agent 1 receives the most recent feedback report in full, while older feedback is compressed into a fixed-size memory ledger that bounds the prompt length and prevents earlier observations from dominating later reasoning. Through this process, LLM4MOF refines its hypotheses, relaxes overly restrictive constraints, and redirects the search toward more promising MOF subspaces. Implementation details for all five components are given in Methods and Supplementary Information. Figure 1. Overview of the LLM4MOF closed-loop multi-agent workflow. A user-defined target query is first converted by Agent 1 into a chemically interpretable hypothesis JSON, which Agent 2 then translates into a constraint JSON. The Matchmaker applies these constraints to the candidate space and organizes the matched candidates into four diagnostic beams (Beam 1, full hypothesis; Beam 2, metal-linker chemistry; Beam 3, metal only; Beam 4, random baseline). Candidate properties are obtained either in database mode using precomputed property values or in discovery mode using live simulations performed during the design loop. The Feedback Generator returns a feedback package to Agent 1 for the next iteration, consisting of the most recent full feedback report and a memory ledger of prior observations. The full closed loop is autonomously repeated for ten iterations. 
+
+Topology Node Linker 
+
+Geometry 
+
+Beam 1
+
+> Hypothesis
+
+Beam 2
+
+> Chemistry
+
+Beam 3
+
+> Metal
+
+Beam 4
+
+> Random
+
+BUILD the structure 
+
+MEASURE the shape 
+
+MEASURE the performance 
+
+RELAX the structure 
+
+Intent Mapping Verbose Reasoning 
+
+Autonomous Self -correction 
+
+> JSON
+
+1 2 3
+
+4
+
+2
+
+1
+
+3
+
+4
+
+{
+
+"mechanism ":
+
+"... dense packing ... 
+
+... microporosity ... ,
+
+"node ":
+
+"... high -valent ... 
+
+... Oxo -cluster ... 
+
+... 12 , 6-connected ... 
+
+... Open metal sites ",
+
+"linker ":
+
+"... short carboxylates ... 
+
+... aromatic backbones ,... 
+
+... avoid steric alkyl ",
+
+"tactic ":
+
+"... avoid geometry cutoffs "
+
+}    
+
+> "... Fe /Cr retention ...
+> ... Downsize linker ...
+> ... structural compaction ..."
+
+## Hypothesis Testing 
+
+Candidates from Beams 
+
+## Feedback Generator 
+
+Diagnosis and Scorecard as Evidence Feedback 
+
+## Matchmaker 
+
+Deterministic Assembler 
+
+## Agent 1
+
+Hypothesis Generator 
+
+## Agent 2
+
+Constraint Translator 
+
+Text -Query 
+
+Design a MOF to maximize volumetric H 2 storage at 77 K and 5 bar 
+
+## User 
+
+Human -LLM Interface 
+
+Beam 4: Metal 
+
+…MOF Target Pore     
+
+> Zinc +…27 .89.4
+
+…
+
+Beam 3: Metal 
+
+…MOF Target Pore     
+
+> Iron +…27 .18.8
+
+…
+
+…
+
+Beam 2: Chemistry 
+
+…MOF Target Pore     
+
+> Iron +…23 .711 .4
+
+…
+
+Beam 1: Hypothesis 
+
+…MOF Target Pore    
+
+> Iron +…21 .714 .7
+
+Full Feedback 
+
+> What should I change next ?
+
+Memory Ledger               
+
+> Where do I stand overall ?
+> Database mode
+> (MOF Database )
+> {
+> "node ":{
+> "metals ": [ "Zr ",
+> "Hf ",
+> "Al ",
+> ...] ,
+> "connectivity ": [ 12 ,6],
+> "ligand ": [ "Oxygen "],
+> "features ":{“OMS ":true }
+> },
+> "linker ":{
+> "connectivity ": 2,
+> "length _min ":5.0,
+> "length _max ":12 .0,
+> "branches ": [ "Benzene “,
+> "Naphthalene “,
+> ...]
+> },
+> "global ":{
+> "exclude ": [ "Alkyl ",
+> "Methyl ",
+> ... ] ,
+> "optional ": [ "Amine "]
+> },
+> "geometry ":{
+> "Di _min ":null ,
+> "Di _max ":null ,...
+> }
+> Discovery mode
+> (Building Blocks )
+
+# Database Mode: Rapid Enrichment toward Top-Performing MOFs 
+
+We first evaluated LLM4MOF in database mode, in which candidate properties were retrieved from precomputed MOF property tables rather than computed by new simulations. Critically, the database served only as a hidden property source in that the agents were never shown the structure list, the database size, the global property distribution, or the best-performing structures. Database mode therefore tests the full reasoning, translation, matching, and feedback loop rather than database screening. The benchmark spanned six tasks across three databases: H₂ uptake from a PORMAKE-derived database of 14,173 structures, CH₄ uptake, CO₂ uptake, 
+
+and Xe/Kr selectivity using hMOF databases containing 51,145 structures, and two band-gap objectives using a QMOF database of 20,373 structures. To make these heterogeneous spaces searchable through Agent 2 constraints, the PORMAKE building blocks and database records were annotated with a shared chemistry-query metadata schema, so that hMOF and QMOF entries are filtered as whole structures while PORMAKE candidates are filtered as building-block combinations (details of the metadata construction provided in Supplementary Note S1). Database reference statistics and the full-hypothesis beam values at the final (tenth) iteration are summarized in Table S1. 
+
+For each task, the loop was run for ten iterations across five independent replicates. At each iteration, the Matchmaker selected up to ten candidates per diagnostic beam, corresponding to at most 40 property evaluations per iteration and 400 per ten-iteration run. Figure 2 reports, for each iteration, the beam median averaged across the five replicates. Across the six tasks, the full-hypothesis beam shifted rapidly from the database median toward the top-performing region of each database. On average, it crossed the top-10% reference within approximately five iterations or approached the top-1% reference by the final iteration for all tasks except the low-band-gap minimization task. Figure 2 Database-mode validation of LLM4MOF across six MOF design tasks. Each panel shows the per-iteration median property value of candidates sampled from four diagnostic beams (Beam 1, full hypothesis; Beam 2, metal-linker chemistry; Beam 3, metal only; Beam 4, random baseline). Lines indicate the mean over five independent replicates, and shaded regions indicate ±1 SEM. The grey violin at DB shows the full database distribution, and horizontal reference lines mark the database median, top 10%, and top 1% values. For the low-band-gap task, lower values are better, so the top 10% and top 1% references correspond to the 10th and 1st percentiles, respectively. 
+
+The beam separations reveal which design axis drove enrichment in each task, and more importantly, this axis differs across properties rather than being fixed in advance. In the adsorption and selectivity tasks ( Figure 2a-d ), the full-hypothesis beam separated most clearly from the chemistry-only and metal-only beams, indicating that pore-geometry constraints were critical for concentrating the search toward high-performing candidates. In contrast, for the large-band-gap objective ( Figure 2e ), the full-hypothesis and chemistry-only beams instead tracked closely, suggesting that chemical composition rather than geometry filtering carried most of the design signal. For the low-band-gap minimization ( Figure 2f ), no beam separated cleanly from the others, indicating that this target is not governed by any single axis among geometry, chemistry, and metal choice. 
+
+Beyond locating top-performing regions, the loop also exposes the chemical logic behind each result. To see how enrichment emerged from the LLM-generated hypotheses, we traced representative hypothesis-to-structure trajectories for three of the tasks, one per database source ( Figure 3 ). Each trajectory links the accumulated Agent 1 reasoning to a representative iteration-10 structure and to its motion through a task-relevant descriptor space. Each iteration-10 structure ranks within the top 0.01% of its database for the target property. 
+
+For H₂ uptake in the PORMAKE -derived database ( Figure 3(a) ), the trajectory moved from an initial open-metal-site, open-pore prior toward a compact micropore regime with the sampled void fraction dropping sharply while volumetric surface area rose. The iteration-10 structure paired a Ga node with a naphthalene dicarboxylate linker, consistent with the learned rule that volumetric uptake at 5 bar benefits from dense micropore confinement rather than oversized pores. For CO₂ uptake at T = 298 K and 2.5 bar in the hMOF database ( Figure 3(b) ), the trajectory illustrates a feedback-driven correction of a chemically reasonable initial prior. Agent 1 first emphasized open metal sites and polar linker functionality, which is a standard heuristic for low-pressure CO₂ 
+
+adsorption. 30 However, beam feedback then redirected the hypothesis toward a different mechanism better suited to this condition: rigid aromatic pore walls, minimal substituent mass, and tight micropore confinement, with the hypothesis explicitly pivoting away from the polar-site prior. The iteration-10 structure, hMOF-5061091 (a Cu node with a biphenyl aromatic-dicarboxylate linker), reflects this revised hypothesis and ranks among the top three structures in the database. On the other hand, the QMOF band-gap task ( Figure 3(c) ) instead followed an electronic-structure axis rather than a pore-geometry axis. The trajectory moved toward closed-shell metal nodes and low-conjugation oxygen-donor linkers, yielding a Sr sulfonate framework with a 6.271 eV band gap. Together, these representative trajectories show that LLM4MOF does not simply enrich high-performing candidates, but also exposes and revises the property-specific design logic behind that enrichment. The other representative trajectories for CH 4 uptake, Xe/Kr selectivity, and low-band-gap minimization are provided in Figure S2 .Figure 3. Representative database-mode examples connecting Agent 1 reasoning to iteration-10 structures and descriptor-space trajectories. Examples are shown for (a) H₂ uptake in the PORMAKE -derived database, (b) CO₂ 
+
+uptake in the hMOF database, and (c) band-gap maximization in the QMOF database. Each row shows accumulated Agent 1 reasoning, a representative structure obtained at iteration 10, and the corresponding trajectory in a task-relevant database descriptor space. Atom colors in the structure panels are C, gray; O, red; H, white; N, blue; Ga, muted pink; Cu, bronze; Sr, green; and S, yellow. Background points are database structures colored by target-property percentile. White circles and red stars mark the mean of Beam 1 candidates sampled in iterations 1 and 10, respectively, and black arrows indicate the direction of hypothesis refinement. 
+
+Chemical Reasoning 
+
+Agent 1
+
+qmof -7b525 e0
+
+Final MOF structure 
+
+6.271 eV (Top 0.0049 %) 
+
+Closed -shell Sr node 
+
+sulfonate /phosphonate anionic linker 
+
+(c) Band gap > 4 eV 
+
+Chemical Reasoning 
+
+Agent 1
+
+hMOF -5061091 
+
+Final MOF structure 
+
+15 .36 mol /kg (Top 0.0039 %) 
+
+Cu node 
+
+biphenyl aromatic -dicarboxylate linker 
+
+(b) CO ₂ uptake (298 K, 2.5 bar )
+
+Chemical Reasoning 
+
+Agent 1
+
+sol +N270 +E81 
+
+Final MOF structure 
+
+37 .0 g/L (Best in DB )
+
+Ga node 
+
+naphthalene dicarboxylate linker 
+
+(a) Volumetric H ₂ uptake (77 K, 5 bar )      
+
+> {
+> "mechanism ":
+> "... void fraction down ...
+> ... density up ...
+> ... small micropores ..." ,
+> "node ":
+> "... drop open metal sites ...
+> ... Ga winner ..." ,
+> "linker ":
+> ".. rigid aromatic dicarboxylate ",
+> "tactic ":
+> ".. hold geometry ,broaden chemistry “
+> }
+> {
+> "mechanism ":
+> "... dispersion on aromatic walls ...
+> ... VF up ,di /df down ...
+> ... not pore -filling ..." ,
+> "node ":
+> "... Cu /Zn ...
+> ... drop open -metal filter ..." ,
+> "linker ":
+> "... rigid aromatic ,methyl -only ...
+> ... reject polar dead mass ..." ,
+> "tactic ":
+> "... pivot off polar prior ... “
+> }
+> {
+> "mechanism ":
+> "... closed -shell ionic ...
+> ... suppress conjugation ...
+> ... geometry non -causal ..." ,
+> "node ":
+> "... exclude open -shell metals ...
+> ... Sr winner ..." ,
+> "linker ":
+> "... oxygen -only σ-donor ...
+> ... carboxylate to sulfonate ..." ,
+> "tactic ":
+> "... raise ionicity by expansion ..."
+> }
+
+The loop also adapts its hypotheses to how uptake is defined and to pressure. Applying the same protocol 
+
+to H₂ uptake at 77 K measured both per unit volume and per unit mass, at 5 and 100 bar, we found that the learned design rules differ systematically across the four conditions ( Figure S3 ). Volumetric uptake is governed by a constrained geometry window (i.e. dense micropores that pack capacity into a fixed volume), whereas gravimetric uptake favors low framework mass and high accessible pore volume. Pressure shifts both: from 5 to 100 bar, the preferred regions open up, mostly for gravimetric uptake consistent with the need for greater pore volume to store H 2 at high loading ( Figure 4 (c) ). 
+
+The Beam 1 and Beam 2 separation tracks this interpretation. For the volumetric uptake, Beam 1 separates clearly from Beam 2 since density, void fraction, and pore-size filtering are all needed to identify high-capacity structures. For gravimetric uptake at 5 bar, the two beams stay closer, indicating that light-framework chemistry alone already captures most of the signal. At 100 bar, however, Beam 1 again rises well above Beam 2, showing that chemistry is no longer sufficient and that explicit filtering toward extreme low density and high void fraction is required to reach the best high-pressure gravimetric structures. Across all four conditions, then, the loop adjusts both which design axis it relies on and how heavily, adapting its reasoning to the specific objective rather than applying a fixed rule. The remaining representative trajectories are provided in Figure S4 .Discovery Mode: Inverse Design of MOFs with Live Simulations 
+
+Having validated the closed loop in database mode, we next tested LLM4MOF in discovery mode, where no pre-existing MOF structures or precomputed property labels are available. Here, Agent 2 constraints define a candidate region in the combinatorial space of topologies, nodes, and linkers, and candidate MOFs are generated, structurally optimized, geometrically characterized, and evaluated by live simulations as the loop runs. This setting probes whether the same closed-loop reasoning can drive discovery when both the structures and their properties must be produced within the loop rather than retrieved. 
+
+The discovery-mode workflow is summarized in Figure S5 . At each iteration, the Matchmaker generates candidate building-block combinations for the four diagnostic beams. For Beam 1, these combinations are first ranked by MOF2Zeo, a fast surrogate that we developed to predict pore geometry directly from a candidate's topology, node, and linker. This pre-ranking is worthwhile because pore geometry emerges only from the assembled framework, and not the individual building blocks, so identifying geometrically promising candidates would otherwise require assembling and relaxing every combination, which would be the most expensive step in the pipeline. MOF2Zeo lets Beam 1 concentrate this expense on the candidates most likely to satisfy the geometry hypothesis. The remaining beams skip this pre-ranking and pass directly to the structure generation. 
+
+Each iteration proceeds in two stages. In the generation stage, to account for structure-generation failures, relaxation failures, and post-relaxation geometry mismatches, 100 candidates are generated for Beam 1 and 30 for each of the remaining beams; all are assembled using PORMAKE, relaxed with LAMMPS/UFF, and characterized with Zeo++. The larger Beam 1 pool ensures enough geometrically valid survivors to apply the hypothesis-driven geometry selection. Although MOF2Zeo provides the initial pre-ranking, the geometry gate that decides which candidates advance is applied only to the true Zeo++ descriptors recomputed after relaxation. In the simulation stage, up to ten candidates per beam are advanced to RASPA3 GCMC simulations. For Beam 1, these are the structures that best satisfy the geometry hypothesis, whereas the remaining beams are randomly selected from valid survivors, with no geometry selection applied. This asymmetry is deliberate, as it lets the Beam 1 versus baseline comparison attribute any performance gain specifically to the geometry hypothesis rather than to sampling. Details of MOF2Zeo, its validation, and the full discovery-mode execution scheme are provided in Supplementary Note S6 and Figures S6 .Figure 4. Discovery-mode closed-loop search with live simulations. (a,b) H₂ uptake at 5 bar under (a) 77 K and 
+
+(b) 160 K. Lines show the mean beam median over five independent replicates, and shaded regions indicate ±1 SEM. Random-search references are computed from Beam 4 structures. (c) Density and void fraction of structures sampled by the hypothesis beam in database and discovery modes. Circles and triangles denote database-mode and discovery-mode structures, respectively. (d) Metal occurrence among sampled hypothesis-beam MOFs in 
+
+database and discovery regimes for the 77 K, 5 bar volumetric H₂ task. Colors indicate the fraction of sampled 
+
+MOFs containing each metal element within each regime. (e) Structural view of the top-performing framework identified in the H₂ uptake live simulation at 77 K, 5 bar. (f) Structural view of the top-performing framework identified in the H₂ uptake live simulation at 160 K, 5 bar 
+
+We then ran LLM4MOF in discovery mode at two user-desired H₂ adsorption conditions, 77 K and 160 
+
+K, both at 5 bar, to test whether the same closed-loop reasoning identifies high-performing structures under live simulation and adapts to a different temperature. Because discovery mode does not rely on an enumerated property database, we used randomly generated Beam 4 structures to define an unbiased reference distribution for the accessible generative search space. At 77 K, the full-hypothesis beam rapidly exceeded the random-search top-10% reference and approached the corresponding random-search top-1% reference (Beam 4 samples) within ten iterations ( Figure 4a ). The best MOF structure from the 10 th iteration of the 77 K campaign was a Cd(II)-lvt framework with anthracene dicarboxylate linkers, reaching 35.75 g/L ( Figure 4e ), reflecting the geometry-centered hypothesis rather than metal identity alone. At 160 K, the full-hypothesis beam again outperformed the chemistry-only, metal-only, and random beams, exceeding the random-search reference levels ( Figure 4b ). The best MOF structure from the 10 th iteration of the 160 K campaign was an Al(III)-fcu framework with anthracene dicarboxylate linkers, reaching 5.37 g/L ( Figure 4f ), reflecting a hypothesis centered on rigid confinement and polarizable aromatic linker surfaces. The shared anthracene dicarboxylate linker across different metals and topologies suggests that the geometry constraints repeatedly favored linker lengths and rigid aromatic shapes 
+
+capable of forming favorable micropore environments for H₂ physisorption. The separation between Beam 1 and Beam 2 further shows that geometry selection, not chemistry alone, is essential for live discovery. 
+
+We next examined the density and void-fraction distributions of the sampled candidates, because these 
+
+descriptors were repeatedly emphasized by Agent 1 when reasoning about volumetric versus gravimetric H₂ 
+
+storage. In the density to void-fraction space, database-mode Beam 1 samples for gravimetric H₂ uptake occupy 
+
+low-density, high void fraction regions, whereas those for volumetric H₂ uptake shift toward higher -density and lower-to-moderate void fraction regions ( Figure 4c ). The live discovery candidates for volumetric H₂ uptake at 
+
+77 K and 5 bar fall in the same region as the corresponding database-mode candidates, showing that the compact-micropore design rule emerges consistently in both regimes, even though discovery mode runs de novo ,independently with no precomputed reference. The 160 K discovery candidates shift further toward denser and lower-void-fraction structures, consistent with the need for stronger confinement when H₂ adsorption is weaker at 
+
+higher temperature. 31 Finally, the metal-occurrence maps show that discovery mode explores a broader node-chemistry space than database mode while retaining the geometry-controlled volumetric design regime ( Figure 4d ). Database-mode sampling is concentrated in a smaller set of frequently retrieved metals, consistent with convergence within a fixed precomputed candidate library. In contrast, discovery mode samples a wider range of metals, including Zn, Cd, Zr, Cr, In, Li, and other less frequent elements, reflecting the larger constructible space accessed by on-demand MOF generation. Thus the design principle recovered in both modes is not a single metal-linker identity, but a geometry-centered design principle that can be realized through multiple chemical routes in discovery mode. 
+
+# Efficiency of LLM4MOF: Baseline Comparison and Inference Cost 
+
+After confirming that discovery mode can identify high-performing MOFs through live simulation, we next asked whether the loop reaches this performance under the tight evaluation budget that live simulation imposes, where each evaluated structure carries the full cost of assembly, relaxation, and GCMC. We compared LLM4MOF against random sampling and a surrogate-assisted genetic algorithm under an identical budget, with 40 evaluated structures per iteration over ten iterations (with all three methods repeated across five replicates). To match the iterative setting, the genetic algorithm was initialized with 40 randomly evaluated structures at the first iteration and then proposed 40 additional structures per iteration using the accumulated evaluation history. Details of the genetic algorithm implementation and its surrogate-model performance are provided in the Supplementary Information and Figure S7 .
+
+LLM4MOF outperformed both baselines in the live H₂ uptake task at 77 K and 5 bar ( Figure 5a ). By iteration 10, it reached a median uptake of 29.3 g/L, compared with 21.8 g/L for the genetic algorithm and 14.3 g/L for random sampling. Although genetic algorithms are powerful global optimizers for MOF design, they typically benefit from large evaluated populations and multiple optimization cycles. Their performance in this live benchmark was therefore limited by the small number of structures that could be evaluated. 32,33 We did not include a generative-model baseline because such models cannot be trained meaningfully under this evaluation budget. 19,34,35 Even a previous low-data generative workflow required approximately 1000 labeled structures, exceeding the budget used here. 20 The LLM inference cost was small. Across five replicate runs, each ten-iteration campaign used 380 RASPA simulations, approximately 0.57 million GPT-5.2 tokens, and $1.06 in LLM inference cost ( Figure 5b -d). The simulation count remained nearly constant across iterations, whereas token use and LLM cost increased gradually as the multi-turn context grew. The memory ledger limited this growth by carrying forward earlier evidence as a bounded summary rather than repeatedly expanding the prompt with all prior feedback. These results show that LLM4MOF can outperform random sampling and a data-limited genetic algorithm with a modest simulation budget and negligible LLM inference cost. 
+
+Figure 5. Efficiency of LLM4MOF in H₂ discovery. (a) H₂ uptake at 77 K and 5 bar over ten iterations for 
+
+LLM4MOF Beam 1, a genetic algorithm, and random sampling. Lines show the mean of replicate medians over five independent runs, and shaded regions indicate ±1 SEM. (b) Number of RASPA3 GCMC simulations performed per iteration, with the cumulative simulation count shown on the right axis. (c) GPT-5.2 token usage per iteration, separated into non-cached input, cached input, and output tokens, with cumulative token usage shown on the right axis. (d) LLM inference cost per iteration, with cumulative cost shown on the right axis. Although the discovery-mode benchmark focused on H₂ uptake, the same workflow can be applied to 
+
+other adsorption and separation objectives by replacing the final simulation target while keeping the reasoning, constraint translation, candidate generation, and feedback loop unchanged. More generally, the framework is compatible with other expensive property-evaluation modules, including DFT-based band-gap, or reaction-energy calculations, as long as the resulting property values can be returned to the Feedback Generator in the same structured format. DISCUSSION 
+
+We introduced LLM4MOF, a closed-loop framework in which language-model agents propose interpretable design hypotheses, automated modules construct and evaluate the corresponding MOFs, and the results refine the next round of hypotheses. The loop reaches top-performing structures across six adsorption, separation, and electronic-structure tasks within roughly 400 property evaluations, generates and validates new MOFs de novo by live simulation, and does so without training a property-specific model for any objective. 
+
+The central contribution is not that a language model can drive MOF search, but that it can do so attributably. Because each round's candidates are organized into diagnostic beams that isolate geometry, chemistry, and metal choice, each outcome reveals which of these was responsible, and this attribution is recovered separately for each property rather than assumed in advance. Such design-level explanation is difficult to extract from surrogate or generative approaches, which return performant structures without the reasoning behind them. 
+
+These observations also bear on whether the model reasons or merely orchestrates a constrained search. The dominant axis was inferred per property rather than specified in advance. For example in the CO 2 task, the loop adopted a textbook open-metal-site prior, found it contradicted by feedback, and revised toward a different mechanism, a correction that non-adaptive search cannot produce; and in discovery mode, run independently of any database, it arrived at the same compact-micropore principle identified in database mode, indicating a genuine, reproducible design rule rather than memorized lookups. The current scope is nonetheless bounded as hypotheses are limited to two-connected linkers and a single objective at a time, and discovery mode validation focused on H 2 uptake, though the same loop extends directly to other adsorption, separation, and DFT-based targets. 
+
+Finally, a more fundamental opportunity lies in the building blocks themselves. In this work, candidates were assembled from PORMAKE’s fixed library, but the model reasons over chemical features, not library entries, and a feature description need not match any existing component. In principle, the same loop could propose linkers or metal nodes beyond any current library, thereby expanding rather than merely recombining the design space. Genetic algorithms are confined to a predefined building-block set and while generative models can produce genuinely new components, they do so only after training on large structural or property-labeled datasets, the very data that is scarce for most MOF objectives. LLM4MOF instead draws novel chemical proposals from knowledge already encoded in the language model, requiring no task-specific training set. The path forward is to let the loop not only reason about new building blocks but construct them – an inverse design that invents its own components rather than choosing among existing ones. METHODS 
+
+LLM-Guided Hypothesis Generation and Constraint Translation 
+
+The LLM agent module in LLM4MOF consists of a hypothesis generator (Agent 1) and a constraint translator (Agent 2). Both agents used GPT-5.2. Agent 1 generates and refines MOF design hypotheses from the user-specified target. At the initial iteration, it receives only the target query; in subsequent iterations, it receives structured feedback from the Feedback Generator while retaining the multi-turn conversation history. Its prompt asks the model to identify the property-governing mechanism, select the dominant design axis among geometry, chemistry, and electronic structure, and propose node and linker features to test the hypothesis. Agent 1 returns a strict JSON hypothesis containing the target application, mechanism, node composition, linker composition, optional pore-geometry window, and iteration-level reasoning. It is not allowed to name topology codes or specific materials, and linker hypotheses are restricted to two-connected linkers. 
+
+Agent 2 converts the Agent 1 hypothesis into a constraint JSON without adding new chemical assumptions. Unlike Agent 1, Agent 2 does not retain conversation history and translates only the current Agent 1 hypothesis. It extracts node constraints, linker constraints, global requirements, and an optional geometry filter using controlled-vocabulary tags. Unspecified constraints are left empty or null. The output contains a node query, linker query, global requirements, and optional geometry filter. Representation-specific rules are supplied through a separate rule block, while the core translation prompt is kept unchanged. More detailed descriptions and examples of Agent 1 and Agent 2 are provided in Supplementary Note S8. 
+
+Feedback Generator 
+
+At each refinement iteration 𝑖𝑖 , the feedback message contains the current evidence report in full, while feedback from earlier iterations is compressed into a fixed-size memory ledger. This preserves the most recent evidence verbatim, keeps the prompt length bounded, and limits uncontrolled carryover of earlier observations. The memory ledger is a factual record of prior evidence, not a prescriptive optimization history. 
+
+Each feedback report contains up to ten candidates from each of four diagnostic beams: the full hypothesis, chemistry-only sampling with the geometry window removed, metal-only sampling with linker and geometry unconstrained, and random sampling from the full design space. For notation, we refer to these beams as full, chem, metal, and rand. For each candidate, the report includes the target value, chemical profile, and pore geometry under anonymized labels to prevent external lookup. Candidates within each beam are sampled with metal balancing by drawing round-robin across distinct metal identities. 
+
+Let ℱ𝑖𝑖 𝑏𝑏 denote the feedback from beam 𝑏𝑏 at iteration 𝑖𝑖 , and let ℱ𝑖𝑖 = ⋃ ℱ𝑖𝑖 𝑏𝑏 𝑏𝑏∈ {full ,chem ,metal ,rand } be the current four-beam feedback. The memory ledger is constructed only from non-random beams from previous iterations: 
+
+𝒜𝒜 <𝑖𝑖 = � � ℱ𝑗𝑗 𝑏𝑏 𝑏𝑏∈ {full ,chem ,metal }
+
+> 𝑖𝑖−1 𝑗𝑗=0
+
+The user message supplied to Agent 1 is then 
+
+𝑢𝑢 𝑖𝑖 = Wrapper[ 𝐷𝐷 (𝒜𝒜 <𝑖𝑖 ) ‖ ℱ 𝑖𝑖 ]
+
+where 𝐷𝐷 denotes distillation into the fixed-size ledger and ‖ denotes text concatenation. 
+
+The random-baseline beam is excluded from 𝒜𝒜 <𝑖𝑖 because it is not conditioned on the agent’s hypotheses. Including it in the ledger frontier or best-value statistics could confound the refinement signal by mixing hypothesis-derived evidence with full-space random contrast. Nevertheless, it is retained in the current feedback as an unconditioned baseline for assessing whether chemistry-conditioned sampling outperforms random sampling. The ledger records only factual summaries of candidates previously observed by Agent 1, including the best target value, the current top-K frontier, the lower-edge cutoff and median of that frontier, the pore-geometry envelope, and the trajectory of these quantities over earlier iterations. Additional details, an example feedback report, and the memory-ledger ablation study are provided in Figures S9 and S10 .
+
+Simulation Details 
+
+Candidate MOFs were assembled from topology, node, and linker combinations using PORMAKE. 5The assembled CIF structures were converted to LAMMPS input files using lammps-interface with universal force field (UFF) parameters. 36,37 Geometry optimization was performed in LAMMPS under periodic boundary conditions using conjugate-gradient minimization with alternating fixed-cell atomic minimization and anisotropic cell relaxation. Geometric descriptors of the relaxed structures were recalculated using Zeo++. 38 Although MOF2Zeo was used as a fast geometric pre-filter, all final geometric descriptors were obtained from Zeo++ after LAMMPS relaxation. These descriptors included accessible surface area, unit-cell volume, void fraction, framework density, largest included sphere diameter, largest free sphere diameter, and diffusion-limiting sphere diameter. 
+
+Adsorption simulations were carried out using grand canonical Monte Carlo (GCMC) simulations in RASPA3. 39 For hydrogen adsorption, H₂ molecules were modeled using a united -atom representation, and the pseudo-Feynman–Hibbs model was applied to account for quantum effects at low temperatures. 40 Methane 
+
+adsorption was simulated at 298 K and 35 bar using the TraPPE CH₄ model. 41 Xe/Kr selectivity was calculated from multicomponent GCMC simulations at 273 K and 1 bar using Lennard-Jones parameters adopted from Lim et al., with a Xe/Kr mole fraction of 0.2/0.8. 17 Framework atoms were described using UFF, cross-interactions were modeled using the Lorentz–Berthelot mixing rule, and a cutoff distance of 12.8 Å was used for van der Waals interactions. Code availability  
+
+> The code and data are available at https://github.com/kn1218/LLM4MOF.git
+
+## ASSOCIATED CONTENT  
+
+> Supplementary Information . The Supplementary Information is available free of charge and includes detailed descriptions of the work.
+
+## AUTHOR INFORMATION 
+
+## Corresponding Author  
+
+> * Email: jihankim@kaist.ac.kr
+> Author Contributions
+
+## K.N. and S.H. contributed equally to this work: They conceived the research idea, designed and implemented the machine learning model architecture, and conducted the main computational experiments. J.K. supervised the overall project. K.N. and S.H. wrote the manuscript with editorial and discussion inputs from all co-authors. All authors have contributed to the discussions that informed the research and have given approval for the final version of the paper.  
+
+> ORCID
+> Kyungmin Nam: 0009-0003-8225-1873
+> Seunghee Han: 0000-0001-8696-6823
+> Jihan Kim: 0000-0002-3844-8789
+> Notes
+> The authors declare no competing interests.
+
+ACKNOWLEDGEMENTS 
+
+This work was supported by the National Research Foundation of Korea (NRF) (RS-2024-00337004 and RS-2024-00451160) and by the InnoCORE program of the Ministry of Science and ICT (N10260141). REFERENCES 
+
+1 Kim, B., Lee, S. & Kim, J. Inverse design of porous materials using artificial neural networks. Science advances 6, eaax9324 (2020). 
+
+2 Park, H., Li, Z. & Walsh, A. Has generative artificial intelligence solved inverse materials design? Matter 
+
+7, 2355–2367 (2024). 
+
+3 Sanchez-Lengeling, B. & Aspuru-Guzik, A. Inverse molecular design using machine learning: Generative models for matter engineering. Science 361 , 360–365 (2018). 
+
+4 Jennings, P. C., Lysgaard, S., Hummelshøj, J. S., Vegge, T. & Bligaard, T. Genetic algorithms for computational materials discovery accelerated by machine learning. NPJ Computational Materials 5, 46 (2019). 
+
+5 Lee, S. et al. Computational screening of trillions of metal–organic frameworks for high-performance methane storage. ACS Applied Materials & Interfaces 13 , 23647–23654 (2021). 
+
+6 Zeni, C. et al. A generative model for inorganic materials design. Nature 639 , 624–632 (2025). 
+
+7 Chang, R., Wang, Y.-X. & Ertekin, E. Towards overcoming data scarcity in materials science: unifying models and datasets with a mixture of experts framework. npj Computational Materials 8, 242 (2022). 
+
+8 Xu, P., Ji, X., Li, M. & Lu, W. Small data machine learning in materials science. npj Computational Materials 9, 42 (2023). 
+
+9 Vu, T.-S. et al. Towards understanding structure–property relations in materials with interpretable deep learning. npj Computational Materials 9, 215 (2023). 
+
+10 Oviedo, F., Ferres, J. L., Buonassisi, T. & Butler, K. T. Interpretable and explainable machine learning for materials science and chemistry. Accounts of Materials Research 3, 597–607 (2022). 
+
+11 Esterhuizen, J. A., Goldsmith, B. R. & Linic, S. Interpretable machine learning for knowledge generation in heterogeneous catalysis. Nature catalysis 5, 175–184 (2022). 
+
+12 Colón, Y. J., Gómez-Gualdrón, D. A. & Snurr, R. Q. Topologically guided, automated construction of metal–organic frameworks and their evaluation for energy-related applications. Crystal Growth & Design 17 , 5801–5810 (2017). 
+
+13 Rosen, A. S. et al. Machine learning the quantum-chemical properties of metal–organic frameworks for accelerated materials discovery. Matter 4, 1578–1597 (2021). 
+
+14 Wilmer, C. E. et al. Large-scale screening of hypothetical metal–organic frameworks. Nature chemistry 
+
+4, 83–89 (2012). 
+
+15 Zanca, F. et al. Computational techniques for characterisation of electrically conductive MOFs: quantum calculations and machine learning approaches. Journal of Materials Chemistry C 9, 13584–13599 (2021). 
+
+16 Bonakala, S., Wahiduzzaman, M., Watanabe, T., Hamzaoui, K. & Maurin, G. Towards accurate and scalable high-throughput MOF adsorption screening: merging classical force fields and universal machine learned interatomic potentials. Chemical Science (2026). 
+
+17 Lim, Y., Park, J., Lee, S. & Kim, J. Finely tuned inverse design of metal–organic frameworks with user-desired Xe/Kr selectivity. Journal of Materials Chemistry A 9, 21175–21183 (2021). 
+
+18 Han, S. & Kim, J. Design and screening of metal–organic frameworks for ethane/ethylene separation. 
+
+ACS omega 8, 4278–4284 (2023). 
+
+19 Park, J., Lee, Y. & Kim, J. Multi-modal conditional diffusion model using signed distance functions for metal-organic frameworks generation. Nature Communications 16 , 34 (2025). 
+
+20 Han, S. et al. EGMOF: Efficient Generation of Metal-Organic Frameworks Using a Hybrid Diffusion-Transformer Architecture. arXiv preprint arXiv:2511.03122 (2025). 
+
+21 Lei, G., Docherty, R. & Cooper, S. J. Materials science in the era of large language models: a perspective. 
+
+Digital Discovery 3, 1257–1272 (2024). 22 Bran, A. M. et al. Chemcrow: Augmenting large-language models with chemistry tools. arXiv preprint arXiv:2304.05376 (2023). 
+
+23 Kang, Y. et al. Harnessing large language models to collect and analyze metal–organic framework property data set. Journal of the American Chemical Society 147 , 3943–3958 (2025). 
+
+24 Lin, J. et al. Conversational Large-Language-Model Artificial Intelligence Agent for Accelerated Synthesis of Metal–Organic Frameworks Catalysts in Olefin Hydrogenation. ACS nano (2025). 
+
+25 Zheng, Z. et al. ChatGPT research group for optimizing the crystallinity of MOFs and COFs. ACS Central Science 9, 2161–2170 (2023). 
+
+26 Ding, K. et al. SciToolAgent: a knowledge-graph-driven scientific agent for multitool integration. Nature Computational Science , 1–11 (2025). 
+
+27 Lee, J., Bae, T. & Kim, J. SimMOF: AI agent for Automated MOF Simulations. arXiv preprint arXiv:2603.29152 (2026). 
+
+28 Ansari, M., Watchorn, J., Brown, C. E. & Brown, J. S. dziner: Rational inverse design of materials with ai agents. arXiv preprint arXiv:2410.03963 (2024). 
+
+29 Zheng, Z. et al. Shaping the water-harvesting behavior of metal–organic frameworks aided by fine-tuned GPT models. Journal of the American Chemical Society 145 , 28284–28295 (2023). 
+
+30 Sumida, K. et al. Carbon dioxide capture in metal–organic frameworks. Chemical reviews 112 , 724–781 (2012). 
+
+31 Zeleňák, V. & Saldan, I. Factors affecting hydrogen adsorption in metal –organic frameworks: a short review. Nanomaterials 11 , 1638 (2021). 
+
+32 Park, J., Lim, Y., Lee, S. & Kim, J. Computational design of metal–organic frameworks with unprecedented high hydrogen working capacity and high synthesizability. Chemistry of Materials 35 , 9– 16 (2022). 
+
+33 Chung, Y. G. et al. In silico discovery of metal-organic frameworks for precombustion CO2 capture using a genetic algorithm. Science advances 2, e1600909 (2016). 
+
+34 Fu, X., Xie, T., Rosen, A. S., Jaakkola, T. & Smith, J. Mofdiff: Coarse-grained diffusion for metal-organic framework design. arXiv preprint arXiv:2310.10732 (2023). 
+
+35 Kim, N., Kim, S., Kim, M., Park, J. & Ahn, S. Mofflow: Flow matching for structure prediction of metal-organic frameworks. arXiv preprint arXiv:2410.17270 (2024). 
+
+36 Thompson, A. P. et al. LAMMPS-a flexible simulation tool for particle-based materials modeling at the atomic, meso, and continuum scales. Computer physics communications 271 , 108171 (2022). 
+
+37 Boyd, P. G., Moosavi, S. M., Witman, M. & Smit, B. Force-field prediction of materials properties in metal-organic frameworks. The journal of physical chemistry letters 8, 357–363 (2017). 
+
+38 Willems, T. F., Rycroft, C. H., Kazi, M., Meza, J. C. & Haranczyk, M. Algorithms and tools for high-throughput geometry-based analysis of crystalline porous materials. Microporous and Mesoporous Materials 149 , 134–141 (2012). 
+
+39 Ran, Y. et al. RASPA3: A Monte Carlo code for computing adsorption and diffusion in nanoporous materials and thermodynamics properties of fluids. The Journal of Chemical Physics 161 (2024). 
+
+40 Fischer, M., Hoffmann, F. & Fröba, M. Preferred hydrogen adsorption sites in various MOFs—a comparative computational study. ChemPhysChem 10 , 2647–2657 (2009). 
+
+41 Martin, M. G. & Siepmann, J. I. Transferable potentials for phase equilibria. 1. United-atom description of n-alkanes. The Journal of Physical Chemistry B 102 , 2569–2577 (1998).
