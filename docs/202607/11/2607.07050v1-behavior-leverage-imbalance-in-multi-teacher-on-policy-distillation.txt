@@ -1,0 +1,456 @@
+Title: Behavior Leverage Imbalance in Multi-Teacher On-Policy Distillation
+
+URL Source: https://arxiv.org/pdf/2607.07050v1
+
+Published Time: Thu, 09 Jul 2026 00:31:33 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Behavior Leverage Imbalance in Multi-Teacher On-Policy Distillation 
+
+Jiabin Shen 1, Guang Chen 2, and Chengjun Mao 31tjusjb@gmail.com 
+
+> 2
+
+cg234573@antgroup.com 
+
+> 3
+
+chengjun.mcj@antgroup.com 
+
+Abstract 
+
+Agentic language models must learn when to call tools, when to consume tool responses, and when to answer directly. This makes multi-teacher on-policy distillation a natural training strategy: one teacher can specialize in tool calls, another in direct responses, and the student can learn from both on its own generated distribution. We show that this strategy can induce a behavior shift that is invisible from aggregate losses alone. In a two-teacher tool-use setting, vanilla generalized knowledge distillation improves tool-call recall but also moves the model toward over-calling, where it calls tools on examples that should be answered directly. Aggregate explanations are insufficient: tool-call samples do not receive more token exposure, and full-sequence per-token divergence is not larger for the tool-call teacher. We instead analyze behavior leverage imbalance : local token-level signals at mode-entry and structural positions, such as <tool call> and function names, can have disproportionate control over the global generation mode. We propose Soft Clamp, a per-token divergence calibration method that dynamically compresses extreme token-level Jensen-Shannon divergence while preserving nonzero gradients. On APIGen-MT, Soft Clamp reduces over-calling from 13.7% to 9.0% relative to vanilla GKD while matching its decision accuracy. In a BFCL multi-turn diagnostic, it also lowers tool-call loops and repeated calls among GKD variants. These results suggest that multi-teacher OPD should monitor where teacher signals act, not only how large they are in aggregate. 
+
+# 1 Introduction 
+
+Agentic language models often act through interleaved dialogue and tool-use trajectories, such as 
+
+System → User → ToolCall 1 → ToolResponse 1 → ToolCall 2 → ToolResponse 2 → Response 1 → User → · · · .
+
+Along such trajectories, the model must decide not only how to use a tool, but also whether to use one and when to stop using tools. This decision is brittle in multi-turn systems. A model that overuses tools increases latency and cost, and it can enter repeated tool-call loops after receiving observations. A model that underuses tools fails tasks that require external information or actions. Multi-teacher on-policy distillation (MOPD) appears well matched to this problem [ 11 ]. A tool-call teacher can specialize in structured function calls; a response teacher can specialize in direct natural-language answers. The student then learns from teacher distributions on its own rollouts, as in generalized knowledge distillation (GKD) [1]. This setup offers specialization without manually merging heterogeneous behaviors. We find a failure mode that is not captured by loss curves or aggregate teacher contributions alone. In our APIGen-MT tool-use setting, vanilla GKD improves decision accuracy and tool-call recall, but it also raises over-calling. The model becomes better at calling tools when tools are needed, yet it becomes more likely to call tools when a direct answer is appropriate. 1arXiv:2607.07050v1 [cs.CL] 8 Jul 2026 Several aggregate explanations are not supported by the training logs. Tool-call samples do not dominate token exposure. Full-sequence per-token Jensen-Shannon divergence (JSD) and a gradient proxy are not larger for the tool-call teacher. In several runs, response tokens receive more exposure and larger aggregate divergence. The final behavior therefore cannot be explained by sample count, token count, or total divergence alone. We argue that the missing variable is behavior leverage imbalance . A token-level learning signal matters not only by its magnitude, but also by where it lands in the generation process. In a tool-use model, mode-entry tokens such as <tool call> , function names, and structural markers can switch the model into a tool-call trajectory. A relatively small local signal at such positions can affect the entire continuation. Natural-language response signals are often spread across many content tokens. They can improve style, factuality, and detail, yet they may exert less direct control over the discrete tool-call versus response boundary. This hypothesis predicts that decision-boundary metrics should explain the final behavior better than full-sequence averages do. This observation leads to a targeted mitigation. We propose Soft Clamp, a token-level calibration rule for GKD. For each token divergence di, Soft Clamp sets a dynamic threshold C = k mean( d) inside a batch. Tokens below the threshold are unchanged. Tokens above the threshold are scaled by a detached factor, 
+
+d′ 
+
+> i
+
+= diC/ stopgrad( di), which caps their forward contribution and scales their gradient without dropping it. Unlike hard clipping, Soft Clamp retains a learning signal for difficult tokens. Unlike global reweighting, it acts only on extremes. Our contributions are: • We identify behavior leverage imbalance as a concrete failure mode in multi-teacher OPD for agentic tool-use models. • We show that aggregate token exposure and full-sequence divergence do not explain the observed tool-call shift, whereas response-side decision pressure gives a more targeted diagnostic of the final over-calling behavior. • We introduce Soft Clamp, a lightweight per-token divergence calibration method that preserves gradients while compressing extreme token-level signals. • We evaluate on APIGen-MT, BFCL, When2Call, and a BFCL multi-turn loop diagnostic. Soft Clamp reduces over-calling among GKD variants while preserving APIGen decision accuracy. We do not claim to introduce multi-teacher distillation itself, nor do we claim that all teacher contributions should be equalized. Our claim is narrower: when different teachers supervise different generation modes, high-leverage local signals can shift global behavior, and token-level calibration can reduce that shift. 
+
+# 2 Problem Setup 
+
+2.1 Multi-teacher on-policy distillation 
+
+Let x be a dialogue context and y = ( y1, . . . , y T ) a student-generated continuation. In on-policy distillation, the student samples from its current policy and then learns from teacher distributions evaluated on the sampled trajectory. In our setting, each training example has a teacher tag m ∈ { tool , response } that routes the example to a tool-call teacher or a response teacher. We use GKD-style token losses based on the divergence between teacher and student next-token distri-butions [ 1]. Let pt(· | x, y <i ) be the teacher distribution and ps(· | x, y <i ) be the student distribution. The token loss is 
+
+di = JSD( pt(· | x, y <i ) ∥ ps(· | x, y <i )) . (1) 2Method Cum token T/R Raw per-token JSD T/R Raw per-token grad T/R Vanilla GKD 0.867 0.881 0.957 Hard Clip 0.870 0.893 0.980 Global Reweight 0.874 0.902 0.985 Soft Clamp 0.881 0.895 0.976 
+
+Table 1: Aggregate sanity checks. T/R denotes tool-call divided by response. The over-calling shift is not explained by more tool-call token exposure or larger full-sequence per-token divergence. The sequence loss averages token losses over supervised target positions. In the main experiments, we also include a small supervised loss as a format anchor for structured tool calls. 
+
+2.2 Tool-call versus response supervision 
+
+The tool-call teacher and response teacher start from the same base model. The tool-call teacher is supervised on examples whose final target is a structured tool call. The response teacher is supervised on examples whose final target is a direct natural-language answer. Training uses the final assistant turn as the supervised target; previous turns serve as context. For tool-call examples, our training implementation consumes the final assistant target as text. We therefore pre-render structured tool calls into the model chat template’s textual tool-call form; Appendix A.2 gives an example. This is an implementation-specific serialization detail, not a requirement of multi-teacher OPD itself: other training frameworks may represent tool calls with different structured fields or templates. The detail matters for our experiments because treating the final target as a generic assistant response without the expected rendering can make the model learn an invalid schema even when decision metrics appear plausible. 
+
+2.3 Behavior leverage 
+
+We define behavior leverage as the degree to which a token position controls the future generation mode. Mode-entry tokens have high behavior leverage because changing them redirects the continuation. In tool-use generation, <tool call> and function names are high-leverage positions. Once the model enters a tool-call block, later tokens must follow a structured schema, and the dialogue may continue with tool observations. This differs from ordinary token difficulty. A content token in a direct response can have high loss, but correcting it may only change a local phrase. A mode-entry token with comparable loss can change whether the whole output becomes a tool call. Multi-teacher OPD becomes vulnerable when one teacher’s signals concentrate on high-leverage positions and another teacher’s signals spread across lower-leverage content positions. 
+
+# 3 Diagnosing Behavior Leverage Imbalance 
+
+3.1 Aggregate statistics do not explain over-calling 
+
+Table 1 compares cumulative exposure and raw divergence ratios between tool-call and response examples. The ratios are below one for all methods: response examples receive more token exposure, and the raw full-sequence per-token JSD is larger on the response side. The raw gradient proxy also does not show tool-call domination. These observations rule out a simple aggregate explanation: the tool-call teacher does not dominate because it sees more tokens or produces larger full-sequence divergence. The model still shifts toward 3Token exposure Raw JSD Raw grad proxy    
+
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Tool / response ratio
+> Vanilla Hard Clip Global Reweight Soft Clamp
+
+Figure 1: Token exposure and aggregate JSD sanity checks. Tool-call signals do not dominate in aggregate, so the explanation must involve where the signal acts.                       
+
+> Method APIGen over-call P(tool) on response Top-1 tool on response BFCL irrel. refusal Vanilla GKD 13.7 0.164 15.1 77.8 Hard Clip 12.0 0.157 14.4 81.9 Global Reweight 10.1 0.138 11.3 80.9
+> Soft Clamp 9.0 0.135 11.2 83.5
+
+Table 2: Decision pressure and final behavior. Values except probabilities are percentages. Bold marks the strongest GKD-variant behavior-calibration result in each column. In these runs, response-side tool-call decision metrics align more closely with final over-calling than full-sequence aggregate divergence does. tool calls. The remaining explanation must therefore involve local signals whose behavioral effect is not proportional to their share of total loss. 
+
+3.2 Decision pressure aligns with final behavior 
+
+We next inspect decision-level metrics on response examples. These metrics ask whether the student assigns high probability to <tool call> even when the training example belongs to the response teacher. Table 2 shows that response-side tool-call probability and response-side tool-call top-1 rate align with final APIGen over-calling. We use this alignment as diagnostic evidence: it identifies where the shift appears in the model distribution, but it does not by itself prove that a single token position caused the entire downstream behavior. This evidence suggests that the model is not only improving on should-call examples. It is also moving the should-respond boundary toward the tool-call mode. This is the operational signature of behavior leverage imbalance: the learned distribution changes most at a boundary token whose value determines the subsequent generation mode. 40.135 0.140 0.145 0.150 0.155 0.160 0.165 
+
+P(tool) on response samples 
+
+0.09 
+
+0.10 
+
+0.11 
+
+0.12 
+
+0.13 
+
+0.14 
+
+> APIGen over-calling
+
+Vanilla 
+
+Hard Clip 
+
+Global Reweight 
+
+Soft Clamp Figure 2: Response-side decision pressure tracks final over-calling across GKD variants. Each point is one method. 
+
+# 4 Soft Clamp 
+
+4.1 Token-level dynamic compression 
+
+Soft Clamp targets extreme token-level divergence. For a batch of supervised tokens with divergences {di},we define 
+
+C = k · mean i(di), (2) where k is a clamp multiplier. The calibrated divergence is 
+
+d′ 
+
+> i
+
+=
+
+(di, di ≤ C, di · C 
+
+> stopgrad( di)
+
+, di > C. (3) The detached denominator makes the forward value equal to C for extreme tokens while scaling their gradients by C/d i. Thus Soft Clamp compresses extremes but keeps a nonzero gradient. 
+
+4.2 Comparison with hard clipping and global reweighting 
+
+Hard clipping tests whether directly truncating extreme token losses is enough. It is simple, but it can remove much of the learning signal from difficult high-leverage tokens. Global reweighting changes token weights according to their batch-relative divergence. It is useful as a contrast, but it scales broad regions of the loss rather than isolating local extremes. Soft Clamp is deliberately narrower. It leaves ordinary tokens unchanged, preserves gradients for extreme tokens, and adapts the threshold to the current batch scale. It does not explicitly identify mode-entry tokens; instead, it limits the effect of any extreme local divergence that could dominate training. It does not require a new teacher routing policy, a learned reward model, or a held-out calibration set. 50.0                
+
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Rolling mean
+> P(tool) on response samples
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Tool top-1 rate on response samples
+> 050 100 150 200 250 300
+> Training step
+> 0.0
+> 0.1
+> 0.2
+> Cumulative mean
+> 050 100 150 200 250 300
+> Training step
+> 0.0
+> 0.1
+> 0.2
+> Vanilla Hard Clip Global Reweight Soft Clamp
+
+Figure 3: Step-level response-side decision pressure. Teacher-forced process metrics show that the pressure on response examples emerges during training. 
+
+4.3 Format anchoring 
+
+Structured tool calls introduce a second risk: schema drift. In early pure OPD runs, some checkpoints produced invalid tool-call strings even when the training data used the correct XML-style target format. Our main runs therefore include a supervised loss with weight 0.3 as a format anchor. This anchor is not the proposed method; it is a controlled training component that keeps the tool-call schema parseable while we compare GKD variants. A pure OPD schema-drift study remains useful future work. 
+
+# 5 Experiments 
+
+5.1 Models and training 
+
+All models use Qwen3.5-9B as the base. The tool-call teacher and response teacher are initialized from the same base and trained on their respective target types. They serve as online supervisors, not as deployable balanced baselines. The main comparison therefore reports the base model, a base SFT model trained on the mixed tool-use data, and four GKD students: vanilla GKD, Hard Clip, Global Reweight, and Soft Clamp. The GKD students share the same data, teachers, training length, and core OPD settings. The main GKD runs use sf t alpha = 0 .3 as a format anchor. 
+
+5.2 Datasets and metrics 
+
+APIGen-MT. APIGen-MT is the main in-domain tool-use decision benchmark. We report decision accuracy, over-calling rate, should-call recall, and should-respond recall. Over-calling is the fraction of should-respond examples on which the model emits a tool call. 
+
+BFCL. BFCL evaluates function-calling quality and irrelevance refusal. We use it to test whether tool-call calibration transfers beyond APIGen-style decision points. 60.0 0.2 0.4 0.6 0.8       
+
+> Gradient suppression
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> Training signal suppressed
+> Tool tokens
+> Resp. tokens
+> 0.00 0.01 0.02 0.03 0.04 0.05 0.06
+> Change vs. Vanilla
+> Final behavior improved
+> Over-call red.
+> BFCL gain
+
+Figure 4: Intervention strength and behavior. Stronger compression of extreme token-level signals aligns with lower APIGen over-calling among GKD variants, but the result should not be read as “more compression is always better.” 
+
+Method Decision Acc Over-calling Call Recall Respond Recall Base 80.7 7.2 68.5 92.8 Base SFT 85.3 4.9 75.5 95.1 Vanilla GKD 88.9 13.7 91.4 86.4 Hard Clip 89.2 12.0 90.4 88.0 Global Reweight 89.1 10.1 88.2 90.0 
+
+Soft Clamp 89.2 9.0 87.5 91.0 
+
+Table 3: APIGen-MT decision results. All values are percentages. Bold marks the best value among GKD variants in each column. Vanilla GKD improves call recall but raises over-calling. Soft Clamp gives the lowest over-calling among GKD variants while matching the best decision accuracy. 
+
+When2Call. When2Call evaluates whether a model should call a tool, request more information, or refuse. It serves as an out-of-domain decision diagnostic, not as the main success metric. 
+
+BFCL multi-turn loop diagnostic. We also run a multi-turn diagnostic on 800 BFCL tasks and 3136 user turns. It records tool calls per turn, loop rates, max-step hits, repeated same-call rates, and final-answer rates. This diagnostic is not an official BFCL leaderboard protocol. It measures whether the single-turn over-calling tendency becomes a practical multi-turn usability problem under a fixed simulated tool environment. 
+
+5.3 APIGen-MT main results 
+
+Table 3 shows the main trade-off. Base SFT favors response behavior: it has low over-calling and high respond recall, but lower call recall. Vanilla GKD moves the model in the opposite direction: call recall reaches 91.4%, but over-calling rises to 13.7%. Soft Clamp reduces over-calling to 9.0% while maintaining 89.2% decision accuracy. 
+
+5.4 BFCL and When2Call 
+
+BFCL is consistent with the calibration interpretation. Soft Clamp gives the best irrelevance refusal among GKD variants, which is consistent with lower unnecessary tool use. It does not improve BFCL overall beyond 70.85 0.90      
+
+> SFT
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> Decision accuracy
+> 0.05 0.10 0.15
+> Over-calling
+> 0.8 0.9
+> Call recall
+> 0.85 0.90 0.95
+> Respond recall
+
+Figure 5: APIGen-MT behavior trade-off. Soft Clamp reduces over-calling relative to vanilla GKD while preserving decision accuracy. 
+
+Method Overall Tool Call Quality Irrelevance Refusal Base 82.2 83.5 79.8 Base SFT 82.9 82.0 84.4 Vanilla GKD 79.8 80.9 77.8 Hard Clip 80.2 79.3 81.9 Global Reweight 80.0 79.5 80.9 
+
+Soft Clamp 80.6 79.1 83.5 
+
+Table 4: BFCL results. All values are percentages. Bold marks the best GKD-variant irrelevance refusal. Soft Clamp improves irrelevance refusal among GKD variants, but it does not dominate the base or base SFT overall. the base SFT. When2Call is more restrictive: GKD variants retain high tool-call accuracy but perform worse on request-for-information and cannot-answer cases. These results frame Soft Clamp as a GKD-internal behavior calibration method, not a universal tool-use decision solution. 
+
+5.5 Multi-turn tool-call loops 
+
+The multi-turn diagnostic connects the decision metric to deployment behavior. Vanilla GKD makes 1.494 tool calls per turn, triggers Loop@3 on 14.8% of turns, and repeats the same call on 16.7% of turns. Soft Clamp lowers these values to 1.268, 10.1%, and 11.1%, respectively. The final-answer rate rises from 89.6% to 94.1%. This result does not replace official BFCL scoring, but it captures the practical risk of an excessive tool-call prior under a controlled interaction harness. 
+
+# 6 Related Work and Limitations 
+
+On-policy and generalized distillation. On-policy distillation trains the student on its own generated distribution, reducing train-test mismatch compared with purely offline distillation. GKD instantiates this idea with divergence-based teacher supervision [ 1 ]. MiniLLM and related work study reverse-KL-style distillation and student-generated samples [ 10 , 17 ]. Our work does not modify the basic OPD objective. It studies how heterogeneous teacher signals act on behavior boundaries inside that objective. 
+
+Multi-teacher OPD. Recent work explores multi-teacher OPD, teacher routing, specialization, and robust-ness [ 4 , 7 , 11 , 13 , 14 , 20 ]. These methods often focus on how to combine or select teachers. We assume teacher routing is already given by data type and study why correct routing can still shift the student toward 8Method MCQ Acc tool call request for info cannot answer Base 72.8 88.1 61.6 68.1 Base SFT 71.6 88.8 63.3 63.1 Vanilla GKD 64.9 89.7 52.6 52.9 Hard Clip 65.4 90.0 52.2 54.2 Global Reweight 66.1 90.0 54.7 54.2 Soft Clamp 65.0 89.1 57.8 49.7 
+
+Table 5: When2Call results. All values are percentages. This benchmark limits the scope of the claim: the current GKD variants do not improve all out-of-domain tool-use decisions.                                     
+
+> Method Calls/turn Loop@3 Loop@5 Max-step Repeat call Final answer Base SFT 0.974 5.1 0.7 0.7 2.5 96.5 Vanilla GKD 1.494 14.8 8.6 8.6 16.7 89.6 Hard Clip 1.348 11.5 6.3 6.3 14.4 91.5 Global Reweight 1.398 12.1 6.6 6.6 14.8 92.1
+> Soft Clamp 1.268 10.1 4.7 4.7 11.1 94.1
+
+Table 6: BFCL multi-turn loop diagnostic. All values except calls/turn are percentages. Bold marks the best value among GKD variants in each column. Soft Clamp has the lowest loop and repeated-call rates among GKD variants. one behavior. This makes our contribution complementary: we analyze token-level behavior leverage rather than proposing multi-teacher distillation as a new paradigm. 
+
+Balancing losses and gradients. Multi-objective training has long used loss weighting and gradient balancing to manage competing tasks [ 2 , 9]. Distillation-specific variants also adjust token weights or teacher contributions [ 8, 15 , 16 ]. Soft Clamp differs in scope. It is not a global task-weighting rule. It compresses extreme per-token divergence values while preserving gradients, which targets local domination at high-leverage positions. 
+
+Tool-use behavior drift. Tool-use and agentic training can produce behavior drift, including tool overuse, tool-use collapse, and repeated calls [ 3, 5 , 6, 12 , 18 , 19 ]. These studies often examine RL or agentic search settings. We find a related behavior shift in supervised multi-teacher OPD, which suggests that overuse can arise before RL, through local distillation signals at mode-entry positions. 
+
+Limitations. First, our experiments focus on one base model and a two-teacher tool-call versus response setting. The mechanism should be tested in other heterogeneous-teacher settings, such as refusal versus helpfulness, code versus natural language, and short answers versus long reasoning. Second, the reported numbers are point estimates from the current training runs; multi-seed studies would better separate systematic effects from run-to-run variation. Third, Soft Clamp is a mitigation, not a theory-optimal solution. Some extreme token-level signals may encode useful specialization; excessive compression could underfit them. Fourth, our step-level evidence uses teacher-forced process metrics. The observed alignment between response-side decision pressure and final over-calling should be read as diagnostic evidence, not as a complete causal proof. Checkpoint-wise free-generation probes would give a more direct trajectory of over-calling during training. Fifth, the BFCL multi-turn loop diagnostic is designed to measure usability risk under a simulated environment; it should be reported alongside official benchmark scores rather than as a replacement. 9SFT         
+
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> count  0.97
+> 1.49
+> 1.35 1.40 1.27
+> Tool calls / turn
+> SFT
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> 0%
+> 5%
+> 10%
+> 15%
+> %
+> 5.1
+> 14.8
+> 11.5 12.1
+> 10.1
+> Loop rate @3
+> SFT
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> 0%
+> 5%
+> 10%
+> 15%
+> 20%
+> %
+> 2.5
+> 16.7
+> 14.4 14.8
+> 11.1
+> Repeat same call
+> SFT
+> Vanilla
+> Hard Clip
+> Global Reweight
+> Soft Clamp
+> 0%
+> 25%
+> 50%
+> 75%
+> 100%
+> %
+> 96.5 89.6 91.5 92.1 94.1
+> Final answer rate
+> Stars mark the best GKD variant for each diagnostic metric.
+
+Figure 6: BFCL multi-turn loop diagnostic. Over-calling in single-turn evaluation corresponds to more tool calls, higher loop rates, and fewer final answers in a simulated multi-turn tool environment. Finally, the supervised format anchor is held fixed across GKD variants, but it changes the pure OPD setting. A separate pure-OPD schema-drift experiment would clarify how much supervised anchoring is needed for structured tool-call formats. 
+
+Artifact availability. We plan to release the training code, analysis scripts, and evaluation harness after internal review. The released artifacts will include the logging metrics and plotting scripts needed to reproduce the main diagnostic figures. 
+
+# 7 Conclusion 
+
+Multi-teacher OPD can shift model behavior even when aggregate teacher contributions look balanced. In tool-use distillation, local signals at mode-entry and structural positions have high behavior leverage: they can move the model into a tool-call trajectory and affect the entire continuation. This helps explain why vanilla GKD can improve tool-call recall while also increasing over-calling. Soft Clamp offers a simple calibration rule for this failure mode. By dynamically compressing extreme per-token divergence and preserving gradients, it reduces over-calling and multi-turn loop risk among GKD variants while maintaining APIGen decision accuracy. The broader lesson is diagnostic: multi-teacher OPD should track not only how much signal each teacher supplies, but also where that signal acts and whether it pushes behavior boundaries. 
+
+AI assistance. The authors used AI-assisted tools for language polishing, draft organization, LaTeX editing, and code/documentation assistance. All scientific claims, equations, experimental results, citations, and final text were reviewed and verified by the authors, who take full responsibility for the manuscript. 10 References 
+
+[1] Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Garea, Matthieu Geist, and Olivier Bachem. On-policy distillation of language models: Learning from self-generated mistakes. In 
+
+International Conference on Learning Representations (ICLR) , 2024. URL https://arxiv.org/ abs/2306.13649 . GKD: foundation work for on-policy distillation with JSD. Our base method. [2] Zhao Chen, Vijay Badrinarayanan, Chen-Yu Lee, and Andrew Rabinovich. Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks. In International Conference on Machine Learning (ICML) , 2018. Gradient normalization for multi-task learning. Referenced as related approach. [3] Wenlong Deng, Yushu Li, Boying Gong, Yi Ren, Christos Thrampoulidis, and Xiaoxiao Li. On grpo collapse in search-r1: The lazy likelihood-displacement death spiral. arXiv preprint arXiv:2512.04220 ,2025. URL https://arxiv.org/abs/2512.04220 . Analyzes collapse in Search-R1-style tool-integrated GRPO via Lazy Likelihood Displacement. Useful adjacent evidence that scalar training curves can hide behavior-level failures. [4] D. Hao, Zhiwei Jin, Chen Chen, and H. Lu. Stabilizing on-policy distillation for mllm reasoning with global normalization. arXiv preprint arXiv:2606.09091 , 2026. URL https://arxiv.org/abs/ 2606.09091 . Batch-level global normalization of token distillation rewards as relative advantages. Suppresses gradient spikes. Single-teacher. [5] Yupu Hao, Zhuoran Jin, Huanxuan Liao, Kang Liu, and Jun Zhao. Why multi-step tool-use reinforce-ment learning collapses and how supervisory signals fix it. arXiv preprint arXiv:2606.26027 , 2026. URL https://arxiv.org/abs/2606.26027 . Analyzes catastrophic collapse in multi-step tool-use RL, including failed tool-invocation structures driven by control-token probability spikes. Strong adjacent evidence for format anchors and behavior-level monitoring. [6] Bowen Jin, Hansi Zeng, Zhenrui Yue, Wang Dong, Hamed Zamani, and Jiawei Han. Search-r1: Training llms to reason and leverage search engines with reinforcement learning. arXiv preprint arXiv:2503.09516 , 2025. URL https://arxiv.org/abs/2503.09516 . Tool-integrated RL framework for multi-turn search interaction. Cited as adjacent background for behavior-level transitions in agentic training. [7] Jongho Jin et al. Entropy-aware on-policy distillation of language models. In International Con-ference on Machine Learning (ICML) , 2026. URL https://arxiv.org/abs/2603.07079 .Single-teacher entropy-based KL switch (forward/reverse). Binary divergence choice, not magnitude calibration. [8] Seongryong Jung et al. Todi: Token-wise distillation via fine-grained divergence control. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2025. URL 
+
+https://arxiv.org/abs/2505.16297 . Per-token adaptive forward/reverse KL selection via sigmoid weighting. Single-teacher. Outstanding Paper Award Nominee. [9] Alex Kendall, Roberto Cipolla, and Yarin Gal. Multi-task learning using uncertainty to weigh losses for scene geometry and semantics. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2018. Homoscedastic uncertainty for multi-task loss weighting. Theoretical basis for uncertainty weighting baseline. 11 [10] Jongwoo Ko et al. Distillm-2: A contrastive approach boosts the distillation of llms. In International Conference on Machine Learning (ICML) , 2025. URL https://arxiv.org/abs/2503.07067 .Contrastive distillation with different divergences for different data types. Single-teacher. [11] Wenhan Ma, Jianyu Wei, Liang Zhao, Hailin Zhang, Bangjun Xiao, Lei Li, Qibin Yang, Bofei Gao, Yudong Wang, Rang Li, Jinhao Dong, Zhifang Sui, and Fuli Luo. Mopd: Multi-teacher on-policy distillation for capability integration in llm post-training. arXiv preprint arXiv:2606.30406 , 2026. URL https://arxiv.org/abs/2606.30406 . Multi-teacher OPD for capability integration with domain-specialized RL teachers and prompt/domain routing. Strong related framework; does not analyze confidence asymmetry bias. [12] Cheng Qian, Emre Can Acikgoz, Hongru Wang, Xiusi Chen, Avirup Sil, Dilek Hakkani-Tur, Gokhan Tur, and Heng Ji. Smart: Self-aware agent for tool overuse mitigation. In Findings of the Associ-ation for Computational Linguistics: ACL , 2025. URL https://aclanthology.org/2025. findings-acl.239/ . Studies unnecessary tool use and calibrates when agents should rely on tools versus parametric knowledge. Related to behavior evaluation, not multi-teacher OPD. [13] Mingyang Song and Mao Zheng. A survey of on-policy distillation for large language models. arXiv preprint arXiv:2604.00626 , 2026. URL https://arxiv.org/abs/2604.00626 . First OPD survey; unifies f-divergence framework. Must cite. [14] Zhihui Wang et al. Mad-opd: Breaking the ceiling in on-policy distillation via multi-agent debate. arXiv preprint arXiv:2605.01347 , 2026. URL https://arxiv.org/abs/2605.01347 . Multi-teacher OPD via debate + confidence-weighted teacher selection. Solves ceiling problem, not bias. [15] Xurong Xie, Zhucun Xue, Jiafu Wu, Jian Li, Yabiao Wang, Xiaobin Hu, Yong Liu, and Jiangning Zhang. Llm-oriented token-adaptive knowledge distillation. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2026. URL https://ojs.aaai.org/index.php/AAAI/ article/view/40701 . Token-adaptive KD based on student needs. Single-teacher + adaptive KL direction. [16] Yuanda Xu, Hejian Sang, Zhengze Zhou, Ran He, Zhipeng Wang, and Alborz Geramifard. Tip: Token importance in on-policy distillation. arXiv preprint arXiv:2604.14084 , 2026. URL https: //arxiv.org/abs/2604.14084 . Token importance taxonomy: high student entropy + low entropy with high divergence. Single-teacher descriptive, not calibrative. [17] Yuxian Xu et al. Minillm: Knowledge distillation of large language models. In International Conference on Learning Representations (ICLR) , 2024. URL https://arxiv.org/abs/2306.08543 .Reverse KL + REINFORCE for LLM distillation. Single-teacher. [18] Zhenghai Xue, Longtao Zheng, Qian Liu, Yingru Li, Xiaosen Zheng, Zejun Ma, and Bo An. Sim-pletir: End-to-end reinforcement learning for multi-turn tool-integrated reasoning. arXiv preprint arXiv:2509.02479 , 2025. URL https://arxiv.org/abs/2509.02479 . Identifies distribu-tional drift from external tool feedback as a source of multi-turn TIR RL instability and gradient explosions. Adjacent stability background. [19] Yirong Zeng, Shen You, Yufei Liu, Qunyao Du, Xiao Ding, Yutai Hou, Yuxian Wang, Wu Ning, Haonan Song, Dandan Tu, Bibo Cai, and Ting Liu. The tool-overuse illusion: Why does llm prefer external tools over internal knowledge? arXiv preprint arXiv:2604.19749 , 2026. URL https: //arxiv.org/abs/2604.19749 . Studies tool overuse and shows outcome-only RL can increase tool-call turns during training. Adjacent behavior-bias work; mechanism is reward design and knowledge-boundary miscalibration, not teacher-token pressure. 12 [20] Siyan Zhao, Zhihui Xie, Mengchen Liu, Jing Huang, Guan Pang, Feiyu Chen, and Aditya Grover. Self-distilled reasoner: On-policy self-distillation for large language models. arXiv preprint arXiv:2601.18734 , 2026. URL https://arxiv.org/abs/2601.18734 . Single-teacher hard clip (min(loss, tau)) for token-level imbalance. Gradient zeroed above threshold. 13 A Additional Experimental Details 
+
+A.1 Training data and supervision 
+
+The main GKD experiments use two training splits derived from APIGen-MT: 15,419 tool-call examples and 15,420 response examples. Each example is routed to one teacher by its teacher tag. The tool-call teacher supervises examples whose final target is a structured tool call, and the response teacher supervises examples whose final target is a natural-language answer. Only the final assistant turn is used as the supervised target. Earlier turns provide dialogue context. In our ms-swift/Megatron implementation, the training backend treats this final assistant target as text. For tool-call examples, we therefore pre-render the final target into the model chat template’s XML-style textual form, with tags such as <tool call> , <function=...> , and <parameter=...> . This preprocessing is backend-specific rather than an algorithmic requirement. It is important in our setup because leaving a tool call as an unrendered object can make the model learn an invalid tool-call schema. 
+
+A.2 Tool-call target rendering 
+
+For structured tool-call examples, the final supervised target is rendered as text before training in our backend. A representative target is: 
+
+> <tool_call> <function=get_flight_cost> <parameter=travel_to> LAX </parameter> </function> </tool_call>
+
+This appendix example is illustrative; the experiments use the rendered targets from the APIGen-MT-derived training split. Other frameworks may serialize the same structured call differently. 
+
+A.3 Main training configuration 
+
+Table 7 lists the shared training configuration for the four GKD variants. All variants use the same data, teachers, model initialization, training length, and batch settings. They differ only in the loss modifier: none for vanilla GKD, hard clipping for Hard Clip, batch-relative reweighting for Global Reweight, and dynamic token compression for Soft Clamp. The supervised anchor is not part of the proposed method. It is held fixed across all GKD variants to keep structured tool-call outputs parseable while comparing the distillation losses. 
+
+# B Metric Definitions 
+
+B.1 Evaluation metrics 
+
+For APIGen-MT, decision accuracy is the fraction of examples for which the model makes the correct tool-use decision. Over-calling is the fraction of should-respond examples on which the model emits a tool call. Call recall is recall on should-call examples, and respond recall is recall on should-respond examples. For BFCL, we report the official-style aggregate score, tool-call quality, and irrelevance refusal. The irrelevance refusal split is especially relevant to this paper because it measures whether the model avoids unnecessary tool calls. 14 Item Value Base model Qwen3.5-9B Training backend ms-swift Megatron GKD backend Precision bfloat16 Epochs 1Micro batch size 4Global batch size 96 Maximum input length 14,000 tokens Maximum completion length 512 tokens Learning rate 5 × 10 −6           
+
+> Warmup fraction 0.1 Tensor parallel size 8GKD rollout mixture λ0.8 GKD β0.5 Sequence KD false Supervised format anchor sft alpha =0.3 Teacher logit top-k32 Loss scale last response+ignore empty think
+> Checkpoint interval 50 steps
+
+Table 7: Shared GKD training configuration. For When2Call, we report multiple-choice accuracy and category-wise scores for tool-call, request-for-information, and cannot-answer decisions. We use it as an out-of-domain decision diagnostic rather than the main success metric. 
+
+B.2 Training process metrics 
+
+The training logs contain both raw and adjusted statistics. Raw statistics are computed before any loss modifier. Adjusted statistics are computed after Soft Clamp, Hard Clip, or Global Reweighting. In vanilla GKD, raw and adjusted values are identical. The main aggregate diagnostic is the raw per-token JSD ratio: 
+
+RJSD =
+
+P 
+
+> i∈tool
+
+di/N tool 
+
+P 
+
+> i∈resp
+
+di/N resp 
+
+, (4) where di is the token-level divergence and N is the number of supervised loss tokens. We also use a gradient proxy ratio: 
+
+Rgrad =
+
+P 
+
+> i∈tool
+
+d2 
+
+> i
+
+/N tool 
+
+P 
+
+> i∈resp
+
+d2 
+
+> i
+
+/N resp 
+
+. (5) These ratios remove the first-order effect of response length and batch composition. Values below one mean that response examples have larger average full-sequence divergence or gradient proxy. Decision-boundary metrics inspect the first supervised token. We log the student’s probability of 
+
+<tool call> , the log-odds margin between <tool call> and all non-tool-call tokens, the margin between <tool call> and common natural-language response starters, and whether <tool call> is the student’s top-1 token. These metrics connect training dynamics to final over-calling because the first supervised token determines whether the model enters the tool-call mode. They should be interpreted as boundary diagnostics, not as a complete causal decomposition of all later generation behavior. 15 Signed pressure measures whether the teacher pushes the student toward <tool call> at the decision boundary: 
+
+Psigned = pt(<tool call> | x, y <1) − ps(<tool call> | x, y <1). (6) Positive values mean that the teacher assigns more probability to <tool call> than the student does. Negative values mean that the teacher pushes against tool-call entry. Cumulative exposure metrics record the number of tool-call and response samples and loss tokens consumed up to each step, which helps separate training-order effects from teacher-signal effects. 
+
+# C Loss Modifier Details 
+
+C.1 Vanilla GKD 
+
+Vanilla GKD uses the original token divergence di without additional calibration. It is the reference point for measuring whether a loss modifier reduces behavior imbalance. 
+
+C.2 Soft Clamp 
+
+Soft Clamp sets a dynamic threshold C = k mean i(di) for each batch. We use k = 3 .0 in the main experiment. Tokens with di ≤ C are unchanged. Tokens with di > C use 
+
+d′ 
+
+> i
+
+= di
+
+C
+
+stopgrad( di) . (7) The forward value is capped at C, but the token still receives a nonzero gradient scaled by C/d i.
+
+C.3 Hard Clip 
+
+Hard Clip applies 
+
+d′ 
+
+> i
+
+= min( di, c ), (8) with c = 0 .5 in the main experiment. This baseline tests whether simply truncating extreme token losses can reduce over-calling. Its drawback is that tokens above the threshold lose the marginal gradient associated with further increases in di.
+
+C.4 Global Reweight 
+
+Global Reweight is a batch-relative baseline. Let 
+
+zi = clip 
+
+ di − mean( d)std( d) , −zmax , z max 
+
+
+
+. (9) The token weight is 
+
+wi = exp( −αz i)mean j exp( −αz j ) , (10) followed by clipping to [wmin , w max ]. The adjusted divergence is d′ 
+
+> i
+
+= di stopgrad( wi). We use α = 0 .3,
+
+zmax = 3 .0, wmin = 0 .25 , and wmax = 2 .0. This method is useful as a contrast because it reweights tokens by batch-relative divergence, but it does not explicitly target high-leverage mode-entry positions. 16 D BFCL Multi-turn Loop Diagnostic 
+
+The BFCL multi-turn diagnostic evaluates whether a model with a stronger tool-call prior becomes less usable in an interactive tool environment. It uses 800 BFCL tasks and 3,136 user turns. When the model emits a tool call, the harness returns a simulated tool observation and continues the dialogue until the model gives a final answer or reaches the maximum step limit. We report five diagnostic metrics. Tool calls per turn counts the average number of tool calls emitted per user turn. Loop@3 and Loop@5 measure whether the model keeps calling tools for at least three or five consecutive steps. Max-step hit records turns that end by reaching the harness limit. Repeat same call 
+
+records repeated calls to the same function with the same arguments. Final answer records whether the model eventually returns a non-tool final answer. This diagnostic is not a replacement for official BFCL scoring. It is a usability stress test for the specific failure mode studied in this paper: a model can improve should-call recall while becoming too willing to enter tool-call trajectories during multi-turn interaction. 
+
+# E Schema Drift and Format Anchoring 
+
+Early pure OPD runs showed that a model can preserve the high-level decision signal while drifting away from the required tool-call schema. This was most visible as invalid XML-style tool-call strings. The issue is separate from behavior leverage imbalance: one concerns whether the model chooses the tool-call mode, and the other concerns whether the generated tool-call string is parseable. The main experiments therefore use a small supervised loss with sft alpha =0.3 as a format anchor. Because this anchor is shared by all GKD variants, it does not explain the difference between vanilla GKD, Hard Clip, Global Reweight, and Soft Clamp. A pure OPD schema-drift experiment is useful as a separate robustness study, but it is not required for the main comparison in this paper. 17

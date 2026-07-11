@@ -6,103 +6,76 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-10
-- 运行时间：2026-07-10 20:43:00 UTC
+- 最新运行日期：2026-07-11
+- 运行时间：2026-07-11 20:14:20 UTC
 - 运行状态：成功
-- 本次总论文数：27
-- 精读区：16
+- 本次总论文数：18
+- 精读区：7
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选 27 篇 AI 论文，精读两篇满分工作，聚焦于大模型与 Agent 的记忆取舍机制，以及递归式多智能体深度搜索。
-最值得关注的方向是：如何用率失真理论指导大模型压缩记忆，以及如何构建可递归编排的 Agent 群组实现广深兼顾的网络搜索。
-建议从业者优先阅读《What to Keep, What to Forget》和《WebSwarm》，从中获取记忆管理与多 Agent 协作的最新方案。
-- 详情：[/202607/10/README](/202607/10/README)
+今日精选长程智能体与多模态感知领域两篇顶尖论文，速览专家路由视觉语言模型等方向。  
+强化学习通过上下文压缩有效突破长程任务，贝叶斯搜索显著提升多模态大模型的细粒度感知能力。  
+建议关注“CoRE-VLA”这类可扩展的机器人学习框架，并尝试将语义感知与自改进方法融入智能体设计。
+- 详情：[/202607/11/README](/202607/11/README)
 
 ### 精读区论文标签
-1. [What to Keep, What to Forget: A Rate--Distortion View of Memory Compaction in LLMs and Agents](/202607/10/2607.08032v1-what-to-keep-what-to-forget-a-rate--distortion-view-of-memory-compaction-in-llms-and-agents)  
+1. [CompactionRL: Reinforcement Learning with Context Compaction for Long-Horizon Agents](/202607/11/2607.05378v1-compactionrl-reinforcement-learning-with-context-compaction-for-long-horizon-agents)  
    标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：将KV缓存淘汰、提示剪枝、智能体记忆等内存压缩方法统一视为率失真问题，直接处理长上下文和智能体记忆
-2. [WebSwarm: Recursive Multi-Agent Orchestration for Deep-and-Wide Web Search](/202607/10/2607.08662v1-webswarm-recursive-multi-agent-orchestration-for-deep-and-wide-web-search)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：提出递归多智能体编排框架，用于基于大语言模型的网络搜索智能体
-3. [Spectral Rewiring for Exploration, Purification, and Model Merging](/202607/10/2607.03065v1-spectral-rewiring-for-exploration-purification-and-model-merging)  
+   evidence：使用强化学习和上下文压缩训练长时程智能体LLM，以在有限上下文窗口内完成长时任务。
+2. [BVS: Bayesian Visual Search with Multimodal Large Language Model for Fine-grained Perception](/202607/11/2607.03184v1-bvs-bayesian-visual-search-with-multimodal-large-language-model-for-fine-grained-perception)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：编辑LLM训练后RL更新以保持推理能力
-4. [From Geometric Labels to Semantic Understanding of Indoor Building Components Using Multimodal Large Language Models](/202607/10/2607.03661v1-from-geometric-labels-to-semantic-understanding-of-indoor-building-components-using-multimodal-large-language-models)  
+   evidence：提出基于贝叶斯视觉搜索的MLLM框架，用于高分辨率图像中的细粒度感知
+3. [Amortising Bayesian Experimental Design for Sequential Information Gathering in LLMs](/202607/11/2607.03426v1-amortising-bayesian-experimental-design-for-sequential-information-gathering-in-llms)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出以点云为中心的多模态大语言模型Building-MLLM，用于室内建筑构件的语义理解
-5. [TORINO: Token Reduction via Interpretable Concept Overlap in Vision-Language Models](/202607/10/2607.04593v1-torino-token-reduction-via-interpretable-concept-overlap-in-vision-language-models)  
+   evidence：使用群体相对策略优化和期望信息增益奖励的RL微调LLM
+4. [Agentic-V2X: Small Language Model Agents for Deadline-Aware V2X Scheduling in 5G/6G Networks](/202607/11/2607.04290v1-agentic-v2x-small-language-model-agents-for-deadline-aware-v2x-scheduling-in-5g6g-networks)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：通过可解释的概念重叠减少VLM中的视觉token
-6. [Enhancing Large Multimodal Models in Key Information Extraction via Scene-Aware Document Synthesis](/202607/10/2607.04636v1-enhancing-large-multimodal-models-in-key-information-extraction-via-scene-aware-document-synthesis)  
+   evidence：构建使用小语言模型的自主智能体进行V2X调度
+5. [VLA Grounder: Language-Conditioning Space Optimization for Black-Box VLA Models](/202607/11/2607.04517v1-vla-grounder-language-conditioning-space-optimization-for-black-box-vla-models)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：增强大模型的视觉文本关键信息提取
-7. [ResonatorLM: Causal Resonant Field Mixing for Efficient Long-Context Language Modeling](/202607/10/2607.05583v2-resonatorlm-causal-resonant-field-mixing-for-efficient-long-context-language-modeling)  
+   evidence：通过语言空间策略优化黑盒视觉-语言-动作模型的语言条件
+6. [APIVOT: Adaptive Planning with Interleaved Vision-Language Thoughts](/202607/11/2607.08024v1-apivot-adaptive-planning-with-interleaved-vision-language-thoughts)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出物理启发的场混合替代注意力以实现长上下文高效建模
-8. [Scene Graph Thinking: Reinforcing Structured Visual Reasoning for Multimodal Large Language Models](/202607/10/2607.05716v2-scene-graph-thinking-reinforcing-structured-visual-reasoning-for-multimodal-large-language-models)  
+   evidence：基于视觉-语言模型并交叉视觉与语言思维的长时域任务规划智能体
+7. [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](/202607/11/2607.08448v1-harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：引入场景图思维以实现多模态大模型的结构化视觉推理
-9. [MILES: Modular Instruction Memory with Learnable Selection for Self-Improving LLM Reasoning](/202607/10/2607.06974v1-miles-modular-instruction-memory-with-learnable-selection-for-self-improving-llm-reasoning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出模块化指令记忆与可学习选择机制，跨问题积累推理经验以增强大语言模型推理能力
-10. [Co-LMLM: Continuous-Query Limited Memory Language Models](/202607/10/2607.07707v1-co-lmlm-continuous-query-limited-memory-language-models)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出新型LLM架构，外部知识库支持连续查询
-11. [ReCoLoRA: Spectrum-Aware Recursive Consolidation for Continual LLM Fine-Tuning](/202607/10/2607.07719v1-recolora-spectrum-aware-recursive-consolidation-for-continual-llm-fine-tuning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：通过递归LoRA整合实现LLM持续微调的方法
-12. [When Implausible Tokens Get Reinforced: Tail-Aware Credit Calibration for LLM Reinforcement Learning](/202607/10/2607.07976v1-when-implausible-tokens-get-reinforced-tail-aware-credit-calibration-for-llm-reinforcement-learning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：校准LLM强化学习中的token级信用分配以避免强化不合理的token
-13. [Agentic Neural Architecture Search](/202607/10/2607.07984v1-agentic-neural-architecture-search)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：基于LLM的智能体用于神经架构搜索，分解架构为槽式形式
-14. [Cognitive-structured Multimodal Agent for Multimodal Understanding, Generation, and Editing](/202607/10/2607.08497v1-cognitive-structured-multimodal-agent-for-multimodal-understanding-generation-and-editing)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：构建认知结构化多模态智能体，利用情节视觉记忆实现自主任务
-15. [Switch-Reasoner: Learn When to Think in Multitask Mixtures via Reinforcement Learning](/202607/10/2607.08572v1-switch-reasoner-learn-when-to-think-in-multitask-mixtures-via-reinforcement-learning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用强化学习让多模态大模型学习自适应推理模式选择
-16. [UniClawBench: A Universal Benchmark for Proactive Agents on Real-World Tasks](/202607/10/2607.08768v1-uniclawbench-a-universal-benchmark-for-proactive-agents-on-real-world-tasks)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：评估大模型与多模态智能体的主动执行基准
+   evidence：记忆增强的智能体框架，利用LLM编码智能体引导冻结VLA进行操纵
 
 ### 速读区论文标签
-1. [Interpretable Inverse Design of Metal-Organic Frameworks with Large Language Model Agents](/202607/10/2606.29459v1-interpretable-inverse-design-of-metal-organic-frameworks-with-large-language-model-agents)  
+1. [CoRE-VLA: Towards Scalable and Robust Vision-Language-Action Modeling via Conditional Routing of Experts](/202607/11/2607.03693v1-core-vla-towards-scalable-and-robust-vision-language-action-modeling-via-conditional-routing-of-experts)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：利用大语言模型智能体进行MOF的可解释逆向设计
-2. [DiscoLoop: Looping Discrete Embeddings and Continuous Hidden States for Multi-hop Reasoning](/202607/10/2607.00341v1-discoloop-looping-discrete-embeddings-and-continuous-hidden-states-for-multi-hop-reasoning)  
+   evidence：提出条件专家路由实现可扩展鲁棒的视觉-语言-动作建模以处理异构传感器
+2. [Semantic-aware and Self-improving Program Reduction via Agentic Large Language Models](/202607/11/2607.03766v1-semantic-aware-and-self-improving-program-reduction-via-agentic-large-language-models)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：利用循环Transformer改进大语言模型的多跳推理
-3. [VLM-AR3L: Vision-Language Models for Absolute and Relative Rewards in Reinforcement Learning](/202607/10/2607.00483v1-vlm-ar3l-vision-language-models-for-absolute-and-relative-rewards-in-reinforcement-learning)  
+   evidence：利用大模型智能体通过迭代推理进行程序缩减
+3. [Forethought: Verifiable Reasoning from Neurosymbolic Primitive Programming](/202607/11/2607.04096v1-forethought-verifiable-reasoning-from-neurosymbolic-primitive-programming)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：利用视觉-语言模型为强化学习提供绝对和相对奖励
-4. [Bayesian Sparse Low-Rank Adaptation for Large Language Model Uncertainty Estimation](/202607/10/2607.02182v1-bayesian-sparse-low-rank-adaptation-for-large-language-model-uncertainty-estimation)  
+   evidence：提出用于基于LLM的智能体工作流的可验证神经符号推理系统
+4. [Behavior Leverage Imbalance in Multi-Teacher On-Policy Distillation](/202607/11/2607.07050v1-behavior-leverage-imbalance-in-multi-teacher-on-policy-distillation)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：大语言模型微调的贝叶斯稀疏低秩适配及不确定性估计
-5. [Improving LLMs via Validator-to-Generator Alignment](/202607/10/2607.02668v1-improving-llms-via-validator-to-generator-alignment)  
+   evidence：用于训练智能体语言模型工具使用的多教师蒸馏方法
+5. [Reinforcement Learning for Data-Efficient Code-Switched ASR](/202607/11/2607.02757v1-reinforcement-learning-for-data-efficient-code-switched-asr)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过频率校正的验证器-生成器对齐解决LLM不一致性
-6. [Text as Partial Constraint: Core-Residual Alignment for Robust Vision-Language Learning](/202607/10/2607.03143v1-text-as-partial-constraint-core-residual-alignment-for-robust-vision-language-learning)  
+   evidence：将带可验证奖励的强化学习用于音频语言模型的语码转换语音识别数据高效适配
+6. [Learning Taxonomic Trees with Hierarchical Representation Regularization for Large Multimodal Models](/202607/11/2607.02909v1-learning-taxonomic-trees-with-hierarchical-representation-regularization-for-large-multimodal-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：改进多模态大模型中的视觉-语言对齐
-7. [Demonstrating Generalization Failures via Mixtures of Conditional Policies](/202607/10/2607.03478v1-demonstrating-generalization-failures-via-mixtures-of-conditional-policies)  
+   evidence：通过表示正则化提升大型多模态模型的分层一致性
+7. [Agentic and Generative AI for Open-Source Intelligence and Cyber Investigations: Taxonomy, Evaluation, Challenges, and Future Directions](/202607/11/2607.03233v1-agentic-and-generative-ai-for-open-source-intelligence-and-cyber-investigations-taxonomy-evaluation-challenges-and-future-directions)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：构建在RL训练时可控制泛化失败的语言模型，以研究泛化失败问题。
-8. [An Experimental Design Approach to Evaluating Agentic AI's Autonomous Model Discovery](/202607/10/2607.06413v1-an-experimental-design-approach-to-evaluating-agentic-ais-autonomous-model-discovery)  
+   evidence：综述了用于开源情报的智能体AI和LLM，将智能体AI确立为独立分析类别
+8. [MemDefrag: Latent Memory Defragmentation for Large Language Models](/202607/11/2607.05969v1-memdefrag-latent-memory-defragmentation-for-large-language-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出用于评估大模型智能体自主模型发现的实验设计框架
-9. [Human-Centric Reflective Architecture for Human-AI Collaborative Decision-Making](/202607/10/2607.03025v1-human-centric-reflective-architecture-for-human-ai-collaborative-decision-making)  
+   evidence：提出一种无训练方法，通过解决位置编码错位问题改善LLM的长期记忆更新，与长上下文处理相关。
+9. [Regime-Conditional Stabilisation of LLM-Augmented Cooperative Multi-Agent Reinforcement Learning](/202607/11/2607.04470v1-regime-conditional-stabilisation-of-llm-augmented-cooperative-multi-agent-reinforcement-learning)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：提出基于大模型智能体的以人为中心的人机协同决策反思架构
-10. [Structured Pruning of Large Language Models via Power Transformation and Sign-Preserving Score Aggregation with Adaptive Feature Retention](/202607/10/2607.08027v1-structured-pruning-of-large-language-models-via-power-transformation-and-sign-preserving-score-aggregation-with-adaptive-feature-retention)  
+   evidence：研究使用LLM生成奖励权重时的多智能体强化学习稳定性问题
+10. [Write-Protected Discrete Bottlenecks for Language-Grounded World Models: A Structural Limitation and Sufficient Fix](/202607/11/2607.08312v1-write-protected-discrete-bottlenecks-for-language-grounded-world-models-a-structural-limitation-and-sufficient-fix)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：大语言模型的结构化剪枝方法
-11. [COALA: Robust Contextualized Speech-augmented Language Modeling for ASR via Contrastive Regularizer and Biasing Score Estimation](/202607/10/2607.08117v1-coala-robust-contextualized-speech-augmented-language-modeling-for-asr-via-contrastive-regularizer-and-biasing-score-estimation)  
+   evidence：修复语言接地离散世界模型的结构限制，支持智能体
+11. [AUTOPILOT VQA: Benchmarking Vision-Language Models for Incident-Centric Dashcam Understanding](/202607/11/2607.08745v1-autopilot-vqa-benchmarking-vision-language-models-for-incident-centric-dashcam-understanding)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：通过判别空间处理语音语言模型的上下文窗口限制以进行实体偏置
+   evidence：针对行车记录仪事故的视觉问答基准，评估视觉-语言模型与多模态大模型
 
 
 <div class="dpr-home-promo-card">

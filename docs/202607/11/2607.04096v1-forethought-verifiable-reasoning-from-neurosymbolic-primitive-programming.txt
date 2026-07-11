@@ -1,0 +1,840 @@
+Title: Forethought: Verifiable Reasoning from Neurosymbolic Primitive Programming
+
+URL Source: https://arxiv.org/pdf/2607.04096v1
+
+Published Time: Tue, 07 Jul 2026 03:02:19 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Forethought : Verifiable Reasoning from Neurosymbolic Primitive Programming 
+
+# Vishvesh Bhat 1, Jay Vaghasiya 1, Emmanuel Anaya Gonzalez 1,2 
+
+> 1
+
+CoreThink AI 
+
+> 2
+
+UC San Diego 
+
+Abstract 
+
+Current agentic workflows usually involve decomposing user requests into sequences of tool calls with correctly resolved parameters, the results of which are processed through rea-soning traces in the language model’s context window. The prevailing route to improve such reasoning is test-time scaling, which trains models to search over long chains of thought; but the resulting capability is entangled in model weights, is not verifiable step-by-step, and is costly at inference. We present 
+
+Forethought , a neurosymbolic reasoning system that instead treats reasoning as an explicit, verifiable program, that builds from a library of symbolic and neural primitives which are composed through a domain-specific language. The result are 
+
+reasoning programs , which are concrete representations of the model’s work, and as such can be inspected and modified before deployment. Instantiated as a tool-calling execution kernel and evaluated across five benchmarks, Forethought 
+
+improves base-model accuracy by about 30% relative and outperforms vanilla prompting, reinforcement-learning scaf-folds, and prompt-evolution methods, enabling small models to match or exceed frontier models capabilities. In a direct comparison, a non-reasoning model augmented with Fore-thought competes with a dedicated reasoning model while requiring roughly three orders of magnitude less post-training investment, and remains model-agnostic and auditable. 
+
+# Introduction 
+
+Large language models are increasingly deployed as agents that must reason over multiple steps and invoke external tools to accomplish tasks. This shift—from single-turn text gener-ation to multi-turn, tool-using agents—has made reasoning reliability a central concern. An agent that must select the correct function, resolve its parameters from context, respect dependencies between steps, and maintain state across turns has many opportunities to fail, and a single incorrect step can invalidate an entire trajectory (Patil et al. 2024; Yao et al. 2024). As these systems move to production, and into reg-ulated domains, accuracy alone is no longer sufficient: their reasoning must also be efficient, cost-effective, and auditable. The current dominant approach to improving reasoning is to scale inference-time computation. Reasoning language models such as DeepSeek-R1 (Guo et al. 2025) are trained through reinforcement learning to produce extended chain-of-thought traces, and a growing body of work organizes these test-time scaling methods into structured search over reasoning chains, trees, and graphs (Zhang, Kraska, and Khattab 2026). This paradigm has produced impressive re-sults, but it carries three significant drawbacks. First, the rea-soning capability is entangled in the model’s weights: it is the product of expensive, model-specific training and does not transfer to other base models. Second, the reasoning process is stochastic and unverifiable—a reasoning model produces a plausible natural-language chain, but there is no formal guarantee that any given step is correct, and errors are de-tected only by the model’s own unreliable self-monitoring. Third, extended reasoning chains are expensive at inference, in cases consuming many times more tokens than the under-lying task requires. An alternative line of work treats reasoning as an explicit program over language-model modules. Declarative frame-works such as DSPy (Khattab et al. 2024) and reflective prompt optimizers such as GEPA (Agrawal et al. 2026) com-pose and optimize multi-step pipelines, while neurosymbolic methods such as Logic-LM (Pan et al. 2023) and neurosym-bolic program synthesis (Ganguly et al. 2024) offload verifi-cation to symbolic components. These approaches introduce valuable structure, but existing systems either optimize only textual components (prompts, demonstrations) without veri-fying intermediate outputs, or target formal domains such as logic and mathematics that admit clean symbolic specifica-tions. Neither line fully addresses agentic tool-calling, where reasoning must be reliable and verifiable but the domain lacks the clean formal semantics of a theorem prover. In this work we present Forethought , a neurosymbolic reasoning system for agentic tool-calling that makes rea-soning explicit, verifiable, and model-agnostic. Our central idea is to decompose reasoning into a library of primitives —narrow reasoning operations implemented either symboli-cally or as fine-tuned small language models (SLMs)—each carrying a typed output contract that specifies the proper-ties its output must satisfy. Primitives are composed into structured reasoning programs through a Python-embedded domain-specific language (DSL), and executed by an engine that verifies each primitive’s output against its contract and produces a per-step verified trace. Because a reasoning pro-gram is represented as an analyzable data structure rather than an opaque chain, it can be inspected and audited at 
+
+design time : a developer establishes the correctness of the program before deployment by reasoning about local con-
+
+> arXiv:2607.04096v1 [cs.AI] 5 Jul 2026
+
+tracts and their composition, rather than discovering errors at runtime. We identify this design-time verification as the primary source of our accuracy gains. This architecture directly addresses the three costs of test-time scaling. The reasoning structure is explicit and model-agnostic—the same program runs on any base model capable of executing its primitives—so it transfers without retraining. Each step is verifiable, providing the auditability that regu-lated deployments require. And because reasoning is carried by small specialized models composed through a constrained program rather than by extended stochastic search, it is far more compute- and data-efficient. Our approach leverages the key observation that formal contracts on model outputs both guarantee correctness and prune the space of candidate programs; we develop this insight into a composable prim-itive library with a design-time verification workflow and demonstrate it at scale on agentic benchmarks. We evaluate our system on five tool-calling benchmarks spanning multiple domains, comparing against vanilla LLM prompting, reinforcement learning-based scaffolds, and re-flective prompt evolution. We empirically demonstrate that 
+
+Forethought consistently achieves performance improve-ments when augmenting a wide range of base models, as well as relative to alternative harness engineering approaches. Concretely, we lay our contributions as follows: 
+
+• We introduce Forethought , a neurosymbolic rea-soning architecture for tool-calling built on verifiable primitives—deterministic and SLM-based—composed through an embedded DSL with typed contracts and per-step verification. 
+
+• We formalize the tool-calling execution kernel as five composable sub-processes with explicit contracts and cross-process invariants, and describe a design-time ver-ification workflow in which reasoning programs are vali-dated before deployment. 
+
+• We show that our approach improves base-model perfor-mance by 30–60% relative on reasoning-intensive tasks, outperforms vanilla prompting, reinforcement learning scaffolds, and reflective prompt optimization across five benchmarks, and enables small models to match or ex-ceed frontier models under vanilla prompting at a fraction of the inference cost. 
+
+• We demonstrate that a non-reasoning base model aug-mented with our neurosymbolic programs competes with a dedicated reasoning model trained through a costly multi-stage pipeline, while requiring roughly three orders of magnitude less post-training investment, and we ana-lyze why structured verification succeeds where stochas-tic scaling has structural limits. 
+
+# Related Work 
+
+Reasoning Enhancement and Test-Time Scaling Rea-soning Language Models such as DeepSeek-R1 (Guo et al. 2025) are trained to produce extended chain-of-thought traces, developing behaviors such as self-verification and reflection through large-scale stochastic search rather than explicit supervision. (Zhang, Kraska, and Khattab 2026) sur-vey this space and propose a modular blueprint organizing reasoning language models into reasoning structures (chains, trees, graphs), search strategies (Monte Carlo Tree Search, beam search), and supervision schemes, showing that many prior methods are special cases of a common design space. From this perspective, such approaches share three draw-backs that our work addresses: the reasoning capability is entangled in model weights and does not transfer across base models; the reasoning process is not verifiable step-by-step; and the improvement comes at substantial compute and data cost. Our approach instead constructs reasoning as an ex-plicit, verifiable, model-agnostic program. 
+
+Neurosymbolic Reasoning Neurosymbolic methods com-bine neural language models with symbolic structure to im-prove reliability and interpretability. Early work in the LLM era translated natural-language reasoning into formal rep-resentations offloaded to external solvers: Logic-LM (Pan et al. 2023) couples LLMs with symbolic solvers for faithful logical reasoning, and Ganguly et al. (2024) use neurosym-bolic program synthesis to produce robust and interpretable reasoning by generating programs verified against a theo-rem prover. More recent work extends neurosymbolic pro-ceduralization to embodied and efficiency-constrained set-tings (Choi, Kim, and Woo 2025). These methods demon-strate that offloading verification to symbolic components improves reliability, but they typically target logical or math-ematical domains with clean formal semantics. Our contri-bution differs in two respects: we target agentic tool-calling rather than formal logic, and our symbolic structure is a com-posable library of verifiable primitives rather than a transla-tion to an external solver. 
+
+Declarative LM Programming and Prompt Optimiza-tion A parallel line of work treats reasoning as a pro-gram over language-model modules and optimizes that pro-gram automatically. DSPy (Khattab et al. 2024) introduced declarative language-model programs that compile into self-improving pipelines by optimizing prompts and demonstra-tions. GEPA (Agrawal et al. 2026) evolves task-specific prompts through reflective, genetic-Pareto search, using natural-language feedback to propose improved prompts in few rollouts, and reports gains over reinforcement learning baselines at substantially lower sample cost. These frame-works share our view that reasoning benefits from ex-plicit program structure, but they optimize textual compo-nents (prompts, demonstrations) of an otherwise unstruc-tured pipeline, without typed contracts or per-step output verification. As a result, the composed program cannot be verified at design time, and errors surface only at inference. Most closely related to our approach is SEVerA (Banerjee et al. 2026), which synthesizes self-evolving agents with ver-ifiable guarantees by enforcing formal input-output contracts on model calls. SEVerA and our work share the central in-sight that formal contracts on model outputs both guarantee correctness and prune the space of candidate programs, steer-ing synthesis toward higher-quality agents. Our approaches differ in emphasis: SEVerA focuses on deductive program synthesis with first-order-logic contracts and constraint satis-faction, whereas we focus on a composable primitive library with a design-time verification workflow and demonstrate the approach at scale across five tool-calling benchmarks. The two lines of work are complementary evidence that verifi-able, contract-guarded composition is a promising direction for reliable agents. 
+
+# Methodology 
+
+We now present the architecture of Forethought in detail. The system consists of three core components: (1) a library of reasoning primitives with verifiable output contracts, (2) a Python-embedded domain-specific language (DSL) for com-posing primitives into structured reasoning programs, and (3) a separate execution engine that interprets, verifies, and optimizes composed programs. We describe each component and their interactions below. 
+
+## Reasoning Primitive Library 
+
+At the foundation of our system lies a library of reasoning 
+
+primitives , each one in charge of implementing a narrow, well-defined reasoning operation. These primitives can be classified in two groups depending on their implementation style: 
+
+Symbolic Primitives. The semantics of these operations can be expressed as a formal, symbolic program, which by construction entails guaranteed correctness. Examples are type checking, format validation, constraint propagation, pat-tern matching, and structural transformations. Their outputs are deterministic given their inputs, and correctness can be verified trivially by re-executing the operation. 
+
+SLM-Based Primitives. These are implemented as fine-tuned small language models (SLMs), each trained on a nar-row task with natural language input-output semantics, such as entity extraction, relation classification, argument decom-position, or logical entailment checking. By restricting the scope of each SLM to a single reasoning operation we ex-ploit a fundamental property: LLM reliability is inversely related to task scope (Patil et al. 2024; Yao et al. 2024). Each SLM-based primitive is trained on curated data specific to its operation and evaluated against a held-out test set that covers the expected input distribution. Every symbolic or language processing primitive, is as-sociated with an output contract : a formal specification of the properties its output must satisfy. Contracts may include type constraints (e.g., the output must be a valid JSON object conforming to a schema), value constraints (e.g., extracted entities must appear in the source text), and semantic con-straints (e.g., a decomposition must collectively cover the original query). Contracts are checked automatically at exe-cution time, and contract violations trigger structured error reporting that identifies the failing primitive, its inputs, and the specific constraint that was violated. 
+
+Primitive Design Principles. We design primitives ac-cording to the following criteria: 
+
+• Narrow scope: Each primitive performs a single, well-defined reasoning operation. This enables reliable fine-tuning with limited training data and meaningful output verification. 
+
+• Composability: Primitive inputs and outputs are typed, enabling static validation of compositions before execu-tion. 
+
+• Independence: Primitives are stateless and side-effect-free, allowing parallel execution of independent opera-tions and deterministic replay for debugging. 
+
+• Verifiability: Every primitive’s output can be checked against its contract without requiring access to ground-truth labels, enabling runtime verification in production. 
+
+## Embedded Domain-Specific Language 
+
+We provide a Python-embedded DSL for composing prim-itives into structured reasoning programs. Unlike general-purpose Python code, programs written in our DSL have formal properties that enable analysis, verification, and opti-mization before execution. 
+
+Composition Operators. The DSL provides first-class composition operators that express common reasoning pat-terns: 
+
+• Sequence: Execute primitives in order, passing outputs forward. 
+
+• Parallel: Execute independent primitives concurrently. 
+
+• Conditional: Branch execution based on intermediate re-sults or contract outcomes. 
+
+• Iterate: Repeat a subprogram until a termination condi-tion is met. 
+
+• Fallback: Attempt alternatives upon primitive failure or contract violation. These operators are themselves typed, enabling the DSL to validate that composed programs are well-formed before execution. For example, the system can statically verify that the output type of a decomposition primitive is compatible with the input type of the subsequent verification primitive. 
+
+Formal Properties. Using an embedded DSL enables sev-eral analyses that are impossible with unstructured Python code: 
+
+• Type-checked composition: Mismatched primitive in-terfaces are caught at program construction time, not at runtime. 
+
+• Cost and latency estimation: The execution engine can traverse the program tree to estimate the number of SLM calls, expected latency, and inference cost before any com-putation occurs. 
+
+• Correctness reasoning: If primitive A satisfies contract 
+
+CA and primitive B satisfies contract CB , and their com-position respects type compatibility, the composed pro-gram’s correctness properties can be derived from the individual contracts. 
+
+• Program optimization: Redundant primitive calls can be eliminated, independent branches can be parallelized, and frequently co-occurring patterns can be cached—all by transforming the AST before execution. Distinction from General-Purpose Libraries. The DSL framing is justified by properties that distinguish our system from a standard Python package. A general-purpose library provides functions with unconstrained inputs and outputs; our DSL provides primitives with typed, contracted inter-faces. A general-purpose library’s compositions exist only as imperative code; our DSL’s compositions exist as analyz-able data structures. A general-purpose library cannot rea-son about program correctness before execution; our DSL can, by leveraging the formal contracts and typed composi-tion. These properties are what enable per-step verification, program optimization, and—as discussed in Section ?? —automated program synthesis, building on a tradition of neu-rosymbolic program synthesis for interpretable and faithful reasoning (Ganguly et al. 2024; Pan et al. 2023). 
+
+## Tool-Calling Execution Kernel 
+
+We instantiate the general DSL framework described above as a tool-calling execution kernel, targeting the agentic tool-use setting where a language model must decompose user requests into sequences of API calls with correctly resolved parameters. This instantiation concretizes the primitive li-brary, composition operators, and verification contracts for a specific reasoning domain while preserving the general architectural properties. 
+
+Formal Domain. The execution kernel operates over the following base sets: V (universe of values), K (key names, unified namespace for configuration, prerequisites, and pa-rameters), T (unit task descriptors), F (callable function iden-tifiers), M ⊆ K (parameter names), and Sig (function sig-natures mapping names to parameter lists and return types). The kernel receives three inputs: ι ∈ I (raw multi-turn input), 
+
+γ ∈ C (initial configuration), and Ω ∈ O (tool and function registry). 
+
+Sub-Process Architecture. The kernel comprises five composable sub-processes, each corresponding to a prim-itive or composition of primitives in the DSL. Critically, each sub-process is implemented using either deterministic primitives, SLM-based primitives, or a defined combination of both. This classification determines the verification strat-egy applied at each stage and makes explicit where neural inference is required versus where symbolic computation suffices. 1. Decompose (ι, γ, Ω) : Receives raw inputs and separates them into typed structures—an ordered list of unit tasks 
+
+turns , a key-value configuration config : K ⇀ V, and a tool registry tools : F ⇀ Sig .
+
+Primitive type: hybrid. The extraction of configuration (Extract (γ)) and tool registration ( Register (Ω) ) are de-terministic primitives—they parse structured inputs ac-cording to fixed schemas, and their outputs are verifi-able by checking conformance to the expected types. The derivation of unit tasks ( Turns (ι)) is an SLM-based 
+
+primitive: it requires natural language understanding to decompose a user request into discrete actionable tasks. The SLM for this operation is fine-tuned on task decom-position examples and its output contract requires that Algorithm 1: Tool-Calling Execution Kernel. [SLM] marks SLM-based primitives; all others are deterministic. Invariant tags reference Section . 
+
+Require: input ι, config γ, registry Ω, turn context τ 
+
+> 1:
+
+// SP1: Decompose  
+
+> 2:
+
+turns ← Turns (ι) [SLM]  
+
+> 3:
+
+config ← Extract (γ); tools ← Register (Ω)  
+
+> 4:
+
+// SP2: Init-Scratchpad  
+
+> 5:
+
+S ← ∅ ; for (k, v ) ∈ config : S ← S∪{ k 7 → v} {INV-S}  
+
+> 6:
+
+// SP3: Get-Order  
+
+> 7:
+
+G ← BuildDepGraph (turns ) [SLM]  
+
+> 8:
+
+if CycleDetect (G) then halt  
+
+> 9:
+
+T ← TopoSort (G) {leaves first, root last}  
+
+> 10:
+
+for all t ∈ T do  
+
+> 11:
+
+// SP4: Check-Prerequisites (t, S ) 
+
+> 12:
+
+for all p ∈ GetPrereqs (t) do  
+
+> 13:
+
+r ← Check (p, S ) {Met / ¬Met / Absent } 
+
+> 14:
+
+if r = Met then  
+
+> 15:
+
+continue  
+
+> 16:
+
+else if r = ¬Met then  
+
+> 17:
+
+t′ ← TaskToMeet (p) [SLM]  
+
+> 18:
+
+return ⟨Blocked (t′), S ⟩ {S unchanged; retry t
+
+(INV-3)}  
+
+> 19:
+
+else  
+
+> 20:
+
+v ← Execute (TaskToCheck (p)) [SLM]  
+
+> 21:
+
+S ← S ∪ { p 7 → v} {fires once per p (INV-2)}  
+
+> 22:
+
+end if  
+
+> 23:
+
+end for  
+
+> 24:
+
+// SP5: Match-Funcs-and-Params (t, S, τ, Ω)  
+
+> 25:
+
+f ← MatchFunc (t, Ω) [SLM]  
+
+> 26:
+
+if f = ⊥ then  
+
+> 27:
+
+report MissingFunction ; continue {abandon t
+
+(INV-R)}  
+
+> 28:
+
+end if  
+
+> 29:
+
+M ← Params (f ); B ← ∅  
+
+> 30:
+
+for all m ∈ M do  
+
+> 31:
+
+v ← Lookup (m, τ, S ) {τ (m), else S(m), else ⊥
+
+(INV-3)}  
+
+> 32:
+
+if v = ⊥ then  
+
+> 33:
+
+v ← Execute (TaskToGet (m)) [SLM]  
+
+> 34:
+
+S ← S ∪ { m 7 → v} {write even if ⊥ (INV-2)}  
+
+> 35:
+
+if v = ⊥ then report MissingParam (m); 
+
+break  
+
+> 36:
+
+end if  
+
+> 37:
+
+B ← B ∪ { m 7 → v} 
+
+> 38:
+
+end for  
+
+> 39:
+
+if dom( B) = M then Execute (f, B ) {execution guard (INV-E)}  
+
+> 40:
+
+end for 
+
+every derived task maps to at least one function in Ω and that the union of derived tasks covers the user’s stated intent. 2. Init-Scratchpad (config ): Establishes a mutable key-value store S : K ⇀ V, seeded from the configuration output of Decompose . S persists for the lifetime of the en-gine run and grows monotonically: keys are never deleted, though values may be overwritten. 
+
+Primitive type: deterministic. Scratchpad initialization is a pure data-structure operation—iterating over key-value pairs and writing them into a map. No neural inference is involved. Correctness is verified trivially: dom( S) = dom( config ) and ∀k : S(k) = config (k).3. Get-Order (turns ): Constructs a dependency graph G =(V, E ) over unit tasks, detects cycles, and produces a topo-logical ordering T where leaf tasks (no dependencies) execute first and the root task executes last. The ordering satisfies: ∀(ti, t j ) ∈ E : pos (tj , T ) < pos (ti, T ).
+
+Primitive type: hybrid. The dependency graph construc-tion ( Build -Dep -Graph ) is an SLM-based primitive: determining whether task tj must execute before task 
+
+ti requires semantic understanding of the tasks and their data dependencies. The SLM is fine-tuned on dependency classification and its output contract requires that declared dependencies correspond to actual data-flow relationships (a task is marked as dependent only if it consumes a value produced by the prerequisite task). Cycle detection and topological sorting are deterministic primitives operat-ing on the constructed graph using standard algorithms. Their correctness is guaranteed by the algorithms them-selves. 4. Check-Prerequisites (t, S ): For each prerequisite p of task t, evaluates a three-valued check function:            
+
+> Check (p, S ) =
+> 
+> Met p∈dom (S)∧Sat (p, S (p))
+> ¬Met p∈dom (S)∧ ¬ Sat (p, S (p))
+> Absent p / ∈dom (S)
+> (1)
+
+The Absent branch triggers inline retrieval, writes the result to S, and re-enters the check loop. The ¬Met branch returns a blocking remediation task. This guarantees that each prerequisite key fires the Absent branch at most once. 
+
+Primitive type: predominantly deterministic. The do-main membership check (p ∈ dom( S)) and the 
+
+Absent /Met /¬Met branching logic are deterministic .The Satisfied (p, S (p)) predicate may be either determin-istic (e.g., checking that a value is non-null or conforms to a type) or SLM-based (e.g., evaluating whether a re-trieved value semantically satisfies a domain-specific con-dition). When SLM-based, the predicate’s output contract requires a binary decision with a confidence score, and values below a threshold trigger the ¬Met branch rather than proceeding with uncertain inputs. The remediation task generation ( Task-To-Meet ) and retrieval task gener-ation ( Task-To-Check ) are SLM-based primitives that construct well-formed task descriptors; their contracts re-quire that the generated task, when executed, will produce a value in the domain of the prerequisite key. 5. Match-Functions-and-Parameters (t, S, τ, Ω) : Identi-fies the best matching function f for task t, resolves all required parameters M via a prioritized lookup (turn con-text τ first, scratchpad S second), and executes f only when all parameters are fully bound: dom( B) = M .
+
+Primitive type: hybrid. Function matching (Match-Func ) is an SLM-based primitive: it requires semantic similarity assessment between the task description and the function signatures in Ω. The SLM is fine-tuned on function-matching examples and its output contract re-quires that the matched function’s signature is compati-ble with the task’s expected input-output types. The pri-oritized lookup function ( Lookup ) is deterministic : it checks τ then S in fixed order and returns the first defined value, with no neural inference involved. The execution guard ( dom( B) = M ) is a deterministic contract check that prevents partial execution unconditionally. Parame-ter retrieval for missing values ( Task-To-Get ) follows the same SLM-based pattern as the retrieval tasks in Check-Prerequisites .
+
+Verification Implications of the Classification. The ex-plicit classification of each operation as deterministic or SLM-based has direct consequences for how the system is verified at design time. Deterministic primitives can be veri-fied exhaustively: their behavior is fully determined by their inputs and can be checked by re-execution or formal analy-sis. SLM-based primitives are verified probabilistically: their reliability is measured empirically against held-out test sets, and their output contracts provide runtime checks that catch failures even when the model produces an incorrect out-put. The hybrid sub-processes are verified compositionally: the deterministic components are verified exhaustively, the SLM-based components are verified probabilistically, and the contracts at the boundaries between them ensure that er-rors in the SLM-based components are caught before they propagate into the deterministic components. This composi-tional verification strategy is what enables the design-time validation workflow described in Section . 
+
+Verifiable Contracts in the Tool-Calling Instantiation. 
+
+Each sub-process enforces explicit post-conditions that serve as output contracts: 
+
+• Decompose : dom( config ) ⊆ K; dom( tools ) ⊆ F.
+
+• Init-Scratchpad : dom( S) = dom( config ) and ∀k :
+
+S(k) = config (k).
+
+• Get-Order : Completeness ( ∀t ∈ turns : t ∈ T ), no duplication ( |T | = |turns |), dependency respect, and acyclicity. 
+
+• Check-Prerequisites : Scratchpad monotonicity ( S′ ⊇
+
+S); at most one Blocked return per invocation. 
+
+• Match-Functions-and-Parameters : Execution guard (Execute (f, B ) is called iff dom( B) = Params (f )); lookup priority ( τ always consulted before S). 
+
+Cross-Process Invariants. The following invariants hold globally across all sub-processes: 
+
+• Scratchpad monotonicity: ∀ states Si, S j at steps i < j :
+
+dom( Si) ⊆ dom( Sj ).
+
+• Task queue well-foundedness: The engine terminates iff the set of reachable tasks is finite and all dependency graphs are acyclic. • Execution precondition: Execute (f, B ) is called iff 
+
+dom( B) = Params (f ). No partial execution is ever at-tempted. 
+
+• Non-fatal errors: Failures abandon only the current task 
+
+t; execution continues with the next task in T .These invariants are not aspirational properties; they are structural consequences of the DSL’s typed composition and contract enforcement. A program that violates any invariant is rejected at construction time or caught at the first violating step during execution. 
+
+## Execution Engine 
+
+The execution engine is responsible for interpreting rea-soning programs, managing primitive invocations, enforcing output contracts, and producing structured execution traces. 
+
+Interpretation. The engine traverses the program AST and evaluates each primitive according to its type. Deterministic primitives are executed directly. SLM-based primitives are dispatched to the appropriate fine-tuned model, with input formatting, output parsing, and retry logic handled by the engine rather than by the user. 
+
+Per-Step Verification. After each primitive produces an output, the engine checks the output against the primitive’s contract. If the contract is satisfied, execution proceeds. If the contract is violated, the engine invokes the program’s error-handling strategy: this may involve retrying the primitive with modified inputs, invoking a fallback primitive, or halting execution with a structured error report. 
+
+Symbolic Trace Generation. The engine produces a struc-tured trace for every execution. The trace records, for each primitive invocation: the primitive identity, input values, out-put values, contract check results, execution time, and model identity (for SLM-based primitives). This trace serves mul-tiple purposes: 
+
+• Debugging: When a program produces incorrect results, the trace identifies exactly which primitive failed and why. 
+
+• Auditability: In regulated industries, the trace provides a complete, inspectable record of the reasoning process that satisfies audit requirements. 
+
+• Improvement: Traces from production executions iden-tify primitives with high failure rates, guiding targeted retraining or redesign. 
+
+• Metric collection: Per-primitive reliability, latency, and cost metrics are derived automatically from traces without user instrumentation. 
+
+Optimization. Before execution, the engine may apply op-timizations to the program AST: 
+
+• Parallelization: Independent primitive calls identified from the AST are dispatched concurrently. 
+
+• Caching: Results of previously executed primitives with identical inputs are reused. 
+
+• Batching: Multiple SLM-based primitive calls targeting the same model are batched for throughput. 
+
+• Pruning: Branches that are unreachable given earlier con-tract results are eliminated. 
+
+## Model-Agnostic Integration 
+
+The system is designed to operate independently of any specific foundation model provider. SLM-based primitives are fine-tuned from open-source base models such as Gemma (Team et al. 2025) and DeepSeek-V3 (DeepSeek-AI et al. 2025), and the execution engine interfaces with models through an abstraction layer that supports any model serving infrastructure. This design provides three advantages: 1. Cost efficiency: Fine-tuned SLMs at 1–7B parameters are substantially cheaper to run than frontier models at infer-ence time, enabling high-volume production deployment at a fraction of frontier inference cost. 2. Deployment flexibility: Customers can deploy the sys-tem on-premises or in private cloud environments with-out depending on external API providers, satisfying data sovereignty and security requirements. 3. Compounding improvement: As open-source base models improve, existing primitives can be re-fine-tuned on stronger bases, and the reasoning layer’s relative im-provement compounds on top of the stronger foundation. 
+
+## Design-Time Verification 
+
+A distinguishing property of our architecture is that reason-ing programs can be manually verified for correctness before deployment , rather than evaluated only at runtime against test inputs. This design-time verification workflow is a primary source of the accuracy improvements we report, and it funda-mentally differentiates our approach from systems that rely on post-hoc output checking or end-to-end evaluation. 
+
+Verification Workflow. The construction of a reasoning program proceeds through explicit verification stages: 1. Program construction: The developer composes prim-itives using the DSL, producing an AST that represents the intended reasoning process. 2. Static analysis: The system validates type compatibility across all primitive interfaces, checks that every com-position is well-formed, and estimates cost and latency. Programs with type mismatches or malformed composi-tions are rejected before any model is invoked. 3. Contract review: The developer inspects the output con-tract of each primitive in the program and verifies that the contracts collectively guarantee the desired end-to-end behavior. Because each primitive has a narrow, well-defined contract, this review is tractable even for complex programs—the developer reasons about local correctness at each step rather than global correctness of the entire system. 4. Edge case analysis: The developer identifies inputs that are likely to stress the program’s assumptions and traces execution through the AST manually, checking whether the contracts and error-handling strategies cover the an-ticipated failure modes. 5. Controlled execution: The program is executed on a cu-rated set of representative inputs with full trace logging. The developer inspects the trace to verify that each prim-itive behaves as expected on real data, and that contract violations are caught and handled appropriately. 6. Deployment: Only after passing the above stages is the program deployed to production, where runtime verifica-tion continues to enforce contracts on every execution. This workflow is analogous to the design-review and test-ing practices of traditional software engineering, applied to AI reasoning programs, and reflects a growing line of work that advocates verifying AI systems at design time rather than through runtime safeguards alone (Haynes 2026; Flan-dre, Nwala, and Giabbanelli 2026). The key enabler is the decomposition of reasoning into primitives with verifiable contracts: because each step is independently checkable, the developer can establish confidence in the whole program by verifying its parts, rather than treating the system as an opaque end-to-end pipeline. 
+
+Concrete Validation: BFCL Tool-Calling. We illustrate the design-time verification methodology through our de-velopment of the tool-calling execution kernel (Section ). Prior to deployment, we constructed a synthetic validation dataset of 300 entries modeled on the Berkeley Function-Calling Leaderboard (BFCL) (Patil et al. 2024) multi-turn benchmark. For each entry, we manually worked through the complete DSL execution—decomposition, scratchpad ini-tialization, task ordering, prerequisite checking, and func-tion/parameter matching—producing a fully annotated so-lution trace that records every sub-process decision and its justification. As a representative example, consider a multi-turn sce-nario where Turn 1 creates a directory and moves a file, and Turn 2 requests a search within the moved file. Figure 1 shows the complete DSL trace for Turn 2, illustrating how cross-turn state is managed through the scratchpad formalism. The resulting tool-call sequence produces an exact match with the BFCL ground truth. A more complex example, shown in Figure 2, involves cross-task parameter resolution within a single turn. When a user requests a passenger name correction on a reservation, the DSL decomposes this into two ordered tasks: retrieve reservation details (to obtain the existing passenger’s date of birth), then update the passenger record with the corrected name while preserving the unchanged DOB. The parame-ter resolution for the update task demonstrates the lookup priority: the new name comes from the turn context τ (user-provided), while the DOB comes from the scratchpad S (re-trieved by the prior task). This cross-task state management is made explicit and verifiable by the scratchpad formalism, whereas in unstructured approaches it would be implicit in the model’s context window. 
+
+Iterative DSL Refinement. The 300 manually worked so-lutions served not only as validation but as the primary mech-anism for refining the DSL itself. Each solution that revealed friction, ambiguity, or failure in the sub-process specifica-tions led to a concrete revision: 
+
+• Cases where prerequisite checking produced false neg-atives identified missing scratchpad propagation rules, leading to the Absent branch with inline retrieval. 
+
+• Cases where parameter resolution failed identified the need for the prioritized lookup function with explicit turn-context-over-scratchpad ordering. 
+
+• Cases where task ordering was ambiguous led to the ex-plicit dependency graph construction with cycle detec-tion. 
+
+• Cases where the scratchpad accumulated stale values mo-tivated the monotonicity invariant: keys are never deleted, preventing accidental loss of cross-turn state. The final DSL specification that emerged from this iter-ative process—the specification presented in this paper— achieved state-of-the-art results on the BFCL benchmark. Critically, the design-time verification process is what pro-duced this outcome: the DSL was validated against hundreds of manually worked examples before any model was trained or any benchmark was attempted. The accuracy gains are at-tributable to the rigor of this process, not to post-hoc tuning against benchmark results. 
+
+Source of Accuracy Gains. The accuracy improvements reported in Experiments section arise primarily from the structural properties of this verification workflow rather than from improvements to the underlying language models them-selves. The system does not make base models more capa-ble; rather, it eliminates errors that unstructured reasoning approaches introduce through ambiguous intermediate steps, unchecked error propagation, and compositions that are never validated for correctness. We decompose the sources of improvement through abla-tion in the Experiments section, separating the contributions of three factors: 1. Specialized primitives: Gains attributable to using fine-tuned SLMs for narrow operations rather than general-purpose models for all reasoning steps. 2. Structured composition: Gains attributable to the DSL’s typed composition and program structure, compared to unstructured chaining of the same primitives. 3. Verification and error correction: Gains attributable to contract enforcement, design-time validation, and run-time error handling. Understanding this decomposition is important for eval-uating the durability of our approach. Gains from verifica-tion and structured composition are architectural and persist regardless of how capable the underlying models become: better models produce fewer errors per step, but verifica-tion still catches the errors they do produce, and structured composition still ensures the overall program is well-formed. Gains from specialized primitives are more contingent on the relative advantage of fine-tuned SLMs over general-purpose models, which may narrow as foundation models improve. We report the relative contribution of each factor in Section . 
+
+Neurosymbolic Programs. We refer to the composed, ver-ified reasoning programs produced by our DSL as neurosym-bolic programs . A neurosymbolic program is a typed AST of primitives—both deterministic and SLM-based—that has been validated through design-time verification and whose execution produces per-step verified traces. The term dis-tinguishes these artifacts from pure neural reasoning chains Scenario: multi_turn_base_0 , Turn 2                                                                                                 
+
+> User input ( ι): “Search the moved report for any mention of revenue .”
+> Scratchpad state inherited from Turn 1:
+> S={archive 7→created ,report.txt 7→moved _to _archive }
+> 1. Decompose (ι, γ, Ω):
+> t1: Navigate to archive t2: Search report.txt for pattern
+> 2. Get-Order (turns):
+> t1≺t2(must enter directory before searching)
+> 3. Check-Prerequisites (t1, S ):
+> P={archive_exists }
+> Check (archive_exists ,S)=Met (from Turn 1 state)
+> ⇒ ⟨ Ready , S ⟩
+> 4. Match-Funcs-and-Params (t1, S, τ, Ω):
+> f=cd ,M={folder }
+> Lookup (folder ,τ,S): S(archive )→’archive’
+> B={folder 7→’archive’ },dom( B) = M✓
+> 5. Match-Funcs-and-Params (t2, S, τ, Ω):
+> f=grep ,M={file_name ,pattern }
+> Lookup (file_name ,τ,S): S→’report.txt’
+> Lookup (pattern ,τ,S): τ→’revenue’ (from user input)
+> B={file_name 7→’report.txt’ ,pattern 7→’revenue’ }✓
+> DSL output: cd(folder=’archive’) ;grep(file_name=’report.txt’, pattern=’revenue’)
+> Ground truth: cd(folder=’archive’) ;grep(file_name=’report.txt’, pattern=’revenue’)
+> Result: ✓Exact match |Functional correctness: ✓|DSL compliance: ✓
+
+Figure 1: Cross-turn state management in the tool-calling DSL. Turn 2 resolves the directory and file location from scratchpad state established by Turn 1, while the search pattern is resolved from the current turn’s user input ( τ ). The scratchpad formalism makes cross-turn dependencies explicit and verifiable, whereas unstructured approaches rely on implicit context-window management. such as those produced by reasoning language models (Guo et al. 2025; Zhang, Kraska, and Khattab 2026) (which lack formal structure and per-step verification) and from pure symbolic programs (which lack the flexibility of learned components). Neurosymbolic programs are model-agnostic: once validated, the same program can be executed with any base model capable of running the constituent primitives, because correctness is a property of the program structure rather than of the model weights. 
+
+## Compositional Reliability Analysis 
+
+A key advantage of our architecture is the ability to reason about system-level reliability from primitive-level measure-ments. Let ri denote the empirically measured reliability of primitive i (the probability that its output satisfies its con-tract on a randomly drawn input from the expected distri-bution). For a sequential composition of n primitives, the naive reliability bound is Qni=1 ri, which degrades rapidly with composition length. Our system mitigates this degradation through several mechanisms: 
+
+• Contract-based early termination: Failed primitives are detected immediately, preventing error propagation through the remaining program. 
+
+• Retry and fallback strategies: The DSL’s error-handling operators allow failed primitives to be retried or replaced with alternatives, improving effective per-step reliability. 
+
+• Independent verification: Verification primitives in-serted at key points in the program independently check intermediate results, catching errors that passed earlier contract checks. 
+
+• Targeted improvement: Production traces identify the lowest-reliability primitives, enabling focused retraining that improves the weakest links in the composition. We report per-primitive reliability measurements and over-all system reliability in Appendix C. 
+
+# Experiments 
+
+We evaluate our neurosymbolic reasoning system across five tool-calling benchmarks spanning multiple domains, com-paring against strong baselines including both agentic rea-soning frameworks and vanilla LLM prompting. We describe the fine-tuning procedure for our SLM-based primitives, re-port main results, and present ablation studies isolating the contribution of each architectural component. 
+
+## Benchmarks 
+
+We evaluate on the following benchmarks, chosen to cover both breadth of tool-calling domains and depth of multi-turn reasoning complexity. 
+
+Tau2. A multi-domain tool-calling benchmark (Yao et al. 2024) spanning three industry verticals: Airline, Telecom, and Retail. Each domain presents distinct function registries, Scenario: Passenger name correction                                                                                       
+
+> User input ( ι): “Correct passenger name on reservation G2LTC4 to James Nguyen”
+> Known context: Existing passenger Ethan Nguyen, user id ethan_nguyen_7360
+> 1. Decompose (ι, γ, Ω):
+> t1: Retrieve reservation details t2: Update passenger name
+> t2depends on t1(need existing DOB) ⇒T= [ t1, t 2]
+> 2. Execute t1— Retrieve reservation:
+> Check-Prerequisites (t1, S ): P=∅ ⇒ ⟨ Ready , S ⟩
+> f=get_reservation_details ,M={reservation_id }
+> Lookup :τ(reservation_id ) = ’G2LTC4’
+> Execute →updates S:
+> S←S∪ { current_passengers 7→[{dob :’1998-08-02’ , . . . }]}
+> 3. Execute t2— Update passenger name:
+> Check-Prerequisites (t2, S ):
+> P={reservation_loaded ,passenger_dob_known }
+> Both Met from Safter t1⇒ ⟨ Ready , S ⟩
+> f=update_reservation_passengers ,M={reservation_id ,passengers }
+> Parameter resolution (lookup priority):
+> reservation_id :τ→’G2LTC4’ (from user input)
+> first_name :τ→’James’ (user-requested change)
+> last_name :τ→’Nguyen’ (user-requested)
+> dob :S→’1998-08-02’ (preserved from t1; name correction ̸=DOB change)
+> DSL output:
+> 1. get_reservation_details(reservation_id=’G2LTC4’)
+> 2. update_reservation_passengers(reservation_id=’G2LTC4’, passengers=[{first_name:’James’, last_name:’Nguyen’, dob:’1998-08-02’}])
+> Result: ✓Correct |DOB preserved via S(t1)|DSL compliance: ✓
+
+Figure 2: Cross-task parameter resolution with lookup priority. The new name is resolved from the turn context τ (user-provided), while the date of birth is resolved from the scratchpad S (populated by t1). The DSL’s explicit lookup ordering ( τ before S)ensures that user-provided values override stale scratchpad entries, while values not mentioned by the user are correctly preserved from prior task outputs. An unstructured approach would require the model to implicitly decide which fields to change and which to preserve—a common source of errors in tool-calling systems. prerequisite structures, and parameter resolution patterns, testing whether our DSL generalizes across domain-specific tool configurations without per-domain modification. 
+
+BFCL v4 — Multi-Turn-Base. The multi-turn subset of the Berkeley Function-Calling Leaderboard v4 (Patil et al. 2024). This benchmark evaluates multi-step tool-calling where later turns depend on state established by earlier turns, directly testing our scratchpad-based cross-turn state man-agement. 
+
+LiveMCPBench. A benchmark (Mo et al. 2025) evaluat-ing tool-calling in the Model Context Protocol (MCP) setting, where models must interact with live tool servers. This tests our system’s ability to handle dynamic tool registries and real-world API interaction patterns. 
+
+MCP-Atlas. A comprehensive MCP evaluation bench-mark (Bandi et al. 2026) testing tool discovery, parameter resolution, and multi-step execution across diverse server configurations. 
+
+BFCL v4 with Human Review (Optional). During our evaluation, we identified scoring inaccuracies in the standard BFCL v4 evaluation pipeline. We conducted a human review of a subset of cases where our system’s output diverged from the ground truth, identifying instances where the ground truth itself contained errors or where functionally equivalent outputs were scored as incorrect. We report results both with the standard scoring and with human-corrected scoring to provide a more accurate assessment. Details of the identified inaccuracies are provided in Appendix B. 
+
+## Baselines 
+
+We compare against three baseline approaches, each repre-senting a distinct paradigm for tool-calling. 
+
+Vanilla LLM Prompting. Direct prompting of large lan-guage models with the tool-calling task, function signatures, and conversation history. We evaluate across a broad set of models to establish the frontier of what unstructured prompt-ing achieves: DeepSeek V3 (DeepSeek-AI et al. 2025), Kimi K2.6 (Moonshot AI 2026), MiniMax M3 (MiniMax Team 2026), GPT-OSS-120B (OpenAI 2025), Mistral 3.5 (Mis-tral AI 2026), Claude Haiku 4.5 (Anthropic 2025a), Claude Sonnet 4.6 (Anthropic 2025b), Claude Opus 4.7 (Anthropic 2026), and GLM 5 (Zhipu AI 2026). For each model, we use Table 1: RLM sweep. ft = fine-tuned frozen code. N = ef-fective sample size after excluding errors. Best pass% per benchmark in bold .                            
+
+> Bench. Params Inf. Pass / Rwd Err
+> BFCL baseline kimi 56.0 / 59.2 – i20, c50 ft kimi 50.5 / – – Airline baseline kimi 81.6 / 98 2% i20, c50 ft kimi 86.6 / 90 10% i15, c40 ft kimi 86.4 / 88 12% i20, c50 ft gpt 21.2 / 66 34% Retail baseline kimi 73.7 / – – i20, c50 ft kimi 80.6 / 94.7 5% i15, c40 ft kimi 70.6 / 89.5 11% i20, c50 gpt 34.6 / 71 29% Telecom baseline kimi 81.6 / – – i20, c50 ft kimi 79.6 / 95.6 4% i20, c50 ft gpt 54.8 / 82 18%
+
+the recommended prompting strategy from the respective provider and report the best result. 
+
+RLM. A reinforcement learning-based reasoning frame-work that runs with fine-tuned frozen code and configurable iteration budgets ( max _iter = 15 –20 , max _llm _calls =40 –50 ). We evaluate with Kimi K2.6 and GPT-OSS-120B as inference models. RLM reports pass% / reward% on po-tentially reduced denominators: runs that produce errors are excluded from the denominator, yielding an effective sam-ple size N that may be smaller than the full benchmark. We report the error rate alongside scores to enable fair compari-son. Table 1 shows the full sweep; we use the best-performing configuration per benchmark in our main comparison. A notable observation is RLM’s high error rate with GPT-OSS-120B (18–34%), indicating that the framework’s re-liability is sensitive to the choice of inference model. On reduced denominators, pass rates appear competitive, but when errors are counted as failures against the full bench-mark size, effective accuracy drops substantially. We discuss the implications of denominator reduction for benchmark comparability in the Analysis section. 
+
+GEPA. A genetic evolution-based prompt optimization framework for structured tool-calling. GEPA evolves a task-specific prompt via a task model and a reflection model within a metric-call budget ( max _metric _calls = 150 –
+
+250 ). We tuned GEPA on Tau2, as it is representative of the target task distribution but separate from our primary evalu-ation set. Prompts are compiled per dataset; we observed that scores are sensitive to the compilation recipe (choice of task model, reflection model, and budget). We evaluate compiled prompts with DeepSeek V3, Kimi K2.6, MiniMax M3, and GLM 4.7 as inference models. Table 2 reports the full sweep; we use the best-performing configuration per benchmark in our main comparison. As with RLM, we report best scores after hyperparameter optimization, ensuring that our com-parisons reflect the strongest possible performance of each baseline rather than default configurations. Table 2: GEPA sweep. Recipe = task / reflection model. Best per benchmark in bold . “–” = not evaluated.                           
+
+> Bench. Recipe Inf. Pass / Rwd
+> BFCL ds-v3 / kimi ds-v3 43.5 / 47.1 ds-v3 / kimi kimi 62.5 / 66.1 kimi / kimi kimi 71.5 / 77.0 kimi / kimi mm-m3 79.0 / 83.3
+> Airline ds-v3 / kimi kimi 76.0 glm / mm, 150c glm 82.0
+> Retail kimi / kimi kimi –glm / mm, 250c glm 82.6
+> glm / mm, 250c kimi 78.1 glm / mm, 250c mm-m3 81.6
+
+Table 3: Fine-tuning dataset for SLM-based primitives. All primitives use Gemma 12B as the base model with a 90/10 train/validation split.                      
+
+> Primitive Total Train Val
+> Decompose 6,910 6,218 692
+> Get-Order 2,000 1,800 200
+> Check-Prerequisites 4,867 4,376 491
+> Match-Func 1,600 1,440 160
+> Match-Fill 1,125 1,011 114
+> Total 16,502 14,845 1,657
+
+For both RLM and GEPA, we emphasize that we report 
+
+best scores after hyperparameter optimization, ensuring that our comparisons reflect the strongest possible performance of each baseline rather than default configurations. 
+
+## SLM Fine-Tuning 
+
+Each SLM-based primitive in our DSL is implemented as a separately fine-tuned model. We use Gemma 12B (Team et al. 2025) as the base model for all primitives, chosen for its strong instruction-following capability at a parameter count that enables cost-efficient inference in production. 
+
+Training Data. Training data for each primitive was con-structed through the design-time verification process de-scribed in Section . From our corpus of 300 manually worked DSL solutions, we derived per-primitive training examples by extracting the input-output pairs for each sub-process in-vocation. These were augmented with additional synthetic examples generated by systematic variation of the core sce-narios. Table 3 summarizes the dataset composition. The variation in dataset size across primitives reflects the complexity of each operation. Decompose requires the most examples because input decomposition spans the widest va-riety of user request patterns. Check-Prerequisites requires substantial data because prerequisite satisfaction involves di-verse domain-specific conditions. Match-Fill , which han-dles parameter value extraction, requires fewer examples be-cause the operation is more constrained once the function signature is known. Table 4: Per-primitive exact-match accuracy on the held-out synthetic test split, before and after fine-tuning Gemma 12B. Average is the end-to-end score over the full pipeline. Fine-tuning improves every primitive, with the largest gains on the semantically hardest stages ( Decompose , Check-Prerequisites ).               
+
+> Primitive Untuned Gemma Finetuned Gemma
+> Decompose 69.7 92.8
+> Get-Order 92.0 100.0
+> Check-Prerequisites 72.9 87.4
+> Match-Func 90.0 96.9
+> Match-Fill 86.0 93.0
+> Average 76.4 92.5
+
+Training Procedure. All primitives are fine-tuned for 4 epochs with a learning rate of 1 × 10 −5. During training, we optimize token-level cross-entropy loss. During validation, we evaluate using exact match : the predicted output must be identical to the ground truth at the structured output level (correct function names, correct parameter names, and cor-rect parameter values). This strict evaluation metric aligns with the production requirement that tool calls must be pre-cisely correct—approximate matches result in API failures. 
+
+Per-Primitive Validation. Each fine-tuned primitive is validated independently against its output contract before integration into the full system. For Decompose , valida-tion checks that every derived task maps to at least one function in the registry. For Get-Order , validation checks that the produced ordering respects all declared dependen-cies. For Check-Prerequisites , validation checks that the three-valued classification (Met/ ¬Met/Absent) is correct. For Match-Func , validation checks that the matched func-tion’s signature is compatible with the task. For Match-Fill ,validation checks that all parameter bindings conform to the expected types. Primitives that fail to meet reliability thresh-olds on validation are retrained with additional data before deployment. Table 4 reports per-primitive exact-match accuracy on the held-out synthetic test split. We treat these as a diagnostic of whether each primitive learned its operation and where the weakest stage lies, not as a measure of system reliability— which the benchmark results (Section ) establish. Fine-tuning improves every stage, with the largest gains on the hardest primitives, Decompose (+23.1) and Check-Prerequisites 
+
+(+14.5). As these scores are in-distribution, they are best read as upper bounds on primitive accuracy. Tuning-set construction and examples are in the Appendix (see section Finetuning examples). 
+
+## Results 
+
+Table 5 presents our main results across all benchmarks. We report scores for our neurosymbolic reasoning engine (NRE) with multiple inference models, vanilla LLM prompt-ing baselines, and the best configurations of RLM and GEPA from the sweeps reported in Tables 1 and 2. Several observations emerge from these results. 
+
+NRE consistently improves base model performance. 
+
+Across all models where both NRE and vanilla results are available, NRE produces higher scores. The improvement is most dramatic for weaker models: haiku-4.5 improves from 52.0 to 82.0 on Tau2 Airline (+57.7% relative), from 75.4 to 92.1 on Tau2 Retail (+22.1%), and from 53.5 to 98.0 on Tau2 Telecom (+83.2%). Stronger models also improve but by smaller margins, consistent with our expectation that the verification and composition framework captures errors that are more frequent in weaker models. 
+
+NRE outperforms all baselines across benchmarks. On every benchmark where results are available for all methods, NRE achieves the highest score. Against vanilla prompting, NRE produces improvements of 30–60% relative on weaker models and meaningful gains even on the strongest frontier models. Against RLM, NRE achieves comparable or higher pass rates without the error-rate penalty that reduces RLM’s effective accuracy on full denominators. Against GEPA, NRE outperforms the best-tuned compilation recipes while re-quiring no per-benchmark prompt optimization. The consis-tency of NRE’s advantage across diverse benchmarks (multi-domain Tau2, multi-turn BFCL, live MCP interaction) and across diverse inference models indicates that the gains are ar-chitectural rather than benchmark-specific or model-specific. 
+
+NRE with small models matches or exceeds frontier vanilla prompting. Our system running on kimi-k2.6 (93.0 on Tau2 Retail) and minimax-m3 (78.0 on BFCL v4) achieves scores competitive with or exceeding vanilla Opus 4.7 (87.7 and 77.0 respectively), despite using substantially smaller and cheaper inference models. This validates the Pareto frontier positioning: comparable accuracy at a frac-tion of the cost. 
+
+RLM and GEPA show sensitivity to configuration. 
+
+RLM’s best scores (86.6 on Airline with kimi-k2.6) are com-petitive on individual benchmarks but accompanied by sig-nificant error rates (10–34%) that reduce effective accuracy. GEPA’s scores vary widely with compilation recipe (43.5– 79.0 on BFCL v4). Neither baseline achieves consistent per-formance across all benchmarks, whereas NRE maintains stable performance across models and benchmarks. 
+
+Human-reviewed scoring narrows the gap with ground truth. On BFCL v4 with human review, NRE scores im-prove by 10–20 points across models (e.g., minimax-m3 from 78.0 to 92.0), suggesting that a substantial fraction of “er-rors” under standard scoring are functionally correct outputs penalized by overly rigid evaluation criteria. We detail the specific scoring issues identified in Appendix B. 
+
+## Neurosymbolic Programs vs. Test-Time Scaling 
+
+A central question for the field is whether reasoning im-provements should come from scaling inference compute (test-time scaling) or from structured reasoning programs. Test-time scaling approaches—exemplified by DeepSeek-R1, OpenAI’s o-series, and similar reasoning models—invest additional compute at inference to search over reasoning Table 5: Main results across benchmarks (MCP-Atlas deferred to a later version). Tau2 domains (Airline/Retail/Telecom), BFCL v4 and v3 multi-turn-base, LiveMCPBench, and BFCL v4 with human review (v4+H). Avg 1 excludes v4+H; Avg 2 uses v4+H in place of v4. Best per column in bold . DeepSeek-V3 under RLM errored out on two Tau2 domains.                                                                                                                                                                                                
+
+> Tau2 BFCL Method Model Air. Ret. Tel. v4 v3 LiveMCP v4+H Avg 1Avg 2
+> NRE
+> (ours) Haiku 4.5 82.0 92.1 98.0 73.0 41.5 69.0 91.5 75.9 79.0 Kimi-k2.6 82.0 93.0 98.0 70.5 42.5 74.7 89.0 76.8 79.9
+> Mistral 3.5 74.0 91.2 96.0 70.5 43.5 75.0 85.0 75.0 77.5 gpt-oss-120b 84.0 85.1 91.0 64.0 36.0 76.0 90.0 72.7 77.0 Deepseek-v3 84.0 79.8 86.8 70.5 39.5 73.7 87.5 72.4 75.2 gpt-5.4-mini 88.0 77.2 86.0 67.0 44.0 75.0 85.5 72.9 76.0 Vanilla Opus 4.7 80.0 87.7 98.2 77.0 42.0 75.0 85.5 76.7 78.1 Sonnet 4.6 80.0 77.2 97.0 73.0 45.0 74.7 83.5 74.5 76.2 Haiku 4.5 52.0 75.4 53.5 62.0 42.0 70.5 73.0 59.2 61.1 Kimi-k2.6 80.0 78.0 95.0 70.0 39.0 72.0 75.0 72.3 73.2 gpt-oss-120b 52.0 64.9 46.5 61.0 30.0 53.0 69.5 51.2 52.7 Deepseek-v3 64.0 78.0 57.9 46.5 28.0 54.0 61.5 54.7 57.2 Deepseek-R1 48.0 44.7 7.0 57.0 30.5 43.0 75.5 38.4 41.5 gpt-5.4-mini 36.0 50.0 21.1 38.5 22.0 42.0 56.0 34.9 37.9 RLM Kimi-k2.6 86.6 80.6 79.6 56.0 29.0 14.7 68.0 57.8 59.8 gpt-oss-120b 21.2 34.6 54.8 15.5 1.0 5.3 28.0 22.1 24.2 Deepseek-v3 0.0 ∗2.5 0.0 ∗2.5 1.5 0.0* 5.5 1.6 2.4 GEPA Kimi-k2.6 80.0 78.1 81.0 70.0 41.0 77.0 87.5 71.2 74.1 Deepseek-v3 36.0 51.8 40.4 26.5 19.5 40.0 41.5 35.7 38.2 gpt-oss-120b 60.0 62.0 66.0 57.5 31.0 63.2 74.0 56.6 59.4
+> ∗All runs errored out on this benchmark under RLM.
+
+chains, producing longer and more deliberate outputs. These approaches have demonstrated strong results but at signifi-cant cost: reasoning models consume 5–50 × more tokens per query than their non-reasoning counterparts, and the reason-ing capability is baked into a specific model through special-ized training rather than being transferable across models. We test this directly by comparing three configurations built on the same base model family: 1. DeepSeek-R1 (reasoning model): The test-time scaling variant of DeepSeek, trained with reinforcement learning to produce extended reasoning chains. 2. DeepSeek-V3 + Neurosymbolic Programs : The non-reasoning base model enhanced with our neurosymbolic reasoning engine. 3. DeepSeek-V3 + RLM / GEPA : The non-reasoning base model enhanced with alternative reasoning frameworks. This comparison isolates the reasoning enhancement method from the base model capability. DeepSeek-V3 and R1 share the same base architecture; R1 adds test-time scal-ing through reinforcement learning-trained reasoning chains. If V3 + neurosymbolic programs matches or exceeds R1, it demonstrates that structured neurosymbolic reasoning can substitute for—and improve upon—the expensive test-time scaling approach. 
+
+Resource contrast. The resource asymmetry between test-time scaling and neurosymbolic programs at the post-training stage is stark. DeepSeek-R1’s reasoning capability was developed through a four-stage post-training pipeline Table 6: Neurosymbolic programs vs. test-time scaling, con-trolling for the base model. DeepSeek V3 (non-reasoning) with our system vs. DeepSeek R1 (a reasoning model on the same base), vanilla prompting, and the strongest prompt-orchestration baseline (GEPA), all on the same V3 base. Tau2 is averaged over its three domains; Avg 1 excludes BFCL v4+H, Avg 2 uses the human-reviewed score. Best per col-umn in bold .                    
+
+> Method Base Tau2 BFCL v4 Avg 1Avg 2
+> Ours (Neur. Prog.) DeepSeek V3
+> 83.5 70.5 72.4 75.2
+> Test-time scaling DeepSeek R1 33.2 57.0 38.4 41.5 Vanilla DeepSeek V3 66.6 46.5 54.7 57.2 Best Prompt Orch. (GEPA) DeepSeek V3 42.7 26.5 35.7 38.2
+
+on top of the DeepSeek-V3 base model (Guo et al. 2025): (1) cold-start SFT on curated chain-of-thought examples, (2) reasoning-focused RL using GRPO with rule-based re-wards, sampling 16 outputs per question at up to 32,768 tokens each, (3) rejection sampling producing ∼600K rea-soning samples plus ∼200K general samples for a second SFT stage ( ∼800K examples total), and (4) a second RL phase for all-scenario alignment. The RL stages alone used 512 NVIDIA H800 GPUs at a reported cost of $294K for the Table 7: Post-training resource comparison: test-time scaling (DeepSeek-R1) vs. neurosymbolic programs (ours).                     
+
+> Resource DeepSeek-R1 DeepSeek-V3+NRE
+> Post-training stages 4 (2 ×SFT + 2 ×RL) 1 (SFT) SFT examples ∼800K 16,502 RL samples/question 16 @ 32K tokens –Post-training GPUs 512 ×H800 2×L4 Post-training cost >$500K <$500 Model-agnostic No Yes Per-step verification No Yes
+
+first stage (Guo et al. 2025); the full four-stage post-training pipeline likely exceeds $500K–$1M when accounting for both RL stages and the SFT computation on 800K examples. By contrast, our post-training consists of a single SFT stage: fine-tuning five SLM-based primitives on a 12B-parameter base model (Gemma 12B) using 16,502 total train-ing examples (Table 3). The entire process runs on a single GPU in hours, at a cost under $500. Table 7 summarizes the post-training contrast. 
+
+Why stochastic scaling has structural limits. Test-time scaling approaches are fundamentally stochastic: the model searches over possible reasoning chains by sampling, evalu-ating, and extending candidates. This search is unstructured in the sense that the model has no formal guarantees about which reasoning steps are correct, no typed composition en-suring that intermediate results are compatible, and no con-tracts verifying outputs at each step. The search finds good reasoning chains through brute-force exploration of a vast space, relying on the model’s implicit knowledge to guide the search toward correct answers. This approach has three structural limitations that neu-rosymbolic reasoning addresses: 
+
+Compute inefficiency. Stochastic search explores many in-correct paths before finding correct ones. Each explored path consumes inference compute. Neurosymbolic programs eliminates this waste by constraining the reasoning to veri-fied primitives composed through a typed DSL: the space of valid reasoning programs is orders of magnitude smaller than the space of possible token sequences, and contract checking prunes invalid candidates without executing them. 
+
+Unreliable error correction. When a stochastic reasoning chain makes an error at step k, the model may or may not detect it at step k +1 . Error detection depends on the model’s implicit ability to recognize mistakes, which is itself unre-liable. Neurosymbolic programs detect errors at each step through explicit contract verification: if primitive k produces an output that violates its contract, the error is caught imme-diately and handled through retry or fallback logic before it propagates. 
+
+Model specificity. Test-time scaling requires model-specific training. DeepSeek-R1’s reasoning capability is the product of reinforcement learning applied specifically to the DeepSeek architecture and weights. This capability does not transfer to other models: using R1’s reasoning approach with a different base model requires retraining from scratch. Our neurosymbolic programs are model-agnostic: the same prim-itive library, DSL, and verification framework can be applied to any base model without retraining. A reasoning program validated on one model works on any other model that can execute the individual primitives, because correctness is a property of the program structure rather than of the model weights. 
+
+Practical implications. The comparison between V3 + Neurosymbolic Programs and R1 has direct practical im-plications for enterprise deployment: 
+
+• Cost: R1 consumes substantially more tokens per query than V3 + Neurosymbolic Programs, because extended reasoning chains are longer than structured primitive in-vocations. At production scale, this cost difference is sig-nificant. 
+
+• Latency: Extended reasoning chains increase end-to-end latency proportionally to chain length. Structured prim-itive invocations have predictable latency determined by the program structure rather than by stochastic search depth. 
+
+• Portability: When a new base model is released, neu-rosymbolic programs can be applied immediately without retraining. Test-time scaling requires a new reasoning-specific training run for each model, which may take months and significant compute. 
+
+• Auditability: neurosymbolic programs produce struc-tured traces with per-step verification. Reasoning models produce natural language chains that are not formally ver-ifiable and may contain plausible-sounding but incorrect reasoning steps. 
+
+• Data efficiency: Our SLM-based primitives are fine-tuned on 16,502 total examples (Table 3) at a cost under $500. DeepSeek-R1’s post-training pipeline consumed 
+
+∼800K SFT examples plus two large-scale RL stages us-ing 512 H800 GPUs, at a total post-training cost exceeding $500K—approximately three orders of magnitude greater than ours (Table 7). These advantages are not marginal improvements over test-time scaling; they are structural consequences of the neurosymbolic approach that persist regardless of how much compute is invested in stochastic scaling. A reasoning model that searches 10 × longer still cannot provide per-step verifi-cation, still cannot transfer its capability to a different base model, and still cannot guarantee that its reasoning chain is well-typed. These are architectural limitations, not resource limitations, and they motivate the neurosymbolic alternative we present. 
+
+# Discussion 
+
+Verifiability Drives Accuracy The verifiable contracts at the core of our system serve both as tools for interpretabil-ity as well as a primary driver of accuracy; a developer can establish the correctness of a reasoning program before de-ployment, and errors can be corrected during construction rather than surfacing unpredictably at inference. This con-trasts with unstructured reasoning scaffolds such as RLMs, where the reasoning process is determined by the model’s stochastic search rather than by an inspectable program. 
+
+Toward Thinner Reasoning Layers A natural direction for future work is increasing the modularity of the primi-tive library. A sufficiently rich and modular primitive library shifts reasoning out of the model weights and into the ex-plicit program structure, reducing the need for the base LLM to perform sophisticated reasoning internally. This points to-ward a regime in which the neurosymbolic layer is thin and cheap—small specialized models orchestrated by a verified program—rather than depending on large, reasoning-capable base models. From the synthesis perspective, although the final reasoning program might only depend on cheap SLM primitives, it iself might only be only within reach of a ca-pable enought LLM. This illustrates a possible workflow for using frontier models: use them only to write the definition of an efficient reasoning program in Forethought .
+
+Significance for Deployment The properties that distin-guish neurosymbolic programs are precisely those that mat-ter most for high-stakes deployment. In regulated domains— finance, healthcare, legal, defense—accuracy alone is insuffi-cient; systems must be auditable, and their reasoning must be inspectable after the fact. Our per-step verified traces provide exactly this: a complete, inspectable record of the reasoning process in which each step’s correctness was checked against an explicit contract. The combination of competitive accu-racy, low cost, model-agnostic deployment, and auditability positions neurosymbolic programs for exactly the settings where current approaches fall short. 
+
+Limitations An evident limitation is that constructing, re-viewing and maintaining reasoning programs requires expert effort to define primitives and contracts, and work through validation. In particular, obtaining each of the SLM-based primitives requires a full language model fine-tuning loop. We believe that neurosymbolic program synthesis techniques could help in these fronts, both by helping with the authoring of reasoning programs, as well as with the creation of post-training loops to obtain SLMs for new primitive operations. Additionally, our approach assumes that the target reason-ing task decomposes into narrow primitive operations com-posed through well-defined patterns. Tool-calling satisfies this assumption well: it has clear sub-operations (decom-position, ordering, prerequisite checking, parameter resolu-tion) with checkable outputs. However, not all reasoning is so cleanly decomposable. Open-ended reasoning, tasks requir-ing holistic judgment, and problems without well-defined intermediate contracts are less amenable to our approach. 
+
+# Conclusion 
+
+We introduce Forethought , a neurosymbolic reasoning system that significantly boosts the accuracy of base lan-guage models on tool-calling tasks while staying cost- and data-efficient, model-agnostic and fully auditable. By decom-posing reasoning into a library of typed, neural and symbolic primitives and composing them via an embedded DSL, we obtain structured programs that can be verified at design time. Evaluated on five diverse benchmarks, our approach outperforms vanilla prompting, reinforcement-learning scaf-folds, and prompt-evolution methods by 30–60% relative, and matches or exceeds frontier models using far cheaper inference. Compared to a test-time scaling baseline, aug-menting a non-reasoning model with our programs rivals a dedicated reasoning model trained through a four-stage pipeline, yet requires roughly three orders of magnitude less post-training effort. We argue that verifiability drives accu-racy by enabling error detection before deployment, position-ing explicit program construction as far more data-efficient than implicit scaling. Future work includes automated DSL program synthesis, expanding the primitive library to fur-ther thin the reasoning layer, and extending neurosymbolic decomposition beyond tool-calling to broader reasoning do-mains, affirming structured, verifiable reasoning as a durable alternative to pure scaling for applications demanding accu-racy, cost-effectiveness, and auditability. 
+
+# References 
+
+Agrawal, L. A.; Tan, S.; Soylu, D.; Ziems, N.; Khare, R.; Opsahl-Ong, K.; Singhvi, A.; Shandilya, H.; Ryan, M. J.; Jiang, M.; Potts, C.; Sen, K.; Dimakis, A. G.; Stoica, I.; Klein, D.; Zaharia, M.; and Khattab, O. 2026. GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning. Anthropic. 2025a. Claude Haiku 4.5. Anthropic. 2025b. Claude Sonnet 4.6. Anthropic. 2026. Claude Opus 4.7. Bandi, C.; Dumitru, R.-G.; Hertzberg, B.; Agarwal, D.; Boo, G.; Polakam, T.; Hassaan, S.; Da, J.; Kim, H.; Gupta, V.; Sharma, M.; Park, A.; Dimakis, M.; Montoya, E. G. H.; Rambado, D.; Salazar, I.; Cruz, R.; Rezaei, M.; Rane, C.; Levin, B.; Zhang, D. Y.; Kenstler, B.; and Liu, B. 2026. MCP-Atlas: A Large-Scale Benchmark for Tool-Use Competency with Real MCP Servers. arXiv:2602.00933. Banerjee, D.; Xu, C.; Ie, E.; Zhang, M.; Peng, D.; Lin, C.-C.; and Singh, G. 2026. SEVerA: Verified Synthesis of Self-Evolving Agents. Choi, W.; Kim, J.; and Woo, H. 2025. NeSyPr: Neurosym-bolic Proceduralization For Efficient Embodied Reasoning. DeepSeek-AI; Liu, A.; Feng, B.; Xue, B.; Wang, B.; Wu, B.; Lu, C.; Zhao, C.; Deng, C.; Zhang, C.; Ruan, C.; Dai, D.; Guo, D.; Yang, D.; Chen, D.; Ji, D.; Li, E.; Lin, F.; Dai, F.; Luo, F.; Hao, G.; Chen, G.; Li, G.; Zhang, H.; Bao, H.; Xu, H.; Wang, H.; Zhang, H.; Ding, H.; Xin, H.; Gao, H.; Li, H.; Qu, H.; Cai, J. L.; Liang, J.; Guo, J.; Ni, J.; Li, J.; Wang, J.; Chen, J.; Chen, J.; Yuan, J.; Qiu, J.; Li, J.; Song, J.; Dong, K.; Hu, K.; Gao, K.; Guan, K.; Huang, K.; Yu, K.; Wang, L.; Zhang, L.; Xu, L.; Xia, L.; Zhao, L.; Wang, L.; Zhang, L.; Li, M.; Wang, M.; Zhang, M.; Zhang, M.; Tang, M.; Li, M.; Tian, N.; Huang, P.; Wang, P.; Zhang, P.; Wang, Q.; Zhu, Q.; Chen, Q.; Du, Q.; Chen, R. J.; Jin, R. L.; Ge, R.; Zhang, R.; Pan, R.; Wang, R.; Xu, R.; Zhang, R.; Chen, R.; Li, S. S.; Lu, S.; Zhou, S.; Chen, S.; Wu, S.; Ye, S.; Ye, S.; Ma, S.; Wang, S.; Zhou, S.; Yu, S.; Zhou, S.; Pan, S.; Wang, T.; Yun, T.; Pei, T.; Sun, T.; Xiao, W. L.; Zeng, W.; Zhao, W.; An, W.; Liu, W.; Liang, W.; Gao, W.; Yu, W.; Zhang, W.; Li, X. Q.; Jin, X.; Wang, X.; Bi, X.; Liu, X.; Wang, X.; Shen, X.; Chen, X.; Zhang, X.; Chen, X.; Nie, X.; Sun, X.; Wang, X.; Cheng, X.; Liu, X.; Xie, X.; Liu, X.; Yu, X.; Song, X.; Shan, X.; Zhou, X.; Yang, X.; Li, X.; Su, X.; Lin, X.; Li, Y. K.; Wang, Y. Q.; Wei, Y. X.; Zhu, Y. X.; Zhang, Y.; Xu, Y.; Xu, Y.; Huang, Y.; Li, Y.; Zhao, Y.; Sun, Y.; Li, Y.; Wang, Y.; Yu, Y.; Zheng, Y.; Zhang, Y.; Shi, Y.; Xiong, Y.; He, Y.; Tang, Y.; Piao, Y.; Wang, Y.; Tan, Y.; Ma, Y.; Liu, Y.; Guo, Y.; Wu, Y.; Ou, Y.; Zhu, Y.; Wang, Y.; Gong, Y.; Zou, Y.; He, Y.; Zha, Y.; Xiong, Y.; Ma, Y.; Yan, Y.; Luo, Y.; You, Y.; Liu, Y.; Zhou, Y.; Wu, Z. F.; Ren, Z. Z.; Ren, Z.; Sha, Z.; Fu, Z.; Xu, Z.; Huang, Z.; Zhang, Z.; Xie, Z.; Zhang, Z.; Hao, Z.; Gou, Z.; Ma, Z.; Yan, Z.; Shao, Z.; Xu, Z.; Wu, Z.; Zhang, Z.; Li, Z.; Gu, Z.; Zhu, Z.; Liu, Z.; Li, Z.; Xie, Z.; Song, Z.; Gao, Z.; and Pan, Z. 2025. DeepSeek-V3 Technical Report. arXiv:2412.19437. Flandre, N. Y.; Nwala, A. C.; and Giabbanelli, P. J. 2026. Composing Verifiable Conceptual Models via Building Blocks: Towards Design-Time Verification of Agentic AI Workflows. arXiv preprint arXiv:2606.21565 .Ganguly, D.; et al. 2024. Proof of Thought: Neurosymbolic Program Synthesis Allows Robust and Interpretable Reason-ing. arXiv preprint arXiv:2409.17270 .Guo, D.; Yang, D.; Zhang, H.; Song, J.; Wang, P.; Zhu, Q.; Xu, R.; Zhang, R.; Ma, S.; Bi, X.; Zhang, X.; Yu, X.; Wu, Y.; Wu, Z. F.; Gou, Z.; Shao, Z.; Li, Z.; Gao, Z.; Liu, A.; Xue, B.; Wang, B.; Wu, B.; Feng, B.; Lu, C.; Zhao, C.; Deng, C.; Ruan, C.; Dai, D.; Chen, D.; Ji, D.; Li, E.; Lin, F.; Dai, F.; Luo, F.; Hao, G.; Chen, G.; Li, G.; Zhang, H.; Xu, H.; Ding, H.; Gao, H.; Qu, H.; Li, H.; Guo, J.; Li, J.; Chen, J.; Yuan, J.; Tu, J.; Qiu, J.; Li, J.; Cai, J. L.; Ni, J.; Liang, J.; Chen, J.; Dong, K.; Hu, K.; You, K.; Gao, K.; Guan, K.; Huang, K.; Yu, K.; Wang, L.; Zhang, L.; Zhao, L.; Wang, L.; Zhang, L.; Xu, L.; Xia, L.; Zhang, M.; Zhang, M.; Tang, M.; Zhou, M.; Li, M.; Wang, M.; Li, M.; Tian, N.; Huang, P.; Zhang, P.; Wang, Q.; Chen, Q.; Du, Q.; Ge, R.; Zhang, R.; Pan, R.; Wang, R.; Chen, R. J.; Jin, R. L.; Chen, R.; Lu, S.; Zhou, S.; Chen, S.; Ye, S.; Wang, S.; Yu, S.; Zhou, S.; Pan, S.; Li, S. S.; Zhou, S.; Wu, S.; Yun, T.; Pei, T.; Sun, T.; Wang, T.; Zeng, W.; Liu, W.; Liang, W.; Gao, W.; Yu, W.; Zhang, W.; Xiao, W. L.; An, W.; Liu, X.; Wang, X.; Chen, X.; Nie, X.; Cheng, X.; Liu, X.; Xie, X.; Liu, X.; Yang, X.; Li, X.; Su, X.; Lin, X.; Li, X. Q.; Jin, X.; Shen, X.; Chen, X.; Sun, X.; Wang, X.; Song, X.; Zhou, X.; Wang, X.; Shan, X.; Li, Y. K.; Wang, Y. Q.; Wei, Y. X.; Zhang, Y.; Xu, Y.; Li, Y.; Zhao, Y.; Sun, Y.; Wang, Y.; Yu, Y.; Zhang, Y.; Shi, Y.; Xiong, Y.; He, Y.; Piao, Y.; Wang, Y.; Tan, Y.; Ma, Y.; Liu, Y.; Guo, Y.; Ou, Y.; Wang, Y.; Gong, Y.; Zou, Y.; He, Y.; Xiong, Y.; Luo, Y.; You, Y.; Liu, Y.; Zhou, Y.; Zhu, Y. X.; Huang, Y.; Li, Y.; Zheng, Y.; Zhu, Y.; Ma, Y.; Tang, Y.; Zha, Y.; Yan, Y.; Ren, Z. Z.; Ren, Z.; Sha, Z.; Fu, Z.; Xu, Z.; Xie, Z.; Zhang, Z.; Hao, Z.; Ma, Z.; Yan, Z.; Wu, Z.; Gu, Z.; Zhu, Z.; Liu, Z.; Li, Z.; Xie, Z.; Song, Z.; Pan, Z.; Huang, Z.; Xu, Z.; Zhang, Z.; and Zhang, Z. 2025. DeepSeek-R1 incentivizes reasoning in LLMs through reinforcement learning. Nature , 645(8081): 633–638. Haynes, H. 2026. Decidable By Construction: Design-Time Verification for Trustworthy AI. arXiv preprint arXiv:2603.25414 .Khattab, O.; Singhvi, A.; Maheshwari, P.; Zhang, Z.; San-thanam, K.; Vardhamanan, S.; Haq, S.; Sharma, A.; Joshi, T. T.; Moazam, H.; Miller, H.; Zaharia, M.; and Potts, C. 2024. DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines. In International Conference on Learning Representations (ICLR) . ArXiv:2310.03714. MiniMax Team. 2026. MiniMax-M3: Frontier Coding, 1M Context, Native Multimodality — All in One Model. Mistral AI. 2026. Mistral Technical Report. Mo, G.; Zhong, W.; Chen, J.; Chen, X.; Lu, Y.; Lin, H.; He, B.; Han, X.; and Sun, L. 2025. LiveMCPBench: Can Agents Navigate an Ocean of MCP Tools? arXiv preprint arXiv:2508.01780 .Moonshot AI. 2026. Kimi K2.6: Technical Report. OpenAI. 2025. GPT-OSS-120B. Pan, L.; Albalak, A.; Wang, X.; and Wang, W. Y. 2023. Logic-LM: Empowering Large Language Models with Sym-bolic Solvers for Faithful Logical Reasoning. arXiv preprint arXiv:2305.12295 .Patil, S. G.; Mao, H.; Ji, C. C.-J.; Yan, F.; Suresh, V.; Stoica, I.; and Gonzalez, J. E. 2024. The Berkeley Function Calling Leaderboard (BFCL): From Tool Use to Agentic Evaluation of Large Language Models. In Advances in Neural Informa-tion Processing Systems (NeurIPS) .Team, G.; Kamath, A.; Ferret, J.; Pathak, S.; Vieillard, N.; Merhej, R.; Perrin, S.; Matejovicova, T.; Ramé, A.; Rivière, M.; Rouillard, L.; Mesnard, T.; Cideron, G.; bastien Grill, J.; Ramos, S.; Yvinec, E.; Casbon, M.; Pot, E.; Penchev, I.; Liu, G.; Visin, F.; Kenealy, K.; Beyer, L.; Zhai, X.; Tsitsulin, A.; Busa-Fekete, R.; Feng, A.; Sachdeva, N.; Coleman, B.; Gao, Y.; Mustafa, B.; Barr, I.; Parisotto, E.; Tian, D.; Eyal, M.; Cherry, C.; Peter, J.-T.; Sinopalnikov, D.; Bhupatiraju, S.; Agarwal, R.; Kazemi, M.; Malkin, D.; Kumar, R.; Vi-lar, D.; Brusilovsky, I.; Luo, J.; Steiner, A.; Friesen, A.; Sharma, A.; Sharma, A.; Gilady, A. M.; Goedeckemeyer, A.; Saade, A.; Feng, A.; Kolesnikov, A.; Bendebury, A.; Abdagic, A.; Vadi, A.; György, A.; Pinto, A. S.; Das, A.; Bapna, A.; Miech, A.; Yang, A.; Paterson, A.; Shenoy, A.; Chakrabarti, A.; Piot, B.; Wu, B.; Shahriari, B.; Petrini, B.; Chen, C.; Lan, C. L.; Choquette-Choo, C. A.; Carey, C.; Brick, C.; Deutsch, D.; Eisenbud, D.; Cattle, D.; Cheng, D.; Paparas, D.; Sreepathihalli, D. S.; Reid, D.; Tran, D.; Zelle, D.; Noland, E.; Huizenga, E.; Kharitonov, E.; Liu, F.; Amirkhanyan, G.; Cameron, G.; Hashemi, H.; Klimczak-Plucińska, H.; Singh, H.; Mehta, H.; Lehri, H. T.; Hazimeh, H.; Ballantyne, I.; Szpektor, I.; Nardini, I.; Pouget-Abadie, J.; Chan, J.; Stanton, J.; Wieting, J.; Lai, J.; Orbay, J.; Fernandez, J.; Newlan, J.; yeong Ji, J.; Singh, J.; Black, K.; Yu, K.; Hui, K.; Vodrahalli, K.; Greff, K.; Qiu, L.; Valentine, M.; Coelho, M.; Ritter, M.; Hoffman, M.; Watson, M.; Chaturvedi, M.; Moynihan, M.; Ma, M.; Babar, N.; Noy, N.; Byrd, N.; Roy, N.; Momchev, N.; Chauhan, N.; Sachdeva, N.; Bunyan, O.; Bo-tarda, P.; Caron, P.; Rubenstein, P. K.; Culliton, P.; Schmid, P.; Sessa, P. G.; Xu, P.; Stanczyk, P.; Tafti, P.; Shivanna, R.; Wu, R.; Pan, R.; Rokni, R.; Willoughby, R.; Vallu, R.; Mullins, R.; Jerome, S.; Smoot, S.; Girgin, S.; Iqbal, S.; Reddy, S.; Sheth, S.; Põder, S.; Bhatnagar, S.; Panyam, S. R.; Eiger, S.; Zhang, S.; Liu, T.; Yacovone, T.; Liechty, T.; Kalra, U.; Evci, U.; Misra, V.; Roseberry, V.; Feinberg, V.; Kolesnikov, V.; Han, W.; Kwon, W.; Chen, X.; Chow, Y.; Zhu, Y.; Wei, Z.; Egyed, Z.; Cotruta, V.; Giang, M.; Kirk, P.; Rao, A.; Black, K.; Babar, N.; Lo, J.; Moreira, E.; Martins, L. G.; Sanseviero, O.; Gonzalez, L.; Gleicher, Z.; Warkentin, T.; Mirrokni, V.; Senter, E.; Collins, E.; Barral, J.; Ghahramani, Z.; Hadsell, R.; Matias, Y.; Sculley, D.; Petrov, S.; Fiedel, N.; Shazeer, N.; Vinyals, O.; Dean, J.; Hassabis, D.; Kavukcuoglu, K.; Fara-bet, C.; Buchatskaya, E.; Alayrac, J.-B.; Anil, R.; Dmitry; Lepikhin; Borgeaud, S.; Bachem, O.; Joulin, A.; Andreev, A.; Hardin, C.; Dadashi, R.; and Hussenot, L. 2025. Gemma 3 Technical Report. arXiv:2503.19786. Yao, S.; Shinn, N.; Razavi, P.; and Narasimhan, K. 2024. 
+
+τ -bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains. arXiv preprint arXiv:2406.12045 .Zhang, A. L.; Kraska, T.; and Khattab, O. 2026. Recursive Language Models. Zhipu AI. 2026. GLM-5: From Vibecoding to Agentic En-gineering. 
+
+# Worked Design-Time Verification Solutions 
+
+This appendix presents representative worked solutions from the corpus of 300 manually verified DSL executions used for design-time verification (see Methodology section). We organize them by the DSL capability each exercises rather than by scenario, so that each example illustrates a distinct aspect of the execution kernel. Each solution traces the five sub-processes and compares the resulting tool-call sequence against the benchmark ground truth. 
+
+## Cross-Turn State Management 
+
+Turn 2 of multi_turn_base_0 requires searching a file that a prior turn moved into a new directory. The directory and file location are resolved from scratchpad state established in Turn 1, while the search pattern is taken from the current turn’s user input. This exercises the scratchpad monotonic-ity invariant (INV-S) and the turn-context-over-scratchpad lookup priority. (Presented in full as Figure 1.) 
+
+## Multi-Step Dependency Chains 
+
+Turn 3 of multi_turn_base_13 decomposes a single request—“copy release_notes.txt into handoff 
+
+and rename the copy”—into three ordered unit tasks whose execution order follows the dependency chain. 
+
+1 Scenario: multi_turn_base_13, Turn 3
+
+2 Input: "Copy release_notes.txt into handoff and rename the 
+
+3 copy to client_release_notes.txt." 
+
+45 SP1 Decompose -> unit tasks: 
+
+6 t1: Copy release_notes.txt to handoff 
+
+7 t2: Navigate to handoff 
+
+8 t3: Rename release_notes.txt -> client_release_notes .txt 
+
+910 SP3 Get-Order -> T = [t1, t2, t3] (dependency chain) 
+
+11 12 SP4/SP5 (per task): 
+
+13 1. cp(source=’release_notes.txt’, destination=’ handoff’) 
+
+14 2. cd(folder=’handoff’) 
+
+15 3. mv(source=’release_notes.txt’, 
+
+16 destination=’client_release_notes.txt’) 
+
+17 18 Ground truth: identical (3/3 calls) Result: EXACT MATCH 
+
+## Prerequisite Checking Against Persistent State 
+
+A single-task turn (“Find the nearest airport to Miami”) illus-trates prerequisite evaluation. The task carries a prerequisite 
+
+user_authenticated , which the three-valued Check 
+
+function resolves to Met directly from persistent scratchpad state (the authenticated flag set in a prior turn), so no remediation is needed. 
+
+1 Scenario: TravelAPI multi-turn, Turn 1
+
+2 Input: "Find the nearest airport to Miami." 
+
+3 Scratchpad (carried): authenticated = true, ... 
+
+45 SP4 Check-Prerequisites(t1, S): 
+
+6 P = { user_authenticated }
+
+7 Check(user_authenticated, S): 
+
+8 S(authenticated) = true -> Satisfied -> Met 
+
+9 => <Ready, S> 
+
+10 11 SP5 Match-Funcs-and-Params(t1, S, tau, Omega): 
+
+12 f = get_nearest_airport_by_city [SLM match] 
+
+13 M = { city }
+
+14 Lookup(city, tau, S): tau(city) = "Miami" 
+
+15 B = { city -> "Miami" }, dom(B) = M [guard satisfied ]
+
+16 => Execute(get_nearest_airport_by_city, {city: " Miami"}) 
+
+17 18 Result: SUCCESS (returns MIA, Miami International Airport) 
+
+## Cross-Task Parameter Resolution 
+
+A passenger name correction decomposes into a retrieval task followed by an update task. The update draws the corrected name from the turn context τ while preserving the date of birth from the scratchpad S populated by the retrieval task—a value the user did not mention and must not alter. This is the sharpest illustration of the lookup priority ( τ before S) com-bined with preservation of unmentioned fields. (Presented in full as Figure 2; an additional variant, reservation NZK0WL ,follows the identical pattern.) 
+
+# BFCL v4 Scoring Corrections 
+
+During evaluation we observed that the standard BFCL v4 multi-turn scoring pipeline penalizes a recurring class of out-puts that are functionally correct. To quantify this, we per-formed a human review of failing cases for each model and technique on each benchmark ; the human-reviewed scores reported in Section are the result of applying this review uniformly across all evaluated systems. Rather than enumer-ate per-system correction counts, we illustrate here the kinds 
+
+of scoring issues the review identified, with representative examples. In every case we hold a deliberately conserva-tive standard, described below, and we retain genuine model errors as failures. We treat an output as a scoring artifact only when it reaches the same scored state by a valid alternative path, is penalized only on surface formatting, or performs setup the reference omits. An output that performs an unrequested action with genuine side effects on API state is treated as a real error, even when the final user-visible result appears similar, and is not reclassified as an artifact. This is consistent with the paper’s thesis that correct intermediate state, not only final output, is what matters. 
+
+## Category A: Reference Omits Required Setup Calls 
+
+Here the reference hard-codes values or assumes state that the task in fact requires the agent to establish. Our system performs the necessary call—resolving a city to an airport code, or authenticating before a booking—and is penalized for output that is, if anything, more complete than the refer-ence. 
+
+multi_turn_base_4. Request: plan a business-class flight from “Los Angeles” to “New York” on 2026-04-15, then book it with the given card and access token. 
+
+Reference: get_flight_cost (with travel_from=LAX, travel_to=JFK), then book_flight. 
+
+Our output: two get_nearest_airport_by_city calls resolving “Los Angeles” and “New York” to LAX and JFK, then get_flight_cost, authenticate_travel, and book_flight. 
+
+Why this is an artifact: the user supplies city names, not air-port codes. Resolving them via get_nearest_airport_by_city is a required and correct step; the reference silently hard-codes the codes and omits the authentication the booking API requires. Our output is penalized for performing setup the task genuinely demands. 
+
+multi_turn_base_159. Request: book a first-class flight from “San Francisco” to “Los Angeles” on 2026-10-15 with the given travel card. 
+
+Reference: get_flight_cost (with travel_from=SFO, travel_to=LAX), then book_flight. 
+
+Our output: two get_nearest_airport_by_city calls resolving “San Francisco” and “Los Angeles” to codes, then authenti-cate_travel, get_flight_cost, and book_flight. 
+
+Why this is an artifact: identical to the above—city-to-airport resolution and authentication are necessary and correct, but the reference omits them and scores their presence as divergence. 
+
+## Category B: Decomposed Calls Reaching Equivalent State 
+
+The output performs the same effective action as the reference but reaches it through additional or split calls that do not alter the scored end state. 
+
+multi_turn_base_15. Request: draft a tweet naming the two files, comma-separated, with the hashtag #fileshowcase. 
+
+Reference: post_tweet with content “file1.txt, file2.txt” and tag #fileshowcase. 
+
+Our output: a read-only posting_get_login_status call, then post_tweet with the same file names and hashtag. 
+
+Why this is an artifact: the posted tweet conveys the same file names and hashtag as the reference; the additional call is a read-only status check that does not mutate tweet state, and the decomposition into multiple calls reaches an equivalent end state. The exact-match scorer nonetheless flags the trace as divergent. 
+
+## Category C: Valid Alternative Path to Equivalent State 
+
+The output obtains the same information or reaches the same state as the reference through a different but valid call se-quence, and is penalized by exact execution-state matching rather than by any functional difference. 
+
+multi_turn_base_66. Request: explore ResearchDocs for files or subdirectories containing the keyword “draft”. 
+
+Reference: find with path=ResearchDocs and name=draft. 
+
+Our output: ls, then cd into ResearchDocs, then find with path=. and name=draft. 
+
+Why this is an artifact: navigating into ResearchDocs and searching the current directory covers exactly the same search space as searching ResearchDocs directly; the two produce the same matches. 
+
+multi_turn_base_110. Request: track down a recently lodged support ticket. 
+
+Reference: get_ticket with ticket_id=1. 
+
+Our output: get_user_tickets. 
+
+Why this is an artifact: both retrieve the target ticket; get_user_tickets returns the user’s tickets (including the one requested), obtaining equivalent information through a valid alternative accessor with no difference in resulting state. 
+
+Summary. The categories above recur across models and techniques: because the standard pipeline scores exact call sequences and intermediate state, it systematically penalizes correct outputs that resolve underspecified inputs, differ only in formatting, or reach the target state by a valid alternative route. Applying the human review uniformly across all eval-uated systems yields the corrected scores in Section , and the correction affects every system’s absolute numbers without changing their relative ordering. 
+
+# Fine-Tuning Examples 
+
+Each SLM-based primitive is fine-tuned on examples that pair a task-specific system prompt with a structured JSON target. We show one representative example per primitive be-low. System prompts are abbreviated to their operative con-straints, and the model’s output is shown as the structured object it must produce; the exact-match validation criterion (Section ) requires this object to match the target. These examples are drawn from our synthetic corpus and are illus-trative of the input–output contract each primitive learns. 
+
+## Decompose 
+
+System (abbrev.): break the request into atomic unit tasks, each calling exactly one registry tool; identify dependencies; ground every parameter in the user request, environment config, or prior conversation. Input: “Play Marvin Gaye for 15 minutes, and after that finishes, play Stevie Wonder for 12 minutes.” 
+
+Target:      
+
+> {"tasks": [{"id":"t1", "tool_name":"spotify.play", "depends_on":[], "parameters":{"artist":"Marvin Gaye", "duration":15}}, {"id":"t2", "tool_name":"spotify.play", "depends_on":["t1"], "parameters":{"artist":"Stevie Wonder", "duration":12}}], "config_keys":{}}
+
+The second task is marked dependent on the first, capturing the “after that finishes” ordering constraint. 
+
+## Get-Order 
+
+System (abbrev.): given a batch of mutually independent tasks, output a total ordering that best fits the user’s workflow; output exactly the given ids, inventing no depen-dencies. 
+
+Input: three ready tasks — s5 enable roaming, s6 add 3 GB data, s7 toggle airplane mode. 
+
+Target: {"ordered_task_ids": ["s5", "s6", "s7"]} 
+
+## Check-Prerequisites 
+
+System (abbrev.): for a prerequisite key that is absent (miss-ing from scratchpad) or not_met (present but predicate false), propose at most one unit task that would advance the check toward Met .
+
+Input: key destination_set , outcome absent ; main task “Navigate to New York after the prerequisite is re-solved.” 
+
+Target:  
+
+> {"task": {"tool_name":"set_navigation", "parameters":{"destination":"New York"}}}
+
+The absent key triggers a single setup task that will populate it. 
+
+## Match-Func 
+
+System (abbrev.): given one unit task and a tool registry, choose at most one tool whose name matches the registry exactly; return null if none applies. 
+
+Input: task “Add 3GB of mobile data to my line L-555”, registry {enable_roaming ,
+
+get_customer_by_phone , refuel_data ,
+
+run_speed_test }. 
+
+Target: {"tool_name": "refuel_data"} 
+
+## Match-Fill 
+
+System (abbrev.): propose values only for missing required parameters, grounded in the task text, turn context, or scratchpad; if a value must come from state, read it from the scratchpad rather than inventing it. 
+
+Input: missing parameter item_ids for 
+
+exchange_delivered_order_items ; turn con-text supplies new_item_ids = [I-100, I-101]; scratchpad 
+
+S holds item_ids = [I-200, I-201]. 
+
+Target: {"values": {"item_ids": ["I-200", "I-201"]}} 
+
+This last example illustrates the lookup discipline di-rectly: the required item_ids is resolved from the scratchpad rather than conflated with the similarly named 
+
+new_item_ids present in the turn context, matching the priority rule enforced by the execution kernel.
