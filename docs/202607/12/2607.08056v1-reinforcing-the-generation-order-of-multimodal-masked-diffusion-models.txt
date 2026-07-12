@@ -1,0 +1,560 @@
+Title: Reinforcing the Generation Order of Multimodal Masked Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2607.08056v1
+
+Published Time: Fri, 10 Jul 2026 00:40:55 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Reinforcing the Generation Order of Multimodal Masked Diffusion Models 
+
+Yidong Ouyang 1∗, Zhe Wang 2, Sourav Bhabesh 2, Dmitriy Bespalov 2
+
+> 1
+
+University of California, Los Angeles 2AGI Foundations for AWS 
+
+# Abstract 
+
+Diffusion Language Models (DLMs) have recently achieved substantial progress in natural language generation tasks. Recent research demonstrates that adaptive token generation ordering can significantly improve performance in mathematical reasoning and code synthesis applications. In this work, we investigate the optimization of generation order for both text-to-image synthe-sis and multimodal understanding. We first establish that, unlike structured problems in language generation such as Sudoku puzzles, model logits alone are insufficient for determining optimal generation sequences in text-to-image generation and multimodal understanding. To address this challenge, we intro-duce a learnable control module trained via Group Relative Policy Optimiza-tion (GRPO) to determine the generation order. Our results demonstrate that learning this control block substantially improves both text-to-image alignment and multimodal understanding in DLMs. In particular, it enhances the model’s ability to capture fine-grained spatial relationships in generated images while also strengthening performance on multimodal reasoning and comprehension tasks. We evaluate our framework on GenEval, an object-focused benchmark for text-to-image alignment, where it achieves 4.08% relative improvements. In addition, experiments on VLMEvalKit confirm 4.85% relative improvements in multimodal understanding, highlighting the broad effectiveness of our ap-proach. 
+
+# 1 Introduction 
+
+Masked diffusion models (MDMs) (Austin et al., 2021; Hoogeboom et al., 2021; Sun et al., 2022; Lou et al., 2023; Arriola et al., 2025; Ou et al., 2024; von Rutte et al., 2025; Shi et al., 2024; Nie et al., 2025; Gat et al., 2024; Campbell et al., 2024) have recently emerged as a powerful class of generative models for discrete data, achieving promising success in language generation tasks. Unlike traditional autoregressive models, which follow a fixed left-to-right decoding scheme, MDMs are trained to solve any-order infilling problems and can generate tokens in essentially arbitrary orders during inference. This flexibility allows MDMs to better handle partially observed inputs and to exploit non-sequential dependencies among tokens. As MDMs gained popularity, the community has begun to recognize that the generation order—the sequence in which unobserved tokens are produced—plays a crucial role in determining the final output quality (Kim et al., 2025; Huang et al., 2025). Early approaches typically selected generation positions at random, but recent work has shown that order selection can be made more informed by leveraging intermediate model predictions. For example, Zheng et al. (Zheng et al., 2023) introduced the Top-K
+
+strategy, which prioritizes positions with the highest predicted token probabilities. Similarly, Kim et al. 
+
+> ∗
+
+Work done during an internship at Amazon. 
+
+1arXiv:2607.08056v1 [cs.LG] 9 Jul 2026 (2025) proposed the Top-K margin strategy, ranking positions by the absolute difference between the top two predicted probabilities. These strategies, by exploiting the model’s confidence estimates, significantly improve performance in structured reasoning tasks such as Sudoku solving. However, existing studies on generation order have been confined to language generation tasks. With the recent development of multimodal masked diffusion models (Yang et al., 2025), which extend MDMs to text-to-image generation and multimodal understanding, a natural question arises: Does the generation order matter in multimodal settings, and if so, how should it be determined? Our preliminary experiments reveal that strategies such as the Top-K margin, while highly effective for symbolic reasoning, fail to yield improvements in image generation quality and multimodal understanding. This discrepancy highlights an important gap: multimodal tasks require order control mechanisms that go beyond simple confidence-based heuristics. To address this, we propose a control block for dynamically determining the generation order in mul-timodal masked diffusion models. Unlike heuristic approaches that rely solely on logits, the control block is learnable and can be trained to optimize the generation process directly via Group Relative Policy Optimization (GRPO). This enables the model to adapt its generation order policy to the specific requirements of image synthesis, capturing complex interdependencies between spatially distributed visual tokens. We evaluate our approach on the GenEval benchmark, a challenging suite designed for rigorous assess-ment of text-to-image generation, and VLMEvalKit benchmark, a comprehensive evaluation framework for multimodal understanding covering visual question answering, reasoning, and perception. Experi-mental results demonstrate that our method outperforms existing order selection strategies in this setting, confirming the importance of learning-based control for multimodal generation. Our contributions are as follows: • We observe existing confidence-based strategies do not yield improvement in image generation quality and multimodal reasoning. • We propose a control block to determine the generation order and optimize it via Group Relative Policy Optimization (GRPO). • We provide extensive empirical evaluation on the GenEval benchmark and VLMEvalKit bench-mark with 4.08% and 4.85% relative improvement respectively, demonstrating the effectiveness and generality of our approach. 
+
+# 2 Preliminary 
+
+In this section, we first introduce the background of masked diffusion models and then summarize a widely used Group Relative Policy Optimization. 
+
+2.1 Masked Diffusion Model 
+
+Masked diffusion models (MDMs) (Austin et al., 2021; Hoogeboom et al., 2021; Sun et al., 2022; Lou et al., 2023; Arriola et al., 2025; Ou et al., 2024; von Rutte et al., 2025; Shi et al., 2024; Nie et al., 2025) are defined by a forward (noising) process and a reverse (denoising) process. In the forward process, tokens in a sequence are progressively replaced with a special mask token until the sequence is fully masked. The reverse process learns to reconstruct the original sequence starting from the fully masked state. 
+
+Forward process Given a clean sequence xT ∈ S L sampled from the data distribution pdata 1, where 
+
+S denotes the finite token space, and a noise level t ∈ { 0, 1, · · · , T}, the forward process is defined as     
+
+> 1We use xTto denote the clean data sample instead of the more common convention where x0denotes the clean data sample. This notation is adopted to align with the GRPO-based optimization.
+
+2xt ∼ qt|T (·| xT ). The corruption process independently masks each coordinate: 
+
+qt|T (xt|xT ) = 
+
+> L
+
+# ∏
+
+> i=1
+
+qt|T (xit|xiT ),where 
+
+qt|T (xit|xiT ) = Cat 
+
+
+
+αtexiT
+
++ ( 1 − αt)em
+
+
+
+.Here, αt is a predefined noise schedule satisfying α0 = 0 and αT = 1. The vector exiT
+
+denotes the one-hot representation of token xiT , and em denotes the one-hot representation of the mask token m. Equivalently, each token remains unchanged with probability αt and is replaced by the mask token with probability 1 − αt.
+
+Reverse process The reverse transition conditioned on the original sequence is defined as qt|t−1(xt|xt−1, xT ).Due to the independence across coordinates, it factorizes as 
+
+qt|t−1(xt|xt−1, xT ) = 
+
+> L
+
+# ∏
+
+> i=1
+
+qt|t−1(xit|xit−1, xiT ),where 
+
+qt|t−1(xit|xit−1, xiT ) = 
+
+
+
+Cat (exit−1
+
+), xit−1̸ = m,Cat 
+
+ 1−αt 
+
+> 1−αt−1
+
+em + αt −αt−1 
+
+> 1−αt−1
+
+exiT
+
+
+
+, xit−1 = m.
+
+Training objective The model is trained by minimizing the weighted cross-entropy objective 
+
+Lθ = −
+
+> T
+
+# ∑
+
+> t=1
+
+αt − αt−1
+
+1 − αt
+
+E xT ∼pdata    
+
+> xt∼qt|T(·| xT)
+
+" L
+
+# ∑
+
+> i=1
+
+δm(xit)e⊤
+
+> xiT
+
+log pθ (xiT |xt, t)
+
+#
+
+,where δx (z) denotes Kronecker delta satisfying δx (z) = 1 if x = z. In practice, the denoising model is often implemented without explicit time conditioning, i.e., pθ (xT |xt, t) = pθ (xT |xt), since the masked input xt implicitly encodes the noise level t through the proportion of masked tokens. 
+
+Sampling process Sampling proceeds by simulating the reverse process from t = 0 to t = T. Starting from a fully masked sequence x0, we iteratively generate xtk from xtk−1 . At each step, the model first predicts the clean sequence ˆxT ∼ pθ (· | xtk−1 ),and then samples 
+
+xtk ∼ qtk |tk−1
+
+ · | xtk−1 , ˆ xT
+
+.The transition is applied independently across coordinates, where only masked positions are updated. Repeating this procedure progressively removes masks and yields sample xT .
+
+2.2 GRPO 
+
+Policy gradient methods have been widely adopted in the post-training stage to enhance the performance of large models (Ouyang et al., 2022). While Proximal Policy Optimization (PPO) (Schulman et al., 2017) remains a dominant approach in online RL, it requires learning an additional value function V, leading to increased computational overhead. Group Relative Policy Optimization (GRPO) (Shao et al., 2024) provides a more efficient alternative by estimating advantages via group statistics. In the multimodal setting, we consider a conditioning input c = ( xtext , ximg ), where xtext denotes the textual prompt and ximg denotes the visual input (which may be empty for text-to-image generation). For each conditioning input c, GRPO samples a group of G outputs {o1, . . . , oG } from the old policy 
+
+πθold (· | c). Each output oi receives a scalar reward ri. The advantage is defined as 
+
+Ai = ri − mean 
+
+
+
+{rj}Gj=1
+
+
+
+std 
+
+
+
+{rj}Gj=1
+
+ .3The GRPO objective is given by 
+
+LGRPO (θ) = E c∼D   
+
+> o1,..., oG∼πθold (·| c)
+
+"
+
+1
+
+G
+
+> G
+
+# ∑
+
+> i=1
+
+1
+
+|oi| 
+
+> |oi|
+
+# ∑
+
+> k=1
+
+min 
+
+
+
+ρki Ai, clip (ρki , 1 − ε, 1 + ε)Ai
+
+
+
+− β DKL 
+
+
+
+πθ (· | c, o<ki ) πref (· | c, o<ki )
+
+ #
+
+,where ρki = πθ (oki |c,o<ki )    
+
+> πθold (oki|c,o<ki)
+
+. The clipping parameter ε controls the update magnitude, while β weights the KL regularization toward the reference policy πref .
+
+Diffusion policy optimization A key challenge is estimating likelihoods under masked diffusion policies. In Zhao et al. (2025), the author adopt a mean-field approximation of sequence likelihood. Let 
+
+ϕπθ (ok | c′) and ϕπθ (o | c′) denote the estimated per-token and sequence probabilities, respectively, where 
+
+c′ is a noised version of the multimodal condition obtained via a masking operator: c′ ∼ masking (c). The resulting diffu-GRPO objective is 
+
+Ldiffu-GRPO (θ) = Ec∼D , c′ ∼masking (c)  
+
+> o1,..., oG∼πθold (·| c)
+
+"
+
+1
+
+G
+
+> G
+
+# ∑
+
+> i=1
+
+1
+
+|oi| 
+
+> |oi|
+
+# ∑
+
+> k=1
+
+min 
+
+
+
+˜ρki Ai, clip ( ˜ρki , 1 − ε, 1 + ε)Ai
+
+
+
+− β DKL 
+
+ ϕπθ (· | c′) ∥ ϕπref (· | c′) #
+
+,where ˜ρki = ϕπθ (oki |c′ )    
+
+> ϕπθold (oki|c′)
+
+. Recent work such as (Yang et al., 2025) improves this framework by introducing structured noising strategies that selectively mask generated tokens while preserving the multimodal condition. In Huang et al. (2025); Wang et al. (2025b), trajectory information is further leveraged for post-training of diffusion language models. 
+
+# 3 Method 
+
+Existing order selection strategies, such as Top-K and Top-K margin (Zheng et al., 2023; Kim et al., 2025), rely solely on the model’s output logits to rank token positions. While effective for structured language tasks such as Sudoku solving, we empirically find that these heuristics do not transfer to multimodal settings: logit confidence at a given position does not reliably reflect its importance to the overall image layout or visual coherence. This motivates a learned control mechanism that can capture the complex spatial dependencies inherent in visual token generation. In this section, we introduce a control block that adaptively determines the generation order at each denoising step. The control block employs the Unmask Policy Module (UPM) (Huang et al., 2025) to assign a ranking score hi 
+
+> θ,t
+
+to each token i at step t. Based on these scores, a Plackett-Luce policy (Ragain and Ugander, 2018; Niu et al., 2012) sequentially samples a top-K unmask set Ut without replacement, such that higher-scoring tokens are preferentially unmasked first. 
+
+3.1 Control Block for Generation Order 
+
+Let Mt denote the set of masked tokens remaining after step t, i.e., Mt = Mt−1 \ U n. The probability of selecting a specific unmask set Ut is 
+
+πunmask  
+
+> θ,t
+
+(Ut | xt−1) = 
+
+> K
+
+# ∏
+
+> k=1
+
+exp (hut (k) 
+
+> θ,t
+
+)
+
+∑Kj=k exp (hut (j) 
+
+> θ,t
+
+) + ∑j∈M t exp (hut (j) 
+
+> θ,t
+
+) .The UPM takes as input the hidden states of the final transformer layer at step t, together with the step index t and a per-token mask indicator, and outputs ranking scores hi
+
+> θ,t
+
+. The K tokens with the 4highest scores are selected to form the unmask set Ut. Token prediction is then performed by the main multimodal diffusion model (MMaDA blocks), yielding 
+
+πtoken  
+
+> θ,t
+
+(xt | xt−1, Ut) = ∏
+
+> i∈U t
+
+pθ,t(xit | xt−1),where pθ,t(xit | xt−1) is a categorical distribution over the vocabulary or image patch values. The complete step policy factorizes as the product of these two components: 
+
+πθ,t(xt | xt−1) = πunmask  
+
+> θ,t
+
+(Ut | xt−1) · πtoken  
+
+> θ,t
+
+(xt | xt−1, Ut).Figure 1 illustrates the overall generation pipeline, in which the control block governs the generation order at each denoising step. 
+
+3.2 Training the Control Block via GRPO 
+
+We formulate the control block as a policy over the reverse diffusion process and optimize it via Group Relative Policy Optimization (GRPO). 
+
+GRPO Objective. Given a multimodal input c and G sampled trajectories {xgt }Tt=0, each trajectory receives a scalar reward rg = reward_func (c, xgT ). Advantages are estimated from group statistics: 
+
+Ag = rg − mean (r1: G )
+
+std (r1: G ) .The control policy is optimized by minimizing the advantage-weighted likelihood ratio: 
+
+Lθ,t = − 1
+
+G
+
+> G
+
+# ∑
+
+> g=1
+
+min 
+
+
+
+ρg 
+
+> θ,t
+
+Ag, clip  ρg
+
+> θ,t
+
+, 1 − ε, 1 + ε Ag
+
+, ρg 
+
+> θ,t
+
+= πθ,t(xgt | xgt−1)
+
+πold, t(xgt | xgt−1) , (1) with gradients accumulated across all diffusion steps: 
+
+∇θ Lθ =
+
+> T
+
+# ∑
+
+> t=1
+
+∇θ Lθ,t.Unlike the single-step density ratio estimation adopted in Zhao et al. (2025); Yang et al. (2025), we leverage full trajectory information by accumulating policy gradients over all N denoising steps. This allows the control block to receive training signal from the complete generation trajectory rather than a single transition, enabling more effective optimization of the generation order. During inference, the control block and the diffusion model operate jointly at each denoising step. At step t, the control block first computes ranking scores hi 
+
+> θ,t
+
+for all masked tokens in Mt−1, and samples a subset Ut of K tokens according to πunmask  
+
+> θ,t
+
+. The diffusion model then predicts the value of each selected token via pθ,t(· | xt−1), yielding xit for each i ∈ U t. The masked set is updated as Mt = Mt−1 \ U t, and the process repeats for all T steps to produce the final sample xT . The complete procedure is summarized in Algorithm 1. 
+
+# 4 Experimental Results 
+
+In this section, we evaluate our proposed method on compositional image generation and human preference alignment tasks. We first describe the experimental setup, followed by comprehensive benchmark results and ablation studies across both text-to-image generation in Section 4.1 and multimodal understanding in Section 4.2. Implementation details including optimizer settings, hyperparameters, and hardware configuration are provided in Appendix A. 
+
+4.1 Text-to-Image Generation 
+
+Compositional Image Generation We evaluate our method on the GenEval benchmark (Ghosh et al., 2023), a comprehensive suite designed to assess text-to-image (T2I) models under complex compositional 5Figure 1: Generation pipeline of the diffusion language model with a control block for determining the generation order. 
+
+Algorithm 1 Training Control Block for Multimodal Diffusion Language Model 
+
+Require: Model θ, dataset D, reward function reward_func  
+
+> 1:
+
+while θ not converged and max epochs not reached do  
+
+> 2:
+
+Sample batch of inputs c ∼ D  
+
+> 3:
+
+for g = 1 to G do  
+
+> 4:
+
+Initialize xg 
+
+> 0
+
+with c and mask tokens  
+
+> 5:
+
+for t = 1 to T do  
+
+> 6:
+
+Compute ranking scores hθ,t for each token  
+
+> 7:
+
+Sample unmask set Ut ∼ Plackett-Luce (hθ,t, K) 
+
+> 8:
+
+Sample tokens xg,it ∼ pi
+
+> θ,t
+
+(· | xgt−1) for i ∈ U t 
+
+> 9:
+
+end for  
+
+> 10:
+
+Compute reward rg ← reward_func (c, xgT ) 
+
+> 11:
+
+end for  
+
+> 12:
+
+Compute advantages Ag using group statistics  
+
+> 13:
+
+for n = 1 to T do  
+
+> 14:
+
+Compute πθ,t(xgt | xgt−1) 
+
+> 15:
+
+Compute per-step loss Lθ,t and gradient  
+
+> 16:
+
+end for  
+
+> 17:
+
+Update θ using accumulated gradients ∑Tt=1 ∇θ Lθ,t 
+
+> 18:
+
+end while 
+
+prompts involving object counting, spatial relations, and attribute binding. The benchmark comprises six challenging sub-tasks: Single Object, Two Objects, Counting, Colors, Position, and Color Attributes. Following Liu et al. (2025), we generate training prompts using the official GenEval scripts, which apply templates and random combinations to construct a diverse prompt dataset. Evaluation employs the official pipeline for object detection, color identification, and spatial relation inference. To prevent data leakage, we strictly deduplicate the test set by treating prompts that differ only in object order (e.g., “a photo of A and B” vs. “a photo of B and A”) as identical variants and removing them from training. Based on the base model’s initial task accuracy, we set the prompt sampling ratio as Position : Counting : Attribute Binding : Colors : Two Objects : Single Object = 7 : 5 : 3 : 1 : 1 : 0. 6Table 1: Evaluation results on GenEval benchmark. All metrics represent accuracy scores, with higher values indicating better performance.                                    
+
+> Method GenEval Benchmark Single Obj. Two Obj. Counting Colors Position Color Attr. Overall
+> MMaDA-COT Top-K 0.93 0.47 0.31 0.81 0.16 0.26 0.49 MMaDA-COT Top-K Margin 0.88 0.49 0.29 0.79 0.15 0.28 0.48 MMaDA-Ours (PickScore) 0.95 0.45 0.34 0.79 0.17 0.30 0.50
+> MMaDA-Ours (GenEval) 0.95 0.55 0.25 0.83 0.23 0.26 0.51
+
+We employ rule-based rewards for different tasks: • Counting: r = 1 − |Ngen −Nref | 
+
+> Nref
+
+, providing partial reward when object count is correct; • Position/Color: Full reward when both count and position/color specifications match exactly. Following the same training pipeline as (Liu et al., 2025; Li et al., 2025; Xue et al., 2025; He et al., 2025), we utilize the mixture reward to learn the control block. We adopt PickScore (Kirstain et al., 2023) as our reward model to align model outputs with human judgments. PickScore is trained on large-scale human-annotated pairwise comparisons and scores each image-prompt pair based on multiple criteria, including prompt alignment and visual quality. 
+
+Results on GenEval Table 1 presents our results on the GenEval benchmark. Although confidence-based methods such as Top-K margin perform well on Sudoku puzzles, we find that such strategies do not yield improvement in image generation quality. Even when training with PickScore reward and evaluating on GenEval metrics, our method still achieves superior performance, which demonstrates the generalization ability of the control block. Our approach achieves the best overall performance when trained with in-distribution rewards, representing significant improvements in patial positioning and multi-object composition compared to baseline methods. Notably, we observe substantial gains in the Two Objects (+0.08) and Position (+0.07) tasks, which we attribute to improved generation order control that better handles spatial relationships and multi-object compositions. 
+
+4.2 Multimodal Understanding 
+
+Benchmark Setup We train the control block on the VLAA-thinker dataset (Chen et al., 2025), focusing on the digit and multiple-choice question subsets. The training objective adopts a weighted reward function defined as 
+
+R = 2 × R correctness + 0.4 × R format ,where Rcorrectness evaluates whether the final answer is correct, and Rformat evaluates whether the response contains a Chain-of-Thought enclosed within the <think> tags. We evaluate our method on a comprehensive suite of multimodal benchmarks using the VLMEvalKit framework. This evaluation covers diverse aspects of multimodal reasoning, perception, and language understanding, ensuring robust comparison with existing approaches. 
+
+Evaluation Datasets We conduct experiments on six widely-adopted benchmarks, each targeting different multimodal capabilities: • GQA (Hudson and Manning, 2019): Large-scale visual question answering focusing on compositional reasoning over real-world images. • MMMU (Yue et al., 2024): Multimodal massive multitask benchmark spanning science, mathematics, and humanities domains for knowledge-intensive reasoning evaluation. 7Table 2: Evaluation results on multimodal understanding benchmarks. 
+
+Method GQA MMMU MMB SEED MathVista_MINI COCO_VAL 
+
+MMaDA-COT 48.58 0.27 0.24 0.52 27.7 27.6 MMaDA-COT Top-K Margin 47.55 0.24 0.37 0.54 28.7 26.3 
+
+MMaDA-Ours 47.61 0.31 0.24 0.57 29.0 28.3 
+
+• MMB (Liu et al., 2024): Comprehensive multimodal benchmark for language-vision models with diverse visual understanding tasks. • SEED (Ge et al., 2024): Multi-granularity comprehension benchmark targeting fine-grained visual-textual alignment. • MathVista_MINI (Lu et al., 2024): Challenging multimodal mathematical reasoning dataset requiring symbolic and visual integration. • COCO_VAL (Lin et al., 2014): MS-COCO validation split for evaluating image-text understanding and generation consistency. 
+
+Multimodal Understanding Results Table 2 summarizes quantitative results across all evaluated datasets. Similarly, confidence-based methods such as Top-K margin do not achieve consistent improve-ment over the baseline method. Our approach achieves the best results on four of six benchmarks. Consistent improvements are observed on MathVista_MINI (+1.3) and COCO_VAL (+0.7), both of which involve open-ended questions and complex reasoning processes compared to multiple-choice benchmarks. These results validate that optimizing generation order effectively enhances multimodal understanding and reasoning capabilities. 
+
+4.3 Ablation Studies and Analysis 
+
+Generation Order Optimization Analysis To better understand the effect of our method on the genera-tion process, we visualize the generation trajectories for both text-to-image generation and multimodal understanding tasks in Figure 2 and Figure 3. For text-to-image generation, our approach improves intermediate results across the trajectory, leading to higher-quality final outputs. For multimodal under-standing, while the baseline model—despite being allowed up to 256 output tokens—often degenerates to a single-token response (e.g., “5” illustrated in Figure 3), our control block enables more detailed reasoning. The model is able to correctly solve counting problems and explicitly name objects to support its reasoning. These results demonstrate that optimizing the generation order not only enhances the model’s ability to capture fine-grained spatial relationships in images but also strengthens its performance on multimodal reasoning and comprehension tasks. 
+
+Qualitative Comparison Figure 4 presents qualitative comparisons of generated samples for both text-to-image generation and multimodal understanding tasks. Our method produces more coherent and contextually appropriate outputs, particularly in scenarios requiring complex compositional reasoning. 
+
+# 5 Related work 
+
+Masked diffusion models Masked diffusion models (discrete diffusion model with absorbing state) were first proposed by extending the transition probability from a Gaussian distribution used in the continuous diffusion model to a multinormal distribution (Sohl-Dickstein et al., 2015; Austin et al., 2021; Hoogeboom et al., 2021). Then, continuous Time framework was established by Campbell et al. (2022); Sun et al. (2022). A line of works (Lou et al., 2023; Arriola et al., 2025; Shi et al., 2024; Ou et al., 2024; Zheng et al., 2024; Sahoo et al., 2024; von Rutte et al., 2025) proposed simplified objective to train masked 8Figure 2: Trajectory visualization on text-to-image generation. 
+
+Figure 3: Trajectory visualization on multimodal understanding. diffusion model. Discrete flow matching was proposed in Gat et al. (2024); Campbell et al. (2024). In Nie et al. (2025), the authors scale up the masked diffusion model to 8B, and Yang et al. (Yang et al., 2025; Xin et al., 2025; Wang et al., 2025a) generalize the masked diffusion model and discrete flow matching on multimodal tasks. 
+
+Control over generation order Recent work has increasingly recognized the importance of studying the generation order for masked diffusion model (Kim et al., 2025; Huang et al., 2025). Instead of randomly selecting a set of positions to generate, Zheng et al. (Zheng et al., 2023) propose Top K strategy, i.e., the generation order is selected by the maximum probability of predicted token in each position. In Kim et al. (2025), the authors propose top K margin strategy, i.e., the absolute difference between the two most probable values at each position. They show that by leveraging the information for the logits, they can dramatically improve the performance of MDM on math puzzles like Sudoku. 
+
+# 6 Conclusion 
+
+We have investigated the problem of generation order in multimodal masked diffusion models for text-to-image generation. While prior logits-based strategies such as Top-K margin are effective in language reasoning tasks, we showed that they fail to improve image generation quality. To overcome this, we proposed a learnable control block optimized with Group Relative Policy Optimization (GRPO), enabling adaptive and task-aware order selection. Experiments on the GenEval benchmark and VLMEvalKit benchmarks demonstrate improvements over existing baselines, confirming the importance of learning-based order policies in multimodal diffusion models. 9(a) Text-to-Image Generation Results (b) Multimodal Understanding Results 
+
+Figure 4: Qualitative comparison of generated samples. Our method demonstrates superior understand-ing and generation quality across both text-to-image synthesis and multimodal reasoning tasks. 
+
+References 
+
+Marianne Arriola, Aaron Gokaslan, Justin T Chiu, Zhihan Yang, Zhixuan Qi, Jiaqi Han, Subham Sekhar Sahoo, and Volodymyr Kuleshov. Block diffusion: Interpolating between autoregressive and diffusion language models. ArXiv , abs/2503.09573, 2025. URL https://api.semanticscholar.org/ CorpusID:276938178 .Jacob Austin, Daniel D. Johnson, Jonathan Ho, Daniel Tarlow, and Rianne van den Berg. Structured denoising diffusion models in discrete state-spaces. ArXiv , abs/2107.03006, 2021. URL https: //api.semanticscholar.org/CorpusID:235755106 .Andrew Campbell, Joe Benton, Valentin De Bortoli, Tom Rainforth, George Deligiannidis, and A. Doucet. A continuous time framework for discrete denoising models. ArXiv , abs/2205.14987, 2022. URL 
+
+https://api.semanticscholar.org/CorpusID:249192370 .Andrew Campbell, Jason Yim, Regina Barzilay, Tom Rainforth, and T. Jaakkola. Generative flows on discrete state-spaces: Enabling multimodal flows with applications to protein co-design. ArXiv , 2024. URL https://api.semanticscholar.org/CorpusID:267523194 .Hardy Chen, Haoqin Tu, Fali Wang, Hui Liu, Xianfeng Tang, Xinya Du, Yuyin Zhou, and Cihang Xie. Sft or rl? an early investigation into training r1-like reasoning large vision-language models. ArXiv ,abs/2504.11468, 2025. URL https://api.semanticscholar.org/CorpusID:277824294 .Itai Gat, Tal Remez, Neta Shaul, Felix Kreuk, Ricky T. Q. Chen, Gabriel Synnaeve, Yossi Adi, and Yaron Lip-man. Discrete flow matching. ArXiv , abs/2407.15595, 2024. URL https://api.semanticscholar. org/CorpusID:271328803 .Yuying Ge, Sijie Zhao, Jinguo Zhu, Yixiao Ge, Kun Yi, Lin Song, Chen Li, Xiaohan Ding, and Ying Shan. Seed-x: Multimodal models with unified multi-granularity comprehension and generation. ArXiv ,abs/2404.14396, 2024. URL https://api.semanticscholar.org/CorpusID:269293538 .Dhruba Ghosh, Hanna Hajishirzi, and Ludwig Schmidt. Geneval: An object-focused framework for evalu-ating text-to-image alignment. ArXiv , abs/2310.11513, 2023. URL https://api.semanticscholar. org/CorpusID:264288728 .Xiaoxuan He, Siming Fu, Yuke Zhao, Wanli Li, Jian Yang, Dacheng Yin, Fengyun Rao, and Bo Zhang. Tempflow-grpo: When timing matters for grpo in flow models. ArXiv , abs/2508.04324, 2025. Emiel Hoogeboom, Didrik Nielsen, Priyank Jaini, Patrick Forr’e, and Max Welling. Argmax flows and multinomial diffusion: Learning categorical distributions. In Neural Information Processing Systems ,2021. URL https://api.semanticscholar.org/CorpusID:235262511 .10 Zemin Huang, Zhiyang Chen, Zijun Wang, Tiancheng Li, and Guo-Jun Qi. Reinforcing the diffusion chain of lateral thought with diffusion language models. ArXiv , abs/2505.10446, 2025. URL https: //api.semanticscholar.org/CorpusID:278635983 .Drew A. Hudson and Christopher D. Manning. Gqa: A new dataset for real-world visual reasoning and compositional question answering. 2019 IEEE/CVF Conference on Computer Vision and Pattern Recog-nition (CVPR) , pages 6693–6702, 2019. URL https://api.semanticscholar.org/CorpusID: 152282269 .Jaeyeon Kim, Kulin Shah, Vasilis Kontonis, Sham M. Kakade, and Sitan Chen. Train for the worst, plan for the best: Understanding token ordering in masked diffusions. ArXiv , abs/2502.06768, 2025. URL 
+
+https://api.semanticscholar.org/CorpusID:276250574 .Yuval Kirstain, Adam Polyak, Uriel Singer, Shahbuland Matiana, Joe Penna, and Omer Levy. Pick-a-pic: An open dataset of user preferences for text-to-image generation. ArXiv , abs/2305.01569, 2023. URL 
+
+https://api.semanticscholar.org/CorpusID:258437096 .Junzhe Li, Yutao Cui, Tao Huang, Yinping Ma, Chun Fan, Miles Yang, and Zhao Zhong. Mixgrpo: Unlocking flow-based grpo efficiency with mixed ode-sde. ArXiv , abs/2507.21802, 2025. Tsung-Yi Lin, Michael Maire, Serge J. Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C. Lawrence Zitnick. Microsoft coco: Common objects in context. In European Conference on Computer Vision , 2014. URL https://api.semanticscholar.org/CorpusID:14113767 .Jie Liu, Gongye Liu, Jiajun Liang, Yangguang Li, Jiaheng Liu, Xintao Wang, Pengfei Wan, Di Zhang, and Wanli Ouyang. Flow-grpo: Training flow matching models via online rl. ArXiv , abs/2505.05470, 2025. URL https://api.semanticscholar.org/CorpusID:278394068 .Yuan Liu, Haodong Duan, Yuanhan Zhang, Bo Li, Songyang Zhang, Wangbo Zhao, Yike Yuan, Jiaqi Wang, Conghui He, Ziwei Liu, et al. Mmbench: Is your multi-modal model an all-around player? In 
+
+European conference on computer vision , pages 216–233. Springer, 2024. Aaron Lou, Chenlin Meng, and Stefano Ermon. Discrete diffusion modeling by estimating the ratios of the data distribution. In International Conference on Machine Learning , 2023. URL https://api. semanticscholar.org/CorpusID:264451832 .Pan Lu, Hritik Bansal, Tony Xia, Jiacheng Liu, Chunyuan Li, Hannaneh Hajishirzi, Hao Cheng, Kai-Wei Chang, Michel Galley, and Jianfeng Gao. Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts. In International Conference on Learning Representations (ICLR) , 2024. Shen Nie, Fengqi Zhu, Zebin You, Xiaolu Zhang, Jingyang Ou, Jun Hu, Jun Zhou, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. Large language diffusion models. ArXiv , abs/2502.09992, 2025. URL 
+
+https://api.semanticscholar.org/CorpusID:276395038 .Shuzi Niu, Yanyan Lan, J. Guo, and Xueqi Cheng. A new probabilistic model for top-k ranking problem. 
+
+Proceedings of the 21st ACM international conference on Information and knowledge management , 2012. URL 
+
+https://api.semanticscholar.org/CorpusID:13969766 .Jingyang Ou, Shen Nie, Kaiwen Xue, Fengqi Zhu, Jiacheng Sun, Zhenguo Li, and Chongxuan Li. Your absorbing discrete diffusion secretly models the conditional distributions of clean data. ArXiv ,abs/2406.03736, 2024. URL https://api.semanticscholar.org/CorpusID:270285911 .Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke E. Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Francis Christiano, Jan Leike, and Ryan J. Lowe. Training language models to follow instructions with human feedback. ArXiv , abs/2203.02155, 2022. URL https://api.semanticscholar.org/CorpusID:246426909 .11 Stephen Ragain and Johan Ugander. Choosing to rank. ArXiv , abs/1809.05139, 2018. URL https: //api.semanticscholar.org/CorpusID:52280181 .Subham Sekhar Sahoo, Marianne Arriola, Yair Schiff, Aaron Gokaslan, Edgar Marroquin, Justin T Chiu, Alexander Rush, and Volodymyr Kuleshov. Simple and effective masked diffusion language models. ArXiv , abs/2406.07524, 2024. URL https://api.semanticscholar.org/CorpusID: 270380319 .John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. ArXiv , abs/1707.06347, 2017. URL https://api.semanticscholar. org/CorpusID:28695052 .Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Jun-Mei Song, Mingchuan Zhang, Y. K. Li, Yu Wu, and Daya Guo. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. ArXiv , abs/2402.03300, 2024. URL https://api.semanticscholar.org/CorpusID: 267412607 .Jiaxin Shi, Kehang Han, Zhe Wang, Arnaud Doucet, and Michalis K. Titsias. Simplified and gen-eralized masked diffusion for discrete data. ArXiv , abs/2406.04329, 2024. URL https://api. semanticscholar.org/CorpusID:270286107 .Jascha Narain Sohl-Dickstein, Eric A. Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep un-supervised learning using nonequilibrium thermodynamics. ArXiv , abs/1503.03585, 2015. URL 
+
+https://api.semanticscholar.org/CorpusID:14888175 .Haoran Sun, Lijun Yu, Bo Dai, Dale Schuurmans, and Hanjun Dai. Score-based continuous-time discrete diffusion models. ArXiv , abs/2211.16750, 2022. URL https://api.semanticscholar.org/ CorpusID:254096040 .Dimitri von Rutte, Janis Fluri, Yuhui Ding, Antonio Orvieto, Bernhard Scholkopf, and Thomas Hofmann. Generalized interpolating discrete diffusion. ArXiv , abs/2503.04482, 2025. URL https://api. semanticscholar.org/CorpusID:276813388 .Jin Wang, Yao Lai, Aoxue Li, Shifeng Zhang, Jiacheng Sun, Ning Kang, Chengyue Wu, Zhenguo Li, and Ping Luo. Fudoki: Discrete flow-based unified understanding and generation via kinetic-optimal velocities. ArXiv , abs/2505.20147, 2025a. URL https://api.semanticscholar.org/CorpusID: 278911369 .Yinjie Wang, Ling Yang, Bowen Li, Ye Tian, Ke Shen, and Mengdi Wang. Revolutionizing reinforcement learning framework for diffusion large language models. ArXiv , abs/2509.06949, 2025b. URL https: //api.semanticscholar.org/CorpusID:281203470 .Yi Xin, Qi Qin, Siqi Luo, Kaiwen Zhu, Juncheng Yan, Yan Tai, Jiayi Lei, Yuewen Cao, Ke Wang, Yibin Wang, Jinbin Bai, Qian Yu, Dengyang Jiang, Yuandong Pu, Haoxing Chen, Le Zhuo, Junjun He, Gen Luo, Tian-Xin Li, Ming Hu, Jin Ye, Shenglong Ye, Bo Zhang, Chang Xu, Wenhai Wang, Hongsheng Li, Guangtao Zhai, Tianfan Xue, Bin Fu, Xiaohong Liu, Yu Qiao, and Yihao Liu. Lumina-dimoo: An omni diffusion large language model for multi-modal generation and understanding. ArXiv , abs/2510.06308, 2025. URL https://api.semanticscholar.org/CorpusID:281891687 .Zeyue Xue, Jie Wu, Yu Gao, Fangyuan Kong, Lingting Zhu, Mengzhao Chen, Zhiheng Liu, Wei Liu, Qiushan Guo, Weilin Huang, and Ping Luo. Dancegrpo: Unleashing grpo on visual generation. ArXiv ,abs/2505.07818, 2025. Ling Yang, Ye Tian, Bowen Li, Xinchen Zhang, Ke Shen, Yunhai Tong, and Mengdi Wang. Mmada: Multimodal large diffusion language models. ArXiv , abs/2505.15809, 2025. URL https://api. semanticscholar.org/CorpusID:278782105 .12 Xiang Yue, Yuansheng Ni, Kai Zhang, Tianyu Zheng, Ruoqi Liu, Ge Zhang, Samuel Stevens, Dongfu Jiang, Weiming Ren, Yuxuan Sun, Cong Wei, Botao Yu, Ruibin Yuan, Renliang Sun, Ming Yin, Boyuan Zheng, Zhenzhu Yang, Yibo Liu, Wenhao Huang, Huan Sun, Yu Su, and Wenhu Chen. Mmmu: A massive multi-discipline multimodal understanding and reasoning benchmark for expert agi. In Proceedings of CVPR , 2024. Siyan Zhao, Devaansh Gupta, Qinqing Zheng, and Aditya Grover. d1: Scaling reasoning in diffusion large language models via reinforcement learning. ArXiv , abs/2504.12216, 2025. URL https://api. semanticscholar.org/CorpusID:277824207 .Kaiwen Zheng, Yongxin Chen, Hanzi Mao, Mingying Liu, Jun Zhu, and Qinsheng Zhang. Masked diffusion models are secretly time-agnostic masked models and exploit inaccurate categorical sam-pling. ArXiv , abs/2409.02908, 2024. URL https://api.semanticscholar.org/CorpusID: 272397565 .Lin Zheng, Jianbo Yuan, Lei Yu, and Lingpeng Kong. A reparameterized discrete diffusion model for text generation. ArXiv , abs/2302.05737, 2023. URL https://api.semanticscholar.org/CorpusID: 256826865 .
+
+# A Implementation Details 
+
+We build upon MMaDA-8B-MixCoT (Yang et al., 2025) as our base model and optimize the control block via a GRPO-style reinforcement learning objective. For all experiments, we use the AdamW optimizer with a constant learning rate of 5 × 10 −6, β1 = 0.9, β2 = 0.999, ϵ = 10 −8, and no weight decay. All models are trained for 5 , 000 steps with a per-GPU batch size of 1 and 4 gradient accumulation steps. The clipping coefficient is set to ϵclip = 0.2 and the KL penalty coefficient to β = 0. For text-to-image generation (GenEval), experiments are conducted on 24 NVIDIA A100 GPUs. We sample G = 4 completions per prompt with R = 6 repeat sampling rounds per training step (i.e., 24 total samples per prompt), using 16 denoising steps and a generation length of 1 ,024 tokens. Training is conducted in bfloat16 precision. For multimodal understanding (VLMEvalKit), experiments are conducted on 8 NVIDIA A100 GPUs. We sample G = 4 completions per prompt with R = 3 repeat sampling rounds (i.e., 12 total samples per prompt), using 64 denoising steps and a generation length of 256 tokens, trained in float16 precision. 13

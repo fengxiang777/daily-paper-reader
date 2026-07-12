@@ -6,76 +6,88 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-11
-- 运行时间：2026-07-11 20:14:20 UTC
+- 最新运行日期：2026-07-12
+- 运行时间：2026-07-12 20:55:21 UTC
 - 运行状态：成功
-- 本次总论文数：18
-- 精读区：7
+- 本次总论文数：22
+- 精读区：11
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选长程智能体与多模态感知领域两篇顶尖论文，速览专家路由视觉语言模型等方向。  
-强化学习通过上下文压缩有效突破长程任务，贝叶斯搜索显著提升多模态大模型的细粒度感知能力。  
-建议关注“CoRE-VLA”这类可扩展的机器人学习框架，并尝试将语义感知与自改进方法融入智能体设计。
-- 详情：[/202607/11/README](/202607/11/README)
+今日精读两篇满分论文，分别将交错多模态推理统一为决策过程、用上下文压缩强化学习攻坚长程智能体。  
+焦点集中在“推理即决策”与“长程记忆压缩”，速读中树搜索蒸馏、MoE 压缩和低开销推理服务也指向模型效率与决策能力的融合。  
+读者可优先细品《Bridging Interleaved Multi-Modal Reasoning as a Unified Decision Process》，它或许能重塑你对多模态推理的可控性认知。
+- 详情：[/202607/12/README](/202607/12/README)
 
 ### 精读区论文标签
-1. [CompactionRL: Reinforcement Learning with Context Compaction for Long-Horizon Agents](/202607/11/2607.05378v1-compactionrl-reinforcement-learning-with-context-compaction-for-long-horizon-agents)  
+1. [Bridging Interleaved Multi-Modal Reasoning as a Unified Decision Process](/202607/12/2607.03748v1-bridging-interleaved-multi-modal-reasoning-as-a-unified-decision-process)  
    标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：使用强化学习和上下文压缩训练长时程智能体LLM，以在有限上下文窗口内完成长时任务。
-2. [BVS: Bayesian Visual Search with Multimodal Large Language Model for Fine-grained Perception](/202607/11/2607.03184v1-bvs-bayesian-visual-search-with-multimodal-large-language-model-for-fine-grained-perception)  
+   evidence：将文图文推理统一为 MDP 的统一多模态模型强化学习
+2. [CompactionRL: Reinforcement Learning with Context Compaction for Long-Horizon Agents](/202607/12/2607.05378v1-compactionrl-reinforcement-learning-with-context-compaction-for-long-horizon-agents)  
+   标签：评分：10.0/10、query:rl-mm-llm-ag
+   evidence：利用上下文压缩的强化学习训练长程智能体，处理长上下文和智能体任务
+3. [Harness-Aware Self-Evolving: Co-Evolving Model Weights, Harness, and Task Solutions](/202607/12/2607.03935v1-harness-aware-self-evolving-co-evolving-model-weights-harness-and-task-solutions)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出基于贝叶斯视觉搜索的MLLM框架，用于高分辨率图像中的细粒度感知
-3. [Amortising Bayesian Experimental Design for Sequential Information Gathering in LLMs](/202607/11/2607.03426v1-amortising-bayesian-experimental-design-for-sequential-information-gathering-in-llms)  
+   evidence：提出一种智能体强化学习框架，协同进化模型权重和任务脚手架
+4. [LLM-as-a-Tutor: Policy-Aware Prompt Adaptation for Non-Verifiable RL](/202607/12/2607.04412v1-llm-as-a-tutor-policy-aware-prompt-adaptation-for-non-verifiable-rl)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用群体相对策略优化和期望信息增益奖励的RL微调LLM
-4. [Agentic-V2X: Small Language Model Agents for Deadline-Aware V2X Scheduling in 5G/6G Networks](/202607/11/2607.04290v1-agentic-v2x-small-language-model-agents-for-deadline-aware-v2x-scheduling-in-5g6g-networks)  
+   evidence：策略感知提示自适应用于LLM对齐的RL
+5. [RSPO: Reward-Swap Policy Optimization for Multi-Turn LLM Agents](/202607/12/2607.04713v1-rspo-reward-swap-policy-optimization-for-multi-turn-llm-agents)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：构建使用小语言模型的自主智能体进行V2X调度
-5. [VLA Grounder: Language-Conditioning Space Optimization for Black-Box VLA Models](/202607/11/2607.04517v1-vla-grounder-language-conditioning-space-optimization-for-black-box-vla-models)  
+   evidence：引入奖励交换策略优化解决多轮LLM智能体训练中的稀疏奖励问题
+6. [STAPO: Selective Trajectory-Aware Policy Optimization for LLM Agent Training](/202607/12/2607.04963v1-stapo-selective-trajectory-aware-policy-optimization-for-llm-agent-training)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：通过语言空间策略优化黑盒视觉-语言-动作模型的语言条件
-6. [APIVOT: Adaptive Planning with Interleaved Vision-Language Thoughts](/202607/11/2607.08024v1-apivot-adaptive-planning-with-interleaved-vision-language-thoughts)  
+   evidence：提出归一化熵解决LLM智能体RL训练中的轨迹忽略问题
+7. [Improving LLM-Generated Process Model Quality Through Reinforcement Learning: The Role of Reward Function Design](/202607/12/2607.06175v1-improving-llm-generated-process-model-quality-through-reinforcement-learning-the-role-of-reward-function-design)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：基于视觉-语言模型并交叉视觉与语言思维的长时域任务规划智能体
-7. [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](/202607/11/2607.08448v1-harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents)  
+   evidence：使用基于多维奖励函数的强化学习提升LLM生成流程模型的质量
+8. [Bridging Physical Reasoning and Task Generalization via Visual Action Outcome Reasoning Alignment](/202607/12/2607.06522v1-bridging-physical-reasoning-and-task-generalization-via-visual-action-outcome-reasoning-alignment)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：记忆增强的智能体框架，利用LLM编码智能体引导冻结VLA进行操纵
+   evidence：VLM视觉推理与行动的对齐奖励
+9. [MMAgent-R$^2$: Learning to Rerank and Reject for Agentic mRAG](/202607/12/2607.07383v1-mmagent-r2-learning-to-rerank-and-reject-for-agentic-mrag)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：面向知识型视觉问答的智能体式多模态检索增强生成系统MMAgent-R^2
+10. [Feedback Manipulation Regularization: Enabling Offline Agent Alignment for Imitation Learning](/202607/12/2607.07859v1-feedback-manipulation-regularization-enabling-offline-agent-alignment-for-imitation-learning)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：利用人类反馈和模仿学习的离线智能体对齐
+11. [Understanding Axes of Difficulty For Long Context Tasks Via PredicateLongBench](/202607/12/2607.08284v1-understanding-axes-of-difficulty-for-long-context-tasks-via-predicatelongbench)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：PredicateLongBench通过谓词任务压力测试长上下文推理
 
 ### 速读区论文标签
-1. [CoRE-VLA: Towards Scalable and Robust Vision-Language-Action Modeling via Conditional Routing of Experts](/202607/11/2607.03693v1-core-vla-towards-scalable-and-robust-vision-language-action-modeling-via-conditional-routing-of-experts)  
+1. [Look Before You Leap: Distilling Tree Search into Action Evaluation for Frozen VLA Models](/202607/12/2607.03751v1-look-before-you-leap-distilling-tree-search-into-action-evaluation-for-frozen-vla-models)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：提出条件专家路由实现可扩展鲁棒的视觉-语言-动作建模以处理异构传感器
-2. [Semantic-aware and Self-improving Program Reduction via Agentic Large Language Models](/202607/11/2607.03766v1-semantic-aware-and-self-improving-program-reduction-via-agentic-large-language-models)  
+   evidence：树搜索蒸馏用于冻结VLA的动作评估
+2. [Nemotron-Labs-3-Puzzle-75B-A9B: Compressing Hybrid MoE LLMs](/202607/12/2607.04371v1-nemotron-labs-3-puzzle-75b-a9b-compressing-hybrid-moe-llms)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：利用大模型智能体通过迭代推理进行程序缩减
-3. [Forethought: Verifiable Reasoning from Neurosymbolic Primitive Programming](/202607/11/2607.04096v1-forethought-verifiable-reasoning-from-neurosymbolic-primitive-programming)  
+   evidence：在多阶段压缩流程中使用强化学习，提升大模型吞吐量和超长上下文并发数
+3. [Akashic: A Low-Overhead LLM Inference Service with MemAttention](/202607/12/2607.05708v1-akashic-a-low-overhead-llm-inference-service-with-memattention)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：提出用于基于LLM的智能体工作流的可验证神经符号推理系统
-4. [Behavior Leverage Imbalance in Multi-Teacher On-Policy Distillation](/202607/11/2607.07050v1-behavior-leverage-imbalance-in-multi-teacher-on-policy-distillation)  
+   evidence：提出MemAttention，通过分块和建模跨块关系管理LLM智能体长上下文
+4. [Diagnosing Semantic Handoff Failures in Agent-Orchestrated Vision-Language-Action Skill Composition](/202607/12/2607.06256v1-diagnosing-semantic-handoff-failures-in-agent-orchestrated-vision-language-action-skill-composition)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：用于训练智能体语言模型工具使用的多教师蒸馏方法
-5. [Reinforcement Learning for Data-Efficient Code-Switched ASR](/202607/11/2607.02757v1-reinforcement-learning-for-data-efficient-code-switched-asr)  
+   evidence：智能体编排的视觉-语言-动作技能组合用于长程任务
+5. [When Does In-Context Search Help? A Sampling-Complexity Theory of Reflection-Driven Reasoning](/202607/12/2607.06720v1-when-does-in-context-search-help-a-sampling-complexity-theory-of-reflection-driven-reasoning)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：LLM 推理中上下文搜索的理论分析
+6. [Dual Latent Memory in Vision-Language-Action Models for Robotic Manipulation](/202607/12/2607.07608v1-dual-latent-memory-in-vision-language-action-models-for-robotic-manipulation)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：潜在记忆令牌用于VLA长程任务
+7. [Reinforcing the Generation Order of Multimodal Masked Diffusion Models](/202607/12/2607.08056v1-reinforcing-the-generation-order-of-multimodal-masked-diffusion-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：将带可验证奖励的强化学习用于音频语言模型的语码转换语音识别数据高效适配
-6. [Learning Taxonomic Trees with Hierarchical Representation Regularization for Large Multimodal Models](/202607/11/2607.02909v1-learning-taxonomic-trees-with-hierarchical-representation-regularization-for-large-multimodal-models)  
+   evidence：通过群体相对策略优化学习文本到图像和多模态理解的生成顺序
+8. [LEEVLA: Seeing What Matters in Latent Environment Evolution for Vision-Language-Action](/202607/12/2607.08182v1-leevla-seeing-what-matters-in-latent-environment-evolution-for-vision-language-action)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过表示正则化提升大型多模态模型的分层一致性
-7. [Agentic and Generative AI for Open-Source Intelligence and Cyber Investigations: Taxonomy, Evaluation, Challenges, and Future Directions](/202607/11/2607.03233v1-agentic-and-generative-ai-for-open-source-intelligence-and-cyber-investigations-taxonomy-evaluation-challenges-and-future-directions)  
-   标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：综述了用于开源情报的智能体AI和LLM，将智能体AI确立为独立分析类别
-8. [MemDefrag: Latent Memory Defragmentation for Large Language Models](/202607/11/2607.05969v1-memdefrag-latent-memory-defragmentation-for-large-language-models)  
-   标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出一种无训练方法，通过解决位置编码错位问题改善LLM的长期记忆更新，与长上下文处理相关。
-9. [Regime-Conditional Stabilisation of LLM-Augmented Cooperative Multi-Agent Reinforcement Learning](/202607/11/2607.04470v1-regime-conditional-stabilisation-of-llm-augmented-cooperative-multi-agent-reinforcement-learning)  
+   evidence：提出具有漂移引导动态优先化的VLA架构以增强多模态任务中的视觉注意力
+9. [XS-VLA: Coupling Coarse-grained Spatial Distillation with Latent Flow Matching for Lightweight Robotic Control](/202607/12/2607.04171v1-xs-vla-coupling-coarse-grained-spatial-distillation-with-latent-flow-matching-for-lightweight-robotic-control)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：研究使用LLM生成奖励权重时的多智能体强化学习稳定性问题
-10. [Write-Protected Discrete Bottlenecks for Language-Grounded World Models: A Structural Limitation and Sufficient Fix](/202607/11/2607.08312v1-write-protected-discrete-bottlenecks-for-language-grounded-world-models-a-structural-limitation-and-sufficient-fix)  
+   evidence：从大视觉语言模型蒸馏空间语义知识到轻量级VLA用于机器人控制
+10. [Video-Text Temporal Localization via Multi-Scale Convolution and Dynamic Routing](/202607/12/2607.05093v2-video-text-temporal-localization-via-multi-scale-convolution-and-dynamic-routing)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：修复语言接地离散世界模型的结构限制，支持智能体
-11. [AUTOPILOT VQA: Benchmarking Vision-Language Models for Incident-Centric Dashcam Understanding](/202607/11/2607.08745v1-autopilot-vqa-benchmarking-vision-language-models-for-incident-centric-dashcam-understanding)  
+   evidence：使用多尺度卷积和动态路由的多模态视频文本定位
+11. [When Structured Sparse Autoencoders Learn Consistent Concepts Across Modalities](/202607/12/2607.08605v1-when-structured-sparse-autoencoders-learn-consistent-concepts-across-modalities)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：针对行车记录仪事故的视觉问答基准，评估视觉-语言模型与多模态大模型
+   evidence：为视觉-语言模型学习跨模态一致概念的结构化稀疏性方法
 
 
 <div class="dpr-home-promo-card">

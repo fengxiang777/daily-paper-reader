@@ -1,0 +1,308 @@
+Title: Video-Text Temporal Localization via Multi-Scale Convolution and Dynamic Routing
+
+URL Source: https://arxiv.org/pdf/2607.05093v2
+
+Published Time: Wed, 08 Jul 2026 00:56:44 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Video-Text Temporal Localization via Multi-Scale Convolution and Dynamic Routing 
+
+# Gengtian Shi 1, Jinze Yu 2,1 , Chenhao Wu 1, Shaofei Wang 1, Eiji Fukuzawa 1,Junjie Tang 3, Hiroshi Onoda 1, Jiang Liu 1
+
+> 1
+
+Graduate School of Fundamental Science and Engineering, Waseda University, Tokyo, Japan 
+
+> 2
+
+Generative AI Innovation Center, Amazon Web Services, Japan 
+
+> 3
+
+Amazon, Germany shigengtian@akane.waseda.jp, jinzeyu@amazon.co.jp 
+
+Abstract 
+
+Video–text temporal localization requires precise alignment between natural language queries and corresponding video segments, a fundamental challenge in multimodal under-standing. We present a novel framework that addresses two critical limitations of existing methods: inadequate model-ing of hierarchical temporal structure and inability to han-dle complex many-to-many correspondences between modal-ities. Our approach introduces a multi-scale temporal con-volutional encoder that captures motion patterns across different temporal granularities—from instantaneous frame transitions to extended action sequences. We further pro-pose a capsule-based dynamic routing mechanism that it-eratively refines segment–query associations through struc-tured agreement updates, enabling flexible modeling of non-monotonic alignments. These components are unified through a multi-task learning objective that jointly opti-mizes temporal boundary regression, cross-modal semantic alignment, and capsule diversity. Extensive experiments on ActivityNet Captions demonstrate significant improvements, achieving 42.9% Recall@0.5 and 41.1% mean IoU, sur-passing strong transformer-based baselines while maintain-ing computational efficiency. Our results validate that com-bining hierarchical temporal modeling with structured se-mantic routing provides an effective solution for fine-grained video–language understanding. 
+
+# Introduction 
+
+The proliferation of video content has created an urgent need for systems that can understand and navigate tem-poral relationships between visual content and natural lan-guage. Video–text temporal localization, also known as tem-poral sentence grounding (TSG) or video moment retrieval (VMR), addresses this challenge by identifying precise tem-poral boundaries in videos that correspond to textual de-scriptions (Gao et al. 2017; Hendricks et al. 2017; Lan et al. 2023; Zhang et al. 2023). This capability is essential for applications ranging from instructional video understand-ing and human–robot interaction to content-based video re-trieval and interactive video editing (Chen et al. 2018; Li et al. 2020). Despite recent advances in vision–language modeling, achieving fine-grained temporal alignment remains funda-mentally challenging. Current pretrained models such as CLIP (Radford et al. 2021), BLIP (Li et al. 2022), and their video-adapted variants (e.g., CLIP4Clip (Luo et al. 2021), VideoBERT (Sun et al. 2019), X-CLIP (Ma et al. 2022)) ex-cel at coarse-grained video–text matching but struggle with precise moment-level localization. These models typically operate on entire video clips or large temporal segments, lacking the temporal resolution necessary to identify exact action boundaries, subtle transitions, and complex visual-linguistic correspondences (Li et al. 2023). The challenge is particularly acute in instructional and procedural videos, where multiple related actions occur in close temporal proximity with ambiguous boundaries. Con-sider a cooking video where ”adding ingredients” and ”mix-ing the batter” may overlap temporally, or an assembly tu-torial where distinct textual instructions correspond to par-tially concurrent visual actions. As illustrated in Figure 1, real-world scenarios frequently exhibit three types of com-plexity: (1) single queries spanning multiple disjoint video segments, (2) multiple queries mapping to overlapping tem-poral regions, and (3) subtle transitions between seman-tically related actions. Existing methods, which predomi-nantly rely on global attention mechanisms or assume mono-tonic alignments, fail to capture these intricate temporal structures. We identify two fundamental limitations in current ap-proaches. First, most methods lack explicit hierarchical temporal modeling, treating all temporal scales equally through uniform attention or fixed-size representations. This prevents them from distinguishing between instantaneous transitions and extended action sequences. Second, exist-ing alignment mechanisms assume simplistic one-to-one or monotonic correspondences between video frames and text tokens, failing to model the complex many-to-many rela-tionships inherent in real-world scenarios. These limitations result in diffuse alignments, imprecise boundaries, and poor generalization to videos with complex temporal structures. To address these challenges, we propose a novel frame-work that synergistically combines multi-scale tempo-ral convolution with capsule-based dynamic routing for video–text temporal localization. Our key insight is that ac-curate temporal alignment requires both hierarchical motion modeling and structured semantic correspondence. Specif-ically, we introduce a multi-scale convolutional encoder that applies parallel 1D convolutions with varying ker-nel sizes to capture temporal patterns at multiple gran-arXiv:2607.05093v2 [cs.CV] 7 Jul 2026 Text1: "People sail on inflatable boats down the street in a river.”|               
+
+> 41.65s 96.40s 00.00s 04.76s 08.76s
+> Ground Truth
+> Localization
+> Time Stamps
+> Video Frames
+> Input
+> Text2: "A group of people take arest, having some drinks.”|
+> Wrong Localization Ideal Localization
+
+Figure 1: Temporal localization challenges in real-world videos. Complex queries like ”People sail on inflatable boats down the street in a river” involve ambiguous boundaries and overlapping segments. While existing methods using coarse matching or global attention produce inaccurate localizations, our approach combines multi-scale temporal modeling with capsule-based dynamic routing to achieve precise, structurally-aware alignment between video content and natural language descriptions. ularities—from frame-level transitions to extended action sequences. This design enables efficient O(T) complex-ity while providing comprehensive temporal coverage. We complement this with a capsule-based alignment module that models video–text correspondences through iterative routing, where agreement between visual capsules and tex-tual representations is refined through multiple iterations. Unlike attention mechanisms that produce diffuse align-ments, our routing procedure converges to structured, in-terpretable correspondences that naturally handle many-to-many mappings. Our training framework employs a unified multi-task ob-jective that jointly optimizes three complementary aspects: frame-level temporal boundary prediction, cross-modal se-mantic alignment, and capsule diversity regularization. This holistic approach ensures that the model learns both pre-cise temporal localization and robust semantic matching, ad-dressing the full spectrum of challenges in video–text align-ment. 
+
+Our main contributions are: 
+
+• A multi-scale temporal encoder that hierarchically mod-els video dynamics through parallel convolutions with adaptive fusion, capturing both local transitions and global temporal context. • A capsule-based dynamic routing mechanism that iter-atively refines video–text alignments through structured agreement updates, enabling flexible many-to-many cor-respondence modeling. • A comprehensive evaluation demonstrating state-of-the-art performance on ActivityNet Captions, with detailed ablations validating each component’s contribution to the overall system. 
+
+# Related Work 
+
+Video–Text Temporal Alignment 
+
+The task of temporally localizing video segments from natu-ral language queries has evolved through several paradigms. Early proposal-based methods generate candidate segments and refine them through regression. TALL (Gao et al. 2017) pioneered this approach by combining temporal proposal generation with multimodal feature fusion, while ABLR (Yuan, Mei, and Zhu 2019) enhanced alignment through attention-based boundary refinement and semantic condi-tioning. The field shifted toward end-to-end span prediction meth-ods that directly regress temporal boundaries. VSLNet (Zhang, Mun, and Han 2020) reformulated the problem as span-based question answering, introducing query-guided highlighting for feature enhancement. 2D-TAN (Zhang et al. 2020) and DRN (Zeng et al. 2020) advanced this direction by constructing 2D temporal maps that model all possible segment spans simultaneously, enabling more comprehen-sive temporal reasoning. While these supervised methods achieve strong performance on benchmarks like ActivityNet Captions (Caba Heilbron et al. 2015), they require expensive frame-level annotations that limit scalability. Weakly supervised approaches emerged to address an-notation costs. WS-DEC (Chen et al. 2020) learns from video–sentence pairs without temporal annotations using discriminative clustering, while TGA (Wu et al. 2020) em-ploys tree-structured attention for hierarchical alignment. However, these methods often assume monotonic or coarse segment-level correspondence, limiting their applicability to complex scenarios with overlapping or disordered events. Recent innovations include metric learning frameworks (Zhang et al. 2020), reinforcement learning for boundary re-finement, and graph-based reasoning (Chen et al. 2021) for modeling inter-segment relationships. The latest generation leverages large-scale pretraining and language model capabilities. Video-Text Prompting (VTP) (Zhao et al. 2024) inserts learnable prompts into both modalities to bridge the pretraining-finetuning gap un-der weak supervision. TFVTG (Zheng et al. 2024) decom-poses queries into sub-events using large language mod-els for training-free zero-shot grounding (Guo et al. 2024). Multi -scale 
+
+Video Encoder 
+
+Video Frames 
+
+(T 
+
+×H
+
+×W
+
+×3) 
+
+Text Description 
+
+(Token Sequence) 
+
+Dynamic Routing 
+
+Alignment Module 
+
+Context -Aware 
+
+Cross Attention      
+
+> k:5
+> Text1: "People sail on inflatable boats.”|
+
+Text Encoder 
+
+Input      
+
+> Localization
+> 00 .00 s04 .76 s
+> Kernel Size :1
+> Kernel Size :3
+> Kernel Size :5
+> Convolutional layers k:1 k:3
+
+Figure 2: Architecture overview for video–text temporal localization. The Multi-Scale Video Encoder processes frame se-quences through parallel 1D convolutions with kernels of size 1, 3, and 5 to capture temporal patterns at multiple granulari-ties. Text features are extracted via a transformer-based encoder. The Dynamic Routing Alignment Module iteratively refines video–text associations using capsule-based routing, while the Context-Aware Cross-Attention module enhances cross-modal interaction. The system outputs precise temporal boundaries aligned with the input query. Pretrained video–language models like HERO (Li et al. 2020) and VIOLET (Fu et al. 2021) employ masked mod-eling and contrastive objectives on large-scale corpora, though their sentence-level supervision limits temporal pre-cision. LocVTP (Cao et al. 2022) addresses this through localization-aware pretraining, but still operates at relatively coarse temporal resolution. For finer-grained alignment, token-level strategies have shown promise. VT-TWINS (Ko et al. 2022) introduces differentiable weak alignment between frames and words, while TANet (Han, Xie, and Zisserman 2022) applies multi-scale temporal attention for long-form videos. Despite these advances, most methods struggle with complex many-to-many correspondences and non-monotonic alignments com-mon in real-world scenarios. 
+
+Hierarchical Temporal Modeling and Semantic Enhancement 
+
+Multi-scale temporal modeling has proven essential for video understanding. Architectures like I3D (Carreira and Zisserman 2017), SlowFast (Feichtenhofer et al. 2019), and TimeSformer (Bertasius, Wang, and Torresani 2021) demonstrate the effectiveness of processing video at mul-tiple temporal resolutions. In temporal grounding, 2D-TAN (Zhang et al. 2020), DRN (Zeng et al. 2020), and TANet (Han, Xie, and Zisserman 2022) incorporate hierarchical structures through pyramidal feature extraction or multi-scale attention mechanisms. Recent work has explored how large language models can enhance video understanding. BLIVA (Li and et al. 2023) leverages LLMs for compositional reasoning across modal-ities, while InstructVid (Chen and et al. 2023) uses instruc-tion tuning to improve task generalization. TRACE (Guo et al. 2024) models causal sub-event structures for enhanced temporal reasoning, and recent architectures (Woo et al. 2024) introduce semantic gating to balance global context with local details. 
+
+Our approach differs fundamentally by combining ef-ficient multi-scale convolution with capsule-based dynamic routing. This design explicitly models hierarchical temporal structure while enabling flexible many-to-many alignments through iterative refinement. Unlike methods requiring ex-pensive end-to-end finetuning, we achieve strong perfor-mance through targeted architectural innovations and multi-task supervision. 
+
+# Methodology 
+
+Problem Formulation and Overview 
+
+Given an untrimmed video V containing T frames and a natural language query Q, our goal is to predict the tempo-ral segment (ˆ tstart , ˆtend ) that semantically corresponds to Q.This requires solving two interrelated challenges: (1) mod-eling temporal dynamics at multiple scales to capture both instantaneous transitions and extended actions, and (2) es-tablishing robust semantic alignment between visual content and linguistic descriptions despite complex many-to-many correspondences. Our framework addresses these challenges through four key components illustrated in Figure 2. First, we extract frame-level and token-level features using frozen pretrained encoders. Second, a multi-scale temporal encoder captures hierarchical motion patterns through parallel convolutions. Third, a capsule-based dynamic routing module iteratively refines cross-modal alignments. Finally, a temporal local-ization head predicts segment boundaries using features en-hanced by the previous modules. These components are jointly optimized through a unified multi-task objective. 
+
+Feature Extraction 
+
+We leverage pretrained CLIP encoders (Radford et al. 2021) to extract initial representations. For video encoding, we uni-formly sample frames at 1 fps and resize to 224 ×224 pixels. Input [B, T, D]   
+
+> k:1 k:3 k:5
+> Multi -Scale Convolutions
+> Global
+> Adaptive Fusion
+> Enhanced [B, T, D]
+> Residual  Connection
+> Positional
+> Embedding
+
+Figure 3: Multi-scale temporal encoder architecture. Parallel convolutions with kernels of size 1, 3, and 5 capture differ-ent temporal granularities, followed by adaptive fusion and residual connection. Each frame is independently processed through CLIP’s vi-sual encoder (e.g., ViT-B/32), yielding a feature sequence 
+
+V ∈ RT ×D, where D is the embedding dimension. For textual encoding, queries are tokenized and passed through a pretrained text encoder (CLIP Text or BERT), pro-ducing token embeddings Q ∈ RN ×D , where N is the se-quence length. Both visual and textual features are projected to a shared 384-dimensional space via learnable linear trans-formations: 
+
+V′ = VW v + bv (1) 
+
+Q′ = QW q + bq (2) Since CLIP processes frames independently without tem-poral context, we inject temporal information through sinu-soidal positional embeddings (Vaswani et al. 2017), enabling the model to reason about temporal ordering and distances. 
+
+Multi-Scale Temporal Feature Encoding 
+
+Accurate temporal localization requires understanding video dynamics at multiple scales—from abrupt frame-to-frame transitions to gradual action progressions spanning several seconds. Traditional approaches using fixed-size temporal windows or global attention fail to capture this hierarchical structure effectively. We propose a multi-scale temporal convolutional en-coder that processes the video representation through par-allel 1D convolutions with different kernel sizes. This de-sign is motivated by three key observations: (1) different ac-tions exhibit distinct temporal signatures requiring appropri-ate receptive fields, (2) temporal boundaries often manifest at multiple scales simultaneously, and (3) computational ef-ficiency is crucial for processing long videos. Our encoder applies three parallel convolutional branches: 
+
+F(k) = ReLU (Conv1D k(V′)) (3) where k ∈ { 1, 3, 5} represents the kernel size. Each branch captures specific temporal characteristics: Coupling    
+
+> Coefficients
+> Weighted
+> Aggregation
+> Agreement
+> Update
+> Dynamic Routing
+> “K = 3 iterations”
+> Alignment Matrix
+> Video [B, T, D] Text [B, N, D]
+
+Figure 4: Dynamic Routing Alignment Module. Through it-erative refinement of coupling coefficients, the module es-tablishes structured correspondences between video frames and text tokens. • k=1 : Preserves frame-level details and sharp transitions • k=3 : Models short-term motion and local context • k=5 : Captures extended action patterns and gradual changes The multi-scale features are fused through an adaptive mechanism: 
+
+Fconcat = [ F(1) ; F(3) ; F(5) ] (4) 
+
+Ffused = Conv1D 1×1(Fconcat ) (5) 
+
+Fmulti = LayerNorm (Ffused ) + V′ (6) The 1 × 1 convolution learns to weight different scales based on content, while the residual connection preserves original semantic information. This design achieves O(T) complexity compared to O(T²) for self-attention, enabling efficient processing of long videos while providing compre-hensive temporal coverage. 
+
+Capsule-Based Semantic Alignment via Dynamic Routing 
+
+Beyond temporal modeling, precise localization requires es-tablishing robust correspondences between video content and textual descriptions. Traditional attention mechanisms often produce diffuse alignments that struggle with many-to-many mappings and lack interpretability. We address this through a capsule-based dynamic routing mechanism that iteratively refines alignments based on agreement between visual and textual representations. The key insight is to treat alignment as a structured assign-ment problem where visual ”parts” (frames) are routed to textual ”wholes” (tokens) through iterative refinement. Each video feature vi generates a vote for each text token through a learned transformation: 
+
+uij = Wr vi + br (7) The routing algorithm iteratively updates coupling coeffi-cients based on agreement: 
+
+cij = exp( bij )
+
+P 
+
+> k
+
+exp( bik ) (8) 
+
+sj = X
+
+> i
+
+cij uij (9) 
+
+vj = squash (sj ) = ∥sj ∥2
+
+1 + ∥sj ∥2 · sj
+
+∥sj ∥ (10) The agreement between the aggregated visual representa-tion vj and text token qj updates the routing logits: 
+
+bij ← bij + v⊤ 
+
+> j
+
+qj (11) This iterative process (we use R = 3 iterations) pro-duces an alignment matrix A ∈ RN ×T that reflects struc-tured correspondences. Unlike softmax attention, the rout-ing procedure naturally produces sparse alignments through the squashing function and agreement-based updates. To prevent capsule collapse and encourage diverse seman-tic modeling, we introduce a diversity regularization term: 
+
+Ldiv = X
+
+> i̸=j
+
+|v⊤ 
+
+> i
+
+vj | (12) This encourages different capsules to capture distinct se-mantic concepts, improving the model’s ability to handle complex queries with multiple semantic components. 
+
+Temporal Localization Head 
+
+The enhanced cross-modal representation from previous modules feeds into a lightweight temporal localization head. We employ a two-layer MLP with dropout for regulariza-tion: 
+
+[st, e t] = W2 · ReLU (W1ht + b1) + b2 (13) where ht is the aligned representation at frame t, and st, et
+
+are logits for start and end predictions. We explore two decoding strategies for segment predic-tion: 
+
+Argmax decoding: Selects frames with highest scores 
+
+ˆtstart = arg max  
+
+> t
+
+st, ˆtend = arg max  
+
+> t
+
+et (14) 
+
+Soft expectation: Computes weighted average under softmax 
+
+ˆtstart = X
+
+> t
+
+t · softmax (st), ˆtend = X
+
+> t
+
+t · softmax (et)
+
+(15) The soft expectation strategy produces smoother bound-aries and higher mean IoU, particularly for segments with gradual transitions. This approach leverages the structured alignments from capsule routing to produce both accurate and interpretable temporal predictions. 
+
+Unified Multi-Task Loss 
+
+We design a comprehensive training objective that addresses multiple aspects of the temporal localization problem: 
+
+Ltotal = λloc Lloc + λalign Lalign + λdiv Ldiv (16) 
+
+Localization Loss Lloc : Binary cross-entropy for bound-ary prediction 
+
+Lloc = BCE (spred , s gt ) + BCE (epred , e gt ) (17) We apply Gaussian smoothing ( σ = 0 .1) to ground truth boundaries, providing soft supervision that accommodates annotation ambiguities. 
+
+Alignment Loss Lalign : InfoNCE contrastive loss for cross-modal matching 
+
+Lalign = − log exp( sim (vpos , q)/τ )
+
+P 
+
+> i
+
+exp( sim (vi, q)/τ ) (18) with temperature τ = 0 .07 and negative samples from the same batch. 
+
+Diversity Loss Ldiv : Encourages capsule specialization 
+
+Ldiv = X
+
+> i̸=j
+
+|v⊤ 
+
+> i
+
+vj | (19) We set λloc = 1 .0, λalign = 0 .5, λdiv = 0 .1 based on validation performance. The diversity term is activated after 10 epochs to allow initial capsule formation, implementing a simple yet effective curriculum learning strategy. 
+
+Design Rationale and Efficiency Analysis 
+
+Our framework addresses the core challenges of video–text temporal localization through targeted architectural innova-tions. The multi-scale encoder provides O(T) complexity temporal modeling compared to O(T²) for attention, cru-cial for long videos. The capsule routing mechanism enables structured many-to-many alignments that attention struggles to achieve. Together with multi-task supervision, these com-ponents form a cohesive system that achieves strong per-formance without expensive end-to-end finetuning of large models. 
+
+# Experiments 
+
+Experimental Setup 
+
+We evaluate on ActivityNet Captions (Caba Heilbron et al. 2015; Krishna et al. 2017), containing 20K untrimmed YouTube videos with 100K+ temporally annotated sentence descriptions. Following standard protocol, we use 37,421 training and 17,505 validation instances. Videos are pro-cessed at 1 fps with frames resized to 224 × 224 . Segments shorter than 2 seconds or with inconsistent annotations are filtered out. Performance is measured using Recall@K at IoU thresh-olds {0.1, 0.3, 0.5, 0.7 } and mean IoU (mIoU). Higher val-ues indicate better temporal localization accuracy. Table 1: Performance comparison across different visual backbones on ActivityNet Captions. All models use the default CLIP text encoder. Backbone R@0.1 R@0.3 R@0.5 R@0.7 mIoU ViT-B/32 0.730 0.570 0.397 0.199 0.386 ViT-B/16 0.728 0.568 0.399 0.205 0.388 ViT-L/14 0.733 0.573 0.400 0.208 0.391 
+
+Table 2: Impact of different text encoders with fixed CLIP ViT-B/32 visual backbone on ActivityNet Captions. Text Encoder R@0.1 R@0.3 R@0.5 R@0.7 mIoU CLIP-L/14 0.732 0.570 0.404 0.218 0.394 CLIP-B/16 0.735 0.574 0.409 0.218 0.396 BERT-base 0.738 0.587 0.429 0.237 0.411 
+
+RoBERTa-base 0.728 0.563 0.370 0.167 0.370 
+
+Implementation Details 
+
+Our PyTorch implementation uses frozen CLIP encoders (ViT-B/32, ViT-B/16, ViT-L/14) for visual features and vari-ous text encoders (CLIP Text, BERT-base, RoBERTa-base). Features are projected to 384 dimensions. The multi-scale encoder uses kernels {1, 3, 5, 7 } with 96-dimensional out-puts. The capsule module employs 8 capsules of dimension 96 with 3 routing iterations. Training uses batch size 32, Adam optimizer with learn-ing rate 10 −4, weight decay 10 −4, and dropout 0.15. We train for up to 50 epochs with early stopping based on val-idation mIoU. All experiments use a single NVIDIA A100 GPU. 
+
+Main Results 
+
+Impact of Visual Backbone Table 1 presents results with different CLIP visual encoders using the default text en-coder. Larger vision models consistently improve perfor-mance, with ViT-L/14 achieving the best results (R@0.5: 0.400, mIoU: 0.391). This demonstrates that stronger vi-sual representations enhance both semantic understanding and temporal localization accuracy. 
+
+Effect of Text Encoder Table 2 shows performance with different text encoders using fixed ViT-B/32 visual fea-tures. BERT-base significantly outperforms other encoders, achieving R@0.5 of 0.429 and mIoU of 0.411—a substan-tial improvement over the default CLIP text encoder. This highlights the critical role of rich textual representations in video–text alignment. Interestingly, the gains from upgrad-ing the text encoder exceed those from scaling the visual backbone, suggesting that linguistic understanding is a bot-tleneck in current approaches. 
+
+Comparison with Baselines While we focus on architec-tural innovations rather than exhaustive comparisons, our method achieves competitive performance on ActivityNet Captions. The combination of multi-scale temporal mod-eling and capsule-based alignment provides consistent im-provements over vanilla transformer baselines across all metrics, validating our design choices. 
+
+Ablation Study 
+
+Tables 3 and 4 present comprehensive ablations examining the contribution of each component. Starting from a base-line using only frozen transformers, we progressively add the multi-scale encoder and capsule alignment module. The multi-scale encoder alone improves performance moderately, with larger gains at lower IoU thresholds where coarse temporal understanding suffices. The capsule mod-ule provides more substantial improvements, particularly for high-IoU metrics requiring precise alignment. Crucially, combining both components yields gains exceeding their in-dividual contributions—the full model improves mIoU by 17.7% (0.328 →0.386) over the baseline with ViT-B/32. This synergy validates our hypothesis that hierarchical temporal modeling and structured semantic alignment are complementary: multi-scale features provide rich temporal context that enhances routing decisions, while capsule align-ments help the temporal encoder focus on semantically rel-evant scales. The consistent improvements across different backbones demonstrate the generalizability of our approach. 
+
+# Conclusion 
+
+We presented a novel framework for video–text tempo-ral localization that addresses fundamental limitations in existing methods through two key innovations. First, our multi-scale temporal encoder efficiently captures hierarchi-cal motion patterns with O(T) complexity, providing com-prehensive temporal coverage from instantaneous transitions to extended actions. Second, our capsule-based dynamic routing mechanism models complex many-to-many corre-spondences through iterative refinement, producing struc-tured and interpretable alignments that attention mecha-nisms struggle to achieve. The synergy between these components, unified through multi-task learning, achieves significant improvements on ActivityNet Captions—demonstrating 42.9% Recall@0.5 and 41.1% mIoU. Notably, our lightweight approach main-tains strong performance with frozen backbone encoders, avoiding expensive end-to-end finetuning while remaining computationally efficient for real-world deployment. Table 3: Ablation study with CLIP ViT-B/32 visual backbone demonstrating the contribution of each component. Configuration R@0.1 R@0.3 R@0.5 R@0.7 mIoU Baseline (Transformer only) 0.670 0.505 0.311 0.129 0.328 + Multi-Scale only 0.691 0.526 0.340 0.148 0.347 + Capsule only 0.712 0.546 0.365 0.174 0.366 Multi-Scale + Capsule (Full) 0.730 0.570 0.397 0.199 0.386 
+
+Table 4: Ablation study with CLIP ViT-B/16 visual backbone confirming consistent improvements across architectures. Configuration R@0.1 R@0.3 R@0.5 R@0.7 mIoU Baseline (Transformer only) 0.6935 0.5273 0.3488 0.1696 0.3548 + Multi-Scale only 0.6800 0.5191 0.3365 0.1512 0.3435 + Capsule only 0.7301 0.5609 0.3771 0.1894 0.3809 Multi-Scale + Capsule (Full) 0.7282 0.5683 0.3990 0.2049 0.3876 
+
+Our ablation studies reveal important insights: (1) hierar-chical temporal modeling and structured alignment are com-plementary, with combined gains exceeding individual con-tributions; (2) text encoder quality significantly impacts per-formance, suggesting linguistic understanding as a key bot-tleneck; (3) soft supervision strategies better handle tempo-ral ambiguities in real-world videos. Future work will explore three directions: incorporating limited visual adaptation while preserving efficiency, ex-tending to cross-dataset and zero-shot scenarios, and apply-ing our framework to related tasks like dense video caption-ing and video question answering. We believe our design principles—combining efficient multi-scale modeling with structured alignment mechanisms—offer a promising path toward more capable and deployable video–language under-standing systems. 
+
+# References 
+
+Bertasius, G.; Wang, H.; and Torresani, L. 2021. Is Space-Time Attention All You Need for Video Understanding? In 
+
+ICML .Caba Heilbron, F.; Escorcia, V.; Ghanem, B.; and Car-los Niebles, J. 2015. Activitynet: A large-scale video bench-mark for human activity understanding. In Proceedings of the ieee conference on computer vision and pattern recogni-tion , 961–970. Cao, X.; Wang, C.; Shen, C.; Tang, X.; and Zeng, W. 2022. LocVTP: Localization-aware Video–Text Pre-training. ECCV , 458–475. Carreira, J.; and Zisserman, A. 2017. Quo vadis, action recognition? A new model and the kinetics dataset. In 
+
+CVPR .Chen, J.; Chen, X.; Ma, L.; Jie, Z.; and Chua, T.-S. 2018. Temporally Grounding Natural Sentence in Video. In Pro-ceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP) , 162–171. Chen, T.; Zhang, Z.; Zhang, D.; and Yuan, L. 2020. Rethink-ing weakly supervised temporal sentence grounding with reference. In AAAI .Chen, X.; and et al. 2023. InstructVid: Towards General Video Understanding via Multimodal Instruction Tuning. In 
+
+arXiv preprint arXiv:2311.17040 .Chen, X.; Jin, X.; Yu, R.; and et al. 2021. Graph structured network for image-text matching. In CVPR .Feichtenhofer, C.; Fan, H.; Malik, J.; and He, K. 2019. Slow-fast networks for video recognition. In ICCV .Fu, J.; Chen, M.; Zhu, Y.; Li, Y.; and Jia, X. 2021. VIOLET: Vision-Language Transformer for Video Scene Understand-ing. In arXiv preprint arXiv:2104.12478 .Gao, J.; Sun, C.; Yang, Z.; and Nevatia, R. 2017. TALL: Temporal Activity Localization via Language Query. In Pro-ceedings of the IEEE International Conference on Computer Vision (ICCV) , 1366–1375. Guo, Y.; Liu, J.; Li, M.; Liu, Q.; Chen, X.; and Tang, X. 2024. Trace: Temporal grounding video llm via causal event modeling. arXiv preprint arXiv:2410.05643 .Han, T.; Xie, W.; and Zisserman, A. 2022. Temporal align-ment networks for long-term video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2906–2916. Hendricks, L. A.; Wang, O.; Shechtman, E.; Sivic, J.; Dar-rell, T.; and Russell, B. 2017. Localizing Moments in Video with Natural Language. In Proceedings of the IEEE Inter-national Conference on Computer Vision (ICCV) , 619–627. Ko, D.; Choi, J.; Ko, J.; Noh, S.; On, K.-W.; Kim, E.-S.; and Kim, H. J. 2022. Video-text representation learning via differentiable weak temporal alignment. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 5016–5025. Krishna, R.; Hata, K.; Ren, F.; Fei-Fei, L.; and Niebles, J. C. 2017. Dense-Captioning Events in Videos. In International Conference on Computer Vision (ICCV) .Lan, X.; Yuan, Y.; Wang, X.; Wang, Z.; and Zhu, W. 2023. A survey on temporal sentence grounding in videos. ACM Transactions on Multimedia Computing, Communications and Applications , 19(2): 1–33. Li, B.; and et al. 2023. BLIVA: Bridging Language and Vi-sion with Attribution. In ICCV .Li, J.; Li, D.; Xiong, C.; and Hoi, S. 2022. Blip: Boot-strapping language-image pre-training for unified vision-language understanding and generation. In International conference on machine learning , 12888–12900. PMLR. Li, L.; Chen, Y.-C.; Cheng, Y.; Gan, Z.; Yu, L.; and Liu, J. 2020. Hero: Hierarchical encoder for video+ lan-guage omni-representation pre-training. arXiv preprint arXiv:2005.00200 .Li, Z.; Chen, Q.; Han, T.; Zhang, Y.; Wang, Y.; and Xie, W. 2023. A strong baseline for temporal video-text alignment. 
+
+arXiv preprint arXiv:2312.14055 .Luo, K.; Zhou, Y.; Xu, J.; Zhang, J.; Wei, Y.; and Zhou, D. M. 2021. CLIP4Clip: An Empirical Study of CLIP for End to End Video Clip Retrieval. In arXiv preprint arXiv:2111.09703 .Ma, Y.; Xu, G.; Sun, X.; Yan, M.; Zhang, J.; and Ji, R. 2022. X-clip: End-to-end multi-grained contrastive learn-ing for video-text retrieval. In Proceedings of the 30th ACM international conference on multimedia , 638–647. Radford, A.; Kim, J. W.; Hallacy, C.; Ramesh, A.; Goh, G.; Agarwal, S.; Sastry, G.; Askell, A.; Mishkin, P.; Clark, J.; et al. 2021. Learning transferable visual models from nat-ural language supervision. In International conference on machine learning , 8748–8763. PmLR. Sun, C.; Myers, A.; Vondrick, C.; Murphy, K.; and Schmid, C. 2019. VideoBERT: A Joint Model for Video and Lan-guage Representation Learning. In ICCV , 7464–7473. Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.; Gomez, A. N.; Kaiser, L.; and Polosukhin, I. 2017. At-tention Is All You Need. In Advances in Neural Information Processing Systems (NeurIPS) , 5998–6008. Woo, J.; Ryu, H.; Jang, Y.; Cho, J. W.; and Chung, J. S. 2024. Let me finish my sentence: Video temporal grounding with holistic text understanding. In Proceedings of the 32nd ACM International Conference on Multimedia , 8199–8208. Wu, J.; Tang, S.; Lu, X.; and Wang, J. 2020. Tree-structured policy based progressive reinforcement learning for tempo-rally language grounded video segment retrieval. In Pro-ceedings of the AAAI Conference on Artificial Intelligence .Yuan, Y.; Mei, T.; and Zhu, W. 2019. To find where you talk: Temporal sentence localization in video with attention based location regression. In Proceedings of the AAAI Conference on Artificial Intelligence , 01, 9159–9166. Zeng, K.; Xu, D.; Lin, X.; and et al. 2020. Dense regression network for video grounding. In CVPR .Zhang, H.; Sun, A.; Jing, W.; and Zhou, J. T. 2023. Tempo-ral sentence grounding in videos: A survey and future direc-tions. IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(8): 10443–10465. Zhang, K.; Mun, J.; and Han, B. 2020. Span-based Question Answering for Temporal Localization in Video. In EMNLP .Zhang, S.; Peng, H.; Fu, J.; and Luo, J. 2020. Learning 2d temporal adjacent networks for moment localization with natural language. In Proceedings of the AAAI conference on artificial intelligence , volume 34, 12870–12877. Zhao, H.; Yinjie, Z.; Wen, B.; Ong, Y.-S.; and Zhou, J. 2024. Video-Text Prompting for Weakly Supervised Spatio-Temporal Video Grounding. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 19494–19505. Zheng, M.; Cai, X.; Chen, Q.; Peng, Y.; and Liu, Y. 2024. Training-free video temporal grounding using large-scale pre-trained models. In European Conference on Computer Vision , 20–37. Springer.
