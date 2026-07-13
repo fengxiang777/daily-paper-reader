@@ -6,88 +6,79 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-12
-- 运行时间：2026-07-12 20:55:21 UTC
+- 最新运行日期：2026-07-13
+- 运行时间：2026-07-13 21:30:03 UTC
 - 运行状态：成功
-- 本次总论文数：22
-- 精读区：11
+- 本次总论文数：19
+- 精读区：8
 - 速读区：11
 
 ### 今日简报（AI）
-今日精读两篇满分论文，分别将交错多模态推理统一为决策过程、用上下文压缩强化学习攻坚长程智能体。  
-焦点集中在“推理即决策”与“长程记忆压缩”，速读中树搜索蒸馏、MoE 压缩和低开销推理服务也指向模型效率与决策能力的融合。  
-读者可优先细品《Bridging Interleaved Multi-Modal Reasoning as a Unified Decision Process》，它或许能重塑你对多模态推理的可控性认知。
-- 详情：[/202607/12/README](/202607/12/README)
+今日精读2篇新作，速读11篇前沿进展，重点关注长程智能体训练与轻量化具身模型。  
+最值得看的方向是：通过上下文压缩高效训练长程强化学习智能体，以及轻量级视觉-语言-动作模型实现精准多任务操作。  
+下一步可深入对比“压缩式RL”与“多模态扩散生成排序”在复杂任务中的泛化表现。
+- 详情：[/202607/13/README](/202607/13/README)
 
 ### 精读区论文标签
-1. [Bridging Interleaved Multi-Modal Reasoning as a Unified Decision Process](/202607/12/2607.03748v1-bridging-interleaved-multi-modal-reasoning-as-a-unified-decision-process)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：将文图文推理统一为 MDP 的统一多模态模型强化学习
-2. [CompactionRL: Reinforcement Learning with Context Compaction for Long-Horizon Agents](/202607/12/2607.05378v1-compactionrl-reinforcement-learning-with-context-compaction-for-long-horizon-agents)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：利用上下文压缩的强化学习训练长程智能体，处理长上下文和智能体任务
-3. [Harness-Aware Self-Evolving: Co-Evolving Model Weights, Harness, and Task Solutions](/202607/12/2607.03935v1-harness-aware-self-evolving-co-evolving-model-weights-harness-and-task-solutions)  
+1. [CompactionRL: Reinforcement Learning with Context Compaction for Long-Horizon Agents](/202607/13/2607.05378v1-compactionrl-reinforcement-learning-with-context-compaction-for-long-horizon-agents)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出一种智能体强化学习框架，协同进化模型权重和任务脚手架
-4. [LLM-as-a-Tutor: Policy-Aware Prompt Adaptation for Non-Verifiable RL](/202607/12/2607.04412v1-llm-as-a-tutor-policy-aware-prompt-adaptation-for-non-verifiable-rl)  
+   evidence：结合强化学习与上下文压缩训练长时域LLM智能体
+2. [FabriVLA: A Lightweight Vision-Language-Action Model for Precise Multi-Task Manipulation](/202607/13/2607.08575v2-fabrivla-a-lightweight-vision-language-action-model-for-precise-multi-task-manipulation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：策略感知提示自适应用于LLM对齐的RL
-5. [RSPO: Reward-Swap Policy Optimization for Multi-Turn LLM Agents](/202607/12/2607.04713v1-rspo-reward-swap-policy-optimization-for-multi-turn-llm-agents)  
+   evidence：用于精确操作的轻量视觉-语言-动作模型
+3. [Mixture of Probes: Learning from Privileged Modalities in Multimodal LLMs Through Probing](/202607/13/2607.08839v1-mixture-of-probes-learning-from-privileged-modalities-in-multimodal-llms-through-probing)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：引入奖励交换策略优化解决多轮LLM智能体训练中的稀疏奖励问题
-6. [STAPO: Selective Trajectory-Aware Policy Optimization for LLM Agent Training](/202607/12/2607.04963v1-stapo-selective-trajectory-aware-policy-optimization-for-llm-agent-training)  
+   evidence：从特权模态中学习用于多模态大模型
+4. [Better Harnesses, Smaller Models: Building 90% Cheaper Agents via Automated Harness Adaptation](/202607/13/2607.08938v1-better-harnesses-smaller-models-building-90-cheaper-agents-via-automated-harness-adaptation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出归一化熵解决LLM智能体RL训练中的轨迹忽略问题
-7. [Improving LLM-Generated Process Model Quality Through Reinforcement Learning: The Role of Reward Function Design](/202607/12/2607.06175v1-improving-llm-generated-process-model-quality-through-reinforcement-learning-the-role-of-reward-function-design)  
+   evidence：自动化框架适配以构建更便宜的大语言模型智能体
+5. [Bidirectional Resource Scheduling for Disaggregated and Asynchronous RL Post-Training](/202607/13/2607.09207v1-bidirectional-resource-scheduling-for-disaggregated-and-asynchronous-rl-post-training)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用基于多维奖励函数的强化学习提升LLM生成流程模型的质量
-8. [Bridging Physical Reasoning and Task Generalization via Visual Action Outcome Reasoning Alignment](/202607/12/2607.06522v1-bridging-physical-reasoning-and-task-generalization-via-visual-action-outcome-reasoning-alignment)  
+   evidence：针对大语言模型后训练阶段的分解式异步强化学习，双向资源调度优化
+6. [Self-Guided Test-Time Training for Long-Context LLMs](/202607/13/2607.09415v1-self-guided-test-time-training-for-long-context-llms)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：VLM视觉推理与行动的对齐奖励
-9. [MMAgent-R$^2$: Learning to Rerank and Reject for Agentic mRAG](/202607/12/2607.07383v1-mmagent-r2-learning-to-rerank-and-reject-for-agentic-mrag)  
+   evidence：长上下文LLM的测试时训练，提升长输入利用
+7. [Multimodal Reward Hacking in Reinforcement Learning](/202607/13/2607.09492v1-multimodal-reward-hacking-in-reinforcement-learning)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：面向知识型视觉问答的智能体式多模态检索增强生成系统MMAgent-R^2
-10. [Feedback Manipulation Regularization: Enabling Offline Agent Alignment for Imitation Learning](/202607/12/2607.07859v1-feedback-manipulation-regularization-enabling-offline-agent-alignment-for-imitation-learning)  
+   evidence：多模态LLM强化学习对齐中的奖励黑客现象
+8. [Agora: Enhancing LLM Agent Reasoning Via Auction-Based Task Allocation](/202607/13/2607.09600v1-agora-enhancing-llm-agent-reasoning-via-auction-based-task-allocation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：利用人类反馈和模仿学习的离线智能体对齐
-11. [Understanding Axes of Difficulty For Long Context Tasks Via PredicateLongBench](/202607/12/2607.08284v1-understanding-axes-of-difficulty-for-long-context-tasks-via-predicatelongbench)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：PredicateLongBench通过谓词任务压力测试长上下文推理
+   evidence：拍卖机制将推理步骤分配给最优求解器
 
 ### 速读区论文标签
-1. [Look Before You Leap: Distilling Tree Search into Action Evaluation for Frozen VLA Models](/202607/12/2607.03751v1-look-before-you-leap-distilling-tree-search-into-action-evaluation-for-frozen-vla-models)  
+1. [Regime-Conditional Stabilisation of LLM-Augmented Cooperative Multi-Agent Reinforcement Learning](/202607/13/2607.04470v1-regime-conditional-stabilisation-of-llm-augmented-cooperative-multi-agent-reinforcement-learning)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：树搜索蒸馏用于冻结VLA的动作评估
-2. [Nemotron-Labs-3-Puzzle-75B-A9B: Compressing Hybrid MoE LLMs](/202607/12/2607.04371v1-nemotron-labs-3-puzzle-75b-a9b-compressing-hybrid-moe-llms)  
+   evidence：大模型生成奖励信号用于多智能体强化学习
+2. [Reinforcing the Generation Order of Multimodal Masked Diffusion Models](/202607/13/2607.08056v1-reinforcing-the-generation-order-of-multimodal-masked-diffusion-models)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：在多阶段压缩流程中使用强化学习，提升大模型吞吐量和超长上下文并发数
-3. [Akashic: A Low-Overhead LLM Inference Service with MemAttention](/202607/12/2607.05708v1-akashic-a-low-overhead-llm-inference-service-with-memattention)  
+   evidence：使用组相对策略优化优化扩散模型生成顺序
+3. [Hidden Decoding at Scale: Latent Computation Scaling for Large Language Models](/202607/13/2607.08186v1-hidden-decoding-at-scale-latent-computation-scaling-for-large-language-models)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：提出MemAttention，通过分块和建模跨块关系管理LLM智能体长上下文
-4. [Diagnosing Semantic Handoff Failures in Agent-Orchestrated Vision-Language-Action Skill Composition](/202607/12/2607.06256v1-diagnosing-semantic-handoff-failures-in-agent-orchestrated-vision-language-action-skill-composition)  
+   evidence：序列长度缩放方法为每个令牌增加计算，无需改变Transformer骨干架构
+4. [Optimal Transport-based Semantic Alignment for LLM-based Audio-Visual Speech Recognition](/202607/13/2607.09001v1-optimal-transport-based-semantic-alignment-for-llm-based-audio-visual-speech-recognition)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：智能体编排的视觉-语言-动作技能组合用于长程任务
-5. [When Does In-Context Search Help? A Sampling-Complexity Theory of Reflection-Driven Reasoning](/202607/12/2607.06720v1-when-does-in-context-search-help-a-sampling-complexity-theory-of-reflection-driven-reasoning)  
+   evidence：最优传输对齐减小视听大语言模型中的模态差异，用于语音识别
+5. [Super-Tuning: From Activation-Aware Pruning to Sparse Fine-Tuning](/202607/13/2607.09287v1-super-tuning-from-activation-aware-pruning-to-sparse-fine-tuning)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：LLM 推理中上下文搜索的理论分析
-6. [Dual Latent Memory in Vision-Language-Action Models for Robotic Manipulation](/202607/12/2607.07608v1-dual-latent-memory-in-vision-language-action-models-for-robotic-manipulation)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：潜在记忆令牌用于VLA长程任务
-7. [Reinforcing the Generation Order of Multimodal Masked Diffusion Models](/202607/12/2607.08056v1-reinforcing-the-generation-order-of-multimodal-masked-diffusion-models)  
+   evidence：提出基于激活感知显著性得分的稀疏参数高效微调方法用于LLM
+6. [dOPSD: On-Policy Self-Distillation for Diffusion Language Models](/202607/13/2607.04428v1-dopsd-on-policy-self-distillation-for-diffusion-language-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过群体相对策略优化学习文本到图像和多模态理解的生成顺序
-8. [LEEVLA: Seeing What Matters in Latent Environment Evolution for Vision-Language-Action](/202607/12/2607.08182v1-leevla-seeing-what-matters-in-latent-environment-evolution-for-vision-language-action)  
+   evidence：扩散语言模型的在策略自蒸馏训练
+7. [CLAP: Direct VLM-to-VLA Adaptation via Language-Action Grounding](/202607/13/2607.08974v1-clap-direct-vlm-to-vla-adaptation-via-language-action-grounding)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出具有漂移引导动态优先化的VLA架构以增强多模态任务中的视觉注意力
-9. [XS-VLA: Coupling Coarse-grained Spatial Distillation with Latent Flow Matching for Lightweight Robotic Control](/202607/12/2607.04171v1-xs-vla-coupling-coarse-grained-spatial-distillation-with-latent-flow-matching-for-lightweight-robotic-control)  
+   evidence：通过语言-动作接地直接适配VLM到VLA
+8. [Learning More from Less: Reinforcement Learning from Hindsight](/202607/13/2607.09042v1-learning-more-from-less-reinforcement-learning-from-hindsight)  
+   标签：评分：7.0/10、query:rl-mm-llm-ag
+   evidence：用于VLA模型RL后训练的后见重标记
+9. [Agent-driven Long-tail Simulation for Autonomous Driving](/202607/13/2607.04331v1-agent-driven-long-tail-simulation-for-autonomous-driving)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：从大视觉语言模型蒸馏空间语义知识到轻量级VLA用于机器人控制
-10. [Video-Text Temporal Localization via Multi-Scale Convolution and Dynamic Routing](/202607/12/2607.05093v2-video-text-temporal-localization-via-multi-scale-convolution-and-dynamic-routing)  
+   evidence：使用指令跟随大语言模型控制交互式智能体，实现逼真的驾驶仿真
+10. [Future Confidence Distillation in Large Language Models](/202607/13/2607.07626v1-future-confidence-distillation-in-large-language-models)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：使用多尺度卷积和动态路由的多模态视频文本定位
-11. [When Structured Sparse Autoencoders Learn Consistent Concepts Across Modalities](/202607/12/2607.08605v1-when-structured-sparse-autoencoders-learn-consistent-concepts-across-modalities)  
+   evidence：面向大模型智能体决策的信心蒸馏
+11. [Every Sample Counts: Supervised Fine-Tuning of Language Models with Pointwise Constraints](/202607/13/2607.08968v1-every-sample-counts-supervised-fine-tuning-of-language-models-with-pointwise-constraints)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：为视觉-语言模型学习跨模态一致概念的结构化稀疏性方法
+   evidence：带有逐样本约束的监督微调
 
 
 <div class="dpr-home-promo-card">

@@ -1,0 +1,518 @@
+Title: Mixture of Probes: Learning from Privileged Modalities in Multimodal LLMs Through Probing
+
+URL Source: https://arxiv.org/pdf/2607.08839v1
+
+Published Time: Mon, 13 Jul 2026 00:03:10 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Mixture of Probes: Learning from Privileged Modalities in Multimodal LLMs Through Probing 
+
+Dominick Reilly 1,3∗ Qiyu Wu 1† Hiromi Wakaki 1 Srijan Das 3 Yuki Mitsufuji 1,21 Sony Group Corporation 2 Sony AI  
+
+> 3
+
+University of North Carolina at Charlotte 
+
+dreilly1@charlotte.edu firstname.lastname@sony.com 
+
+https://github.com/Sony/MoP  "        
+
+>   
+> 
+> 
+> 
+> 
+> 
+>    
+> 
+> 
+> !!
+> #
+> !
+> #
+> Egocentric
+> Exocentric
+> Depth
+> Audio
+> ⋯
+> Universal
+> Modality
+> Encoder
+> Learnable Mixture
+> of Probes
+> Egocentric Probes
+> Exocentric Probes
+> Depth Probes
+> Audio Probes
+> General Probes
+> ⋯
+> Specific Probing
+> General Probing
+> Disentangled Modality
+> Representations
+> LLM
+
+Figure 1: (left) MoP improves single-modality inference across five modalities, outperforming both unimodal MLLMs and naive multimodal training. (right) MoP achieves this through a structured probing mechanism with modality-specific and modality-general probes, which disentangle modality representations before integration with the LLM. 
+
+Abstract 
+
+Multimodal Large Language Models (MLLMs) are typically designed under the assumption that all modalities available during training will also be accessible at inference. However, many real-world settings violate this assumption, requiring models to operate under a privileged modality setting , where auxiliary modalities are available only during training. While these modalities contain valuable infor-mation, existing MLLMs largely fail to leverage them effectively, as they treat modalities as interchangeable inputs rather than sources of complementary supervi-sion. We propose Mixture of Probes (MoP) , a novel framework that disentangles 
+
+modality-specific and modality-general signals within the MLLM, allowing the model to preserve modality-dependent structure while learning transferable repre-sentations across modalities. At its core, MoP achieves this through a structured probing mechanism that extracts and organizes information from intermediate representations of a shared modality encoder, rather than relying only on final-layer alignment as done in existing MLLMs. To support this disentanglement, we further introduce MoP Cross-modal Training (MoP-X) , a training strategy for MoP centered around a probe disentanglement loss that prevents probe collapse and encourages cross-modal learning. We evaluate MoP across two domains spanning eight tasks and four modalities under a comprehensive evaluation protocol tailored to the privileged modality setting, where each modality is independently treated as the sole input at inference time. MoP consistently outperforms strong MLLM baselines, achieving up to 65% relative improvement, demonstrating that auxiliary modalities, even when unavailable at inference, can provide substantial gains when effectively leveraged during training. Code, model checkpoints, and evaluation protocols will be made available at https://github.com/Sony/MoP .
+
+> ∗
+
+Work done during internship at Sony Group Corporation 
+
+> †
+
+Corresponding Author: qiyu.wu@sony.com 
+
+Preprint. arXiv:2607.08839v1 [cs.CV] 9 Jul 2026 1 Introduction 
+
+Stemming from the success of large language models (LLMs) [ 39 , 4, 38 ], recent multimodal large language models (MLLMs) have enabled language-based interaction with diverse sensory inputs such as vision, audio, and depth [ 48 , 14 , 27 , 42 ]. Yet real-world scenarios often exhibit an asymmetric structure: the sensors that are available for training are not always available for deployment. A model may be trained with rich auxiliary streams, such as egocentric video, depth, or audio, but later be required to operate from a single cheap, reliable, or non-invasive modality. This creates a privileged modality setting , where auxiliary modalities provide supervision during training but are unavailable at inference. For example, in activities of daily living (ADL), training data may include egocentric video from wearable devices [ 11 , 10 ], depth from specialized sensors [ 15 ], and exocentric video from static cameras [9, 6], while deployment is typically restricted to exocentric video alone. Existing MLLMs [ 49 , 19 , 36 , 2] are not designed to address this setting. They primarily view them as interchangeable inputs rather than treating modalities as sources of complementary supervision, exclusively aiming only to align each modality into a shared representation space [ 29 , 51 , 25 , 13 ]. However, in the privileged modality setting, it is not sufficient for a model to merely align each modality; it must leverage information from modalities available only during training and transfer this knowledge to improve performance on the modality available at inference. Most methods achieve such alignment with modality-specific encoders [ 29 , 51 , 25 ], or through the more scalable unified modality encoder paradigm [ 13 ]. We identify two key limitations of these MLLMs in the privileged modality setting: (i) sub-optimal modality representations - new modalities are typically incorporated via shared encoders with limited modality-specific adaptation at the final layers, neglecting intermediate features that capture low-level modality-specific signals [ 32 ]; (ii) 
+
+unstructured cross-modal representations - existing approaches lack explicit mechanisms to disentangle modality-general and modality-specific information, hindering effective cross-modal knowledge transfer [43]. To this end, we propose Mixture of Probes (MoP) , an MLLM architecture for the privileged modality setting that improves cross-modal knowledge transfer by encouraging disentangled modality-specific 
+
+and modality-general representations to be learned through a structured probing mechanism. Inspired by evidence from neuroscience that the human brain separates modality-specific maps from modality-general abstractions across sensory streams [ 8], MoP is built around the idea that effective cross-modal transfer requires preserving what is unique to each modality while isolating what can be shared across them. This intuition is further supported by the Modality Focusing Hypothesis [ 43 ], which finds that cross-modal transfer depends primarily on modality-general decisive features rather than modality-specific signals that do not transfer across modalities. Concretely, MoP introduces a structured probing mechanism [ 35 ] that leverages intermediate representations throughout a shared universal encoder, enabling richer extraction of both modality-dependent and shared signals across the model depth. Modality-specific probes are conditioned only on individual modalities to capture modality-specific structure, while modality-general probes are conditioned on all modalities to capture general cross-modal structure, illustrated in Figure 1. A key component of our design is MoP Cross-modal Training (MoP-X) , which consists of two components: (i) a probe disentanglement loss that plays a central role by explicitly encouraging disentanglement between the modality-specific and modality-general probes and prevents probe collapse; (ii) modality-interleaved batching that ensures consistent cross-modal interaction during training, unlike prior methods that train each modality sequentially or in isolation [29, 51]. We evaluate MoP on two domains spanning 8 tasks and 4 modalities . In the Activities of Daily Living 
+
+(ADL) domain, MoP is trained using egocentric video, exocentric video, and depth. In the Music Understanding domain, MoP is trained on paired audio-visual data. In each domain, we perform a comprehensive evaluation under the privileged modality setting, where each modality is independently treated as the sole input at inference time. Across both domains and all inference conditions, MoP consistently outperforms state-of-the-art MLLM baselines, demonstrating that auxiliary modalities, when properly leveraged, can substantially improve single-modality performance. A summary of our contributions follows: • We formalize the privileged modality setting for MLLMs, where auxiliary modalities enrich training but are absent at inference, and demonstrate that standard multimodal training fails to effectively leverage this asymmetry. 2• We propose Mixture of Probes (MoP) , a novel probing-based architecture that learns disentangled modality-specific and modality-general representations through learnable probing across the depth of a modality encoder. • We introduce MoP Cross-modal Training (MoP-X) , a training strategy complementing MoP via a probe disentanglement loss to separate modality-specific from modality-general representations, and promote cross-modal interaction through modality-interleaved batching. • We demonstrate the effectiveness of MoP across two domains, eight tasks, and four modali-ties under the privileged modality setting, consistently outperforming strong MLLM base-lines and highlighting the benefits of leveraging privileged modalities. 
+
+2 Related Works 
+
+Multimodal Large Language Models. Multimodal Large Language Models (MLLMs) extend LLMs beyond text by mapping sensory inputs (e.g., vision, video) into a shared language representation space [ 20 , 3, 7 , 24 , 45 ]. To support multiple modalities, many approaches introduce specific modality encoders and alignment modules to connect each modality to the LLM [ 48 , 5 , 51 , 25 , 37 , 14 , 29 , 33 ], while others such as OneLLM use a shared universal encoder across modalities [ 13 ], motivated by previous works demonstrating the robustness of transformer representations [ 22 , 50 ]. However, these methods are primarily designed for modality alignment , treating each modality as an input to be independently mapped into the LLM space. In contrast, we study the privileged-modality setting, where auxiliary modalities are available only during training and must improve a single-modality at inference, requiring explicit cross-modal knowledge transfer rather than alignment alone. 
+
+Learnable Token-based Adaptation Mechanisms. A related line of work adapts pretrained vision-language models using small sets of learnable tokens that interface with frozen backbones. Methods such as BLIP-2 [ 18 ] and InstructBLIP [ 7] introduce query tokens to extract task-relevant information from a vision encoder and align it with an LLM, while prompt tuning approaches adapt transform-ers through learnable tokens in the input without modifying the backbone [ 16 ]. However, these approaches treat learned tokens as a shallow interface to the model, typically interacting only with final encoder representations and capturing a single undifferentiated signal. In contrast, our approach uses probing as a mechanism for structured representation learning , inserting probes throughout the encoder to extract information at different levels of abstraction and explicitly disentangling modality-general and modality-specific signals. This enables the model to not only adapt, but to organize information to support effective cross-modal transfer in the privileged-modality setting. 
+
+Learning with Missing or Privileged Modalities Learning with missing or privileged modalities has been widely studied across multimodal learning, domain adaptation, and knowledge distillation. The classical Learning Using Privileged Information (LUPI) framework [ 40 ] introduces auxiliary modalities available only at training time, later extended to deep learning via generalized distilla-tion [ 21 ]. In multimodal settings, related ideas appear in cross-modal distillation and supervision, where one modality guides another (e.g., RGB → depth, audio → vision) [ 12 , 1, 28 ]. More recent work addresses the missing modality setting, focusing on robustness when inputs are incomplete through modality dropout, reconstruction, or invariant fusion strategies [ 26 , 23 , 41 ], with emerging extensions to multimodal LLMs that compensate for missing inputs via retrieval or tool use [30]. Despite these advances, existing approaches primarily emphasize robustness to missing modalities or reconstruction of absent inputs, rather than explicitly leveraging auxiliary modalities to improve a target modality at inference. Moreover, existing methods are developed for task-specific multimodal models, making them non-trivial to adapt to MLLMs, where modalities must be integrated through a shared language-centered representation space. In contrast, we focus on privileged-modality transfer 
+
+for MLLMs, where auxiliary modalities are available only during training and are used to directly improve single-modality performance at inference. 
+
+3 Problem Formulation 
+
+Let M = {1, . . . , M } denote the set of modalities available during training. Each sample in our training dataset consists of multi-modal observations of the same scene 
+
+X = {Xm}m∈M , (1) where Xm denotes the input from modality m (e.g., egocentric video, exocentric video, depth, or audio), together with a language query q and a target sequence y = ( y1, . . . , y T ).3We consider the privileged modality setting, in which all modalities are accessible during training, but only a single modality X(m⋆), where m⋆ ∈ M , is available at test time. We aim to learn a predictor 
+
+f : ( X(m⋆), q ) 7 → y, (2) that benefits from additional modalities during training despite their absence at inference. Formally, we aim to leverage the full multi-modal training distribution to learn representations or inductive biases that improve generalization under single-modality inference. This differs from standard multi-modal learning, which assumes {Xm}m∈M are available at both training and test time, and instead aligns with the paradigm of learning with privileged information, where auxiliary modalities act as training-time-only supervision. 
+
+4 Method 
+
+4.1 Preliminaries 
+
+Recent MLLMs increasingly adopt a unified architecture , in which a universal encoder maps hetero-geneous input modalities into a shared representation space, rather than relying on separate encoders for each modality. In this paradigm, lightweight modality-specific tokenizers first convert raw inputs into token sequences, which are processed by a shared universal modality encoder. The resulting features are projected into the language embedding space and fed to an LLM together with a text instruction. Below, we describe each component of this unified MLLM framework in more detail. 
+
+Modality-specific tokenizers. For an input observation Xm from modality m ∈ M , a modality-specific tokenizer τ m(·) first converts the raw input into a sequence of modality tokens 
+
+˜Zm = τ m(Xm) ∈ RN m×dv (3) where N m is the number of input tokens and dv is the hidden dimension of the Universal modality en-coder. These tokenizers account for modality-dependent input structure while mapping all modalities into a universal token embedding space. 
+
+Universal modality encoder. All tokenized modality inputs are processed by a shared universal encoder E composed of L Transformer layers. Given the tokenized input ˜Zm for modality m, the encoder produces a sequence of hidden representations 
+
+Hml = El(Hml−1), l = 1 , . . . , L, (4) with Hm 
+
+> 0
+
+= ˜Zm and Hml ∈ RN m×dv . Encoder parameters are shared across all modalities, enabling inputs from heterogeneous sensor streams to be mapped into a common latent representation space. 
+
+Universal modality connector. The final-layer encoder representation HmL is projected into the LLM embedding space through a universal modality connector g(·):
+
+Zm = g(HmL ) ∈ RN m×dlm (5) where dlm is the hidden dimension of the LLM. The connector aligns encoder features with the token embedding space of the language model, enabling inputs from different modalities to be consumed through a unified interface. 
+
+LLM. The projected modality tokens Zm are concatenated with the text tokens q and provided to the LLM for autoregressive generation. In this way, the LLM operates over a unified sequence consisting of modality-conditioned visual tokens and textual context, producing the output response in the standard causal decoding manner. However, such unified MLLMs exhibit several limitations. First, the universal modality encoder is typically initialized from a pretrained unimodal model, kept frozen, and adapted to new modalities using only its final-layer representations, ignoring useful modality-dependent signals present in lower-level features. Second, they do not explicitly disentangle modality-general and modality-specific information, which restricts their ability to capture complementary signals and transfer knowledge across modalities [ 43 ]. Third, existing training procedures do not explicitly encourage the learning of complementary information across modalities, as modalities are often treated independently or without structured interactions during training. 
+
+4.2 Mixture of Probes (MoP) 
+
+We introduce Mixture of Probes (MoP) , a probing-based architecture that augments a universal modality encoder with learnable tokens operating on intermediate representations across layers. By probing the encoder beyond its final-layer features, MoP extracts salient cues that may not be 4Exocentric 
+
+> Tokenizer
+> Probe
+> Router
+> Modality -general
+> Probing Tokens
+> Modality -specific
+> Training Modalities
+> Layer 1
+> Universal Modality Encoder
+> Large Language Model
+> Layer 2
+> Layer  𝑁
+> Cross -Attn
+> Cross -Attn
+> Cross -Attn
+> Cross -Attn
+> Universal Probe
+> Connector
+> Universal  Modality
+> Connector
+> Cross -Attn
+> Cross -Attn
+
+⋯
+
+⋯
+
+⋯
+
+> Ego
+> Exo
+> Depth
+
+Figure 2: MoP Architecture. In this example, three modalities are shown: egocentric, exocentric, and depth. Each sample in a training batch consists of a single modality, in this example that modality is the exocentric video. preserved in the final representation. Motivated by the modality focusing hypothesis [ 43 ], MoP learns two complementary probe families: modality-specific probes, which capture signals unique to each modality, and modality-general probes, which capture shared structure across modalities. This design allows the model to represent both shared and modality-specific information within a unified encoder to facilitate effective cross-modal representation learning. We illustrate the MoP architecture in Figure 2 and present each component in more detail below. 
+
+Modality-specific and modality-general probes. For each modality m ∈ M , we define a set of modality-specific probes P ms ∈ RKs×dv where Ks is the number of modality-specific probes. In addition, we define a shared set of modality-general probes Pg ∈ RKg ×dv where Kg is the number of modality-general probes. Both probe sets lie in the same hidden space as the universal modality encoder and are implemented as a set of learnable tokens. 
+
+Layer-wise probe interaction. Given tokenized modality input ˜Zm, a deterministic probe router selects the corresponding modality-specific probes for modality m, which are passed along with the modality-general probes through every layer of the universal modality encoder and updated through cross-attention with the encoder hidden states. Let P ms,l and Pg,l denote the modality-specific and modality-general probes after interaction with encoder layer l, respectively. We initialize 
+
+P ms, 0 = P ms , Pg, 0 = Pg Then, for each layer l = 1 , . . . , L , the probes are updated as 
+
+P ms,l = CrossAttn m,l s (P ms,l −1, H ml ); Pg,l = CrossAttn lg (Pg,l −1, H ml ) (6) where the probe tokens act as queries and the encoder hidden states Hml act as keys and values. Here, CrossAttn m,l s denotes the modality-specific cross-attention module for modality m at layer 
+
+l, while CrossAttn lg denotes the corresponding cross-attention module used to update the shared modality-general probes. In this way, the probes iteratively extract modality-relevant information from the universal encoder’s intermediate representations across depth. Importantly, modality-general probes are shared across modalities but interact with one modality per sample, so cross-modal transfer is achieved indirectly through shared parameter updates across modality-interleaved training iterations. This design is intentional, as performing interaction between jointly would substantially increase the token budget and exceed the context length of the MLLM. 
+
+Probe-conditioned language tokens. After the final encoder layer L, we obtain the final modality-specific and modality-general probe representations P ms,L ∈ RKs×dv and Pg,L ∈ RKg ×dv . The probe tokens are concatenated to form the full probe representation P m, and then projected into the LLM embedding space through a shared probe connector gp(·):
+
+Zmp = gp(P m) ∈ R(Kg +Ks)×dlm (7) 5The resulting probe tokens are then concatenated with the projected universal encoder tokens to obtain ˆZm = [ Zm; Zmp ], and fed to the LLM. Thus, the LLM receives both the backbone modality tokens and the additional probe tokens that encode modality-specific and modality-general signals. 
+
+4.3 MoP Cross-modal Training (MoP-X) 
+
+We train MoP to encourage cross-modal representation transfer in the privileged modality setting. While the probing architecture of MoP exposes both modality-specific and modality-general signals, effective transfer requires these representations to remain distinct. MoP-X enforces this through a probe disentanglement loss, along with a simple modality-interleaved batching strategy to ensure consistent cross-modal interaction during training. During training, we optimize the modality-specific tokenizers, the modality-language connector, the MoP components, and the LLM through LoRA, while keeping the universal modality encoder frozen. 
+
+Probe Disentanglement Loss. Although the modality-specific and modality-general probes are designed to capture complementary information, this separation is not guaranteed by architecture alone and in practice, probes may collapse toward similar representations. To mitigate this, we introduce a probe disentanglement loss that penalizes inter and intra-probe similarity within each encoder layer. Formally, let 
+
+P ml = [ Pg,l ; P ms,l ] ∈ RK×dv , (8) denote the concatenated modality-general and modality-specific probes at layer l, where K =
+
+Kg + Ks. We perform normalization along the feature dimension and compute the cosine similarity: 
+
+Sml = ¯P ml ( ¯P ml )⊤ ∈ RK×K , (9) where ¯P ml denotes the row-wise ℓ2 normalized probe matrix. We then encourage only the off-diagonal entries of Sml . Let D ∈ RK×K denote the matrix with zeros on the diagonal and ones off-diagonal, the probe probe disentanglement loss is computed by averaging the layer-wise loss across layers: 
+
+Ldis = 1
+
+LK (K − 1) 
+
+> L
+
+X
+
+> l=1
+
+∥D ⊙ Sml ∥1 , (10) 
+
+Modality-interleaved Batching Strategy. We construct mini-batches by sampling examples across multiple modalities, as opposed to previous methods that process each modality sequentially or in isolation [ 51 , 29 ]. This exposes shared model components to heterogeneous modality signals within a single optimization step. While each training sample contains a single modality, interaction between modality-specific and modality-general components is facilitated through shared representations, rather than explicit cross-modal coupling at the sample level. 
+
+Autoregressive Loss. Given an input from modality m ∈ M , let ˆZm denote the final sequence of projected encoder and probe tokens produced by MoP, as defined in Section 4.2. Conditioned on ˆZm
+
+and q, the model is trained with the standard autoregressive objective 
+
+LAR = −
+
+> T
+
+X
+
+> t=1
+
+log pθ
+
+
+
+yt | ˆZm, q, y <t 
+
+
+
+(11) where θ denotes the trainable parameters of the model and y<t represents the subsequence of tokens preceding position t. The final loss used for training is the λ-weighted combination of the probe disentanglement loss and autoregressive loss: 
+
+L = LAR + λLdis (12) 
+
+5 Experiments 
+
+5.1 Experimental Setup Benchmarks We evaluate our approach on two distinct task domains: Activities of Daily Living (ADL) understanding and Music Understanding. For ADL understanding, we evaluate on Ego-in-Exo Perception [34 ], a benchmark containing 3,881 questions spanning four task categories, where each question corresponds to a time-synchronzied ego-exo video pair. We evaluate models using a single input modality per question, allowing us to assess performance under different inference sensors. Specifically, we consider egocentric video, exocentric video, and depth (obtained from exocentric video using DepthAnythingV2 [44]) as separate evaluation settings. 6Table 1: Results on Ego-in-Exo Perception. Results are reported on the four tasks of Ego-in-Exo Perception under single modality inference with egocentric, exocentric, or depth modalities. Tasks are abbreviated as: Action Und. = Action Understanding , Task Regions = Task Relevant Regions ,HOI = Hand Object Interactions , and Hand Ident. = Hand Identification .                                                                                   
+
+> Method Egocentric Inference Exocentric Inference Depth Inference Action Und. Task Regions HOI Hand Ident. Avg Action Und. Task Regions HOI Hand Ident. Avg Action Und. Task Regions HOI Hand Ident. Avg
+> Trained without privileged modalities
+> Unimodal MLLM [47] 77.04 80.49 76.03 64.74 74.57 59.50 66.60 71.60 65.00 65.68 44.89 59.88 59.74 63.71 57.06
+> Trained with privileged modalities (Ego+Exo+Depth)
+> X-InstructBLIP [29] 77.31 76.22 76.15 65.38 73.77 61.31 68.54 71.31 65.12 66.57 46.90 50.85 62.34 65.12 56.30 OneLLM [13] 35.14 35.73 47.93 63.71 45.63 23.17 35.73 46.28 62.16 41.84 21.02 32.44 44.27 62.29 40.01 Naive MLLM [47] 75.30 75.98 75.44 65.12 72.96 60.68 69.39 73.08 64.99 67.04 41.06 52.20 59.74 64.48 54.37
+> MoP (Ours) 84.48 86.95 80.76 65.64 79.46 82.68 71.68 76.86 65.51 74.18 56.23 76.10 67.53 64.99 66.21
+
+For Music Understanding, we evaluate on Music-AVQA [17 ], which contains 9,185 questions across five music understanding tasks. Although each question is paired with audio and video modalities, we evaluate each question using a single input modality per sample to stay consistent with our problem setting. We report results under both audio and video inference, allowing controlled analysis of how information from privileged modalities at training time transfers to different inference modalities. 
+
+Compared Models. We compare MoP against three baseline settings. (i) Unimodal MLLM ,trained using only the target inference modality without access to privileged modalities. (ii) Naive MLLM , trained jointly on all modalities without explicit mechanisms for cross-modal interaction or specialization. (iii) Existing MLLMs , including X-InstructBLIP [ 29 ] and OneLLM [ 13 ], which represent state-of-the-art approaches to multimodal alignment. All methods leveraging privileged modalities share the same training data, differing only in how cross-modal information is modeled. 
+
+MoP Implementation Details We instantiate the universal modality encoder as SigLIP [ 46 ] and the language model as Qwen 2.5 [ 31 ], both initialized from large-scale pretrained weights [ 47 ]. We train on instruction pairs from the EgoExo4D dataset [ 34 ] for ADL understanding, and the training split of Music-AVQA for music understanding. Models are trained for 1 epoch on 4 NVIDIA H200 GPUs. During training, each sample is randomly assigned a single input modality, resulting in mixed-modality batches that expose the model to diverse modalities within each optimization step (Section 4.3). The universal modality encoder is kept frozen and we train the modality-specific tokenizers, the universal modality-language connector, and the MoP components, while adapting the language model with LoRA of rank r = 16 . We use a learning rate of 10 −5 for the universal connectors and LoRA parameters, and 2 × 10 −6 for the modality-specific tokenizers and probe cross-attention modules. Unless otherwise specified, we use 8 modality-specific probes and 8 modality-general probes. We initialize the probes from N (0 , 0.02) , and the probe disentanglement loss weight is set to λ = 100 .Table 2: Results on Music-AVQA. Results are reported under single-modality inference. Audio-answerable questions are evaluated using audio alone, and video-answerable questions are evaluated using video alone, following the task definitions of Li et al. [17]. 
+
+Method Audio Inference Video Inference Counting (A) Comparative (A) Avg Counting (V) Location (V) Avg 
+
+Trained without privileged modalities 
+
+Unimodal MLLM [47] 44.84 48.65 46.75 80.40 58.22 69.31 
+
+Trained with privileged modalities (Audio+Video) 
+
+X-InstructBLIP [29] 42.18 52.05 47.12 45.12 59.84 52.48 OneLLM [13] 59.98 47.47 53.73 65.58 69.71 67.65 Naive MLLM [47] 53.13 53.74 53.44 83.49 64.25 73.87 
+
+MoP (Ours) 62.05 52.36 57.21 83.90 71.25 77.58 
+
+5.2 Main Results Ego-in-Exo Perception. Table 1 reports results on Ego-in-Exo Perception across egocentric, ex-ocentric, and depth inference. We observe that unimodal baselines consistently outperform the Naive MLLM baseline on their corresponding inference modality (e.g., Unimodal MLLM achieves 74.57% vs. 72.96% for the Naive MLLM under egocentric inference). Despite being trained on addi-tional modalities the naive MLLM fails to improve performance, suggesting that simply combining modalities without structured interaction does not result in effective knowledge transfer. In contrast, MoP significantly improves performance across all inference modalities, achieving gains of +6.50%, +7.14%, and +11.84% points over the Naive MLLM for egocentric, exocentric, and depth 7inference, respectively. Notably, MoP also outperforms the corresponding modality-only models for all three inference settings. Since these baselines are trained directly on the target inference modality alone, this improvement shows that MoP successfully leverages privileged modalities during training to improve single-modality inference. MoP also outperforms both X-InstructBLIP [ 29 ] and OneLLM [ 13 ] across all three inference modalities, showing that its gains are not simply due to stronger multimodal alignment, but to more effective use of privileged modalities. 
+
+Music-AVQA. Table 2 reports results on Music-AVQA under audio and video inference. Similar to the ADL setting, we observe that naive multimodal training does not consistently improve over unimodal baselines. In particular, the audio-only MLLM achieves 35.01 accuracy, while the naive multimodal model reaches 39.28, indicating only modest gains despite access to additional modalities during training. In contrast, MoP provides consistent improvements over the naive multimodal baseline, achieving gains of +5.45 and +1.64 under audio and video inference, respectively. Notably, MoP also outperforms recent alignment-based MLLMs, including X-InstructBLIP and OneLLM, under both audio and video inference. While these methods are trained with privileged modalities, their objective is primarily to align each modality with the LLM space, rather than to structure cross-modal representations for single-modality inference. The consistent gains of MoP suggest that alignment alone is not sufficient in the privileged modality setting; explicitly separating modality-specific and modality-general information provides a more effective mechanism for transferring knowledge from auxiliary modalities. 0 1 10 50 100   
+
+> Probe Disentanglement Loss Weight ( λ)
+> 65
+> 70
+> 75
+> 80
+> Accuracy (%)
+> Egocentric Exocentric Depth
+
+Figure 3: Ablation on prove disentanglement loss weight. Every   
+
+> Layer
+> Every 2
+> Layers
+> Early
+> Layers
+> Middle
+> Layers
+> Late
+> Layers
+> Probing Position
+> 60
+> 70
+> 80
+> Accuracy (%)  Egocentric Exocentric Depth
+
+Figure 4: Ablation on position of probing layers. Every   
+
+> Layer
+> Early
+> Layers
+> Middle
+> Layers
+> Late
+> Layers
+> Probe Disentanglement Loss Positions
+> 70
+> 80
+> Accuracy (%)  Egocentric Exocentric Depth
+
+Figure 5: Ablation on applica-tion of disentanglement loss. 5.3 Ablation Study 
+
+We perform all ablations on the three inference settings of the Ego-in-Exo Perception benchmark. Table 3: Ablation of Probe Types. Impact of modality-specific and modality-general probing across different inference modalities.             
+
+> Probing type Inference Modality Egocentric Exocentric Depth
+> Naive MLLM (No Probing) 72.96 67.04 54.37 + Modality-specific 76.72 (+3.76) 72.87 (+5.83) 63.22 (+8.85) + Modality-general 78.24 (+5.28) 73.08 (+6.04) 64.57 (+10.2)
+
+Effect of probing types. Table 3 studies the con-tribution of the two probe families by compar-ing the naive MLLM, MoP with only modality-specific probes, and MoP with both modality-specific and modality-general probes. Adding modality-specific probes already yields clear gains across all three inference modalities, show-ing that intermediate-layer probing is effective even when restricted to modality-dependent in-formation. Incorporating modality-general probes provides a further improvement in every case, leading to the best overall performance on egocentric, exocentric, and depth inference. These results support the core design of MoP: modality-specific probes capture information unique to each modality, while modality-general probes capture shared structure that is complementary. 
+
+Effect of probe disentanglement loss. We study the effect of the probe disentanglement loss weight 
+
+λ in Figure 3 by varying its contribution relative to the autoregressive objective. Overall, MoP is reasonably stable across a broad range of λ, indicating that performance does not depend on highly sensitive tuning of the loss term. We observe that λ = 100 yields the strongest overall performance across all three inference modalities, and we therefore use this value in the remaining experiments. 
+
+Location of probing layers. In Figure 4, we ablate where probing is applied within the universal modality encoder. Specifically, we compare probing at every layer, every other layer, only early layers (1-5), only middle layers (5-15), and only late layers (15-27). Probing at every layer performs best overall, suggesting that MoP benefits from interacting with the encoder throughout its entire depth rather than only at a restricted subset of layers. 
+
+Placement of probe disentanglement loss. In Figure 5, we study where the probe disentanglement loss is applied within the universal modality encoder. We compare applying the loss at every layer against restricting it to early, middle, or late layers only. Applying the probe disentanglement loss 810 −6                   
+
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Inter-probe variance (log)
+> Ego–Exo
+> w/o dis w/ dis
+> 10 −6
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Ego–Depth
+> 10 −6
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Exo–Depth
+> 0510 15 20 25
+> Layer
+> 10 −6
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Intra-probe variance (log)
+> Ego
+> 0510 15 20 25
+> Layer
+> 10 −6
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Exo
+> 0510 15 20 25
+> Layer
+> 10 −6
+> 10 −4
+> 10 −2
+> 10 0
+> 10 2
+> 10 4
+> Depth
+
+(a) Probe variance across universal modality encoder depth. Ego                 
+
+> Exo
+> Depth
+> 1.80 1.60 1.80
+> 1.99 1.55 1.57
+> 2.16 2.00 1.88
+> MoP w/o dis
+> Ego
+> Shared
+> Exo
+> Shared
+> Depth
+> Shared
+> Ego
+> Exo
+> Depth
+> 2.42 2.48 2.56
+> 2.34 2.41 2.49
+> 2.57 2.61 2.69
+> MoP w/ dis
+> 1.4
+> 1.6
+> 1.8
+> 2.0
+> 2.2
+> 2.4
+> 2.6 Subspace Distance
+
+(b) Subspace distances. 
+
+Figure 6: Effect of probe disentanglement loss on learned probe representations. 
+
+at every layer yields the strongest overall results, indicating that encouraging probe specialization throughout the full encoder is more effective than constraining it only locally. 
+
+5.4 Model Diagnosis & Analysis of MoP Effect of probe disentanglement loss on learned probes. Figure 6a analyzes the variance of the probe representations with and without probe disentanglement loss. The top row reports inter-probe variance (across modality pairs), while the bottom row reports intra-probe variance (within each modality). Without probe disentanglement loss, probe variance remains consistently low, indicating that probes collapse toward similar representations, particularly in early and mid-level layers. With the probe disentanglement loss, both inter- and intra-probe variance increase across layers and modalities, suggesting that probes learn more diverse and specialized representations. To further understand this behavior, we analyze the geometry of the learned representations through pairwise subspace distances in Figure 6b. At a high level, we ask whether modality-specific and shared probes occupy distinct directions in representation space. We measure this via the Frobenius distance between the SVD-extracted projection matrices of each probe group, where larger values indicate less directional overlap. Without the disentanglement loss, these distances tend to be smaller, suggesting the two probe groups orient similarly. With it, distances are consistently larger, consistent with specific probes being pushed toward more orthogonal structure relative to the shared subspace. 25% 50% 75% 100%    
+
+> Data scale
+> 60
+> 70
+> 80
+> Accuracy (%)
+> Egocentric Exocentric Depth
+> Naive MLLM MoP (Ours)
+
+Figure 7: Data scaling property of MoP. MoP data scaling. Figure 7 studies how perfor-mance changes as the amount of training data in-creases from 25% to 100%. The naive MLLM baseline remains largely flat across all three infer-ence modalities, indicating limited benefit from ad-ditional training data. In contrast, MoP improves consistently with scale, rising from 73.19 to 79.46 on egocentric inference, from 66.40 to 74.18 on exo-centric inference, and from 55.48 to 66.21 on depth inference. These results suggest that MoP is able to exploit additional supervision more effectively than naive multimodal instruction tuning. 
+
+6 Conclusion and Future Work 
+
+We introduce Mixture of Probes (MoP) for multimodal large language models under the privileged modality setting . MoP a probing-based framework that improves cross-modal knowledge transfer by separating modality-specific information from modality-general structure. Our results demonstrate that this separation is the key to making auxiliary modalities useful: when properly leveraged, they can substantially improve single-modality performance. Despite these promising results, our study has two natural limitations. First, MoP assumes a universal modality encoder and does not directly extend to heterogeneous modality-specific encoders; this design is intentional, as the probing mechanism relies on a common representation space to extract and compare signals across modalities at intermediate layers. Second, we focus on the strict privileged modality setting with a single 9modality at inference and do not address multi-modal inference scenarios. This choice isolates the core challenge of transferring knowledge from auxiliary modalities. We leave extensions to heterogeneous encoders and multiple test-time modalities as important directions for future work. 
+
+References 
+
+[1] Yusuf Aytar, Carl Vondrick, and Antonio Torralba. Soundnet: Learning sound representa-tions from unlabeled video. In Proceedings of the 30th International Conference on Neural Information Processing Systems , NIPS’16, page 892–900, Red Hook, NY, USA, 2016. Curran Associates Inc. 3 [2] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-vl technical report. 
+
+arXiv preprint arXiv:2502.13923 , 2025. 2 [3] Lucas Beyer, Andreas Steiner, André Susano Pinto, Alexander Kolesnikov, Xiao Wang, Daniel Salz, Maxim Neumann, Ibrahim Alabdulmohsin, Michael Tschannen, Emanuele Bugliarello, Thomas Unterthiner, Daniel Keysers, Skanda Koppula, Fangyu Liu, Adam Grycner, Alexey Gritsenko, Neil Houlsby, Manoj Kumar, Keran Rong, Julian Eisenschlos, Rishabh Kabra, Matthias Bauer, Matko Bošnjak, Xi Chen, Matthias Minderer, Paul Voigtlaender, Ioana Bica, Ivana Balazevic, Joan Puigcerver, Pinelopi Papalampidi, Olivier Henaff, Xi Xiong, Radu Soricut, Jeremiah Harmsen, and Xiaohua Zhai. Paligemma: A versatile 3b vlm for transfer, 2024. 3 [4] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2020. 2 [5] Feilong Chen, Minglun Han, Haozhi Zhao, Qingyang Zhang, Jing Shi, Shuang Xu, and Bo Xu. X-llm: Bootstrapping advanced large language models by treating multi-modalities as foreign languages. arXiv preprint arXiv:2305.04160 , 2023. 3 [6] Rui Dai, Srijan Das, Saurav Sharma, Luca Minciullo, Lorenzo Garattoni, Francois Bremond, and Gianpiero Francesca. Toyota smarthome untrimmed: Real-world untrimmed videos for activity detection. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2022. 2 [7] Wenliang Dai, Junnan Li, Dongxu Li, Anthony Meng Huat Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale Fung, and Steven Hoi. Instructblip: Towards general-purpose vision-language models with instruction tuning. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. 3 [8] Shilpa Dang, Jessica Emily Antono, Igor Kagan, and Arezoo Pooresmaeili. Modality-specific and modality-general representations of subjective value in frontal cortex. Communications Biology , 7:1550, 2024. 2 [9] Srijan Das, Rui Dai, Michal Koperski, Luca Minciullo, Lorenzo Garattoni, Francois Bremond, and Gianpiero Francesca. Toyota smarthome: Real-world activities of daily living. In Proceed-ings of the IEEE/CVF International Conference on Computer Vision , pages 833–842, 2019. 2[10] Kristen Grauman, Andrew Westbury, Eugene Byrne, Zachary Chavis, Antonino Furnari, Ro-hit Girdhar, Jackson Hamburger, Hao Jiang, Miao Liu, Xingyu Liu, Miguel Martin, Tushar Nagarajan, Ilija Radosavovic, Santhosh Kumar Ramakrishnan, Fiona Ryan, Jayant Sharma, Michael Wray, Mengmeng Xu, Eric Zhongcong Xu, Chen Zhao, Siddhant Bansal, Dhruv Batra, Vincent Cartillier, Sean Crane, Tien Do, Morrie Doulaty, Akshay Erapalli, Christoph Feichtenhofer, Adriano Fragomeni, Qichen Fu, Abrham Gebreselasie, Cristina González, James Hillis, Xuhua Huang, Yifei Huang, Wenqi Jia, Weslie Khoo, Jáchym Koláˇ r, Satwik Kottur, 10 Anurag Kumar, Federico Landini, Chao Li, Yanghao Li, Zhenqiang Li, Karttikeya Mangalam, Raghava Modhugu, Jonathan Munro, Tullie Murrell, Takumi Nishiyasu, Will Price, Paola Ruiz, Merey Ramazanova, Leda Sari, Kiran Somasundaram, Audrey Southerland, Yusuke Sugano, Ruijie Tao, Minh Vo, Yuchen Wang, Xindi Wu, Takuma Yagi, Ziwei Zhao, Yunyi Zhu, Pablo Arbeláez, David Crandall, Dima Damen, Giovanni Maria Farinella, Christian Fuegen, Bernard Ghanem, Vamsi Krishna Ithapu, C. V. Jawahar, Hanbyul Joo, Kris Kitani, Haizhou Li, Richard Newcombe, Aude Oliva, Hyun Soo Park, James M. Rehg, Yoichi Sato, Jianbo Shi, Mike Zheng Shou, Antonio Torralba, Lorenzo Torresani, Mingfei Yan, and Jitendra Malik. Ego4d: Around the world in 3,000 hours of egocentric video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 18995–19012, June 2022. 2 [11] Kristen Grauman, Andrew Westbury, Lorenzo Torresani, Kris Kitani, Jitendra Malik, Tri-antafyllos Afouras, Kumar Ashutosh, Vijay Baiyya, Siddhant Bansal, Bikram Boote, Eugene Byrne, Zach Chavis, Joya Chen, Feng Cheng, Fu-Jen Chu, Sean Crane, Avijit Dasgupta, Jing Dong, Maria Escobar, Cristhian Forigua, Abrham Gebreselasie, Sanjay Haresh, Jing Huang, Md Mohaiminul Islam, Suyog Jain, Rawal Khirodkar, Devansh Kukreja, Kevin J Liang, Jia-Wei Liu, Sagnik Majumder, Yongsen Mao, Miguel Martin, Effrosyni Mavroudi, Tushar Nagarajan, Francesco Ragusa, Santhosh Kumar Ramakrishnan, Luigi Seminara, Arjun Somayazulu, Yale Song, Shan Su, Zihui Xue, Edward Zhang, Jinxu Zhang, Angela Castillo, Changan Chen, Xinzhu Fu, Ryosuke Furuta, Cristina Gonzalez, Prince Gupta, Jiabo Hu, Yifei Huang, Yim-ing Huang, Weslie Khoo, Anush Kumar, Robert Kuo, Sach Lakhavani, Miao Liu, Mi Luo, Zhengyi Luo, Brighid Meredith, Austin Miller, Oluwatumininu Oguntola, Xiaqing Pan, Penny Peng, Shraman Pramanick, Merey Ramazanova, Fiona Ryan, Wei Shan, Kiran Somasundaram, Chenan Song, Audrey Southerland, Masatoshi Tateno, Huiyu Wang, Yuchen Wang, Takuma Yagi, Mingfei Yan, Xitong Yang, Zecheng Yu, Shengxin Cindy Zha, Chen Zhao, Ziwei Zhao, Zhifan Zhu, Jeff Zhuo, Pablo Arbelaez, Gedas Bertasius, David Crandall, Dima Damen, Jakob Engel, Giovanni Maria Farinella, Antonino Furnari, Bernard Ghanem, Judy Hoffman, C. V. Jawahar, Richard Newcombe, Hyun Soo Park, James M. Rehg, Yoichi Sato, Manolis Savva, Jianbo Shi, Mike Zheng Shou, and Michael Wray. Ego-exo4d: Understanding skilled human activity from first- and third-person perspectives. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 2 [12] Saurabh Gupta, Judy Hoffman, and Jitendra Malik. Cross modal distillation for supervision transfer. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016. 3 [13] Jiaming Han, Kaixiong Gong, Yiyuan Zhang, Jiaqi Wang, Kaipeng Zhang, Dahua Lin, Yu Qiao, Peng Gao, and Xiangyu Yue. Onellm: One framework to align all modalities with language. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2024. 2, 3, 7, 8 [14] Jiaming Han, Renrui Zhang, Wenqi Shao, Peng Gao, Peng Xu, Han Xiao, Kaipeng Zhang, Chris Liu, Song Wen, Ziyu Guo, Xudong Lu, Shuai Ren, Yafei Wen, Xiaoxin Chen, Xiangyu Yue, Hongsheng Li, and Yu Qiao. Imagebind-llm: Multi-modality instruction tuning. In International Conference on Learning Representations (ICLR) , 2024. 2, 3 [15] Jungong Han, Ling Shao, Dong Xu, and Jamie Shotton. Enhanced computer vision with microsoft kinect sensor: A review. IEEE Transactions on Cybernetics , 43(5):1318–1334, 2013. 2[16] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Visual prompt tuning. In ECCV , 2022. 3 [17] Guangyao li, Yake Wei, Yapeng Tian, Chenliang Xu, Ji-Rong Wen, and Di Hu. Learning to answer questions in dynamic audio-visual scenarios. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 7 [18] Junnan Li, Dongxu Li, Silvio Savarese, and Steven C. H. Hoi. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International Conference on Machine Learning , 2023. 3 11 [19] Bin Lin, Bin Zhu, Yang Ye, Munan Ning, Peng Jin, and Li Yuan. Video-llava: Learning united visual representation by alignment before projection. In Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2024. 2 [20] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2023. 3 [21] David Lopez-Paz, Léon Bottou, Bernhard Schölkopf, and Vladimir Vapnik. Unifying distillation and privileged information. In International Conference on Learning Representations (ICLR) ,2016. 3 [22] Kevin Lu, Aditya Grover, Pieter Abbeel, and Igor Mordatch. Pretrained transformers as universal computation engines. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) ,2022. 3 [23] Mengmeng Ma, Jian Ren, Long Zhao, Sergey Tulyakov, Cathy Wu, and Xi Peng. Smil: Multimodal learning with severely missing modality. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2021. 3 [24] Muhammad Maaz, Hanoona Rasheed, Salman Khan, and Fahad Shahbaz Khan. Video-chatgpt: Towards detailed video understanding via large vision and language models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (ACL) , 2024. 3 [25] Seungwhan Moon, Andrea Madotto, Zhaojiang Lin, Tushar Nagarajan, Matt Smith, Shashank Jain, Chun-Fu Yeh, Prakash Murugesan, Peyman Heidari, Yue Liu, Kavya Srinet, Babak Damavandi, and Anuj Kumar. Anymal: An efficient and scalable any-modality augmented language model. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2024. 2, 3 [26] Natalia Neverova, Christian Wolf, Graham W. Taylor, and Florian Nebout. Moddrop: Adap-tive multi-modal gesture recognition. IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI) , 2016. 3 [27] OpenAI. Gpt-4o system card, 2024. 2 [28] Andrew Owens, Jiajun Wu, Josh H. McDermott, William T. Freeman, and Antonio Torralba. Ambient sound provides supervision for visual learning. In Proceedings of the European Conference on Computer Vision (ECCV) , 2016. 3 [29] Artemis Panagopoulou, Le Xue, Ning Yu, Junnan Li, Dongxu Li, Shafiq Joty, Ran Xu, Silvio Savarese, Caiming Xiong, and Juan Carlos Niebles. X-instructblip: A framework for aligning x-modal instruction-aware representations to llms and emergent cross-modal reasoning. In 
+
+Proceedings of the European Conference on Computer Vision (ECCV) , 2024. 2, 3, 6, 7, 8 [30] Vittorio Pipoli, Alessia Saporita, Federico Bolelli, Marcella Cornia, Lorenzo Baraldi, Costantino Grana, Rita Cucchiara, and Elisa Ficarra. Missrag: Addressing the missing modality challenge in multimodal large language models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025. 3 [31] Qwen Team, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report. arXiv preprint arXiv:2412.15115 , 2025. 7 [32] Maithra Raghu, Thomas Unterthiner, Simon Kornblith, Chiyuan Zhang, and Alexey Dosovit-skiy. Do vision transformers see like convolutional neural networks? In Advances in Neural Information Processing Systems (NeurIPS) , 2021. 2 12 [33] Dominick Reilly, Rajatsubhra Chakraborty, Arkaprava Sinha, Manish Kumar Govind, Pu Wang, Francois Bremond, Le Xue, and Srijan Das. Llavidal: A large language-vision model for daily activities of living. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 3 [34] Dominick Reilly, Manish Kumar Govind, Le Xue, and Srijan Das. From my view to yours: Ego-to-exo transfer in vlms for understanding activities of daily living. arXiv preprint arXiv:2501.05711 , 2025. 6, 7 [35] Dominick Reilly, Manish Kumar Govind, Le Xue, and Srijan Das. Viscop: Visual probing for video domain adaptation of vision language models. In Proceedings of the European Conference on Computer Vision (ECCV) , 2026. 2 [36] Shuhuai Ren, Linli Yao, Shicheng Li, Xu Sun, and Lu Hou. Timechat: A time-sensitive multi-modal large language model for long video understanding. arXiv preprint arXiv:2312.02051 ,2023. 2 [37] Yixuan Su, Tian Lan, Huayang Li, Jialu Xu, Yan Wang, and Deng Cai. Pandagpt: One model to instruction-follow them all. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (ACL) , 2023. 3 [38] Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupatiraju, Shreya Pathak, Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale, Juliette Love, Pouya Tafti, Léonard Hussenot, Pier Giuseppe Sessa, Aakanksha Chowdhery, Adam Roberts, Aditya Barua, Alex Botev, Alex Castro-Ros, Ambrose Slone, Amélie Héliou, Andrea Tacchetti, Anna Bulanova, Antonia Paterson, Beth Tsai, Bobak Shahriari, Charline Le Lan, Christopher A. Choquette-Choo, Clément Crepy, Daniel Cer, Daphne Ippolito, David Reid, Elena Buchatskaya, Eric Ni, Eric Noland, Geng Yan, George Tucker, George-Christian Muraru, Grigory Rozhdestvenskiy, Henryk Michalewski, Ian Tenney, Ivan Grishchenko, Jacob Austin, James Keeling, Jane Labanowski, Jean-Baptiste Lespiau, Jeff Stanway, Jenny Brennan, Jeremy Chen, Johan Ferret, Justin Chiu, Justin Mao-Jones, Katherine Lee, Kathy Yu, Katie Millican, Lars Lowe Sjoesund, Lisa Lee, Lucas Dixon, Machel Reid, Maciej Mikuła, Mateo Wirth, Michael Sharman, Nikolai Chinaev, Nithum Thain, Olivier Bachem, Oscar Chang, Oscar Wahltinez, Paige Bailey, Paul Michel, Petko Yotov, Rahma Chaabouni, Ramona Comanescu, Reena Jana, Rohan Anil, Ross McIlroy, Ruibo Liu, Ryan Mullins, Samuel L Smith, Sebastian Borgeaud, Sertan Girgin, Sholto Douglas, Shree Pandya, Siamak Shakeri, Soham De, Ted Klimenko, Tom Hennigan, Vlad Feinberg, Wojciech Stokowiec, Yu hui Chen, Zafarali Ahmed, Zhitao Gong, Tris Warkentin, Ludovic Peran, Minh Giang, Clément Farabet, Oriol Vinyals, Jeff Dean, Koray Kavukcuoglu, Demis Hassabis, Zoubin Ghahramani, Douglas Eck, Joelle Barral, Fernando Pereira, Eli Collins, Armand Joulin, Noah Fiedel, Evan Senter, Alek Andreev, and Kathleen Kenealy. Gemma: Open models based on gemini research and technology, 2024. 2 [39] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timo-thée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. arXiv preprint arXiv:2302.13971 , 2023. 2 [40] Vladimir Vapnik and Rauf Izmailov. Learning using privileged information: Similarity control and knowledge transfer. In Proceedings of the 32nd International Conference on Machine Learning (ICML) , 2015. 3 [41] Renjie Wu, Hu Wang, Hsiang-Ting Chen, and Gustavo Carneiro. Deep multimodal learning with missing modality: A survey. Transactions on Machine Learning Research (TMLR) , 2026. 3[42] Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. Qwen2.5-omni technical report. arXiv preprint arXiv:2503.20215 , 2025. 2 [43] Zihui Xue, Zhengqi Gao, Sucheng Ren, and Hang Zhao. The modality focusing hypothesis: Towards understanding crossmodal knowledge distillation. In International Conference on Learning Representations (ICLR) , 2023. 2, 4, 5 13 [44] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. Depth anything v2. In Advances in Neural Information Processing Systems , 2024. 6 [45] Qinghao Ye, Haiyang Xu, Jiabo Ye, Ming Yan, Anwen Hu, Haowei Liu, Qi Qian, Ji Zhang, Fei Huang, and Jingren Zhou. mplug-owl2: Revolutionizing multi-modal large language model with modality collaboration. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. 3 [46] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In Proceedings of the IEEE/CVF International Conference on Computer Vision . IEEE, 2023. 7 [47] Boqiang Zhang, Kehan Li, Zesen Cheng, Zhiqiang Hu, Yuqian Yuan, Guanzheng Chen, Sicong Leng, Yuming Jiang, Hang Zhang, Xin Li, Peng Jin, Wenqi Zhang, Fan Wang, Lidong Bing, and Deli Zhao. Videollama 3: Frontier multimodal foundation models for image and video understanding. arXiv preprint arXiv:2501.13106 , 2025. 7 [48] Hang Zhang, Xin Li, and Lidong Bing. Video-llama: An instruction-tuned audio-visual language model for video understanding. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2023. 2, 3 [49] Hang Zhang, Xin Li, and Lidong Bing. Video-llama: An instruction-tuned audio-visual language model for video understanding. In Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2023. 2 [50] Yiyuan Zhang, Kaixiong Gong, Kaipeng Zhang, Hongsheng Li, Yu Qiao, Wanli Ouyang, and Xiangyu Yue. Meta-transformer: A unified framework for multimodal learning. arXiv preprint arXiv:2307.10802 , 2023. 3 [51] Zijia Zhao, Longteng Guo, Tongtian Yue, Sihan Chen, Shuai Shao, Xinxin Zhu, Zehuan Yuan, and Jing Liu. Chatbridge: Bridging modalities with large language model as a language catalyst. 
+
+arXiv preprint arXiv:2305.16103 , 2023. 2, 3, 6 14 Appendix A Broader impacts 
+
+The broader impacts of MoP stem from its ability to improve single-modality inference by leveraging privileged modalities available only during training, which can benefit real-world applications where high-fidelity sensors are useful for supervision but impractical, expensive, invasive, or unavailable at deployment, such as assistive robotics, healthcare monitoring, and content understanding. At the same time, because MoP is built on top of pretrained language models and multimodal encoders, it may inherit or amplify biases, hallucinations, privacy risks, and safety limitations associated with these foundation models. Moreover, since MoP transfers information from auxiliary modalities, care must be taken when those modalities contain sensitive information, such as egocentric video, audio, depth, or other sensor streams that may reveal personal behavior or private environments. 
+
+B Subspace distances (additional details) 
+
+To further understand how MoP affects the representation spaces of each modality, we analyze the geometry of the learned probe representations through pairwise subspace distances in Figure 6b on a subset of 500 samples of the Ego-in-Exo Perception benchmark. For a given probe group, we collect its learned probe representations into 
+
+P ∈ RN ×K×dv ,
+
+where N is the number of samples, K is the number of probes in the group, and dv is the probe feature dimension. For modality-general probes, K = Kg , while for modality-specific probes, K = Ks. We then flatten this probe representation to obtain X ∈ R(N K )×dv , so that each row corresponds to one probe representation. We center X by subtracting its feature-wise mean, and then compute its top-k
+
+right singular vectors using singular value decomposition: 
+
+X = U ΣV ⊤.
+
+The first k right singular vectors define an orthonormal basis B ∈ Rdv ×k for the dominant represen-tation subspace of that probe group. Given two probe groups with subspace bases B1 and B2, we compare their directions using the Frobenius distance between their projection matrices: 
+
+d(B1, B 2) = B1B⊤ 
+
+> 1
+
+− B2B⊤  
+
+> 2F
+
+.
+
+Smaller values indicate that two probe groups span similar directions in representation space, while larger values indicate less directional overlap. In our analysis, we use k = 10 and compute this distance pairwise across probe groups. 
+
+C t-SNE analysis on learned probes t-SNE 1 
+
+> t-SNE 2
+> Ego (Specific)
+> Exo (Specific)
+> Depth (Specific)
+> Ego (General)
+> Exo (General)
+> Depth (General)
+
+Figure 8: t-SNE visualization of specific and gen-eral probes. 
+
+Figure 8 visualizes the learned modality-specific and modality-general probe repre-sentations using t-SNE. We observe that the modality-specific probes form clearly sepa-rated clusters for egocentric, exocentric, and depth inputs, suggesting that they capture distinct modality-dependent structure. The modality-general probes form a cluster of their own, but we find that they additionally consist of smaller modality-conditioned sub-clusters. This behavior is consistent with the intended role of the two probe families: specific probes specialize to each modality, while general probes learn a shared representation space that is distinct from the specific probes. Im-portantly, the general probes do not collapse into identical representations across modali-ties, nor do they separate as strongly as the 15 modality-specific probes, suggesting that they preserve transferable structure while retaining enough modality context to support cross-modal knowledge transfer. Q: What does the person take from the cutlery holder?              
+
+> A. Spatula B. Knife C. Fork D. Spoon
+> Naïve MLL M:BOneLLM :BMoP (Ours): A
+
+Q: What action is the person performing in the scene?                    
+
+> A. Turning on oven B. Chop vegetables
+> C.Place hand over skillet to check hea tD. Pour oil in skillet
+> Naïve MLLM :DOneLLM :AMoP (Ours): C
+
+Q: What kind of instrument is the leftest instrument?       
+
+> Naïve MLLM :Guita rOneLLM :Guitar MoP (Ours): Violin
+
+Q: What does the person pick up from the counter?                
+
+> A. White cu pB.Blue plate C. Red bowl D. Green plat e
+> Naïve MLLM :AOneLLM :CMoP (Ours): B
+
+Q: What hand does the person use to pour sugar?               
+
+> A. Left han dB. Both hands C.Right hand
+> Naïve MLLM :AOneLLM :AMoP (Ours): C
+
+Q: Is there an acoustic guitar sound?       
+
+> Naïve MLLM :No OneLLM :No MoP (Ours): Yes
+
+Audio -only 
+
+Figure 9: Qualitative results of MoP on single modality inference. 
+
+D Qualitative Results 
+
+Figure 9 presents qualitative comparisons between MoP and baseline MLLMs under single-modality inference. MoP produces more accurate responses, demonstrating a stronger ability to leverage the privileged modalities available during training. These examples qualitatively support the improve-ments observed in our quantitative evaluation. 
+
+E Runtime Analysis 
+
+Table 4: Inference computation overhead of MoP. Model Max VRAM Latency (Full MLLM) % Param. Increase 
+
+Base VLM 24.4GB 0.767s -MoP (Ours) 32.5GB 1.078s +7.5% 
+
+Table 4 reports the inference overhead in-troduced by MoP relative to the base VLM. Due to the additional probe parameters and layer-wise cross-attention operations, MoP increases maximum VRAM usage from 24.4GB to 32.5GB and inference latency from 0.767s to 1.078s per sample, while in-troducing only a modest parameter increase of 7.5%. Despite this additional cost, the overhead remains practical for modern MLLM systems, particularly given the substantial performance gains obtained from MoP. Importantly, MoP does not require multiple modality inputs at inference, so runtime scales with a single inference modality rather than the total number of training modalities. 16

@@ -1,0 +1,891 @@
+Title: Bidirectional Resource Scheduling for Disaggregated and Asynchronous RL Post-Training
+
+URL Source: https://arxiv.org/pdf/2607.09207v1
+
+Published Time: Mon, 13 Jul 2026 00:48:39 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Bidirectional Resource Scheduling for Disaggregated and Asynchronous RL Post-Training 
+
+## Zhiqiang Tan 
+
+25b951103@stu.hit.edu.cn 
+
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen Shenzhen, China 
+
+## Maoxin Wang 
+
+25s151169@stu.hit.edu.cn 
+
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen Shenzhen, China 
+
+## Sijie Wang 
+
+25b951105@stu.hit.edu.cn 
+
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen Shenzhen, China 
+
+## Yiming Yin 
+
+yyin464@connect.hkust-gz.edu.cn 
+
+Data Science and Analytics Thrust, The Hong Kong University of Science and Technology (Guangzhou) Guangzhou, China 
+
+## Qiang Wang 
+
+qiang.wang@hit.edu.cn 
+
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen Shenzhen, China 
+
+## Xiaowen Chu 
+
+xwchu@ust.hk 
+
+Data Science and Analytics Thrust, The Hong Kong University of Science and Technology (Guangzhou) Guangzhou, China 
+
+## Shaohuai Shi ∗
+
+shaohuais@hit.edu.cn 
+
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen Shenzhen, China 
+
+## Abstract 
+
+It is well established that the reasoning capabilities of large language models (LLMs) can be improved by applying rein-forcement learning (RL) in a post-training stage. In a standard RL iteration, the current model (the policy) generates expe-rience through rollouts, and the resulting data is then used to update the policy during training. High-performance RL frameworks such as StreamRL and AReaL employ a disaggre-gated architecture and asynchronous rollouts to better ex-ploit both rollout and training resources, thereby increasing overall system throughput. Nonetheless, across varying RL setups (e.g., hardware configurations, model scales, staleness levels, and hyperparameters) and under changing workloads, it remains common for both rollout and training resources to experience idle periods. In this paper, we present BiDiRL, a hybrid time-space mul-tiplexing architecture for asynchronous, disaggregated RL designed to reduce resource idleness. First, we develop a hot-switch runtime that enables rapid switching between rollout and training resources with negligible overhead. Second, we propose a static, scheduling-aware planner based on time-performance modeling that chooses a hot-switch-friendly resource partition, so that rollout and training durations are roughly balanced at a coarse level. Third, at execution time, we introduce a bidirectional scheduler that further exploits runtime bubbles through fine-grained resource switching, allowing the bottleneck stage to temporarily borrow idle 
+
+> ∗Corresponding author.
+
+resources from the other pool. Across a wide range of work-loads, datasets, and models on two 32-GPU testbeds, BiDiRL increases RL training throughput by up to 1.94 × compared with state-of-the-art RL systems—including veRL, AReaL, and ROLL—without affecting convergence behavior. 
+
+## 1 Introduction 
+
+Reinforcement learning (RL) post-training has become a key technique for improving the reasoning, coding, and tool-use capabilities of large language models (LLMs) [ 2 , 12 , 17 ,19 , 29 ]. An LLM RL job mainly consists of two stages. In the rollout stage, the actor model takes a batch of prompts and generates responses using an inference engine such as vLLM [ 9]. We refer to the workers that execute this stage as 
+
+rollouters . In the training stage, the system scores generated responses, computes policy losses under objectives such as group relative policy optimization (GRPO) [ 19 ], and updates the actor model using a training engine such as PyTorch FSDP [ 36 ]. We refer to the workers that execute this stage as trainers . After each update, the latest actor weights are transferred to rollouters for subsequent generation. Existing LLM RL systems mainly organize rollout and training with either colocated or disaggregated architectures. A colocated architecture improves device utilization by time-sharing a single resource pool between rollout and training, as in veRL [ 22 ] and DistFlow [ 28 ]. Since the two stages oc-cupy the same devices at different times, colocation avoids dedicating resources to a stage that is temporarily inactive. However, this utilization benefit comes at the cost of resource 
+
+> 1arXiv:2607.09207v1 [cs.DC] 10 Jul 2026
+
+Table 1. Comparison with representative RL systems.                                                         
+
+> Feature BiDiRL veRL RLBoost StreamRL AReaL ROLL Disaggregated √√√√√√
+> Off-policy √√√√√√
+> Fractional staleness √√××××
+> Static planning √𝑝 ×𝑝 ××
+> Same-budget borrow √×××××
+> Elastic rollout √×√√××
+> Elastic training √×××××√,×, and 𝑝 denote supported, unsupported, and partially supported, respectively. Fractional staleness denotes staleness bounds 0<𝑠 <1. Same-budget elasticity means temporarily expanding rollout or training with idle resources from the other committed pool without adding GPUs.
+
+coupling: rollout and training are constrained to the same resource pool despite their distinct scaling behavior [ 39 ]. Re-cent systems revisit disaggregated execution by combining separate rollout and training resource pools with asynchro-nous or off-policy training [ 4, 26 , 39 ]. By allowing trainers to consume samples generated by recent actor versions, these systems overlap rollout and training and improve overall throughput. Nevertheless, overlap alone does not remove idle resource bubbles left by fixed disaggregated allocation. As detailed in Section 2.3, these bubbles have two sources. Some are pre-dictable before execution: a fixed rollout-training partition can create persistent rate mismatch. Others arise during exe-cution: response-length dynamics [ 2, 11 , 24 , 25 ], constraints imposed by model parallelism strategies, and staleness con-straints can leave idle windows even under a well-chosen partition. We refer to these two cases as structural bubbles 
+
+and residual bubbles , respectively. Existing systems attack these bubbles from complementary directions, as summa-rized in Table 1. Asynchronous and off-policy systems in-crease overlap, static planners improve the initial partition, and rollout-side schedulers or external resource harvesting reduce generation-side stalls [ 4, 26 , 31 , 32 , 39 ]. These ap-proaches leave a resource-orchestration challenge. Static planning can reduce structural bubbles before execution, but it cannot reclaim residual bubbles caused by runtime vari-ation and staleness. Rollout-side scheduling or offloading helps when rollout is the bottleneck, but it does not address trainer-heavy or two-sided idle windows within the same committed budget. Thus, disaggregated RL needs a mecha-nism that chooses a good initial partition and, during exe-cution, reuses whichever committed resource pool becomes temporarily idle without violating staleness constraints. To address this challenge, we develop BiDiRL, a hybrid time-space multiplexing system for disaggregated and asyn-chronous RL post-training. BiDiRL keeps rollout and training on separate committed resource pools to preserve disaggre-gated overlap, but allows either pool to temporarily execute the auxiliary role of the other stage when doing so is pre-dicted to reduce idle time. To achieve this goal, we first design a hot-switch runtime (§3.2) to make rollouter and trainer roles exchangeable on their resource pools with negligible overhead. Then, before execution, we design a scheduling-aware static planner (§4) to select a rate-balanced resource partition and construct a hot-switch-compatible resource envelope with time performance modeling. Finally, during execution, we design a bidirectional scheduler (§5) to admit borrowing resources from different pools when the predicted benefit exceeds the measured switching overhead, and it also decides how much workload should be assigned to primary and auxiliary workers with our real-time online profiling (§5.1). These mechanisms allow BiDiRL to harvest any pos-sible idle resource window introduced by disaggregation during RL post-training. We evaluate BiDiRL against state-of-the-art open-source RL systems, including veRL [ 22 ], AReaL [ 4], and ROLL [ 26 ]. The evaluation covers diverse workloads, staleness bounds, resource budgets, model sizes, and two 32-GPU platforms (NVIDIA A6000 and H100). Across all the evaluated cases, BiDiRL runs faster by 1.05 ×–1.94 × over veRL, AReaL, and ROLL. It improves effective training throughput by 
+
+1.27 ×–1.68 × across the 16-GPU A6000 testbed and reaches 
+
+1.94 × with 32 GPUs. Similarly, on the H100 testbed, BiDiRL achieves 1.23 ×–1.53 × improvement. Ablations show that our dynamic bidirectional scheduler improves over no borrowing by 1.12 ×–1.71 × and over opportunistic borrow-ing by 1.02 ×–1.31 ×. In summary, we make the following contributions: 
+
+• We identify idle resource bubbles in disaggregated LLM RL under staleness bounds as a two-timescale problem: structural bubbles arise from static partition mismatch, while residual bubbles come from workload dynamics, model-parallelism constraints, and staleness constraints. 
+
+• We design a hot-switch runtime to enable rollout and training to be switchable in runtime with negligible overhead. 
+
+• We design a scheduling-aware static planner that se-lects the initial rollout-training resource partitioning and constructs a hot-switch-compatible resource enve-lope, exposing lightweight prediction interfaces used by runtime scheduling. 
+
+• We propose a bidirectional scheduler that dynami-cally borrows idle rollout or training resources for the bottleneck stage, deciding both when to borrow and how much workload to assign using a benefit-over-overhead admission rule to minimize resource idleness. 
+
+> 2
+
+## 2 Background and Motivation 
+
+2.1 LLM RL Workflow 
+
+In LLM RL post-training, the actor is the model being op-timized. Given a batch of prompts, the actor generates re-sponses autoregressively and is trained to maximize their ex-pected reward. In GRPO-style workloads, multiple responses generated from the same prompt constitute a prompt-level rollout group, while each completed response is treated as a response-level training sample [2]. Modern rollout engines, such as vLLM [ 9 ] and SGLang [ 37 ], combine model paral-lelism with data parallelism to create inference replicas. The training stage consumes completed response-level samples. These operations are commonly executed by training engines based on PyTorch FSDP [ 36 ] or Megatron-LM [ 23 ]. To reduce memory usage, training engines typically partition a batch into micro-batches, process them sequen-tially, and accumulate gradients across micro-batches before applying the update. In BiDiRL, we use the term chunk 
+
+to denote the executable scheduling unit induced by this micro-batching. Its size is determined by the per-device micro-batch size and the data-parallel degree, and it serves as the unit used by Trainer-on-RollPoll scheduling (Section 5). This decomposition provides the basis for modeling trainer execution time. 
+
+2.2 Staleness-Bounded Disaggregated RL 
+
+Disaggregated RL systems map rollout and training to sepa-rate committed resource pools. This execution model allows rollouters and trainers to use specialized engines and over-lap sample generation with model update. Asynchronous execution is governed by a staleness policy 𝑠 . At the sam-ple level, if a sample is generated by actor version 𝑣 𝑔 and consumed when the trainer is updating actor version 𝑣 𝑡 , its actor-version distance is Δ𝑣 = 𝑣 𝑡 − 𝑣 𝑔 [ 4 ]. A sample is valid only if it satisfies the configured staleness policy. At the batch level, some systems use a floating-point policy 𝑠 , where 𝑠 < 1
+
+caps the stale-sample share and 𝑠 ≥ 1 removes the batch-level freshness requirement [ 22 ]. Thus, 𝑠 = 0 indicates strict on-policy execution, where all samples must be generated by the latest actor version. When 0 < 𝑠 < 1, trainers may consume a mixture of new and recent valid stale samples, but each batch still requires enough new samples. When 𝑠 ≥ 1,an entire batch may be formed from recent valid samples. Modern disaggregated systems often use partial roll-out [ 35 ] to avoid blocking on long responses. When trainers reach a synchronization point, unfinished generations can be interrupted and carried over to the next window. With partial rollout, the steady-state execution can be viewed from the trainer side as two phases: waiting until enough valid rollout groups are available and then consuming the resulting batch. Ignoring the initial buffer fill and the final drain, and folding weight synchronization into trainer consumption unless stated otherwise, we approximate the 1024 2048 4096 8192 
+
+> Response length
+> 0
+> 50
+> 100
+> Time (s)
+> Rollout
+> Training
+
+(a) Response length scaling. 4 8 16 32  
+
+> GPUs
+> 0
+> 20
+> 40
+> 60
+> Time (s)
+> Rollout
+> Training
+
+(b) Resource scaling. 0 20 40 60 80   
+
+> step
+> 0.5
+> 1.0
+> response length  1e3 1K 2K
+
+(c) Response length dynamics. (8,24) (16,16) (24,8)   
+
+> Partition (rollout, training)
+> 0
+> 1
+> 2
+> GPU-s
+> 1e4 Rollout
+> Training
+> Bubble
+
+(d) Bubbles with partitions. 
+
+Figure 1. Profiling evidence for resource bubbles in disaggre-gated LLM RL. Rollout and training exhibit different scaling trends [ 39 ] (top row). Static partitions still leave resource bubbles (bottom row). duration of one training window as 
+
+𝑇 step ≈ 𝑇 wait + 𝑇 consume , (1) where 𝑇 wait is the time until the rollout buffer contains enough valid rollout groups under the staleness bound, and 𝑇 consume is the time for trainers to consume the batch. Without partial rollout, the current window remains tied to the slowest response in the rollout batch, making the step time closer to the maximum of rollout completion time and trainer consumption time. Partial rollout removes this tail from the current window, but any residual shortage of valid samples appears as 𝑇 wait in the next window. 
+
+2.3 Motivation: Resource Bubbles 
+
+Rollout and training exhibit distinct execution characteris-tics [ 39 ]. Rollout first processes prompt tokens through prefill and then generates response tokens through autoregressive decoding [ 38 ]. Its execution time is sensitive to response length because a few long-tail sequences can dominate the overall rollout time [ 5 , 21 , 35 ]. Training consumes completed responses through batched model execution, including pol-icy log-probability recomputation, reference-policy evalu-ation when required, and actor updates [ 19 ]. As shown in Figure 1a and Figure 1b, rollout is more sensitive to longer responses and usually obtains smaller gains from additional resources than training, while training can expose denser batched computation over tokens [4, 39]. These scaling differences create bubbles at two time scales. Before execution, the system must partition a fixed resource      
+
+> 3Rollout
+> Training (a) Training idle Rollout
+> Training (b) Rollout idle Rollout
+> Training (c) Two-sided idle
+
+Figure 2. Motivation for bidirectional scheduling in disag-gregated LLM RL. With bounded off-policy execution, rollout and training can overlap but bubbles remain when (a) rollout is slower, (b) training is slower, or (c) the staleness bound forces trainers to wait for fresh samples after rollouters run ahead. budget into committed rollout and training pools. This par-titioning problem appears in existing disaggregated sys-tems [ 8, 21 , 34 , 39 ]. A poor resource partition creates a per-sistent rate mismatch, where one stage repeatedly waits because the other stage is slower. We refer to the predictable idle windows caused by static resource partition mismatch as structural bubbles . During execution, even a well-tuned initial partition cannot eliminate all idle time. Response lengths may shift as the policy evolves during RL training (Figure 1c) [ 2, 11 , 24 , 25 ]. Feasible resource allocations are also constrained by model parallelism strategies, which lim-its how finely the partitioning can be tuned. A strict staleness bound can further prevent rollouters from running beyond the permitted run-ahead window, or force trainers to wait until enough new rollout samples become available. We refer to the remaining idle windows caused by workload variation, model parallelism constraints, and staleness constraints as 
+
+residual bubbles . As shown in Figure 1d, such bubbles remain even under different static resource partitioning. The side on which residual bubbles appear depends on the workload, the staleness bound, and the resource partition. Long-reasoning and multi-turn tasks tend to be rollout-heavy because they generate longer responses (Figure 2a) [ 6 , 30 ]. In contrast, short-output workloads may expose a training-side bottleneck (Figure 2b), especially for multimodal RL tasks where responses are short but training still processes full multimodal inputs [ 3, 16 , 27 ]. With a strict staleness bound, bubbles may also appear on both sides: trainers may wait for enough new rollout samples, while rollouters stop after exhausting the permitted run-ahead window (Figure 2c). These cases show that idle resources in disaggregated RL are not always one-sided. Either the rollout pool or the training pool may become temporarily idle. This observation motivates the two-timescale design used by BiDiRL. Static planning selects a parallelism-compatible partition that reduces structural bubbles, while runtime bidi-rectional scheduling reclaims the residual bubbles that fixed allocation cannot fully eliminate. Algorithm  Model config  Device config  Workload       
+
+> Static planner(§4) Online profiler (§5.1)
+> Dynamic scheduler(§5.2)
+> Hot-switching
+> runtime (§3.2)
+> borrowing
+> Rollpoll Trainpoll
+> Primary Rollouter Primary Trainer
+> Auxiliary Trainer Auxiliary Rollouter
+
+Figure 3. The system overview of BiDiRL. 
+
+## 3 BiDiRL: System Design 
+
+3.1 System Overview 
+
+Figure 3 shows the architecture of BiDiRL. For a given GPU cluster for RL post-training, BiDiRL partitions the GPU re-sources into two pools: a rollout pool (RollPoll) for rollouters and a training pool (TrainPoll) for trainers. The key idea of BiDiRL is to maximally reduce the bubble time under the disaggregated architecture for different RL training scenarios by dynamically enabling trainers to run on RollPoll and rollouters to run on TrainPoll in runtime. Thus, we develop a hot-switch runtime (§3.2) that supports light-weight context switching, making the associated overhead negligible (§7.3). Then, BiDiRL introduces a static scheduling-aware plan-ner (§4) to coarsely assign a proper number of GPUs as RollPoll and TrainPoll so that the rollout time and training time are comparable and both resources are switchable in runtime. The key idea of the static planner is to model time performance (including compute and communication) of different inference and training tasks under different GPU resources with a constraint of allowing hot switching be-tween rollouters and trainers, so that we can assign a proper group of GPUs for RollPoll and TrainPoll. After the static planning of resources, BiDiRL launches the RL post-training job by placing rollouters in RollPoll and trainers in TrainPoll. During RL execution, BiDiRL exploits our proposed bidirectional scheduler (§5) to dynamically determine when rollouters should borrow resources from TrainPoll and when trainers should borrow resources from RollPoll to minimize the iteration time. Using RollPoll for trainers (Trainer-on-RollPoll) and TrainPoll for rollouters (Rollouter-on-TrainPoll) in runtime requires dynamically switching the context of rollout and training. For example, in Trainer-on-RollPoll, a training instance with the newest weight parameters should be launched and collaborate with the existing trainers on TrainPoll. To accurately ensure that bidirectional resource switching can always bring perfor-mance benefits, BiDiRL introduces a lightweight online pro-filer (§3.2) that measures system time performance (e.g., rollout time, training time, weight synchronization time,              
+
+> 4Primary rollouter
+> Auxiliary rollouter
+> Admission Dispatch Recovery
+> Chunk Chunk
+> Sync
+> RollPoll TrainPoll
+> Rollouter Trainer chunk Switching cost Optimizer step (a) Rollouter-on-TrainPoll: rollouters borrow the training pool. Rollouter
+> Chunk Chunk Chunk
+> Admission
+> Chunk Chunk
+> Grad
+> Opt step
+> Sync
+> Chunk Chunk
+> Lazy pull and tail split
+> (b) Trainer-on-RollPoll: trainers borrow the rollout pool.
+
+Figure 4. Bidirectional scheduling. The two directions share an overhead-aware admission interface but use different work units and recovery rules. etc.). Based on the profiling information and workload mod-els, BiDiRL formulates each borrowing opportunity as an admission-control and workload-splitting problem. A bor-rowed window is admitted only when the predicted benefit outweighs the measured hot-switch overhead, and the as-signed workload is sized according to the predicted comple-tion time of the primary and auxiliary workers (§5). 
+
+3.2 Hot-Switching Runtime 
+
+Hot switching for rollouters and trainers is the runtime mech-anism that makes the planner-selected resource envelope executable (details in §4) and switchable (details in §5). At startup, auxiliary workers are initialized and then kept pas-sive. Primary workers own their pools by default. As shown in Figure 4, when the scheduler admits borrowing, the run-time releases the primary workers and wakes the auxiliary workers. When a primary worker needs to resume or the auxiliary workers finish their assigned tasks, the runtime revokes the auxiliary lease. The auxiliary workers then stop accepting new tasks, return recoverable pending tasks, and yield the pool back to the primary workers. This preempt-and-yield rule ensures that a pool is never used by rollout and training workers at the same time. It also gives the scheduler flexibility to switch without restarting the rollout or training instance. For Rollouter-on-TrainPoll (Figure 4a), 𝐶 in indicates the time for switching the training pool from primary trainers to auxiliary rollouters, which involves offloading trainer states, loading rollouter states, and synchronizing with primary rollouters when needed. 𝐶 out indicates the time for switch-ing back to primary trainers, including offloading rollouter states and reloading trainer states. After borrowing, complete rollout samples are committed normally, and incomplete roll-out samples are returned as partial rollout state for primary rollouters to resume. For Trainer-on-RollPoll (Figure 4b), 𝐶 in indicates the time for switching the rollout pool from primary rollouters to auxiliary trainers, and 𝐶 out indicates the time for switching back to primary rollouters, which includes gradient synchro-nization if the borrowed window covers actor update. When the borrowed window ends, trainer chunks that have not started execution can return to the pending queue, while run-ning chunks finish and merge in original order; Section 6.3 summarizes the chunk state classes used by these recovery rules. 
+
+## 4 Scheduling-Aware Static Planning 
+
+Static planning runs once before RL training starts and re-turns a resource envelope 
+
+E = (𝑔 𝑟 , 𝑔 𝑡 , 𝜌 𝑟 , 𝜌 𝑡 , M𝑟 , M𝑡 ), (2) where 𝑔 𝑟 and 𝑔 𝑡 are the number of GPUs assigned to RollPoll and TrainPoll, 𝜌 𝑟 and 𝜌 𝑡 are the replica layouts used by rollout and training. M𝑟 , M𝑡 are the stage-time models for rollout and training, respectively. Due to the page limit, we leave the details of modeling to Appendix A.1 and they can be accurately verified according to our experimental results (§7.4). This envelope E is constructed to be both hot-switch com-patible and throughput-aware. 
+
+4.1 Hot-switch Compatible Model Layouts 
+
+The planner first determines the minimal feasible model layout for each stage. A model layout specifies the number of devices occupied by one rollout or trainer replica. BiDiRL follows a minimal-replica principle: once a stage replica can satisfy the memory and execution constraints, using a larger replica usually reduces the data-parallel degree and may introduce additional communication overheads. The selected layouts also define the granularity of hot switching. For a candidate resource partition to be legal, each resource pool must be divisible into an integer number of replicas for every role it may host. This constraint allows the auxiliary role to be activated without process restarts or expensive resharding. Primary and auxiliary workers of the same stage also use the same model layout, so model weights and gradients can be transferred without layout resharding. This constraint in our BiDiRL distinguishes it from the existing planner that only balances stage throughput [ 14 ,22 , 39 ]. A resource partition with good predicted through-put can still be unusable if it cannot enable hot switching. BiDiRL therefore searches only over partitions that satisfy both throughput and compatibility requirements as follows. 
+
+> 5
+
+Algorithm 1 Scheduling-aware static planning                                                                                                
+
+> Require: device budget 𝐺 , placement constraint Π, workload sta-tistics 𝑊 =(𝐵 𝑝 , 𝑈 𝐵 , . . . ), model configuration 𝑃
+> 1: 𝜌 𝑟 , 𝜌 𝑡 ←MinFeasibleLayouts (𝑊 , 𝑃 )
+> 2: M𝑟 ,M𝑡 ←BuildStageModels (𝑊 , 𝑃, 𝜌 𝑟 , 𝜌 𝑡 )
+> 3: 𝑏𝑒𝑠𝑡 ← ⊥
+> 4: for all (𝑔 𝑟 , 𝑔 𝑡 ) ∈ CandidatePartitions (𝐺, Π)do
+> 5: if ¬Compatible (𝑔 𝑟 , 𝑔 𝑡 , 𝜌 𝑟 , 𝜌 𝑡 )then
+> 6: continue
+> 7: end if
+> 8: 𝑑 𝑟 ←ReplicaCount (𝑔 𝑟 , 𝜌 𝑟 )
+> 9: 𝑑 𝑡 ←ReplicaCount (𝑔 𝑡 , 𝜌 𝑡 )
+> 10: 𝑇 𝑟 ← M 𝑟 (𝐵 𝑝 , 𝑑 𝑟 )
+> 11: 𝑇 𝑡 ← M 𝑡 (𝑈 𝐵 , 𝑑 𝑡 )
+> 12: 𝜆 𝑟 ←𝐵 𝑝 /𝑇 𝑟
+> 13: 𝜆 𝑡 ←𝐵 𝑝 /𝑇 𝑡
+> 14: 𝜆 pipe ←min (𝜆 𝑟 , 𝜆 𝑡 )
+> 15: if 𝑏𝑒𝑠𝑡 =⊥or 𝜆 pipe >𝑏𝑒𝑠𝑡 .𝜆 pipe then
+> 16: 𝑏𝑒𝑠𝑡 ← ( 𝑔 𝑟 , 𝑔 𝑡 , 𝑑 𝑟 , 𝑑 𝑡 , 𝜆 pipe )
+> 17: end if
+> 18: end for
+> 19: return 𝑏𝑒𝑠𝑡 .𝑔 𝑟 , 𝑏𝑒𝑠𝑡 .𝑔 𝑡 , 𝜌 𝑟 , 𝜌 𝑡 ,M𝑟 ,M𝑡
+
+4.2 Execution Time Models and Resource Allocation 
+
+Given the compatible model layouts, the planner enumerates legal rollout-training partitions under the total resource bud-get. For each candidate partition (𝑔 𝑟 , 𝑔 𝑡 ), it derives the rollout and trainer replica counts 𝑑 𝑟 = ReplicaCount (𝑔 𝑟 , 𝜌 𝑟 ) and 
+
+𝑑 𝑡 = ReplicaCount (𝑔 𝑡 , 𝜌 𝑡 ). We write M𝑟 (𝑛, 𝑑 ) as the pre-dicted time for 𝑑 rollout replicas to produce 𝑛 prompt-level rollout groups, and M𝑡 (𝑈 , 𝑑 ) as the predicted time for 𝑑 
+
+trainer replicas to consume a stage-ordered trainer workload 
+
+𝑈 . For the representative batch in the workload statistics 𝑊 ,let 𝐵 𝑝 be the number of prompt-level rollout groups and 𝑈 𝐵 
+
+be the corresponding trainer workload. The planner com-putes 
+
+𝜆 𝑟 = 𝐵 𝑝 
+
+M𝑟 (𝐵 𝑝 , 𝑑 𝑟 ) , 𝜆 𝑡 = 𝐵 𝑝 
+
+M𝑡 (𝑈 𝐵 , 𝑑 𝑡 ) . (3) The selected partition maximizes the steady-state pipeline rate 
+
+𝜆 pipe = min (𝜆 𝑟 , 𝜆 𝑡 ). (4) This objective balances rollout production and trainer con-sumption under a fixed resource budget, rather than maxi-mizing either stage rate in isolation. The selected partition reduces structural bubbles, while the compatible layouts make later bidirectional scheduling feasible. Algorithm 1 summarizes the procedure, where 𝑔 is the number of devices in a pool and 𝑑 is the number of repli-cas induced by the selected layout. The planner returns the selected resource envelope, which is then made executable by the hot-switch runtime and used by the bidirectional scheduler for admission control and workload splitting. 
+
+4.3 Planning Complexity 
+
+Let SΠ denote the set of candidate rollout-training partitions generated under the placement constraint Π. Algorithm 1 scans each candidate partition once. For each partition, the planner performs compatibility checks against the selected replica layouts, computes the rollout and trainer replica counts, and evaluates the two stage-time models, each of which takes constant time. Thus, after the one-time construc-tion of replica layouts and stage models, the partition-search complexity is 𝑂 (|S Π |) . For the common case of two-way integer partitions over 𝐺 devices, |S Π | = 𝑂 (𝐺 ). Since static planning runs once before RL training starts, this overhead is amortized over the full training execution. 
+
+## 5 Bidirectional Scheduling 
+
+5.1 Online Profiler 
+
+The online profiler exposes a compact runtime interface to the bidirectional scheduler. Each completed execution unit emits (𝑘, 𝑥, 𝜋, 𝑋, 𝑑, ˆ𝑇 ): 𝑘 ∈ { 𝑟, 𝑡 } is the rollout or trainer stage, 𝑥 ∈ { 𝑝, 𝑎 } is the primary or auxiliary role, 𝜋 is the executing pool, 𝑋 summarizes the workload, 𝑑 is the active replica count, and ˆ𝑇 is the observed time. Rollout records include prompt-group and token-length statistics, while trainer records include stage-ordered chunk workload. These records calibrate M𝑟 and M𝑡 . The profiler also reports (𝐼 𝑟 , 𝐼 𝑡 , 𝑄 𝑟 , 𝑈 , 𝐶 in , 𝐶 out , 𝐶 grad ), where 𝐼 𝑟 , 𝐼 𝑡 are RollPoll and TrainPoll idle windows, 𝑄 𝑟 is the rollout deficit, 𝑈 is the remaining trainer workload, and the three 𝐶 terms are mea-sured switch-in, switch-out, and gradient-synchronization costs. Workers emit records after completion, and calibration runs at weight-synchronization boundaries outside the worker critical path. 
+
+5.2 Dynamic Scheduling 
+
+The bidirectional scheduler reduces residual bubbles by tem-porarily borrowing idle resources across the two committed resource pools. Borrowing is considered when 𝐼 𝑡 > 0 for Rollouter-on-TrainPoll or 𝐼 𝑟 > 0 for Trainer-on-RollPoll. Given the profiled hot-switch costs and stage-time models above, each borrowing opportunity makes two decisions: whether the predicted benefit covers the hot-switch over-head, and how to split the remaining workload between primary and auxiliary workers if borrowing is admitted. We use 𝑑 𝑝 and 𝑑 𝑎 to denote the numbers of primary and auxil-iary replicas available to the bottleneck stage in the current borrowed window. 
+
+5.2.1 Scheduling for Rollouter-on-TrainPoll. This di-rection uses idle training-pool resources as auxiliary roll-outers to reduce trainer waiting time. Let 𝑄 𝑟 be the current deficit in prompt-level rollout groups required to start train-ing under the staleness bound. Let 𝐶 in and 𝐶 out be the mea-sured costs for entering and leaving the auxiliary rollout 
+
+> 6
+
+window. When the training pool is idle, the scheduler admits borrowing only when primary rollouters alone are predicted to need longer than the switching cost to close the deficit: 
+
+M𝑟 (𝑄 𝑟 , 𝑑 𝑝 ) − M 𝑟 (𝑄 𝑟 , 𝑑 𝑝 + 𝑑 𝑎 ) > 𝐶 in + 𝐶 out . (5) Here M𝑟 is the rollout time model, initialized by the static planner and calibrated by online profiling (Appendix A.1.2). After admission, BiDiRL dispatches the deficit according to rollout data-parallel capacity. The auxiliary rollouters receive the following number of prompt groups: 
+
+𝑄 𝑎 = round 
+
+ 𝑑 𝑎 
+
+𝑑 𝑝 + 𝑑 𝑎 
+
+𝑄 𝑟 
+
+
+
+, 𝑄 𝑝 = 𝑄 𝑟 − 𝑄 𝑎 . (6) The remaining 𝑄 𝑝 groups stay on primary rollouters. This design separates admission from per-request assignment. The rollout time model M𝑟 predicts the aggregate production time of the deficit window, while the final length of each individual response is only observed after generation. BiDiRL therefore assigns prompts according to data-parallel capacity rather than relying on fine-grained length prediction before generation. Auxiliary rollout remains useful even when the borrowed window is interrupted. A complete prompt group is com-mitted to training immediately. An incomplete group is re-turned to primary rollouters with its generated prefix and per-response completion status. Primary rollouters resume unfinished responses rather than regenerating completed prefixes. Similar to partial rollout, this design allows auxil-iary rollout work to be preempted. 
+
+5.2.2 Scheduling for Trainer-on-RollPoll. Trainer-on-RollPoll reduces trainer consumption time by temporarily using RollPoll resources as auxiliary trainers. Let 𝑈 be the remaining stage-ordered trainer workload. The trainer work-load is decomposed into a sequence of chunk-level work. A chunk is the basic execution unit submitted to trainer work-ers and is handled by primary trainers by default. When RollPoll is idle, the scheduler admits borrowing only when joint execution with auxiliary trainers is predicted to finish the remaining chunks faster than primary-only execution. Before admission, a startup drain removes the prefix of 𝑈 
+
+that primary trainers are expected to finish while auxiliary trainers are being prepared, yielding a drained workload 
+
+𝑈 ′. The admission test compares primary-only execution on 
+
+𝑈 with joint execution on 𝑈 ′ plus switching and gradient-synchronization costs. After admission, the scheduler first assigns chunks in a demand-driven manner. Primary and auxiliary trainers pull the next chunk only when they are ready to execute it. This lazy-pull policy reduces sensitivity to variable chunk execu-tion time compared with one-time static assignment. When the remaining chunk-level work fits within one combined primary and auxiliary window, the scheduler performs a one-time tail split that searches over feasible chunk assignments 
+
+Algorithm 2 Trainer-on-RollPoll scheduling                                                                              
+
+> Require: stage-ordered workload 𝑈 , replica counts 𝑑 𝑝 , 𝑑 𝑎 , maxi-mum chunk size 𝑠 max , costs 𝐶 in , 𝐶 out , 𝐶 grad
+> 1: 𝑈 ′←DrainPrefix (𝑈 , 𝐶 in ,M𝑡 , 𝑑 𝑝 )
+> 2: 𝑇 no ← M 𝑡 (𝑈 , 𝑑 𝑝 )
+> 3: 𝑇 joint ← M 𝑡 (𝑈 ′, 𝑑 𝑝 +𝑑 𝑎 )
+> 4: 𝑇 borrow ←𝐶 in +𝑇 joint +𝐶 out +𝐶 grad
+> 5: if 𝑇 borrow ≥𝑇 no then
+> 6: return primary-only execution
+> 7: end if
+> 8: Q ← BuildChunkQueue (𝑈 ′)
+> 9: while Qis not empty do
+> 10: if TailWindow (Q) then
+> 11: (𝑈 𝑝 , 𝑈 𝑎 ) ← JointTailSplit (Q , 𝑠 max ,M𝑡 , 𝑑 𝑝 , 𝑑 𝑎 )
+> 12: RunTail (𝑈 𝑝 , 𝑈 𝑎 )
+> 13: break
+> 14: end if
+> 15: for all ready side 𝑥 ∈ { 𝑝, 𝑎 }do
+> 16: 𝑐 ←LazyPull (Q , 𝑥, 𝑠 max )
+> 17: RunAsync (x,c)
+> 18: end for
+> 19: end while
+
+and uses the trainer time model (Appendix A.1.1) to choose the split that minimizes the predicted joint completion time. Chunk-level scheduling gives the runtime more opportuni-ties to recover idle rollout resources, but it introduces a trade-off between execution efficiency and scheduling granularity. Smaller chunks improve tail alignment but reduce computa-tion efficiency, while larger chunks improve efficiency but may leave a larger final imbalance. BiDiRL addresses this trade-off by using large chunks during lazy pull and allowing smaller remainder chunks only in the tail partitioning. Data-transfer overheads from chunk-level execution are further hidden by the asynchronous input-compute-output pipeline described in Section 6.3. Algorithm 2 summarizes Trainer-on-RollPoll scheduling. Here Q tracks the remaining chunk-level work rather than a fixed list of concrete chunks. LazyPull (Q , 𝑥, 𝑠 max ) forms one ready executable chunk of size up to 𝑠 max for side 𝑥 .
+
+JointTailSplit re-chunks the remaining tail work for the primary and auxiliary sides separately. For each candidate workload split, both sides use full chunks of size 𝑠 max and at most one smaller remainder chunk. The minimum chunk size is one sample per device. The selected workload split minimizes the larger predicted completion time of the two sides. 𝐶 grad is nonzero only when the borrowed window covers actor update and auxiliary gradients must be merged. 
+
+5.2.3 Scheduling Complexity. The Rollouter-on-TrainPoll decision incurs constant scheduler-side overhead per borrowing opportunity, as it only evaluates one rollout-time prediction and computes a capacity-proportional dispatch. For Trainer-on-RollPoll, let 𝑛 be the number of chunks actually dispatched by lazy pull. Each dispatched 
+
+> 7
+
+Table 2. Trainer chunk state classes used for recovery and ordered merge.       
+
+> State Meaning Recoverable
+> queued Input transfer or worker-side buffering has started, but accelerator execution has not started. Yes
+> running The worker is executing the chunk on the accelerator. No
+> finished Execution output has been retrieved and merged in original order. No
+> cancelled A queued chunk was released before execution. Terminal
+
+chunk is pulled and launched once, so the lazy-pull loop has 
+
+𝑂 (𝑛 ) queue-management overhead. The tail split only enu-merates integer split points within the bounded tail window. If the tail window contains 𝑢 minimum scheduling units, the tail-split search costs 𝑂 (𝑢 ). Thus, the scheduler-side overhead is negligible compared with the model execution time. 
+
+## 6 Implementation 
+
+6.1 Prototype 
+
+We implemented BiDiRL on top of veRL [ 22 ] in 8.3K lines of Python code. BiDiRL uses vLLM [ 9 ] for rollout, PyTorch FSDP [ 36 ] for training, and Ray [ 15 ] for orchestration. We develop the logic for static resource planning, bidirectional scheduling, workload partitioning and execution, worker life-cycle management, hot switching, cross-pool synchroniza-tion, asynchronous chunk execution, and online profiling around the existing rollout and training execution paths. 
+
+6.2 Cross-pool Synchronization 
+
+BiDiRL reuses the veRL-style actor-to-rollout synchroniza-tion path between primary trainers and primary rollouters. It adds three synchronization paths for borrowed execution. In Trainer-on-RollPoll, the canonical primary trainer broad-casts the required actor weights to all auxiliary trainers on the rollout pool to refresh their model weights. In Rollouter-on-TrainPoll, the canonical primary rollouter also broadcasts rollout weights to auxiliary rollouters on the training pool. If auxiliary trainers participate in actor update, their gradients are synchronized back to the primary trainer before the op-timizer step. These synchronization paths rely on the replica compatibility selected by the static planner (Appendix A.1). Primary and auxiliary workers of the same stage use compat-ible replica configurations even when they run on different pools, so hot switching does not require process restart or runtime resharding [10]. 
+
+Table 3. Per-server configuration of the A6000 testbed.        
+
+> Component Configuration CPU Dual Intel(R) Xeon(R) Platinum 8358 @ 2.60GHz GPU 8x NVIDIA RTX A6000-48G @ 1.46GHz Memory 512GB DDR4 NVLink 112.5GB/s (4x) PCIe 4.0 (x16) Network Mellanox MT28908 @ 200Gb/s
+
+6.3 Asynchronous Trainer Chunks 
+
+Trainer-on-RollPoll executes training work through an asyn-chronous chunk pipeline; Table 2 summarizes the recov-erable chunk states. Each chunk follows an enqueue-run-dequeue sequence. The enqueue stage transfers the chunk input to the target worker and places it in a worker-side buffer. The run stage launches the corresponding trainer operation on the accelerator. The dequeue stage retrieves the completed output and merges it according to the origi-nal chunk order. Dependency-free operations, including Ray object transfers, worker-side buffering, chunk execution, out-put retrieval, and auxiliary preparation or release events, are issued asynchronously. This allows transfers, execution, and lease-management events from different chunks to overlap. The scheduler may therefore keep multiple chunk futures in flight across primary and auxiliary trainers. The pipeline hides the overhead of chunk-level scheduling while preserving trainer-side ordering semantics. Chunks that have only been enqueued or buffered can be reclaimed when the auxiliary lease is revoked. Chunks that are already running are allowed to finish to avoid wasting accelerator resources. Completed chunks are dequeued and merged in the original order, making the chunk pipeline behave as if the chunks were executed sequentially on the primary trainer. 
+
+## 7 Evaluation 
+
+BiDiRL improves disaggregated LLM RL throughput by har-vesting residual idle windows between rollout and training through model-guided bidirectional scheduling. The evalua-tion shows that this benefit holds across workload, staleness, resource, model, dataset, and hardware changes, while pre-serving the logical RL dataflow. We first compare end-to-end throughput against state-of-the-art LLM RL systems. We then isolate the scheduling mechanisms, validate the static planning and stage-time models that guide scheduling deci-sions, and check training behavior. 
+
+7.1 Experimental Setup Testbed. Unless otherwise specified, experiments are run on the A6000 GPU cluster which contains four nodes (the node configuration is shown in Table 3). The H100 testbed also contains a total of 32 GPUs with four nodes (Table 4), which are used for cross-hardware validation and are explicitly 
+
+> 8
+
+BiDiRL veRL AReaL ROLL 1K 2K 4K 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Throughput (tokens/s)  1e4
+
+(a) Response length    
+
+> (1.27 ×–1.55 ×)0.5 124
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Throughput (tokens/s)  1e4
+> ××
+
+(b) Staleness   
+
+> (1.45 ×–1.68 ×)816 32
+> 0.0
+> 0.5
+> 1.0
+> Throughput (tokens/s)  1e4
+> OOM
+
+(c) Resource (batch = 128)   
+
+> (1.38 ×–1.94 ×)2B/VL 4B/VL 8B/Text
+> 0.0
+> 0.5
+> 1.0
+> Throughput (tokens/s)  1e4
+
+(d) Model/dataset   
+
+> (1.34 ×–1.45 ×)1K 2K 4K
+> 0
+> 1
+> 2
+> 3
+> Throughput (tokens/s)  1e4
+> OOM
+
+(e) ‡ Response length    
+
+> (1.29 ×–1.47 ×)0.5 124
+> 0
+> 1
+> 2
+> 3
+> Throughput (tokens/s)  1e4
+> ××
+
+(f) ‡ Staleness   
+
+> (1.26 ×–1.39 ×)816 32
+> 0
+> 2
+> 4
+> Throughput (tokens/s)  1e4
+> OOM
+
+(g) ‡ Resource (batch = 128)   
+
+> (1.05 ×–1.53 ×)2B/VL 4B/VL 8B/Text
+> 0
+> 2
+> 4
+> Throughput (tokens/s)  1e4
+
+(h) ‡ Model/dataset   
+
+> (1.23 ×–1.31 ×)32/8 64/16 128/32
+> 0.0
+> 0.5
+> 1.0
+> Throughput (tokens/s)  1e4
+
+(i) Batch/resource scaling   
+
+> (1.29 ×–1.45 ×)64/8 128/16 256/32
+> 0
+> 2
+> 4
+> Throughput (tokens/s)  1e4
+
+(j) ‡ Batch/resource scaling   
+
+> (1.30 ×–1.41 ×)8/24 16/16 24/8
+> 0
+> 2
+> 4
+> Throughput (tokens/s)  1e4
+> N/A
+
+(k) ‡ Resource partition (4B)   
+
+> (1.24 ×–1.41 ×)8/24 16/16 24/8
+> 0
+> 2
+> 4
+> 6
+> Throughput (tokens/s)  1e4
+> N/A
+
+(l) ‡ Resource partition (2B) 
+
+> (1.11 ×–1.41 ×)
+
+Figure 5. End-to-end throughput comparison across A6000/H100 workloads and resource settings. Bars show raw throughput; speedup ranges compare BiDiRL with the strongest valid external baseline. OOM, failed, and unsupported runs are excluded; 
+
+× marks unsupported settings and ‡ marks H100 results. 
+
+Table 4. Per-server configuration of the H100 testbed. 
+
+Component Configuration CPU Dual Intel(R) Xeon(R) Platinum 8468 @ 2.10GHz GPU 8x NVIDIA H100-80G HBM3 @ 1.98GHz Memory 2TB DDR5 NVLink ∼956GB/s (18x) PCIe 5.0 (x16) Network 8x Mellanox MT2910 @ 400Gb/s 
+
+marked in the figures. We evaluate BiDiRL across scenarios with max response lengths from 1K to 4K, staleness bounds from 0 to 4, both text and multimodal datasets, model sizes from 2B to 8B, and resource budgets from 8 to 32 devices. Specifically, we use models from the Qwen 3 family [ 33 ]including Qwen3VL-2B, Qwen3VL-4B, and Qwen3-8B. The multimodal dataset is Geo3K [ 13 ] and the text dataset is GSM8K [ 1 ]. Unless otherwise specified, we use Geo3K with a max response length of 2K and a global prompt batch size of 64 as the default workload, with a GRPO group size of 8 responses per prompt. The batch size is doubled on H100 devices to better use the larger memory capacity. By default, the staleness bound is 1, the model is Qwen3VL-4B, and the resource budget is 2 nodes. 
+
+Baselines. We compare BiDiRL with veRL v0.7.1 [ 22 ], AReaL v1.0.3 [ 4], and ROLL v0.2.1 [ 26 ]. veRL [ 22 ] provides practical colocated and disaggregated data flows for LLM RL. AReaL [ 4 ] pushes disaggregation toward fully asynchronous execution, where rollouters continuously generate samples and trainers update the actor once enough samples are avail-able. ROLL [ 26 ] provides a large-scale RL system stack with rollout scheduling, parallel strategy management, and data-transfer support. We configure all systems with the same hyperparameter settings whenever supported. Unsupported 
+
+9settings are marked as N/A. Runs that fail due to memory pressure are marked as OOM and are excluded from speedup ranges. Fractional staleness values between 0 and 1 are un-supported by ROLL and AReaL, so those points are marked with × in the staleness sweep. AReaL also requires the batch size to be divisible by rollout data parallelism. In the 2B and 4B H100 resource-partition sweeps, the batch-120 16-16 point violates this rule and is marked unsupported. 
+
+Metrics. We compute RL training throughput as the total number of prompt and response tokens consumed by the measured training steps, divided by their step time. An ex-periment with staleness bound 𝑠 drops max (1, ⌈𝑠 ⌉) complete metric steps from the head and ⌈𝑠 ⌉ steps from the tail for stability. 
+
+7.2 End-to-End Performance 
+
+Figure 5 summarizes the end-to-end throughput comparison. For compatibility with the baselines, BiDiRL uses the same node-aligned rollout/trainer partitioning as the compared systems in the main end-to-end runs. The static planner supplies the hot-switch-compatible envelope and stage-time models used by the runtime scheduler. 
+
+Overall performance. As shown in Figure 5, BiDiRL runs faster than existing veRL, AReaL, and ROLL by 1.05 ×–
+
+1.94 × under different configurations. On A6000, it improves over the baselines by 1.27 ×–1.68 × across the default, stale-ness, batch/resource, and model/dataset sweeps. The scale-up setting reaches 1.94 ×. On H100, BiDiRL increases through-put by 1.23 ×–1.47 × in the default setting and 1.05 ×–1.53 ×
+
+in scale-up. The H100 resource-partition studies give 1.11 ×–
+
+1.41 × speedups. Existing systems keep fixed committed roll-out and trainer pools within an execution window, so asyn-chronous overlap still leaves residual idle windows when the two rates diverge. BiDiRL turns these windows into useful work by temporarily lending idle resources to the current bottleneck stage. 
+
+Workload and staleness. BiDiRL does not rely on a fixed bottleneck direction. Response length, model size, and dataset shift the relative cost of rollout production and trainer consumption. On A6000, BiDiRL is 1.55 ×, 1.45 ×, and 1.27 ×
+
+faster for 1K, 2K, and 4K responses, respectively. It is also 
+
+1.34 ×–1.45 × faster in the model/dataset sweep. The smaller gains occur when sample production and consumption are already closer to balanced, or when memory-safe configura-tions reduce reusable slack. The staleness sweep stresses the other part of the design. Tight bounds make trainers wait for enough new rollout groups, while relaxed bounds allow more natural overlap but still leave bubbles when production and consumption rates mismatch. At 𝑠 = 0, we separately compare BiDiRL with the veRL colocated architecture. With bidirectional borrowing, pipeline bubbles [ 39 ] are largely eliminated, so the two systems achieve similar throughput. For 𝑠 > 0, BiDiRL improves staleness throughput by 1.45 ×–
+
+1.68 × on A6000 and 1.26 ×–1.39 × on H100. This shows that bidirectional scheduling remains useful whether the exposed idle window appears on the trainer side, the rollout side, or both. 
+
+Resource and hardware. With different resource scal-ing up, the runtime dynamics become more severe and the runtime scheduling is more important. On A6000, BiDiRL improves the 128-prompt setting by 1.38 ×–1.94 × across 8 to 32 devices. On H100, the same pattern illustrates that our BiDiRL achieves 1.05 ×–1.53 × speedups, and the resource-partition studies give 1.24 ×–1.41 × for Qwen3VL-4B and 
+
+1.11 ×–1.41 × for Qwen3VL-2B. The batch/resource setting further shows that changing batch size together with device count does not make a fixed partition universally balanced. Larger or faster hardware shifts the rollout/trainer rate ratio, but residual imbalance remains under fixed disaggregated pools. The relative speedup is smaller on H100 because the stronger devices and larger batches leave shorter residual idle windows for BiDiRL to harvest. BiDiRL adapts by borrow-ing in the direction whose predicted gain exceeds switching overhead. 
+
+7.3 Scheduling Ablation 
+
+Figure 6 evaluates the scheduling mechanisms. The end-to-end comparison uses the default 8-8 partition because it is a common disaggregated configuration across the compared systems. For ablation, we use a 4-12 rollout/trainer partition under the same 16-device budget and prompt batch size 60 for the multimodal workload. As response length and stale-ness change, it exposes both rollout-heavy and trainer-heavy windows, making it suitable for testing both borrowing direc-tions. The Qwen3-8B/GSM8K ablation uses the 8-8 partition and prompt batch size 256 used by the corresponding end-to-end text run to avoid OOM. 
+
+Ablation variants. No borrow keeps the same static par-tition but disables runtime borrowing. w/o R-on-T disables trainer-pool resources from being borrowed for rollout. w/o T-on-R disables rollout-pool resources from being borrowed for training. Opport. borrows whenever the opposite pool is observed idle, without checking whether the window cov-ers switching overhead and without model-guided work-load splitting. BiDiRL consistently matches or exceeds the strongest valid ablated variant, with 1.00 ×–1.13 × speedup under the total-run throughput metric. The gap against sim-pler policies is larger. BiDiRL improves over no borrowing by 1.12 ×–1.71 ×, and over opportunistic borrowing by 1.02 ×–
+
+1.31 ×. This pattern shows that the benefit comes from model-guided admission and bidirectional workload splitting, not only from enabling borrowing. One-direction and oppor-tunistic variants can be strong in particular states, but they become suboptimal when the workload or staleness state changes.                  
+
+> 10 BiDiRL w/o T-on-R w/o R-on-T Opport. No borrow 1K 2K 4K
+> 0.0
+> 0.2
+> 0.4
+> Throughput (tokens/s)  1e4 (a) Response length
+> (1.02 ×–1.06 ×)0.5 124
+> 0.0
+> 0.2
+> 0.4
+> Throughput (tokens/s)  1e4
+> (b) Staleness
+> (1.06 ×–1.12 ×)816 32
+> 0.0
+> 0.5
+> 1.0
+> Throughput (tokens/s)  1e4
+> (c) Resource (batch = 120)
+> (1.00 ×–1.09 ×)2B/VL 4B/VL 8B/Text
+> 0.0
+> 0.5
+> 1.0
+> Throughput (tokens/s)  1e4
+> (d) Model/dataset
+> (1.04 ×–1.13 ×)
+
+Figure 6. A6000 ablation throughput summary. The figure isolates the contribution of model-guided bidirectional scheduling. Bars show raw throughput; speedup ranges compare BiDiRL with the strongest valid ablated variant, excluding failed runs. 
+
+Bidirectional scheduling. Both borrowing directions are necessary because different runtime states expose differ-ent idle pools. Across the ablation sweeps, BiDiRL is 1.02 ×–
+
+1.68 × faster than w/o T-on-R and 1.00 ×–1.24 × faster than 
+
+w/o R-on-T . It is 1.00 ×–1.19 × faster than the stronger one-direction variant in each setting. Longer responses make roll-out heavier, so Rollouter-on-TrainPoll becomes important when trainers are waiting for enough valid rollout groups. Shorter responses or relaxed staleness can instead leave roll-out resources idle while trainers consume the batch, making Trainer-on-RollPoll more useful. For example, 𝑠 = 0 and 
+
+0 < 𝑠 < 1 settings with faster rollout production can expose both 𝑇 wait and 𝑇 consume windows in the same run, which is why the full BiDiRL policy is more robust than either one-direction variant. The ablation therefore supports the core design choice in Section 5. Residual bubbles are two-sided and cannot be handled by optimizing only rollout or only training. 
+
+Model-guided admission and partitioning. Not every idle window is worth borrowing. BiDiRL is 1.02 ×–1.31 ×
+
+faster than opportunistic borrowing and 1.12 ×–1.71 × faster than no borrowing. Opportunistic borrowing improves over no borrowing, but it still falls below BiDiRL. Short windows may not cover hot-switch cost, and one-shot DP-proportional assignment can leave primary/auxiliary tail mismatch. BiDiRL uses the stage-time model to admit a borrowed window only when the predicted reduction exceeds switching cost, and it splits the remaining work according to the predicted completion time of primary and auxiliary workers. The result is a scheduler that reclaims slack when it is useful and avoids paying switching overhead for windows that are too short. 
+
+Hot-switch cost. Table 5 reports the hot-switch cost com-ponents charged by the admission tests in Section 5, with each entry shown as Qwen3VL-2B/Qwen3VL-4B seconds. 
+
+𝐶 in and 𝐶 out cover model state movement and synchroniza-tion when a worker enters and leaves an auxiliary role, while 
+
+𝐶 grad is charged only when Trainer-on-RollPoll performs 
+
+Table 5. Measured hot-switch costs (in seconds). Borrowing path 𝐶 in 𝐶 out 𝐶 grad 
+
+Trainer-on-RollPoll 3.58/6.16 3.40/5.62 0.66/1.21 Rollouter-on-TrainPoll 5.54/7.70 4.20/5.59 –actor-update synchronization. The 4B costs are consistently higher than the 2B costs, as hot switching is dominated by model state size and cluster communication bandwidth. These costs are small relative to rollout/training windows but non-negligible for short idle windows. BiDiRL therefore admits borrowing only when the model-estimated gain ex-ceeds the measured switching cost, rather than borrowing on every observed idle window. 
+
+7.4 Static Planning and Model Validation Static planning. Figure 7 validates the resource envelope se-lected by the static planner. The partition sweeps show that static partitioning matters because different rollout/trainer partitions produce clearly different measured throughput under the same total resource budget. Across the displayed machine-aligned partitions, measured throughput varies by 
+
+1.40 × for Qwen3VL-2B and 2.09 × for Qwen3VL-4B. The predicted trend follows the measured trend and selects the measured-best partition in the displayed sweeps. The selected partitions are 8-8 for Qwen3VL-2B and 8-24 for Qwen3VL-4B. The planner is not intended to predict every point with exact absolute accuracy. Its role is to avoid obvi-ously imbalanced partitions and select a high-throughput, hot-switch-compatible resource envelope. The best parti-tion differs across the 2B and 4B models, confirming that model size changes the average stage-cost ratio. This result complements the dynamic workload effects in Figure 5. Response length, dataset, and staleness further move the rollout/trainer rate ratio, so a fixed partition tuned for one condition is not sufficient across runs.   
+
+> 11 (4,12) (8,8) (12,4)
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Normalized token/s  Predicted
+
+(a) 2B resource partition (8,24) (16,16) (24,8)  
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Normalized token/s  Predicted
+
+(b) 4B resource partition 5 6 8 10 15 
+
+> Prompts/GPU
+> 100
+> 200
+> 300
+> 400
+> Time (s)
+> Measured
+> Predicted
+> 2K
+> 4K
+
+(c) Rollout 1 2 3 4 5 
+
+> Chunks/GPU
+> 1
+> 2
+> 3
+> Time (s)
+> Measured
+> Predicted
+> 2K
+> 4K
+
+(d) Trainer 
+
+Figure 7. Static planning and model validation. Partition sweeps compare measured throughput with planner pre-dictions, where (𝑅,𝑇 ) denotes rollout/trainer devices. The rollout and trainer panels compare measured and predicted stage time. 0 10 20 30 40 50 60 
+
+> step
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> Geo3K reward
+> BiDiRL, s=1
+> BiDiRL, s=2
+> veRL, s=1
+> veRL, s=2
+
+Figure 8. Convergence behavior over the first 60 training steps. BiDiRL changes computation placement and timing while preserving the logical rollout groups and training sam-ples consumed by GRPO. 
+
+Stage-time model validation. The stage-time models provide the ranking signal used by both static planning and runtime admission; Appendix A.1 gives their definitions. Fig-ure 7c shows the rollout model and Figure 7d shows the trainer model. The rollout panel increases with prompts per GPU, the trainer panel increases with chunks per GPU, and the 2K and 4K response-length curves remain separated as expected. The two fits have median errors of 3.12% and 2.92% ,with p90 errors of 5.77% and 4.68% . These errors are suffi-cient for ranking resource envelopes and deciding whether a borrowed window is likely to pay for its switching cost. 
+
+7.5 Training Convergence 
+
+Figure 8 compares BiDiRL with veRL under the same stale-ness settings. BiDiRL changes the physical placement and timing of computation, but it preserves the logical rollout groups and training samples consumed by GRPO. Within the first 60 steps, the last common logged-point reward gap is +0.017 at staleness 1 and +0.000 at staleness 2; the cor-responding mean gaps are +0.020 and +0.001 . These small gaps show that bidirectional resource scheduling, as a sys-tem efficiency optimization, changes computation placement but does not alter the logical RL behavior exposed to GRPO. 
+
+## 8 Discussion 
+
+Static planning and runtime adaptation. Static planning is necessary but insufficient for LLM RL. The workload distri-bution, especially response length, varies across prompts and evolves as the policy changes during training [ 2 , 11 ]. BiDiRL therefore uses lightweight offline profiling only to select a hot-switch-compatible resource envelope and initialize the stage-time models, while online profiling corrects the models as the workload evolves. Runtime speedups depend on the actual workload distribution and observed idle windows 𝐼 𝑟 
+
+and 𝐼 𝑡 , which are only available during execution; BiDiRL therefore avoids offline prediction of borrowing gains. In-stead of repartitioning by stopping and restarting a training job, the online profiler continuously updates M𝑟 , M𝑡 , and switching costs within the selected envelope. 
+
+Rollout sample granularity. Rollouter-on-TrainPoll schedules prompt groups. BiDiRL splits the rollout deficit 
+
+𝑄 𝑟 by replica capacity rather than predicting final response length, which is unknown before generation finishes. This avoids relying on per-sample length prediction and keeps admission and dispatch simple, but an interrupted auxiliary window may return partially generated groups to primary rollouters. Future schedulers could use prompt features or early decoding signals [ 7 ] to place likely short prompts on auxiliary rollouters. 
+
+Trainer chunk granularity. Trainer-on-RollPoll trades chunk efficiency for tail balance. Large chunks improve ac-celerator efficiency, while small chunks reduce mismatch between primary and auxiliary trainers. BiDiRL uses large lazy-pull chunks on the common path, then searches over the remaining workload split near the tail and uses smaller chunks only when needed to reduce primary/auxiliary mis-match. Because auxiliary trainers compute gradients without optimizer states, future implementations can use the saved memory for more aggressive adaptive chunk sizing. 
+
+## 9 Related Work 
+
+LLM inference and training engines. LLM rollout and training have different execution characteristics, making it difficult for one engine to efficiently support both RL 
+
+> 12
+
+stages [ 4, 39 ]. Rollout is dominated by variable-length au-toregressive generation and benefits from serving engines such as vLLM [ 9] and SGLang [ 37 ]. Training is dominated by dense forward/backward computation, gradient synchro-nization, and optimizer-state management, and is commonly executed with systems such as FSDP [ 36 ] and Megatron-LM [ 23 ]. BiDiRL is complementary to these engines: it treats them as stage executors and optimizes cross-stage resource planning and runtime scheduling above them. 
+
+RL frameworks for LLMs. Existing LLM RL frame-works make different resource-efficiency trade-offs. NeMo-Aligner [ 20 ] and OpenRLHF [8] adopt disaggregated execution, which simplifies integration of heterogeneous rollout and training engines but can leave one stage idle while the other is active. Colocated systems such as veRL [ 22 ]and RLHFuse [ 40 ] improve utilization by time-sharing the same GPU pool across RL stages. However, colocation also couples rollout and training to one resource pool and one set of parallelism constraints, despite their different scaling behavior. StreamRL [ 39 ] and AReaL [ 4] reduce pipeline bubbles through asynchronous execution, but still keep committed rollout and trainer pools fixed within an execution window. Elastic systems such as StreamRL and RLBoost [ 32 ] further accelerate rollout with idle or external resources, but they primarily expand the rollout side rather than support bidirectional borrowing between committed rollout and trainer pools. In contrast, BiDiRL targets bidirectional borrowing under a fixed committed budget: idle rollout resources can exe-cute trainer work, and idle trainer resources can execute rollout work when the predicted benefit exceeds switching overhead. 
+
+## 10 Conclusion 
+
+This paper presents BiDiRL, a bidirectional resource sched-uler for asynchronous and disaggregated LLM RL. BiDiRL treats resource bubbles as a two-timescale scheduling prob-lem. Before execution, a static planner reduces structural bub-bles by selecting a throughput-aware, hot-switch-compatible resource envelope. During execution, a model-guided sched-uler recovers residual bubbles by lending idle resources from either committed pool to the current bottleneck stage when the predicted gain covers switching cost. The hot-switch runtime executes admitted borrowing, while online profil-ing keeps stage-time models and switching costs calibrated. Across workloads, staleness settings, model sizes, datasets, and hardware platforms, BiDiRL improves throughput over existing systems by up to 1.94 × while preserving the logical RL dataflow and convergence behavior. 
+
+## References 
+
+[1] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 2021. Training Verifiers to Solve Math Word Problems. arXiv preprint arXiv:2110.14168 (2021). arXiv:2110.14168 [2] DeepSeek-AI, Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue, Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chenyu Zhang, Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Han Bao, Hanwei Xu, Haocheng Wang, Honghui Ding, Huajian Xin, Huazuo Gao, Hui Qu, Hui Li, Jianzhong Guo, Jiashi Li, Jiawei Wang, Jingchang Chen, Jingyang Yuan, Junjie Qiu, Junlong Li, J. L. Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai Hu, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Meng Li, Miaojun Wang, Mingming Li, Ning Tian, Panpan Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen, Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen, Shanghao Lu, Shangyan Zhou, Shan-huang Chen, Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing Wu, Shengfeng Ye, Tao Yun, Tian Pei, Tianyu Sun, T. Wang, Wangding Zeng, Wanjia Zhao, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin, Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxiang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang, Xinxia Shan, Y. K. Li, Y. Q. Wang, Y. X. Wei, Yang Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yun-fan Xiong, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Y. X. Zhu, Yanhong Xu, Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu, Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zijia Zhu, Zi-jun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu Zhang, and Zhen Zhang. 2025. DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learn-ing. Nature 645, 8081 (Sept. 2025), 633–638. arXiv:2501.12948 [cs.CL] doi: 10.1038/s41586-025-09422-z 
+
+[3] Kaituo Feng, Kaixiong Gong, Bohao Li, Zonghao Guo, Yibing Wang, Tianshuo Peng, Junfei Wu, Xiaoying Zhang, Benyou Wang, and Xi-angyu Yue. 2025. Video-R1: Reinforcing Video Reasoning in MLLMs. arXiv:2503.21776 [cs.CV] doi: 10.48550/arXiv.2503.21776 
+
+[4] Wei Fu, Jiaxuan Gao, Xujie Shen, Chen Zhu, Zhiyu Mei, Chuyi He, Shusheng Xu, Guo Wei, Jun Mei, Jiashu Wang, Tongkai Yang, Binhang Yuan, and Yi Wu. 2025. AReaL: A Large-Scale Asynchronous Rein-forcement Learning System for Language Reasoning. doi: 10.48550/ ARXIV.2505.24298 
+
+[5] Wei Gao, Yuheng Zhao, Dakai An, Tianyuan Wu, Lunxi Cao, Shaopan Xiong, Ju Huang, Weixun Wang, Siran Yang, Wenbo Su, et al . 2026. RollPacker: Taming Long-Tail Rollouts for RL Post-Training with Tail Batching. In 23rd USENIX Symposium on Networked Systems Design and Implementation (NSDI 26) . 849–866. [6] Wei Gao, Yuheng Zhao, Tianyuan Wu, Shaopan Xiong, Weixun Wang, Dakai An, Lunxi Cao, Dilxat Muhtar, Zichen Liu, Haizhou Zhao, et al .2025. RollArt: Scaling Agentic RL Training via Disaggregated Infras-tructure. arXiv preprint arXiv:2512.22560 (2025). arXiv:2512.22560 [7] Jingkai He, Tianjian Li, Erhu Feng, Dong Du, Qian Liu, Tao Liu, Yubin Xia, and Haibo Chen. 2025. History Rhymes: Accelerating LLM Rein-forcement Learning with RhymeRL. doi: 10.48550/ARXIV.2508.18588 
+
+13 [8] Jian Hu, Xibin Wu, Wei Shen, Jason Klein Liu, Weixun Wang, Songlin Jiang, Haoran Wang, Hao Chen, Bin Chen, Wenkai Fang, Xianyu, Yu Cao, Haotian Xu, and Yiming Liu. 2025. OpenRLHF: A Ray-Based Easy-to-Use, Scalable and High-Performance RLHF Framework. In Proceed-ings of the 2025 Conference on Empirical Methods in Natural Language Processing: System Demonstrations , Ivan Habernal, Peter Schulam, and Jörg Tiedemann (Eds.). Association for Computational Linguistics, Suzhou, China, 656–666. doi: 10.18653/v1/2025.emnlp-demos.48 
+
+[9] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Sto-ica. 2023. Efficient Memory Management for Large Language Model Serving with PagedAttention. In Proceedings of the 29th Symposium on Operating Systems Principles . ACM, Koblenz Germany, 611–626. doi: 10.1145/3600006.3613165 
+
+[10] Kinman Lei, Yuyang Jin, Mingshu Zhai, Kezhao Huang, Haoxing Ye, and Jidong Zhai. [n. d.]. Puzzle: Efficiently Aligning Large Language Models through Light-Weight Context Switch. ([n. d.]). [11] Jiacai Liu, Chaojie Wang, Chris Liu, Liang Zeng, Rui Yan, Yiwen Sun, and Yang Liu. 2025. DAPO: Improving Multi-Step Reasoning Abili-ties of Large Language Models with Direct Advantage-Based Policy Optimization. In Advances in Neural Information Processing Systems ,D. Belgrave, C. Zhang, H. Lin, R. Pascanu, P. Koniusz, M. Ghassemi, and N. Chen (Eds.), Vol. 38. Curran Associates, Inc., 71445–71477. [12] Xiaoqian Liu, Ke Wang, Yongbin Li, Yuchuan Wu, Wentao Ma, Aobo Kong, Fei Huang, Jianbin Jiao, and Junge Zhang. 2025. EPO: Explicit Policy Optimization for Strategic Reasoning in LLMs via Reinforce-ment Learning. In Proceedings of the 63rd Annual Meeting of the Associ-ation for Computational Linguistics (Volume 1: Long Papers) , Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pile-hvar (Eds.). Association for Computational Linguistics, Vienna, Austria, 15371–15396. doi: 10.18653/v1/2025.acl-long.747 
+
+[13] Pan Lu, Ran Gong, Shibiao Jiang, Liang Qiu, Siyuan Huang, Xiaodan Liang, and Song-Chun Zhu. 2021. Inter-GPS: Interpretable Geometry Problem Solving with Formal Language and Symbolic Reasoning. In 
+
+Proceedings of the 59th Annual Meeting of the Association for Computa-tional Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) . Association for Com-putational Linguistics, Online, 6774–6786. doi: 10.18653/v1/2021.acl-long.528 
+
+[14] Zhiyu Mei, Wei Fu, Kaiwei Li, Guangju Wang, Huanchen Zhang, and Yi Wu. 2025. ReaL: Efficient RLHF Training of Large Language Models with Parameter Reallocation. In Proceedings of Machine Learning and Systems , Vol. 7. [15] Philipp Moritz, Robert Nishihara, Stephanie Wang, Alexey Tumanov, Richard Liaw, Eric Liang, Melih Elibol, Zongheng Yang, William Paul, Michael I. Jordan, and Ion Stoica. 2018. Ray: A Distributed Framework for Emerging AI Applications. In 13th USENIX Symposium on Operating Systems Design and Implementation (OSDI 18) . USENIX Association, 561–577. [16] NVIDIA, Niket Agarwal, Arslan Ali, Maciej Bala, Yogesh Balaji, Erik Barker, Tiffany Cai, Prithvijit Chattopadhyay, Yongxin Chen, Yin Cui, Yifan Ding, Daniel Dworakowski, Jiaojiao Fan, Michele Fenzi, Francesco Ferroni, Sanja Fidler, Dieter Fox, Songwei Ge, Yunhao Ge, Jinwei Gu, Siddharth Gururani, Ethan He, Jiahui Huang, Jacob Huff-man, Pooya Jannaty, Jingyi Jin, Seung Wook Kim, Gergely Klár, Grace Lam, Shiyi Lan, Laura Leal-Taixe, Anqi Li, Zhaoshuo Li, Chen-Hsuan Lin, Tsung-Yi Lin, Huan Ling, Ming-Yu Liu, Xian Liu, Alice Luo, Qianli Ma, Hanzi Mao, Kaichun Mo, Arsalan Mousavian, Seungjun Nah, Sri-harsha Niverty, David Page, Despoina Paschalidou, Zeeshan Patel, Lindsey Pavao, Morteza Ramezanali, Fitsum Reda, Xiaowei Ren, Vas-anth Rao Naik Sabavat, Ed Schmerling, Stella Shi, Bartosz Stefaniak, Shitao Tang, Lyne Tchapmi, Przemek Tredak, Wei-Cheng Tseng, Jibin Varghese, Hao Wang, Haoxiang Wang, Heng Wang, Ting-Chun Wang, Fangyin Wei, Xinyue Wei, Jay Zhangjie Wu, Jiashu Xu, Wei Yang, Lin Yen-Chen, Xiaohui Zeng, Yu Zeng, Jing Zhang, Qinsheng Zhang, Yux-uan Zhang, Qingqing Zhao, and Artur Zolkowski. 2025. Cosmos World Foundation Model Platform for Physical AI. arXiv:2501.03575 [cs.CV] doi: 10.48550/arXiv.2501.03575 
+
+[17] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wain-wright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F Chris-tiano, Jan Leike, and Ryan Lowe. 2022. Training Language Models to Follow Instructions with Human Feedback. In Advances in Neural Information Processing Systems , S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh (Eds.), Vol. 35. Curran Associates, Inc., 27730–27744. [18] Aurick Qiao, Sang Keun Choe, Suhas Jayaram Subramanya, Willie Neiswanger, Qirong Ho, Hao Zhang, Gregory R Ganger, and Eric P Xing. [n. d.]. Pollux: Co-adaptive Cluster Scheduling for Goodput-Optimized Deep Learning. ([n. d.]). [19] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024. DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv:2402.03300 [cs.CL] doi: 10.48550/ arXiv.2402.03300 
+
+[20] Gerald Shen, Zhilin Wang, Olivier Delalleau, Jiaqi Zeng, Yi Dong, Daniel Egert, Shengyang Sun, Jimmy Zhang, Sahil Jain, Ali Taghibakhshi, Markel Sanz Ausin, Ashwath Aithal, and Oleksii Kuchaiev. 2024. NeMo-Aligner: Scalable Toolkit for Efficient Model Alignment. arXiv:2405.01481 [cs.CL] doi: 10.48550/arXiv.2405.01481 
+
+[21] Guangming Sheng, Yuxuan Tong, Borui Wan, Wang Zhang, Chaobo Jia, Xibin Wu, Yuqi Wu, Xiang Li, Chi Zhang, Yanghua Peng, Haibin Lin, Xin Liu, and Chuan Wu. 2026. Laminar: A Scalable Asynchronous RL Post-Training Framework. In Proceedings of the 21st European Confer-ence on Computer Systems . ACM, McEwan Hall/The University of Edin-burgh Edinburgh Scotland UK, 400–422. doi: 10.1145/3767295.3803580 
+
+[22] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. 2025. Hybrid-Flow: A Flexible and Efficient RLHF Framework. In Proceedings of the Twentieth European Conference on Computer Systems . ACM, Rotterdam Netherlands, 1279–1297. doi: 10.1145/3689031.3696075 
+
+[23] Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 2020. Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. arXiv:1909.08053 [cs.CL] doi: 10.48550/arXiv.1909.08053 
+
+[24] Xin Tan, Yicheng Feng, Yu Zhou, Yimin Jiang, Yibo Zhu, and Hong Xu. 2026. OrchestrRL: Dynamic Compute and Network Orchestra-tion for Disaggregated RL. arXiv preprint arXiv:2601.01209 (2026). arXiv:2601.01209 [25] Zheyue Tan, Tuo Shi, Huining Yuan, Zelai Xu, Chao Yu, Boxun Li, Yu Wang, and Bo Zhao. 2026. E Arl : Efficient Agentic RL Post-Training for LLMs under Dynamic Context Lengths. In Proceedings of the Sixth European Workshop on Machine Learning and Systems . ACM, Edinburgh Scotland Uk, 41–48. doi: 10.1145/3805621.3807632 
+
+[26] Weixun Wang, Shaopan Xiong, Gengru Chen, Wei Gao, Sheng Guo, Yancheng He, Ju Huang, Jiaheng Liu, Zhendong Li, Xiaoyang Li, Zichen Liu, Haizhou Zhao, Dakai An, Lunxi Cao, Qiyang Cao, Wanxi Deng, Feilei Du, Yiliang Gu, Jiahe Li, Xiang Li, Mingjie Liu, Yijia Luo, Zihe Liu, Yadao Wang, Pei Wang, Tianyuan Wu, Yanan Wu, Yuheng Zhao, Shuaibing Zhao, Jin Yang, Siran Yang, Yingshui Tan, Huimin Yi, Yuchi Xu, Yujin Yuan, Xingyao Zhang, Lin Qu, Wenbo Su, Wei Wang, Jiamang Wang, and Bo Zheng. 2025. Reinforcement Learning Optimization for Large-Scale Learning: An Efficient and User-Friendly Scaling Library. doi: 10.48550/ARXIV.2506.06122 
+
+[27] Yan Wang, Wenjie Luo, Junjie Bai, Yulong Cao, Tong Che, Ke Chen, Yuxiao Chen, Jenna Diamond, Yifan Ding, Wenhao Ding, et al . 2025. 14 Alpamayo-R1: Bridging Reasoning and Action Prediction for Gen-eralizable Autonomous Driving in the Long Tail. arXiv preprint arXiv:2511.00088 (2025). arXiv:2511.00088 [28] Zhixin Wang, Tianyi Zhou, Liming Liu, Ao Li, Jiarui Hu, Dian Yang, Yinhui Lu, Jinlong Hou, Siyuan Feng, Yuan Cheng, et al . 2026. DistFlow: A Fully Distributed RL Framework for Scalable and Efficient LLM Post-Training. In Forty-Third International Conference on Machine Learning (ICML) .[29] Chuan Wu. 2024. A Framework for Training Large Language Models for Code Generation via Proximal Policy Optimization. In NL2Code Workshop of ACM KDD (25/08/2024-29/08/2024, Barcelona) .[30] Junde Wu, Jiayuan Zhu, Yuyuan Liu, Min Xu, and Yueming Jin. 2025. Agentic Reasoning: A Streamlined Framework for Enhancing LLM Rea-soning with Agentic Tools. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Pa-pers) , Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Moham-mad Taher Pilehvar (Eds.). Association for Computational Linguistics, Vienna, Austria, 28489–28503. doi: 10.18653/v1/2025.acl-long.1383 
+
+[31] Tianyuan Wu, Lunxi Cao, Yining Wei, Wei Gao, Yuheng Zhao, Dakai An, Shaopan Xiong, Zhiqiang Lv, Ju Huang, Siran Yang, Yinghao Yu, Jiamang Wang, Lin Qu, and Wei Wang. 2026. Weave: Efficient Co-Scheduling for Disaggregated RL Post-Training. In 20th USENIX Sym-posium on Operating Systems Design and Implementation (OSDI 26) .USENIX Association, Seattle, WA, USA. [32] Yongji Wu, Xueshen Liu, Haizhong Zheng, Juncheng Gu, Beidi Chen, Z. Morley Mao, Arvind Krishnamurthy, and Ion Stoica. 2025. RLBoost: Harvesting Preemptible Resources for Cost-Efficient Reinforcement Learning on LLMs. doi: 10.48550/ARXIV.2510.19225 
+
+[33] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. 2025. Qwen3 Technical Report. arXiv:2505.09388 [cs.CL] doi: 10.48550/ arXiv.2505.09388 
+
+[34] Zhewei Yao, Reza Yazdani Aminabadi, Olatunji Ruwase, Samyam Rajb-handari, Xiaoxia Wu, Ammar Ahmad Awan, Jeff Rasley, Minjia Zhang, Conglong Li, Connor Holmes, et al . 2023. Deepspeed-Chat: Easy, Fast and Affordable Rlhf Training of Chatgpt-like Models at All Scales. 
+
+arXiv preprint arXiv:2308.01320 (2023). arXiv:2308.01320 [35] Yiqi Zhang, Huiqiang Jiang, Xufang Luo, Zhihe Yang, Chengruidong Zhang, Yifei Shen, Dongsheng Li, Yuqing Yang, Lili Qiu, and Yang You. 2026. SortedRL: Accelerating RL Training for LLMs through Online Length-Aware Scheduling. doi: 10.48550/ARXIV.2603.23414 
+
+[36] Yanli Zhao, Andrew Gu, Rohan Varma, Liang Luo, Chien-Chin Huang, Min Xu, Less Wright, Hamid Shojanazeri, Myle Ott, Sam Shleifer, Alban Desmaison, Can Balioglu, Pritam Damania, Bernard Nguyen, Geeta Chauhan, Yuchen Hao, Ajit Mathews, and Shen Li. 2023. PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel. Proceedings of the VLDB Endowment 16, 12 (Aug. 2023), 3848–3860. doi: 10.14778/ 3611540.3611569 
+
+[37] Lianmin Zheng, Liangsheng Yin, Zhiqiang Xie, Chuyue Sun, Jeff Huang, Cody Hao Yu, Shiyi Cao, Christos Kozyrakis, Ion Stoica, Joseph E. Gonzalez, Clark Barrett, and Ying Sheng. 2024. SGLang: Effi-cient Execution of Structured Language Model Programs. In Advances in Neural Information Processing Systems , A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang (Eds.), Vol. 37. Curran Associates, Inc., 62557–62583. doi: 10.52202/079017-2000 
+
+[38] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xu-anzhe Liu, Xin Jin, and Hao Zhang. 2024. DistServe: Disaggregating Prefill and Decoding for Goodput-Optimized Large Language Model Serving. In 18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24) . USENIX Association, 193–210. [39] Yinmin Zhong, Zili Zhang, Xiaoniu Song, Hanpeng Hu, Chao Jin, Bingyang Wu, Nuo Chen, Yukun Chen, Yu Zhou, Changyi Wan, Hongyu Zhou, Yimin Jiang, Yibo Zhu, and Daxin Jiang. 2025. StreamRL: Scalable, Heterogeneous, and Elastic RL for LLMs with Disaggregated Stream Generation. arXiv:2504.15930 doi: 10.48550/arXiv.2504.15930 
+
+[40] Yinmin Zhong, Zili Zhang, Bingyang Wu, Shengyu Liu, Yukun Chen, Changyi Wan, Hanpeng Hu, Lei Xia, Ranchen Ming, Yibo Zhu, and Xin Jin. 2025. Optimizing RLHF Training for Large Language Models with Stage Fusion. In 22nd USENIX Symposium on Networked Systems Design and Implementation (NSDI 25) . USENIX Association, 489–503. 
+
+## A Appendix 
+
+A.1 Stage-Time Models 
+
+This appendix gives the stage-time models exposed to the static planner and runtime scheduler. The main text uses only their prediction interfaces: M𝑟 (𝑛, 𝑑 ) predicts the time for 𝑑 
+
+rollout replicas to produce 𝑛 prompt-level rollout groups, and 
+
+M𝑡 (𝑈 , 𝑑 ) predicts the time for 𝑑 trainer replicas to consume a stage-ordered trainer workload 𝑈 . Both models use replica-max semantics. Given a workload 𝑋 and 𝑑 replicas, the work-load is partitioned into replica-local workloads 𝑋 1, . . . , 𝑋 𝑑 ,and the stage time is the slowest replica: 
+
+M★(𝑋, 𝑑 ) = max    
+
+> 𝑗 ∈ [ 1,𝑑 ]
+
+𝑇 ★,rep (𝑋 𝑗 ),
+
+> 𝑑
+
+Ø
+
+> 𝑗 =1
+
+𝑋 𝑗 = 𝑋 . (7) This form captures the synchronization point at the end of a rollout or trainer stage while keeping model evaluation lightweight. 
+
+A.1.1 Trainer Model. The trainer workload consists of ordered micro-batches for old-log-probability computation, reference-log-probability computation, and actor update. Let 
+
+𝑠 ∈ S denote one such trainer stage. For a micro-batch 𝑏 ,each sample 𝑢 ∈ 𝑏 has prompt length 𝑝 𝑢 and response length 
+
+𝑟 𝑢 . The forward FLOPs are 
+
+𝐹 (𝑏 ) = 2𝑁 nonemb ∑︁  
+
+> 𝑢 ∈𝑏
+
+(𝑝 𝑢 + 𝑟 𝑢 )+ 4𝐿𝐻 ∑︁  
+
+> 𝑢 ∈𝑏
+
+(𝑝 𝑢 + 𝑟 𝑢 )2
+
++ 2𝐻𝑉 ∑︁  
+
+> 𝑢 ∈𝑏
+
+𝑟 𝑢 .
+
+(8) The multiplier 𝑚 𝑠 is 1 for old/ref forward stages and 3 for actor update. The communication term is fitted with an 𝛼 -𝛽 
+
+model over the stage-specific message size 𝑛 𝑠 (𝑏 ),
+
+𝐶 𝑠 (𝑏 ) = 𝛼 comm ,𝑠 + 𝛽 comm ,𝑠 𝑛 𝑠 (𝑏 ). (9) Compute and communication are combined with a fitted 
+
+𝑝 -norm overlap [18], 
+
+overlap (𝑥, 𝑐, 𝑟 ) = (𝑥 𝑟 + 𝑐 𝑟 )1/𝑟 . (10) 
+
+15 The predicted micro-batch time is 
+
+𝑡 𝑠 (𝑏 ) = 𝜏 𝑠 + overlap (𝛼 𝑠 𝑚 𝑠 𝐹 (𝑏 ), 𝐶 𝑠 (𝑏 ), 𝑟 𝑠 ), (11) where 𝜏 𝑠 , 𝛼 𝑠 , and 𝑟 𝑠 are calibrated from profiling runs. For replica 𝑗 , the trainer replica time sums the ordered micro-batch times assigned to that replica: 
+
+𝑇 𝑡, rep (𝑈 𝑗 ) =∑︁  
+
+> 𝑠 ∈ S
+
+∑︁ 𝑏 ∈𝑈 𝑗,𝑠 
+
+𝑡 𝑠 (𝑏 ). (12) The trainer stage-time model M𝑡 (𝑈 , 𝑑 ) then follows the replica-max rule above. 
+
+A.1.2 Rollout Model. For a rollout request set 𝑅 𝑗 assigned to one rollout replica, request 𝑖 ∈ 𝑅 𝑗 has prompt length 𝑝 𝑖 
+
+and response length 𝑟 𝑖 . The per-token KV-cache footprint is 
+
+𝑏 kv = 2𝐿𝐻 kv 𝑑 head 𝑏 dtype 
+
+𝑡𝑝 , (13) where 𝑡𝑝 is the tensor-parallel degree. At average live length 
+
+ℓ, the KV-limited concurrency is 
+
+𝑁 max (ℓ) = max 
+
+
+
+1,
+
+ 𝐵 kv 
+
+𝑏 kv ℓ
+
+  
+
+. (14) For prefill, with 𝐵 𝑗 = |𝑅 𝑗 |,
+
+𝑁 pre = min (𝐵 𝑗 , 𝑁 max (mean (𝑝 𝑖 ))) , 𝑊 pre =
+
+ 𝐵 𝑗 
+
+𝑁 pre 
+
+
+
+,
+
+(15) 
+
+𝐹 pre = 2𝑁 nonemb ∑︁ 𝑖 ∈𝑅 𝑗 
+
+𝑝 𝑖 + 4𝐿𝐻 ∑︁  
+
+> 𝑖 ∈𝑅 𝑗
+
+𝑝 2 
+
+> 𝑖
+
++ 2𝐻𝑉 𝐵 𝑗 , (16) 
+
+𝑃 pre = 𝜏 pre 𝑊 pre + 𝛼 pre 𝐹 pre . (17) For decode step 𝑡 , let 𝐴 𝑡 = {𝑖 ∈ 𝑅 𝑗 | 𝑟 𝑖 ≥ 𝑡 } and ℓ𝑡 =
+
+mean 𝑖 ∈𝐴 𝑡 (𝑝 𝑖 + 𝑡 − 1). The number of decode waves is 
+
+𝑤 𝑡 =
+
+ |𝐴 𝑡 |
+
+min (| 𝐴 𝑡 |, 𝑁 max (ℓ𝑡 )) 
+
+
+
+. (18) The decode features are 
+
+𝑊 dec =∑︁ 
+
+> 𝑡
+
+𝑤 𝑡 ,𝑁 tok =∑︁ 
+
+> 𝑖
+
+𝑟 𝑖 ,𝐻 dec =∑︁ 
+
+> 𝑖
+
+
+
+𝑟 𝑖 𝑝 𝑖 + 𝑟 𝑖 (𝑟 𝑖 − 1)
+
+2
+
+
+
+.
+
+(19) The decode predictor is 
+
+𝑃 dec = 𝜏 dec 𝑊 dec + 𝛽 tok 𝑁 tok + 𝛽 hist 𝐻 dec . (20) The rollout replica time is 
+
+𝑇 𝑟, rep (𝑅 𝑗 ) = overlap (𝑃 pre , 𝐶 pre , 𝑟 ) + overlap (𝑃 dec , 𝐶 dec , 𝑟 ).
+
+(21) Given 𝑛 prompt-level rollout groups and 𝑑 rollout replicas, 
+
+M𝑟 (𝑛, 𝑑 ) partitions the corresponding request set across replicas and applies the replica-max rule.
