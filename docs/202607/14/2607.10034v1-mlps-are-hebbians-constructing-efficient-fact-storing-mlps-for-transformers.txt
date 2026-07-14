@@ -1,0 +1,7616 @@
+Title: MLPs are Hebbians: Constructing Efficient Fact-Storing MLPs for Transformers
+
+URL Source: https://arxiv.org/pdf/2607.10034v1
+
+Published Time: Tue, 14 Jul 2026 01:03:42 GMT
+
+Number of Pages: 82
+
+Markdown Content:
+# MLPs are Hebbians: Constructing Efficient Fact-Storing MLPs for Transformers 
+
+Roberto Garcia 1 ∗ † Jerry Liu 1 * † Ronny Junkins 2 * 
+
+Sabri Eyuboglu 2 Atri Rudra 3 Chris R´ e21Institute for Computational & Mathematical Engineering, Stanford University 
+
+> 2
+
+Department of Computer Science, Stanford University 
+
+> 3
+
+Department of Computer Science and Engineering, University at Buffalo 
+
+## Abstract 
+
+Large language models (LLMs) store factual knowledge in their parameters. While recent work has shown that this knowledge resides in MLP layers, existing constructive and mechanistic interpretability models of fact-storage in LLMs fail to explain the surprising empirical phenomenon that they store facts at an information-theoretically optimal rate. In this work, we develop a theoretical account of this phenomenon. We develop the first Transformer-compatible fact-storing MLP closed-form construction that satisfies the following three properties empirically observed in LLMs: it (i) attains optimal fact storage scaling, (ii) handles arbitrary input/output geometries, and (iii) works inside Transformers. Key to our work is to analyze the decoding margin of MLPs, whereas prior work only studies MLP fact storage. Under isotropic embeddings, our construction achieves information-theoretically optimal storage capacity scaling and requires 10-104 × fewer parameters at matched fact count than prior constructions. For arbitrary key and value embeddings, we show that our construction attains the same storage capacity scaling, up to penalization factors depending on the embedding geometries. Moreover, we demonstrate that our constructed MLPs can be used within Transformer blocks for factual recall tasks at optimal capacity scaling, requiring 15-63 × fewer parameters at matched fact count than prior constructions. Finally, as a proof-of-concept, we show that fact-storing MLPs enable modular fact editing by swapping a Transformer’s MLP with a new one. 
+
+## 1 Introduction 
+
+Large language models (LLMs) achieve remarkable performance across domains such as mathematics, science, and law (Google DeepMind, 2024; Guha et al., 2023; Saab et al., 2024), in part because they can store vast amounts of knowledge in their parameters (Petroni et al., 2019; Meng et al., 2023a). Prior work suggests that knowledge in Transformers is stored in Multi-Layer Perceptrons (MLPs) as key-value mappings, or facts (Geva et al., 2021; Dai et al., 2022). However, despite these findings, fact-storing MLPs remain poorly understood. While prior work has made important progress toward understanding and modeling fact storage in MLPs, existing models fail to capture three empirically observed properties of LLM fact storage: MLPs must (i) attain optimal fact storage scaling, (ii) handle arbitrary input/output geometries, and (iii) work inside Transformers. Mechanistic interpretability work (Geva et al., 2021; Dai et al., 2022) assumes MLPs store facts in individual neurons, but these models lead to suboptimal storage-capacity scaling. More recently, Nichani et al. (2024) study LLM fact storage by introducing an MLP weight construction (NTK MLP) 
+
+> ∗
+
+Equal first authors; order chosen by coin flip 
+
+> †
+
+Corresponding authors: robgarct@stanford.edu , jerrywliu@stanford.edu .
+
+> ‡
+
+Code is released at https://github.com/HazyResearch/hebbian-mlps .
+
+1arXiv:2607.10034v1 [cs.LG] 10 Jul 2026 Decoding Margin MLP Transformer Block                                   
+
+> v1
+> v2
+> MLP (k1)
+> γmin ↑
+> large margin of error
+> v1
+> v2
+> MLP (k1)
+> γmin ↓
+> small margin of error
+> MLP (k1)≈Emb (Paris)
+> MLP W(x) =
+> F∑
+> i=1
+> vîK(ki, x )
+> k1=Emb (capital of France)
+> Storage Capacity
+> |W|=Flog( F)
+> MLP (k1+ε)≈Emb (Paris)
+> MLP W(x) = ∑
+> i
+> vîK(ki, x )
+> Storage Capacity
+> |W|=Flog( F)
+> k1+ε=Emb (capital of France) + ε
+> =
+> Attn (The capital of France is)
+> Attention
+> The capital of France is
+
+Figure 1: (A) Decoding margin illustration: Top plot shows an MLP with large decoding margin, bottom plot with low decoding margin. The MLP with larger decoding margin has a larger “margin of error”, making it more robust when queried with perturbed versions of k1.
+
+(B) MLPs are information-theoretically optimal: we show that MLPs are Hebbian memories in kernel space and that the storage capacity of MLPs scales at the information-theoretically optimal rate. (C) Transformer blocks are information-theoretically optimal: we show that the storage capacity of Transformer blocks scales at the information-theoretically optimal rate, provided the attention noise remains bounded. with theoretical capacity guarantees. However, existing constructions (i) theoretically and empirically do not attain the empirically observed information-theoretically optimal capacity scaling of LLMs; (ii) are restricted to isotropic (e.g., uniformly spherical) embedding distributions, whereas LLM embeddings are anisotropic (Ethayarajh, 2019; Razzhigaev et al., 2024); and (iii) cannot be used by Transformer blocks for factual recall tasks, such as answering “What is the capital of France?”. Our core insight is to study MLP decoding margin scaling (Definition 2.2). Where prior works focus on fact-storage under noiseless key queries, our decoding margin study allows us to develop the first closed-form MLP construction that is usable by Transformers for factual recall. Consequently, we theoretically show that Transformer blocks are capable of information-theoretically optimal fact storage – providing the first theoretical explanation that aligns with the empirical capacity scaling observed in pretrained LLMs. Our construction is the first to capture all three empirically observed properties of LLM fact storage: • Optimal fact-storage capacity and margin (Sections 3, 4). Our first step toward matching the empirically optimal fact-storage scaling of LLMs is to demonstrate that 1) MLPs are Hebbian kernel memories and 2) that Hebbian kernel memories achieve asymptotically optimal fact-storage scaling. We show this by developing a closed-form MLP construction, equivalent to a Hebbian memory with sketched quadratic kernel, which provably attains a fact storage capacity of F = Θ(W/ log W) for F facts using W parameters (Corollary 4.4). Theoretically, our construction closes the optimality gap over prior constructions by a factor of log 11 F under isotropic embeddings. Moreover, we show that, at matched fact count, the NTK baseline requires 10-104 × more parameters than our best data-dependent kernel construction (Figure 2c). • Handling arbitrary embedding geometries (Section 4). We next study how arbitrary embedding geometries affect MLP margin and storage capacity scaling. We show that generalizing the MLP margin and capacity scaling to arbitrary embedding geometries introduces four embedding-geometric statistics multiplicatively into the information-theoretically optimal scaling derived for isotropic embeddings (Theorem 4.3). Intuitively, 2these statistics penalize the margin and capacity scaling by how clustered the key and value embeddings are. Empirically, we show that our generalized bounds characterize the empirical decoding margin scaling precisely ( R2 ≥ 0.95; Figure 5c). Furthermore, we find that the capacity gap between our construction and trained MLPs is preserved even under anisotropic embeddings. • MLPs usable within Transformers for factual recall (Section 5). Towards understanding MLP usage within LLMs, we find that non-trivial decoding margin is needed by MLPs to be used for factual recall within Transformer blocks. Attention layers produce imperfect, noisy queries, so the fact-storing MLPs they query should be robust to noise. Building on this insight, we demonstrate theoretically and empirically, for the first time, that Transformer blocks can retrieve facts from MLPs with optimal fact-storage capacity to solve factual recall tasks (Theorem 5.2, Figure 3c). Moreover, in these Transformer experiments, at matched fact count, the NTK baseline requires roughly 15-63 × more parameters than Transformer blocks using our data-dependent construction. Finally, as a proof-of-concept, we show that fact-storing MLPs enable modular fact editing 
+
+(Section 5.2) by replacing a Transformer’s MLP with one storing new facts. Our method, MLP S WAPPING , achieves near-perfect fact-editing score —correctly editing target facts while avoiding off-target effects—whereas prior state-of-the-art methods degrade to as low as 
+
+∼ 30% score when editing 10% of the fact-set. In summary, our work takes a constructive step toward understanding MLPs in Trans-formers. We present a fact-storing MLP construction that achieves optimal margin and fact-storage capacity, provides provable decoding-margin guarantees under arbitrary em-beddings, and is usable within Transformer blocks for factual recall at optimal capacity. We also demonstrate an application to modular fact editing, illustrating a path toward robust and modular knowledge manipulation in LLMs. 
+
+## 2 Preliminaries 
+
+2.1 Formalizing Factual Knowledge Fact sets and storage. Given key embeddings K ∈ R|K|× d and value embeddings V ∈
+
+R|V|× d, a fact set is a map f : [|K|] → [|V|]. We write ki and vi for the ith key and value embedding, respectively. 
+
+Definition 2.1 (Fact storage) . A model gθ : Rd → Rd stores a fact set f : [|K|] → [|V|] given embeddings K and V if, for all i ∈ [|K|] and all j̸ = f (i) ∈ [|V|],
+
+⟨gθ (ki), v f (i)⟩ > ⟨gθ (ki), vj⟩. (1) Notably, this definition is equivalent to correct softmax decoding in language modeling. 
+
+Definition 2.2 (Margin) . The margin of gθ on fact i against competitor j̸ = f (i) is 
+
+γi,j := ⟨gθ (ki), v f (i)⟩ − ⟨ gθ (ki), vj⟩, (2) and the minimum margin is γmin := min i,j̸ = f (i) γi,j. Note that storing a fact set (in the sense of Definition 2.1) is equivalent to γmin > 0. 
+
+Fact-storage cost and capacity. To measure parameter efficiency, we define the smallest parameter budget needed for a model class to store every fact set on fixed embeddings. 
+
+Definition 2.3 (Fact-storage cost and capacity) . The fact-storage cost of a model class g on embeddings K and V is the minimum parameter count needed to represent all possible fact sets: 
+
+W(g; K, V) = min 
+
+(
+
+#(θ) ∀ f : [|K|] → [|V|],
+
+∃ θ s.t. gθ stores f
+
+)
+
+. (3) The corresponding fact-storage capacity is the maximum number of facts storable with a fixed parameter budget. 3Theorem 2.4 (Information-theoretic lower bound) . Assuming a constant number of bits per parameter, the fact-storage cost of embeddings K and V for any model class g satisfies W(g; K, V) = Ω(|K| log [|V|]) .See Appendix B.1 for proof. 
+
+2.2 Model Classes 
+
+In this work, we study two model classes: gated one-hidden-layer MLPs and Hebbian memories (Kohonen, 1972; Hopfield, 1982; Bubeck et al., 2020; Cabannes et al., 2024; Nichani et al., 2024). 
+
+MLPs. We consider models gθ : Rd → Rdv of the form MLP (x) = gθ (x) = B(( Ax ) ⊙ σ(Gx )) , (4) where x ∈ Rd, A, G ∈ Rm×d, and B ∈ Rdv ×m. This family includes SwiGLU-style MLPs (Shazeer, 2020) used in modern language models (Yang et al., 2025; DeepSeek-AI et al., 2025; Dubey et al., 2024). Our explicit construction (Section 4.1) uses σ = id. 
+
+Hebbian memories. These linear models are maps gW : Rd → Rdv of the form gW(x) = Wx ,where x ∈ Rd and W ∈ Rdv ×d. A fact set is stored by taking 
+
+W =
+
+> |K|
+
+# ∑
+
+> j=1
+
+v f (j)k⊤ 
+
+> j
+
+. (5) Section 3 shows that MLPs can be recast as Hebbian memories in a kernel feature space. 
+
+2.3 Related Work 
+
+The two closest works to ours are Nichani et al. (2024) and Zhong et al. (2025). Nichani et al. (2024) gave the first explicit construction of fact-storing MLPs and showed near-optimal fact-storage capacity, up to a polylogarithmic factor, but their analysis is restricted to isotropic embeddings and studies only the separability condition γmin > 0. Zhong et al. (2025) developed a unified associative-memory view of attention and MLPs , but focused on average retrieval fidelity rather than worst-case margins. In contrast, we derive explicit margin bounds beyond isotropy, identify margin bounded away from zero as the condition for Transformer usability, and show that constructed MLPs can be integrated into Transformer blocks for factual recall. Additional discussion of probing, editing, and scaling studies of factual knowledge in language models appears in Appendix C. 
+
+## 3 MLPs, Hebbians, and Margins 
+
+We first establish two observations that let us analyze MLP fact storage within Transformers. First, MLPs are equivalent to Hebbian kernel memories after whitening the empirical feature covariance. Second, MLPs in Transformers need margins bounded away from zero (not just positive separability) because attention layers pass noisy queries to MLPs. 
+
+3.1 MLPs Are Hebbian Kernel Memories 
+
+Our first observation is that any MLP can be rewritten as a Hebbian kernel memory on its stored examples. The only gap between the plain Hebbian predictor and the original MLP is the empirical feature covariance ˆΣ, so whitening converts any MLP into a (kernel) Hebbian. 4Key Result: MLPs are Hebbian Memories 
+
+Theorem 3.1 (MLPs as kernel Hebbians, informal) . For stored examples (xi, yi) with 
+
+yi = MLP (xi) and MLP (x) = Bϕ(x) (where for gated MLPs ϕ(x) = ( Ax ) ⊙ σ(Gx )), define the empirical feature covariance 
+
+ˆΣ := 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+ϕ(xi)ϕ(xi)⊤.
+
+Assuming ˆΣ is invertible, define the whitened Hebbian memory Hwhite (z) := 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yi K(xi, z)
+
+induced by the kernel K(x, z) := ϕ(x)⊤ ˆΣ−1ϕ(z).
+
+Then Hwhite (z) = MLP (z) for all z.
+
+Thus, after feature whitening, the MLP is exactly a Hebbian kernel memory. 
+
+See Appendix B.2.1 for formal statement and proof. 
+
+This reduction motivates the rest of the paper: constructing an MLP with desirable margin and storage capacity scaling amounts to designing an effective kernel for Hebbian memories. 
+
+3.2 Margins Govern Transformer Usability 
+
+Our second observation is that positive margin at stored keys is not enough for a Transformer block to use a fact-storing MLP reliably. Intuitively, because the attention mechanism perturbs the query before it reaches the MLP, end-to-end usability requires the decoding margin to be bounded away from zero. 
+
+Definition 3.2 (Synthetic Sequential Factual Recall (SSFR)) . Fix a junk-token vocabulary of size VJ , a model dimension d, and a set of F key-value pairs {(ki, v f (i))}Fi=1 where 
+
+f : [F] → [F] is a fact set. Then SSFR inputs have the form: 
+
+j1, . . . , jJ/2 
+
+| {z }
+
+> junk prefix
+
+, ki
+
+|{z} 
+
+> key
+
+, jJ/2 +1, . . . , jJ
+
+| {z }
+
+> junk suffix
+
+, q
+
+|{z} 
+
+> query
+
+→ v f (i)
+
+|{z} 
+
+> value
+
+,where jt i.i.d. 
+
+∼ Unif ([ VJ ]) and q is a fixed query token. The junk length J controls how difficult it is for attention to isolate the relevant key. 
+
+Empirical verification. We pretrain an attention-only Transformer block, freeze it, insert a frozen GD-trained fact-storing MLP, and sweep hidden width (see Appendix A.2.1 for details). Crucially, although the MLP stores the fact-set as soon as γmin becomes positive, end-to-end SSFR accuracy lags until the margin is bounded away from zero (Figure 2a). This observation motivates our theoretical study of Hebbian margin bounds in Section 4. 
+
+## 4 Margin and Storage Capacity Analysis of Hebbian MLPs 
+
+In Section 3, we identified decoding margin as a property of interest in MLPs. In this section we turn to study the margin and fact storage capacity scaling of MLPs. We begin by proposing a simple bilinear MLP construction, which we term the Hebbian MLP , allowing us to characterize how decoding margin and fact storage capacity scales with the number of facts and MLP parameters. Equipped with our simple construction, we demonstrate that MLPs realize optimal margin scaling (Theorem 4.3) and that their fact storage capacity scales at the information-theoretically optimal rate (Corollary 4.4). Finally, we develop 5kernel-whitened and data-dependent variants of our MLP construction that realize optimal capacity scaling empirically; at matched fact count, the NTK baseline requires roughly 10-104 × more parameters than our data-dependent construction. 
+
+Decoding margin. We study the MLP decoding margin when viewed as a Hebbian kernel memory with kernel K (Theorem 3.1). Intuitively, the decoding margin is the “slack” a model is allowed in its outputs so that it still decodes to the right values (see Figure 1a). Our margin analysis follows from decomposing the margin into signal and cross-talk terms (Appendix B.8.1): 
+
+γi,j = ⟨v f (i) − vj, v f (i)⟩ K(ki, ki)
+
+| {z }
+
+> signal
+
++ ∑ 
+
+> t̸=i
+
+⟨v f (i) − vj, v f (t)⟩ K(kt, ki)
+
+| {z }
+
+> cross-talk
+
+. (6) Intuitively, we wish to develop a kernel K that 1) maximizes the signal-to-cross talk ratio while 2) remaining implementable as a gated MLP. 
+
+4.1 A Bilinear Hebbian MLP Construction 
+
+Our first step toward understanding the decoding margin and storage-capacity scaling of MLPs is to develop a simple closed-form gated MLP construction capable of storing a fact set. Our Hebbian MLP construction is defined as MLP (x) = B Ax ⊙ Gx  (7) with Ai,j ∼ N(0, 1 
+
+> m
+
+), Gi,j ∼ N(0, 1 
+
+> m
+
+), and B = VT Φ, where Φi = Ak i ⊙ Gk i. The key compo-nent of this construction is that it is equivalent to a Hebbian kernel memory (Section B.2.2), using an m-dimensional feature map to sketch the exact quadratic kernel K2(x, z) = ⟨x, z⟩2,which we can analyze: 
+
+H(z) = 
+
+> F
+
+# ∑
+
+> i=1
+
+vi ˆK2(ki, z), ˆK2(k, z) = 
+
+> m
+
+# ∑
+
+> r=1
+
+(A⊤ 
+
+> r
+
+k)( A⊤ 
+
+> r
+
+z) ( G⊤ 
+
+> r
+
+k)( G⊤ 
+
+> r
+
+z). (8) We provide a pseudocode implementation of our construction in Algorithm 1. 
+
+4.2 Margin Scaling 
+
+4.2.1 Isotropic Embeddings 
+
+We first show that in the isotropic keys and values setting, our bilinear MLP construction’s margin scales at an asymptotically optimal rate: 
+
+> Key Result: MLP margin scales at optimal rate
+
+Theorem 4.1 (MLP Margin Scaling (Isotropic Embeddings Setting) - Informal) . Under isotropic key and value embeddings, the decoding margin of our bilinear MLP construction (Equation (7) ) scales as: 
+
+γmin ≥ 1|{z} 
+
+> signal
+
+− C
+
+r F log (F)
+
+md | {z }
+
+> cross-talk
+
+. (9) See Corollary B.31 for formal statement and proof. 
+
+Remark 4.2 (Asymptotic optimality in decoding margin) . Our construction implicitly uses a kernel with feature dimension m. A rank-limited Welch-style upper bound shows that under isotropic keys and values, no PSD rank-m kernel with near-unit diagonal can asymptotically improve upon the pF log (F)/(md ) term in Theorem 4.3, up to logarithmic factors. As such, our construction attains the asymptotically optimal decoding margin bound (Ap-pendix B.8.6). 610 4 10 5
+
+> # MLP parameters
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> 11,708 params
+> 53,396 params
+
+A. Hidden-dim usability   
+
+> MLP accuracy
+> MLP margin
+> Transformer accuracy
+> 10 210 3
+> Feature dimension M
+> 1.25
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> Minimum margin  min
+
+B. Margin validation              
+
+> Empirical min
+> Fitted theory
+> Isotropic keys, isotropic values
+> Fitted bound: min =CsCxnL /( Md )
+> R2= 0.988, MSE=1.04e-03
+> 211 213 215 217 219 221 223
+> Number of Parameters (W)
+> 27
+> 28
+> 29
+> 210
+> 211
+> 212
+> 213
+> 214
+> Number of Facts (F)
+
+C. MLP capacity 
+
+> 6-10x gap to GD
+> 10-104x fewer than NTK
+> GD
+> Ours (no whitening)
+> Ours (whitened)
+> Ours (data-dependent)
+> NTK
+> d=64
+> d=90
+> d=128
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+
+Figure 2: Decoding margins govern Transformer usability and yield provable capacity bounds. (A) In a Transformer, inserted fact-storing MLPs become usable only once their decoding margin is bounded away from zero. (B) Under isotropic keys and values, the empirical margin follows our predicted scaling as the MLP hidden dimension m increases. 
+
+(C) Our construction achieves asymptotically optimal fact-storage capacity scaling under isotropic keys and values. 
+
+Empirical verification. We evaluate the empirical margin scaling against the theoretical scaling as we sweep facts F and MLP hidden-dimension m under isotropic embeddings. Figure 2b validates that our margin bounds closely match the empirical minimum margins (R2 ≥ 0.97). 
+
+4.2.2 Beyond isotropic embeddings 
+
+Our margin decomposition (Equation (6)) analysis extends beyond isotropic key/value embeddings to arbitrary embedding geometries, like those found in LLMs (Ethayarajh, 2019; Razzhigaev et al., 2024). To this end, we present the most general margin bound for arbitrary embedding geometries, illustrating how embedding-geometric statistics enter the margin scaling. Furthermore, we provide a full ladder of bounds across the key/value geometry regimes (Table 2). 
+
+Theorem 4.3 (MLP Margin Scaling (Arbitrary Embeddings Setting) – Informal) . Under 
+
+arbitrary key and value embeddings, and in the regime d ≳ log F , the decoding margin of our bilinear MLP construction (Equation (7) ) scales as: 
+
+γmin ≥ C S sig 
+
+| {z } 
+
+signal 
+
+−
+
+r F log (F)
+
+md Pkey Pval Palign 
+
+| {z }
+
+cross-talk 
+
+. (10) See Corollary B.26 for formal statement and proof, including the formal definitions of the four embedding-geometric statistics Pkey , Pval , Palign , and Ssig .For a fact set mapping ki → vi, define the kernel vectors Ki ∈ RF−1 and the value interfer-ence vectors Vi,j ∈ RF−1 as: 
+
+(Ki)t := ˆK(ki, kt), (Vi,j)t := ⟨vi − vj, vt⟩, t̸ = i.From our signal and cross talk decomposition (Equation (6)), Ki captures which other facts are activated when retrieving fact i, while Vi,j measures which values interfere with distin-guishing fact i from competitor j. Using these vectors as building blocks, four embedding-geometric statistics enter the isotropic margin bound multiplicatively when generalizing it to arbitrary embedding geometries, with each statistic isolating a distinct source of signal or cross-talk: 7• Key crowding penalty. 
+
+Pkey :=
+
+√EK
+
+√F/m
+
+
+
+EK := max  
+
+> i∈[F]
+
+∥Ki∥22
+
+
+
+.This measures how much the stored keys overlap under the bilinear featurization, relative to the random/isotropic baseline scale √F/m. Smaller Pkey (and thus smaller cross-talk) means the key features are more separated, so fewer irrelevant facts are activated by a query. • Value crowding penalty. 
+
+Pval :=
+
+√Ev
+
+√F/d Ev := max   
+
+> j̸=i∈[F]
+
+∥Vi,j∥22
+
+!
+
+.This measures how much the stored value directions overlap, relative to the ran-dom/isotropic baseline scale √F/d. Smaller Pval (and thus smaller cross-talk) means the incorrect values are less aligned with the correct value margin direction. • Key–value alignment penalty. 
+
+Palign := κ
+
+plog (F)/F κ := max   
+
+> j̸=i∈[F]
+
+cos ∠ Ki, Vi,j
+
+ !
+
+.This measures alignment between which facts a query activates (kernel column) and which values are most confusable (value interference), relative to the isotropic baseline plog (F)/F. Smaller Palign (and thus smaller cross-talk) means key and value errors are orthogonal rather than compounding each other. • Signal strength. 
+
+Ssig := Kdiag min Vmin 
+
+(1 − plog (F)/d)
+
+
+
+Kdiag min := min 
+
+> i∈[F]
+
+ˆK(ki, ki), Vmin := min   
+
+> i̸=j
+
+⟨vi − vj, vi⟩
+
+
+
+.This measures the strength of the signal relative to the 1 − log (F)/d baseline. Larger Ssig 
+
+(and thus stronger decoding signal) means featurized keys have larger norm while value embeddings remain nearly-orthogonal. 
+
+Empirical verification. We evaluate our general margin bound (and those from Table 2) in Figure 5, finding they closely track the empirically observed margin as we vary the key and value crowding ( R2 ≥ 0.95). 
+
+4.3 Fact-Storage Capacity 
+
+Equipped with our margin scaling bounds (Equations (9) and (10)), we develop storage capacity scaling laws for our bilinear gated MLPs by simply solving for the parameters necessary to make their margin positive. We find that the storage capacity of our simple MLP construction scales at the information-theoretically optimal rate, under the isotropic embeddings setting, while for non-isotropic embeddings it does so up to penalization factors. 
+
+> Key Result: MLPs store facts at an info-theoretically optimal rate.
+
+Corollary 4.4 (MLP Fact-storage Capacity (Isotropic Embeddings Setting) - Informal) .
+
+For isotropic key and value embeddings, our bilinear MLP construction stores F facts using W = Θ(md ) = Θ(F log (F)) 
+
+parameters. Thus MLPs achieve information-theoretically optimal fact-storage capacity. 
+
+See Corollary B.32 for formal statement and proof. 8Corollary 4.5 (Optimal Fact-storage Capacity (Arbitrary Embeddings Setting) - Informal) .
+
+For arbitrary key and value embeddings, our bilinear MLP construction stores F facts using W = Θ(md ) = Θ F log (F)
+
+ Pkey Pval Palign 
+
+Ssig 
+
+2!
+
+parameters. Thus MLPs achieve information-theoretically optimal fact-storage capacity up to penalization factors. 
+
+See Corollary B.27 for formal statement and proof. Corollary 4.4 counts real-valued parameters; Appendix B.2.6 shows that, under bounded precision, our construction incurs only an extra logarithmic factor in total bit complexity. 
+
+Empirical verification. Figure 2c compares the storage scaling of our construction to gradient descent-trained (GD) MLPs and the NTK construction from Nichani et al. (2024). Notably, we include two more closed-form variants of our construction in our empirical analysis: • Kernel-whitened construction. Our kernel-whitened MLP construction whitens the sketched quadratic kernel ˆK in our vanilla MLP construction with its empirical covari-ance. This construction is motivated by the observations that 1) the key crowding penalty 
+
+Pkey governs the cross-talk magnitude scale in our signal and cross talk decomposition (Equation (10)) and 2) whitening the sketched quadratic kernel ˆK with its empirical covariance (Appendix B.2.4) reduces Pkey (Lemma B.3). To our knowledge, our kernel-whitened construction is the first closed-form MLP construction to empirically achieve the optimal fact-storage capacity scaling W = Θ
+
+
+
+F log 
+
+ F
+
+> δ
+
+ 
+
+.• Data-dependent construction. Our data-dependent MLP closed-form construction solves for each weight matrix in our vanilla MLP construction via a least-squares objec-tive, as opposed to initializing them randomly. Intuitively, the least squares objective we solve for each matrix leverages the key and value geometry to maximize the con-struction’s margin (Appendix B.2.5). This approach improves storage capacity without gradient descent: at matched fact count, the NTK baseline requires roughly 10-104 ×
+
+more parameters than our data-dependent construction, while our data-dependent construction only requires about 6-10 × more parameters than GD. 
+
+## 5 Integrating Fact-Storing MLPs into Transformers 
+
+In Section 4, we characterized the margin scaling of Hebbian MLPs . In this section we leverage our margin scaling bounds to study the storage capacity scaling of Transformer blocks, where MLP inputs are no longer exact keys but instead are noisy attention outputs. Crucially, we demonstrate that the fact storage capacity of Transformer blocks scales at the information-theoretically optimal rate, provided the attention noise remains bounded. Further, we empirically show that our construction remains usable within Transformer blocks for factual recall tasks; at matched fact count, the NTK baseline requires roughly 15-63 × more parameters than Transformer blocks using our data-dependent construction. Finally, we show that fact-storing MLPs unlock a new capability: modular, zero-shot fact editing within a Transformer by swapping out its MLP .
+
+5.1 MLPs in Transformers Achieve Optimal Fact-Storage Capacity 
+
+We start by investigating why MLPs need positive margin in Transformers. Unlike in the standalone setting, attention does not query the MLP with the exact stored key. We quantify the worst-case deviation formally with an attention noise ceiling , which we define as the maximum noise an attention layer can produce when querying an MLP for a fact: 
+
+Definition 5.1 (Attention noise ceiling – informal) . Let Qi ⊂ Rd be the set of all possible queries an attention layer can produce when querying the MLP for the fact corresponding 921 22 23 24         
+
+> Junk Length J
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Attention Noise Floor (L2)
+> A. Attention noise floor
+> Model
+> d=64, F=512
+> d=96, F=1152
+> d=128, F=2048
+> 213 215 217 219 221 223 225
+> Number of MLP Parameters
+> 26
+> 27
+> 28
+> 29
+> 210
+> 211
+> 212
+> 213
+> 214
+> Number of Facts
+> B. Transformer capacity
+> 1.1-2.9x gap to GD
+> 15-63x fewer than NTK
+> GD
+> Ours (no whitening)
+> Ours (whitened)
+> Ours (data-dependent)
+> NTK
+> 2% 5% 10%
+> Edited Facts (%)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Edit Score
+> C. Fact editing
+> MEMIT
+> AlphaEdit
+> ROME
+> MLP Swapping
+
+Figure 3: Transformer blocks achieve information-theoretic optimal fact-storage capacity and enable modular fact editing. (A) Attention noise ceiling εattn scales with junk context length J in SSFR. (B) Under bounded attention noise, Transformer blocks with our MLP construction achieve information-theoretic optimal fact-storage capacity scaling. (C) MLP SWAPPING achieves near-perfect fact-editing score ( > 0.99) at up to 10% edited facts, more than 40% better than existing fact-editing baselines. to the key ki. The attention noise ceiling is defined as 
+
+εattn := max 
+
+i∈[F] max 
+
+q∈Qi
+
+∥q − ki∥2.Intuitively, we find that the attention noise ceiling increases with the number of distractor tokens in the sequence being processed by a Transformer block (Figure 3). We next show that Transformer usability reduces to whether the MLP margin can handle perturbations at this scale. 
+
+MLPs achieve optimal fact-storage capacity in Transformers. We now present our main result. Equipped with our margin scaling analysis in MLPs, we demonstrate that Trans-former blocks can store facts at an information-theoretic optimal rate, provided bounded attention noise ceiling: 
+
+Key Result: Transformer blocks can store facts at an info-theory optimal rate. 
+
+Theorem 5.2 (Transformer Block Fact-storage Capacity (Isotropic Embeddings) - In-formal) . A Transformer block equipped with a fact-storing bilinear MLP, with non-trivial margin γmin > c0 > 0, for constant c 0, can store F facts using W = Θ(md ) = Θ(F log (F)) 
+
+MLP parameters, provided the attention layer in the block satisfies the attention noise ceiling 
+
+εattn ≲ c0
+
+Lbil 
+
+q F log (F)
+
+d
+
+ . (11) 
+
+where L bil is the Lipschitz constant of the MLP. 
+
+See Appendix B.10 for formal statement and proof. Corollary B.65 presents the formal statement and proof. We note that this result can be easily extended to arbitrary embedding geometries, incurring the same penalization factors from Equation (10). 10 Empirical verification. We produce GD, NTK, and our constructed MLPs, freeze their parameters, then insert them into a 1-layer Transformer and train on the SSFR task. Figure 3b validates the predicted asymptotically optimal capacity scaling for Transformer blocks using our construction. Appendix B.10 reports a complementary per-key margin diagnostic; in particular, Figure 7 shows that the usable-key fraction inferred from per-key margins closely tracks end-to-end Transformer accuracy. Among the constructions we evaluate, our data-dependent construction only requires at most 3 × more parameters than GD MLPs at matched fact count. Relative to the NTK baseline, our data-dependent construction requires 15-63 × fewer parameters at matched fact count. See Appendix B.10 for further diagnostics. 
+
+5.2 Fact Editing via MLP S WAPPING 
+
+Having demonstrated that fact-storing MLPs are usable inside Transformers, we now use GD-trained fact-storing MLPs to show a simple proof-of-concept method for zero-shot fact editing . We call this procedure MLP S WAPPING : to edit the model’s facts, we construct a new MLP storing the revised fact set and swap it into the Transformer, with no further tuning of the Transformer’s parameters .We evaluate on a synthetic author-book language-modeling task (Appendix A.4.5) using a one-layer Transformer trained to store book–author facts through a frozen fact-storing MLP. After training, we edit a subset of stored facts and evaluate two metrics. The first is the standard fact-editing score (Meng et al., 2023c), which jointly captures edit efficacy (edited facts predict the new values), specificity (unedited facts stay correct), and paraphrase generalization (edits transfer to paraphrased prompts). The second is the non-fact PPL ratio, measuring post-edit versus pre-edit perplexity on non-fact tokens. MLP S WAPPING 
+
+achieves near-perfect fact-editing score across the edit fractions we test. At 10% edited facts, MLP S WAPPING achieves score 0.999—a 44.9-percentage-point gain over the strongest baseline, AlphaEdit (Fang et al., 2025) (score 0.550)—while achieving a non-fact PPL ratio of only 1.02 (Figure 3c). Appendix A.4.5 further shows that MLP S WAPPING also works for a data-dependent constructed Hebbian MLP. MLP S WAPPING with Hebbian MLPs keeps the edit score above 0.98 through up to 10% edited facts, while the strongest baseline reaches only 0.847—a 13.3-percentage-point gain (Figure 9). 
+
+## 6 Discussion 
+
+Our work presents a stepping stone toward understanding MLPs within Transformers from a constructive lens. We present an MLP construction that achieves optimal margin and fact-storage capacity, provides provable margin guarantees for arbitrary embeddings, and remains usable within Transformer blocks for factual recall. We also show an application of modular fact-storing MLPs in fact editing, illustrating a path toward robust, modular knowledge manipulation in LLMs. Our analysis currently applies to constructed MLPs in a single-layer Transformer setting. Extending to MLPs in pretrained LLMs—for example, by understanding how the geometries of real LLM embeddings affect the kernels MLPs learn—would provide a principled lens for investigating how trained MLPs store knowledge. Furthermore, moving beyond the single-layer setting would let us study multi-hop recall and more realistic editing scenarios. 11 Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## Acknowledgements 
+
+The authors thank Yasa Baig, Kelly Buchanan, Mayee Chen, Vivien Cheng, Catherine Deng, Owen Dugan, Rajat Vadiraj Dwaraknath, Neel Guha, Junmiao Hu, Ishan Khare, Hermann Kumbong, Eshaan Nichani, Jon Saad-Falcon, Thanawat Sornwanee, Stuart Sul, Alex Waitz, John Winnicki, Morris Yau, Michael Zhang, and Dylan Zinsley for their helpful feedback and discussion. The authors gratefully acknowledge the support of NIH under No. U54EB020405 (Mo-bilize), NSF under Nos. CCF2247015 (Hardware-Aware), CCF1763315 (Beyond Sparsity), CCF1563078 (Volume to Velocity), and 1937301 (RTML); US DEVCOM ARL under Nos. W911NF-23-2-0184 (Long-context) and W911NF-21-2-0251 (Interactive Human-AI Team-ing); ONR under Nos. N000142312633 (Deep Signal Processing); Stanford HAI under No. 247183; NXP, Xilinx, LETI-CEA, Intel, IBM, Microsoft, NEC, Toshiba, TSMC, ARM, Hitachi, BASF, Accenture, Ericsson, Qualcomm, Analog Devices, Google Cloud, Salesforce, Total, the HAI-GCP Cloud Credits for Research program, the Stanford Data Science Initiative (SDSI), and members of the Stanford DAWN project: Meta, Google, and VMWare. The U.S. Government is authorized to reproduce and distribute reprints for Governmental purposes notwithstanding any copyright notation thereon. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views, policies, or endorsements, either expressed or implied, of NIH, ONR, or the U.S. Government. JL is supported by the Department of Energy Computational Science Graduate Fellowship under Award Number DE-SC0023112. AR’s research is supported by NSF grant CCF#2247014. 
+
+## References 
+
+Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.3, knowledge capacity scaling laws, 2024. URL https://arxiv.org/abs/2404.05405 .Heejong Bong and Arun Kumar Kuchibhotla. Tight concentration inequality for sub-Weibull random variables with generalized Bernstein Orlicz norms. arXiv preprint arXiv:2302.03850 , 2023. URL https://arxiv.org/abs/2302.03850 .S ´ebastien Bubeck, Ronen Eldan, Yin Tat Lee, and Dan Mikulincer. Network size and weights size for memorization with two-layers neural networks, 2020. URL https: //arxiv.org/abs/2006.02855 .Vivien Cabannes, Elvis Dohmatob, and Alberto Bietti. Scaling laws for associative memories, 2024. URL https://arxiv.org/abs/2310.02984 .Damai Dai, Li Dong, Yaru Hao, Zhifang Sui, Baobao Chang, and Furu Wei. Knowledge neurons in pretrained transformers, 2022. URL https://arxiv.org/abs/2104.08696 .DeepSeek-AI, Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang, Bochao Wu, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chenyu Zhang, Chong Ruan, Damai Dai, Daya Guo, Dejian Yang, Deli Chen, Dongjie Ji, Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo, Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang, Han Bao, Hanwei Xu, Haocheng Wang, Haowei Zhang, Honghui Ding, Huajian Xin, Huazuo Gao, Hui Li, Hui Qu, J. L. Cai, Jian Liang, Jianzhong Guo, Jiaqi Ni, Jiashi Li, Jiawei Wang, Jin Chen, Jingchang Chen, Jingyang Yuan, Junjie Qiu, Junlong Li, Junxiao Song, Kai Dong, Kai Hu, Kaige Gao, Kang Guan, Kexin Huang, Kuai Yu, Lean Wang, Lecong Zhang, Lei Xu, Leyi Xia, Liang Zhao, Litong Wang, Liyue Zhang, Meng Li, Miaojun Wang, Mingchuan Zhang, Minghua Zhang, Minghui Tang, Mingming Li, Ning Tian, Panpan Huang, Peiyi Wang, Peng Zhang, 12 Qiancheng Wang, Qihao Zhu, Qinyu Chen, Qiushi Du, R. J. Chen, R. L. Jin, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan, Runji Wang, Runxin Xu, Ruoyu Zhang, Ruyi Chen, S. S. Li, Shanghao Lu, Shangyan Zhou, Shanhuang Chen, Shaoqing Wu, Shengfeng Ye, Shengfeng Ye, Shirong Ma, Shiyu Wang, Shuang Zhou, Shuiping Yu, Shunfeng Zhou, Shuting Pan, T. Wang, Tao Yun, Tian Pei, Tianyu Sun, W. L. Xiao, Wangding Zeng, Wanjia Zhao, Wei An, Wen Liu, Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao Zhang, X. Q. Li, Xiangyue Jin, Xianzu Wang, Xiao Bi, Xiaodong Liu, Xiaohan Wang, Xiaojin Shen, Xiaokang Chen, Xiaokang Zhang, Xiaosha Chen, Xiaotao Nie, Xiaowen Sun, Xiaoxiang Wang, Xin Cheng, Xin Liu, Xin Xie, Xingchao Liu, Xingkai Yu, Xinnan Song, Xinxia Shan, Xinyi Zhou, Xinyu Yang, Xinyuan Li, Xuecheng Su, Xuheng Lin, Y. K. Li, Y. Q. Wang, Y. X. Wei, Y. X. Zhu, Yang Zhang, Yanhong Xu, Yanhong Xu, Yanping Huang, Yao Li, Yao Zhao, Yaofeng Sun, Yaohui Li, Yaohui Wang, Yi Yu, Yi Zheng, Yichao Zhang, Yifan Shi, Yiliang Xiong, Ying He, Ying Tang, Yishi Piao, Yisong Wang, Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo, Yu Wu, Yuan Ou, Yuchen Zhu, Yuduan Wang, Yue Gong, Yuheng Zou, Yujia He, Yukun Zha, Yunfan Xiong, Yunxian Ma, Yuting Yan, Yuxiang Luo, Yuxiang You, Yuxuan Liu, Yuyang Zhou, Z. F. Wu, Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean Xu, Zhen Huang, Zhen Zhang, Zhenda Xie, Zhengyan Zhang, Zhewen Hao, Zhibin Gou, Zhicheng Ma, Zhigang Yan, Zhihong Shao, Zhipeng Xu, Zhiyu Wu, Zhongyu Zhang, Zhuoshu Li, Zihui Gu, Zijia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song, Ziyi Gao, and Zizheng Pan. Deepseek-v3 technical report, 2025. URL https://arxiv.org/abs/2412.19437 .Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. arXiv e-prints , pp. arXiv–2407, 2024. Nelson Elhage, Tristan Hume, Catherine Olsson, Nicholas Schiefer, Tom Henighan, Shauna Kravec, Zac Hatfield-Dodds, Robert Lasenby, Dawn Drain, Carol Chen, Roger Grosse, Sam McCandlish, Jared Kaplan, Dario Amodei, Martin Wattenberg, and Christopher Olah. Toy models of superposition, 2022. URL https://arxiv.org/abs/2209.10652 .Kawin Ethayarajh. How contextual are contextualized word representations? comparing the geometry of bert, elmo, and gpt-2 embeddings, 2019. URL https://arxiv.org/abs/ 1909.00512 .Junfeng Fang, Houcheng Jiang, Kun Wang, Yunshan Ma, Shi Jie, Xiang Wang, Xiangnan He, and Tat seng Chua. Alphaedit: Null-space constrained knowledge editing for language models, 2025. URL https://arxiv.org/abs/2410.02355 .Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer feed-forward layers are key-value memories, 2021. URL https://arxiv.org/abs/2012.14913 .Mor Geva, Avi Caciularu, Kevin Ro Wang, and Yoav Goldberg. Transformer feed-forward layers build predictions by promoting concepts in the vocabulary space, 2022. URL 
+
+https://arxiv.org/abs/2203.14680 .Google DeepMind. Ai achieves silver-medal standard solving international mathematical olympiad problems with alphaproof. Blog post, Jul 2024. URL https://deepmind.google/ discover/blog/ai-solves-imo-problems-at-silver-medal-level/ . “AlphaProof is a system that trains itself to prove mathematical statements in the formal language Lean . . . ”, solves 3 IMO problems etc. Jia-Chen Gu, Hao-Xiang Xu, Jun-Yu Ma, Pan Lu, Zhen-Hua Ling, Kai-Wei Chang, and Nanyun Peng. Model editing harms general abilities of large language models: Regular-ization to the rescue, 2024. URL https://arxiv.org/abs/2401.04700 .Neel Guha, Julian Nyarko, Daniel Ho, Christopher R ´e, Adam Chilton, Alex Chohlas-Wood, Austin Peters, Brandon Waldon, Daniel Rockmore, Diego Zambrano, et al. Legalbench: A collaboratively built benchmark for measuring legal reasoning in large language models. 
+
+Advances in Neural Information Processing Systems , 36:44123–44279, 2023. Akshat Gupta, Anurag Rao, and Gopala Anumanchipalli. Model editing at scale leads to gradual and catastrophic forgetting, 2024. URL https://arxiv.org/abs/2401.07453 .13 J J Hopfield. Neural networks and physical systems with emergent collective computational abilities. Proceedings of the National Academy of Sciences , 79(8):2554–2558, 1982. doi: 10. 1073/pnas.79.8.2554. URL https://www.pnas.org/doi/abs/10.1073/pnas.79.8.2554 .Teuvo Kohonen. Correlation matrix memories. IEEE Trans. Comput. , 21(4):353–359, April 1972. ISSN 0018-9340. doi: 10.1109/TC.1972.5008975. URL https://doi-org.stanford. idm.oclc.org/10.1109/TC.1972.5008975 .Arun K. Kuchibhotla and Abhishek Chakrabortty. Moving beyond sub-gaussianity in high-dimensional statistics: Applications in covariance estimation and linear regression. 
+
+Information and Inference: A Journal of the IMA , 11(4):1389–1456, 2022. Beatrice Laurent and Pascal Massart. Adaptive estimation of a quadratic functional by model selection. Annals of Statistics , 28(5):1302–1338, 2000. Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in gpt, 2023a. URL https://arxiv.org/abs/2202.05262 .Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in gpt, 2023b. URL https://arxiv.org/abs/2202.05262 .Kevin Meng, Arnab Sen Sharma, Alex Andonian, Yonatan Belinkov, and David Bau. Mass-editing memory in a transformer, 2023c. URL https://arxiv.org/abs/2210.07229 .John X. Morris, Chawin Sitawarin, Chuan Guo, Narine Kokhlikyan, G. Edward Suh, Alexan-der M. Rush, Kamalika Chaudhuri, and Saeed Mahloujifar. How much do language models memorize?, 2025. URL https://arxiv.org/abs/2505.24832 .Neel Nanda, Senthooran Rajamanoharan, J ´anos Kram ´ar, and Rohin Shah. Fact finding: Attempting to reverse-engineer factual recall on the neuron level, Dec 2023. URL https://www.alignmentforum.org/posts/iGuwZTHWb6DFY3sKB/ fact-finding-attempting-to-reverse-engineer-factual-recall .Eshaan Nichani, Jason D. Lee, and Alberto Bietti. Understanding factual recall in transform-ers via associative memories, 2024. URL https://arxiv.org/abs/2412.06538 .Ryan O’Donnell. Analysis of Boolean Functions . Cambridge University Press, 2014. Fabio Petroni, Tim Rockt ¨aschel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, Alexander H Miller, and Sebastian Riedel. Language models as knowledge bases? arXiv preprint arXiv:1909.01066 , 2019. Anton Razzhigaev, Matvey Mikhalchuk, Elizaveta Goncharova, Ivan Oseledets, Denis Dim-itrov, and Andrey Kuznetsov. The shape of learning: Anisotropy and intrinsic dimensions in transformer-based models, 2024. URL https://arxiv.org/abs/2311.05928 .Khaled Saab, Tao Tu, Wei-Hung Weng, Ryutaro Tanno, David Stutz, Ellery Wulczyn, Fan Zhang, Tim Strother, Chunjong Park, Elahe Vedadi, et al. Capabilities of gemini models in medicine. arXiv preprint arXiv:2404.18416 , 2024. Noam Shazeer. Glu variants improve transformer, 2020. URL https://arxiv.org/abs/2002. 05202 .Wei Sun, Tingyu Qu, Mingxiao Li, Jesse Davis, and Marie-Francine Moens. Mitigating negative interference in multilingual sequential knowledge editing through null-space constraints, 2025. URL https://arxiv.org/abs/2506.10800 .Roman Vershynin. High-dimensional probability: An introduction with applications in data science , volume 47, chapter 3, pp. 67–68. Cambridge university press, 2018. Roman Vershynin. High-Dimensional Probability: An Introduction with Applications in Data Science . Number 58 in Cambridge Series in Statistical and Probabilistic Mathematics. Cambridge University Press, 2nd edition, 2026. ISBN 9781009490672. doi: 10.1017/ 9781009490672. 14 Mengting Wan and Julian McAuley. Item recommendation on monotonic behavior chains. In Proceedings of the 12th ACM Conference on Recommender Systems , RecSys ’18, pp. 86–94, New York, NY, USA, 2018. Association for Computing Machinery. ISBN 9781450359016. doi: 10.1145/3240323.3240369. URL https://doi.org/10.1145/3240323.3240369 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .Shu Zhong, Mingyu Xu, Tenglong Ao, and Guang Shi. Understanding transformer from the perspective of associative memory, 2025. URL https://arxiv.org/abs/2505.19488 .Nicolas Zucchet, J ¨org Bornschein, Stephanie Chan, Andrew Lampinen, Razvan Pascanu, and Soham De. How do language models learn facts? dynamics, curricula and hallucinations, 2025. URL https://arxiv.org/abs/2503.21676 .15 Appendix 
+
+A Experiments 18 
+
+A.1 Model Definitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 A.1.1 MLP Variants . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 A.1.2 Transformer Setups . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 A.2 Experimental details for Section 3 . . . . . . . . . . . . . . . . . . . . . . . . . 18 A.2.1 Synthetic Sequential Factual Recall (SSFR) . . . . . . . . . . . . . . . 18 A.2.2 Margins Govern Transformer Usability Sweep . . . . . . . . . . . . . 19 A.3 Experimental details for Section 4 . . . . . . . . . . . . . . . . . . . . . . . . . 19 A.3.1 MLP Fact-Storage Capacity . . . . . . . . . . . . . . . . . . . . . . . . 19 A.3.2 Margin Sweeps . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 A.4 Experimental details for Section 5 . . . . . . . . . . . . . . . . . . . . . . . . . 20 A.4.1 Attention-Noise Sweep . . . . . . . . . . . . . . . . . . . . . . . . . . 20 A.4.2 Noisy-Margin Diagnostic . . . . . . . . . . . . . . . . . . . . . . . . . 21 A.4.3 Transformer Capacity Sweep . . . . . . . . . . . . . . . . . . . . . . . 21 A.4.4 Per-Key Margin Diagnostic . . . . . . . . . . . . . . . . . . . . . . . . 22 A.4.5 Fact Editing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 A.5 Additional Empirical Results . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 A.5.1 Training-Accuracy Transformer Capacity . . . . . . . . . . . . . . . . 26 A.5.2 Anisotropic MLP Capacity . . . . . . . . . . . . . . . . . . . . . . . . 26 A.5.3 Margin and Capacity Scaling Under LLM Embeddings . . . . . . . . 26 
+
+B Theory 29 
+
+B.1 Information-Theoretic Lower Bound on Fact Storage . . . . . . . . . . . . . . 29 B.2 Hebbian MLP Construction . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 B.2.1 MLPs Are Hebbians . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 B.2.2 Bilinear MLP Featurization Induces the K2 Kernel . . . . . . . . . . . 32 B.2.3 Sketched-K2 Construction . . . . . . . . . . . . . . . . . . . . . . . . . 33 B.2.4 Kernel Whitening . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33 B.2.5 Data-Dependent Construction . . . . . . . . . . . . . . . . . . . . . . 34 B.2.6 Bit Complexity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35 B.3 NTK Baseline . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39 B.4 Margin Bounds Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41 B.5 Embedding Geometric Summary Statistics Definitions . . . . . . . . . . . . . 41 B.6 Cross-Talk Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 B.6.1 Arbitrary Keys, Arbitrary Values . . . . . . . . . . . . . . . . . . . . . 43 B.6.2 Arbitrary Keys, Isotropic Values . . . . . . . . . . . . . . . . . . . . . 44 B.6.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) . . . . . . . . . . . 44 16 B.6.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) . . . . . . . . . . . . 46 B.7 Signal Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 47 B.7.1 Arbitrary Keys, Arbitrary Values . . . . . . . . . . . . . . . . . . . . . 48 B.7.2 Arbitrary Keys, Isotropic Values . . . . . . . . . . . . . . . . . . . . . 48 B.7.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) . . . . . . . . . . . 49 B.7.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) . . . . . . . . . . . . 50 B.8 Margin Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51 B.8.1 Arbitrary Keys, Arbitrary Values . . . . . . . . . . . . . . . . . . . . . 51 B.8.2 Arbitrary Keys, Isotropic Values . . . . . . . . . . . . . . . . . . . . . 52 B.8.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) . . . . . . . . . . . 53 B.8.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) . . . . . . . . . . . . 54 B.8.5 Summary Table: Margin Bounds Across Regimes . . . . . . . . . . . 56 B.8.6 A Welch/Frobenius Upper Bound in the Isotropic Key/Value Regime 56 B.9 Auxiliary Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59 B.9.1 Signal Bounds: Isotropic Values . . . . . . . . . . . . . . . . . . . . . 59 B.9.2 Signal Bounds: Isotropic Keys and Bilinear Random Features . . . . 59 B.9.3 Cross-Talk Bounds: Isotropic Values . . . . . . . . . . . . . . . . . . . 60 B.9.4 Cross-Talk Bounds: Isotropic Keys and Bilinear Random Features . . 63 B.9.5 Additional Concentration Tools . . . . . . . . . . . . . . . . . . . . . . 67 B.10 Hebbian MLPs within Transformers . . . . . . . . . . . . . . . . . . . . . . . 79 B.10.1 Noisy Margin . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 79 17 A Experiments 
+
+A.1 Model Definitions 
+
+A.1.1 MLP Variants 
+
+Across the standalone fact-storage-capacity experiments (Sections A.3.1 and 4.3) and the Transformer-block capacity experiments (Section A.4.3), we compare the following MLP variants at matched hidden width m on the same synthetic fact sets: 
+
+GD (gradient-descent trained). Our default GD baseline is a bilinear gated-identity MLP, i.e. the bilinear specialization of the gated MLP family in Equation (4). Unless stated otherwise, we train these models for 10 ,000 epochs using Adam with initial learning rate 10 −3 and a cosine-annealing schedule down to 10 −6.
+
+NTK. Our NTK baseline is the degree-1 Hermite weight construction of Nichani et al. (2024), which uses a gated ReLU MLP architecture. A self-contained description is given in Section B.3. 
+
+Our construction. Our closed-form construction is a Hebbian MLP with sketched-K2 kernel, i.e. the bilinear random-feature construction described in Section 4.1 and Algo-rithm 1. We study three variants: • Unwhitened. This is the raw sketched-K2 Hebbian construction, with the bilinear random-feature map used directly in the final Hebbian readout. • Whitened. This uses the same bilinear feature map, but applies the full readout whitening procedure from Section B.2.4 with ridge parameter 10 −6.• Data-dependent. This keeps the same bilinear architecture, but performs least squares solves to obtain the random feature vectors within the Hebbian kernel, as described in Section B.2.5, then applies whitening with ridge parameter 10 −6.
+
+A.1.2 Transformer Setups 
+
+We describe details about the modified 1-layer, 1-head GPT-style Transformer architecture used across all of our SSFR experiments unless otherwise specified. We freeze the input and output embeddings, and when an experiment includes a fact-storing MLP, that MLP uses the same embeddings as the Transformer. Positional encodings are disabled throughout. We use RMSNorm before the attention layer, and use unit-RMSNorm (which projects to the unit sphere) before the MLP and before the final Transformer output. We train with AdamW using learning rate 2 × 10 −4, batch size 1,280, and 4,000 iterations. Our experiments include two different training protocols: • In the pretrained attention setting, we first train attention alone on a dummy SSFR task using the identity map, so that it learns to query the MLP when faced with distractor junk tokens in its context. After training, we freeze the attention layer, then train a frozen fact-storing MLP on a fresh random-permutation fact set using the same embeddings, insert it into the Transformer, and evaluate the combined model on SSFR with that fact set. • In the inserted MLP setting, we first construct or train a frozen fact-storing MLP on a random-permutation fact set, then insert it into the Transformer block. We then train the attention layer around that frozen MLP on SSFR using the same fact set. 
+
+A.2 Experimental details for Section 3 
+
+A.2.1 Synthetic Sequential Factual Recall (SSFR) 
+
+We instantiate SSFR using the contextual single-token recall task 
+
+SSSFR [ f ] :=
+
+n
+
+concat (jpre , k, jsuf , q, f (k)) : k ∈ S k, jpre ∈ J pre , jsuf ∈ J suf 
+
+o
+
+,18 where f : Sk → S v is a bijection defining the fact set, q is a dedicated query token, and 
+
+jpre , jsuf are junk-token strings that do not belong to the fact vocabulary. Keys and values are treated as single tokens. Unless otherwise specified, the default SSFR configuration used in our experiments uses a junk vocabulary of size 9 and junk-prefixes and junk-suffixes of length 9. Transformer architecture and training details are summarized in Appendix A.1.2. 
+
+A.2.2 Margins Govern Transformer Usability Sweep 
+
+The hidden-width sweep in Figure 2a uses the pretrained attention setting from Ap-pendix A.1.2 and uses GD-trained fact-storing MLPs. We use dmodel = 128, F = 2048, 
+
+J = VJ = 9, and sweep across 16 logarithmically spaced hidden widths in [16, 256 ], with four seeds per width. For each width we report the standalone MLP margin and accuracy together with the accuracy of the combined Transformer block on the random fact set. 
+
+A.3 Experimental details for Section 4 
+
+A.3.1 MLP Fact-Storage Capacity 
+
+We estimate the MLP fact-storage capacity in Figure 2c by binary-searching over hidden width m at fixed embedding dimension d and fact count F. We sweep over 
+
+d ∈ { 64, 90, 128 }, α := F/d2 ∈ { 1/32, 1/16, 1/8, 1/4, 1/2, 3/4, 1 }.For each (method , d, α) tuple, we generate a random-permutation fact set and sample key and value embeddings from the unit sphere. We then binary-search for the smallest hidden width m that attains 100% fact storage on the sampled fact set and report the corresponding parameter count W. We compare GD-trained bilinear MLPs, our sketched-K2 Hebbian construction (with and without whitening, and our data-dependent kernel variant), and the NTK baseline from Nichani et al. (2024), as described in Appendix A.1. 
+
+A.3.2 Margin Sweeps 
+
+We use the same bilinear sketched-K2 construction for the isotropic margin sweeps in Figure 2b, as well as for the arbitrary-geometry comparisons summarized in Table 2. 
+
+Isotropic keys and values. For the isotropic keys and isotropic values sweeps supporting Appendix B.8.4, we sample unit-norm spherical keys and values from a random-permutation fact set, vary either F or m, and construct the MLP at each point. We then compare the measured minimum margin with the theoretical prediction (Equation (56)). The F-sweep (exact K2) uses d = 32, m = 512, F ∈ [32, 2048 ] (30 log-spaced points, 5 seeds). The F-sweep (bilinear sketched-K2) uses d = 64, m = 512, F ∈ [32, 512 ] (30 log-spaced points, 5 seeds). The m-sweep (bilinear bilinear sketched-K2) uses d = 64, F = 256, m ∈ [64, 1024 ] (30 log-spaced points, 5 seeds). 
+
+Arbitrary keys, isotropic values. For the arbitrary-key sweep supporting Appendix B.8.2, we start from spherical keys and apply a rank-1 spike transform 
+
+k′ 
+
+> i
+
+= ki + β⟨ki, u⟩u
+
+∥ki + β⟨ki, u⟩u∥2
+
+,where u ∈ Sd−1 is fixed within a sweep and β ≥ 0 controls the anisotropy strength. As β
+
+increases, the keys crowd along u, increasing the key-side quantities entering the bound, especially EK. Values remain isotropic, sampled uniformly from the unit sphere. At each 
+
+β, we construct the MLP, measure γmin , and compare it against the theorem, plug-in, and heuristic predictions for the resulting key geometry (Equation (46)). We use d = 64, F = 128, 
+
+m = 512, β ∈ [0, 5 ].19 10 2        
+
+> Number of facts F
+> 0.4
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Minimum margin  min
+> Empirical min
+> Fitted theory
+> Isotropic keys, isotropic values
+> Fitted bound: min =CsCxnL /( Md )
+> R2= 0.971, MSE=6.57e-04
+
+Figure 4: Margin scaling with number of facts (isotropic setting). Minimum margin of bilinear sketched-K2 MLPs decreases with the number of stored facts F, following the predicted scaling from Equation (56). The empirical margin closely tracks the theoretical bound across the F-sweep with d = 64, m = 512. 
+
+Isotropic keys, arbitrary values. For the arbitrary-value sweep supporting Appendix B.8.3, we keep the keys isotropic and apply the same rank-1 spike transform to the values: 
+
+v′ 
+
+> i
+
+= vi + β⟨vi, u⟩u
+
+∥vi + β⟨vi, u⟩u∥2
+
+.Again u is fixed within a sweep and β is the control parameter. This changes the value-side quantities Vmin , BY, and Ev while preserving unit norm. Keys remain isotropic, sampled uniformly from the unit sphere. At each β, we rebuild the MLP, measure the empirical decoding margin, and compare it against the corresponding theorem, plug-in, and heuristic predictions (Equation (51)). We use d = 64, F = 128, m = 512, β ∈ [0, 10 ].
+
+Arbitrary keys and values. For the fully structured sweep supporting Appendix B.8.1, we apply the same rank-1 spike model to both keys and values, using the same spike strength 
+
+β and fixed direction u:
+
+e′ 
+
+> i
+
+= ei + β⟨ei, u⟩u
+
+∥ei + β⟨ei, u⟩u∥2
+
+, ei ∈ { ki, vi}.This setting makes key crowding and value interference vary coherently, which is the regime where the coupling factor κ emerges. For each β, we recompute the geometric summary statistics entering the deterministic bound and compare the measured margin against the theorem, plug-in, and heuristic predictions, focusing on the composite cross-talk scale √EK
+
+√Ev κ (Equation (44)). We use d = 64, F = 128, m = 512, β ∈ [0, 3.35 ].
+
+A.4 Experimental details for Section 5 
+
+A.4.1 Attention-Noise Sweep 
+
+The attention-noise experiment in Figure 3a uses the pretrained attention Transformer train-ing setup (Appendix A.1.2) and isolates the attention module during the attention-only pretraining phase. At evaluation, for each stored key and junk context sampled, we measure the ℓ2 deviation between the attention output at the query position and the corresponding stored key embedding. We then aggregate these deviations to estimate the attention noise floor. 20 2 4 6 8        
+
+> EK
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> Minimum margin  min
+> Empirical min
+> Fitted theory
+> Arbitrary keys, isotropic values
+> Fitted bound: min =CsKdiag min CoKoff max CxEKL/d
+> R2= 0.973, MSE=1.65e-03
+
+(a) Arbitrary keys, isotropic val-ues ( β-sweep). As β increases, key crowding grows and the measured margin tracks the the-oretical bound via key-geometry terms Kdiag min , Koff max , and EK.0 50 100 150 200 250            
+
+> EvLv
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> Minimum margin  min
+> Empirical min
+> Fitted theory
+> Isotropic keys, arbitrary values
+> Fitted bound: min =CsVmin (CBBY+CvEvLv)L/m
+> R2= 0.998, MSE=2.68e-05
+
+(b) Isotropic keys, arbitrary val-ues ( β-sweep). Increasing β con-centrates values and the mar-gin closely follows the bound through value-geometry terms 
+
+Vmin , BY , and Ev.1 2 3 4 5         
+
+> EKEv
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Minimum margin  min
+> Empirical min
+> Fitted theory
+> Arbitrary keys, arbitrary values
+> Fitted bound: min =C1Kdiag min Vmin CxEKEv
+> R2= 0.968, MSE=5.60e-04
+
+(c) Arbitrary keys and values (β-sweep). Both geometries are spiked simultaneously; the mar-gin degradation is governed by the composite cross-talk scale √EK
+
+√Ev κ, matching the deter-ministic bound. 
+
+Figure 5: Margin β-sweeps across arbitrary key/value geometry regimes. Each panel applies a rank-1 spike transform with strength β to the keys (left), values (middle), or both (right), using F = 128 facts. In all three cases the theoretical bound tracks the em-pirically measured minimum margin ( R2 ≥ 0.95), validating the margin decomposition of Equation (6) and the geometric summary statistics of Table 2. The arbitrary keys and values plot uses the raw summary-statistic form of Theorem B.25, which is equivalent to the penalty-statistic general margin/capacity bound in Corollary B.27 of the main text. We vary junk length J ∈ { 2, 4, 8, 16 } and couple the junk vocabulary size to the length (VJ = J). We run our sweeps using model sizes 
+
+(dmodel , F) ∈ { (64, 512 ), (96, 1152 ), (128, 2048 )}.and average over four seeds. 
+
+A.4.2 Noisy-Margin Diagnostic 
+
+The noisy-margin curve in Figure 3b measures how the minimum margin of our bilinear construction changes under perturbed key queries. We use isotropic keys and values with 
+
+d = 64, F = 256, and hidden width m = 512. For each stored key, we perturb it via 
+
+eki = ki + ϵui, ui ∼ Unif (Sd−1),and sweep ϵ logarithmically from 0.01 to 2.0 over 15 values. For each sweep point, we report the empirical noisy minimum margin and the predicted linear degradation term, averaged over three seeds. 
+
+A.4.3 Transformer Capacity Sweep 
+
+Our Transformer capacity plots use the SSFR task from Appendix A.2.1 and the inserted MLP 
+
+training setup from Appendix A.1.2. In our experiments, we compare GD, our unwhitened construction, our whitened construction, our data-dependent construction, and the NTK baseline. Unless otherwise stated, we use embedding dimension d = 128, junk length J = 9, junk vocabulary size VJ = 9, 4,000 training epochs, and one seed. We evaluate Transformer capacity using two complementary success criteria: • Training accuracy. In this variant, we evaluate a Transformer’s accuracy on SSFR using the MLP and the fact set it is trained with. This criterion assesses whether the inserted MLP is well-behaved enough that it can be used inside a Transformer at all. Crucially, this criterion is unable to distinguish between when a Transformer is learning to query its fact-storing MLP to perform factual recall and when it is simply using its attention parameters to memorize the fact set. 21 10 2 10 1 10 0            
+
+> Query noise level
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> Minimum margin  min
+> Noisy min (z)
+> Fitted theory
+> noisy queries (isotropic keys, isotropic values)
+> d= 64, F= 256, m= 512
+> Fitted bound: min (z) = CsCxnL /( md )
+> C L bil nL /d
+> R2= 0.941, MSE=4.89e-02
+
+Figure 6: Margin degradation under noisy queries. Bilinear MLP minimum margin decreases linearly with the magnitude of key perturbations ϵ, validating the noisy-margin degradation bound. The empirical margin (solid line) closely follows the predicted linear degradation term (dashed line) with d = 64, F = 256, m = 512. • Evaluation (fact-adaptive) accuracy. In this variant, we train a Transformer using an MLP MLP A storing a given fact set A, but during evaluation, we generate a new fact set B and fact-storing MLP, MLP B, that stores it. We then insert MLP B into the pretrained Transformer, with no additional training, and evaluate the Transformer’s end-to-end accuracy on SSFR using fact set B. This criterion assesses whether the Transformer is performing factual recall by learning to query its fact-storing MLP, while being prevented from introducing additional fact-set-dependent computation. In practice, we find that we need to make two changes to the standard GPT-style architecture to ensure that Transformers trained on a given fact set will learn a fact-adaptive solution: (i) we disable the residual connection after the attention layer to prevent extra signal propagation, and (ii) we freeze the value and output projections to identity matrices to hinder memorization. For the main-text Transformer-capacity plot in Figure 1c, we define Transformer capacity as the smallest model that achieves 100% fact-adaptive accuracy. We sweep 
+
+F ∈ { 26, 2 7, . . . , 2 13 } = {64, 128, 256, 512, 1024, 2048, 4096, 8192 }
+
+and binary-search over hidden width m ∈ [1, 65536 ] with precision 16 for each method. 
+
+A.4.4 Per-Key Margin Diagnostic 
+
+The violin plot in Figure 7 visualizes the full distribution of per-key margins rather than only the minimum margin, as in the other margin sweeps. For this experiment, we use the 
+
+pretrained attention setting from Appendix A.1.2. We use d = 128, F = 2048, J = VJ = 9, 16 logarithmically spaced hidden widths in [16, 256 ], and four seeds. For each width, we pool the per-key margins across seeds and compare their distribution against the corresponding combined Transformer accuracy and standalone MLP accuracy. 
+
+A.4.5 Fact Editing 
+
+Language Modeling Task. We introduce a simple language modeling (LM) task to evaluate a Transformer’s ability to perform next-token prediction while recalling factual informa-tion. In this task, the model is presented with a natural-language sentence expressing a 22 Figure 7: Per-key margin distributions is predictable of end-to-end Transformer accuracy. 
+
+The usable-key fraction inferred from per-key margins is predictable of the combined attention+MLP Transformer accuracy across the tested models. 
+
+(book , author ) relation and is required to predict each subsequent token in the sequence. We curate this dataset using author-book relations from the Goodreads Book Graph Dataset (Wan & McAuley, 2018). Formally, let f : Sk → Sv be the authors fact set , where Sk =
+
+{“It” , “1984” , “And Then There Were None” , . . . } is the set of book titles (keys) and Sv = {“Stephen King” , “George Orwell” , “Agatha Christie” , . . . } is the set of corresponding authors (values). To simplify analysis, we select exactly one book per author. Let J = {(“The author of” , “is” ), (“Who is the author of” , “? It is” ), . . . } denote the set of natural-language template prefix–suffix pairs. The LM task given f can then be defined as: 
+
+SLM [ f ] = {concat (tprefix , k, tsuffix , f (k)) | (tprefix , tsuffix ) ∈ J, k ∈ Sk}.For example, given the sequence: The author of | {z }
+
+> template prefix
+
+1984 |{z} 
+
+> key
+
+is |{z} 
+
+> template suffix
+
+George Orwell 
+
+| {z }
+
+> value
+
+from SLM [ f ], the model’s task is to perform next-token prediction at every position in the sentence. This LM task allows us to study factual recall in a more natural language modeling setting, complementing the SSFR setup. 
+
+Model Parameterization. For this experiment, we use a one-layer Transformer architecture with one head and the following non-standard design choices. We use this parameterization because it was the most realistic and simplest Transformer variant in our sweep that was able to achieve near-perfect accuracy on the book–author task when trained with an inserted fact-storing MLP. The model uses frozen tied input/output embeddings, no attention or MLP residual connec-tion, RoPE positional encoding, freezes the RMSNorm before the MLP, uses an RMSNorm before attention and the language-modeling head, and sets value and output projections of the attention layer frozen to identity matrices. The model hidden dimension is dmodel = 256. The attention layer keeps standard causal softmax attention, but uses learned nonlinear query and key projections. If zt is the attention-normalized residual stream, then, omitting biases, 
+
+qt = WQ,2 GELU (WQ,1 LN (zt)) , kt = WK,2 GELU (WK,1 LN (zt)) , vt = zt,and the attention output is 
+
+at = ∑
+
+> s≤t
+
+softmax s
+
+q⊤ 
+
+> t
+
+ks
+
+√dmodel 
+
+!
+
+vs,23 with the output projection fixed to the identity. The feedforward layer is a two-expert module. Let xt denote the residual stream entering the feedforward block at token position t, and let ˜xt be the normalized MLP input after the block’s pre-MLP RMSNorm. The feedforward output is FFN (xt, ˜ xt) = αt ffact ( ˜xt) + ( 1 − αt) faux (xt), αt = σ(g2(GELU (g1(xt)))) .Here ffact is the inserted fact-storing MLP, held fixed during Transformer training, and 
+
+faux (x) = xUV is a trainable rank-8 low-rank linear expert. The router is a two-layer scalar sigmoid MLP that forms a linear combination of the fact expert and auxiliary expert outputs. Intuitively, our goal is for the model to learn to use the fact-storing MLP to store the book–author relations and the auxiliary expert to learn the natural-language sentence formats. Book titles and author names are added to the model tokenizer as atomic tokens before training. For the fact MLP, the key embedding representing each book is the normalized version of the corresponding atomic book token. 
+
+GD MLP Setup. In our fact-editing experiment, we use GD-trained fact-storing MLPs (see Appendix A.1.1 for the bilinear gated architecture and optimizer settings), but we train the MLP with a MSE objective under arg-max decoding: 
+
+LMLP (K, V, f ) ∝
+
+> |K|
+
+# ∑
+
+> i=1
+
+MLP (ki) − v f (i) 
+
+> 22
+
+.The inserted fact expert is a gated MLP with hidden width h = 512, trained by GD for up to 10 , 000 epochs with learning rate 10 −3, minimum learning rate 10 −6, and early stopping once the objective falls below 10 −7. Crucially, we train this MLP with MSE rather than cross entropy because MSE matches the full author-value embedding vectors, not only the nearest-token classifier. We find that a parameter-matched cross-entropy GD MLP reaches 100% fact classification accuracy when evaluated standalone, but when inserted into the Transformer the model reaches only about 90% accuracy. 
+
+Training Setup. We train on 16 , 384 book-author facts with 16 rephrases per fact. We initialize embeddings with Kaiming-uniform initialization and train the Transformer with AdamW using learning rate 2 × 10 −4, weight decay 0.1, batch size 32, 18 epochs, and 8192 optimizer steps per epoch. The trained base reaches near-perfect standalone MLP accuracy 0.9998 and Transformer value-token accuracy 0.9984. 
+
+Evaluation. We divide the 16 , 384 stored facts into a preserved set whose answers should remain unchanged and an altered set whose answers are replaced by a fresh permutation of author values. We edit 328, 819, or 1638 facts, corresponding to 2%, 5%, and 10% of the fact set. For altered facts, we evaluate the new answer on both the edited training template and held-out rephrases; for preserved facts, we evaluate the original answer. We report four fact-editing quantities. Efficacy is author-token accuracy on altered facts under the edited labels. Paraphrase is accuracy on held-out rephrasings of the altered facts under the edited labels. Specificity is accuracy on preserved facts under the original labels. 
+
+Score is the harmonic mean of efficacy, paraphrase, and specificity. We additionally report the non-fact PPL ratio :
+
+rNF = PPL post,NF 
+
+PPL pre,NF 
+
+= exp  CE post,NF − CE pre,NF 
+
+ ,where the CE is averaged over all next-token positions except the author-value tokens, across preserved and altered prompts before and after editing. For example, rNF = 1 means the edit leaves non-fact-token language-modeling loss unchanged. 
+
+Baselines. We compare four editing methods: 24 • Our method, MLP S WAPPING , constructs a replacement GD fact expert for the complete post-edit fact set and swaps that expert into the frozen Transformer, with no update to the surrounding Transformer. • MEMIT (Meng et al., 2023c) applies a multi-edit linear residual update to the fact expert’s output projection, using altered-fact keys and a regularized solve. • ROME (Meng et al., 2023b) applies a rank-one residual update for each edit, adapted to our one-layer setting and applied at the final prompt token. • AlphaEdit (Fang et al., 2025) first estimates a preserve-key subspace and then projects the residual edit into the approximate nullspace of that preserve subspace before updating the fact expert. For the weight-update editors, residuals are computed from a single templated prompt per fact and applied to the inserted MLP output immediately upstream of the logits. We omit random prefix contexts and the ROME KL term because this synthetic dataset has a single relation and a unique author per book. For each weight-update baseline and edit fraction, we sweep method-specific hyperparame-ters and report the score-best configuration. AlphaEdit uses the best targeted grid setting 
+
+train steps = 100, lr = 0.05, clip norm = None , and singular value tolerance = 10 at all three edit fractions. MEMIT uses lr = 0.05, λ = 150, and clip norm = 0.75, with 100 steps at 2% and 5% edits and 25 steps at 10% edits. ROME uses lr = 0.05, wd = 1.5 × 10 −3,and early stopping loss = 5 × 10 −2, with 10 steps at 2% edits and 100 steps at 5% and 10% edits.                                                                  
+
+> Method Efficacy Paraphrase Specificity Score rNF
+> 2.00% edited facts MLP S WAPPING 1.000 1.000 0.999 1.000 1.016
+> AlphaEdit 0.896 0.899 0.981 0.924 1.000
+> MEMIT 0.643 0.645 0.990 0.729 1.000
+> ROME 1.000 1.000 0.009 0.026 1.238 5.00% edited facts MLP S WAPPING 0.998 0.998 0.998 0.998 1.057
+> AlphaEdit 0.747 0.745 0.909 0.794 1.001
+> MEMIT 0.128 0.126 0.986 0.179 1.001
+> ROME 0.991 0.991 0.002 0.006 1.642 10.00% edited facts MLP S WAPPING 0.998 0.999 0.999 0.999 1.021 AlphaEdit 0.482 0.482 0.766 0.550 1.010
+> MEMIT 0.004 0.003 0.995 0.005 1.002
+> ROME 0.834 0.832 0.001 0.003 2.405
+
+Table 1: Fact-editing metrics for baselines and MLP S WAPPING on the GD MLP base model. 
+
+rNF is the non-fact-token perplexity ratio. Bold marks the best value and italics mark the second-best value within each edit fraction and metric; lower is better for rNF , and higher is better for all other metrics. Ties at the displayed precision share the same marking. 
+
+Fact editing with constructed MLPs. We also repeat the fact-editing experiment from Figure 3c using the data-dependent Hebbian MLP construction . Because the data-dependent construction has slightly worse storage capacity scaling than GD MLPs, we find we need to increase the hidden dimension to h = 1024 to achieve near-perfect MLP and Transformer accuracy. Other than this change, our experimental setup is the same as described above for GD MLPs. We retune the method-specific hyperparameters for each of the fact-editing baselines. We show that MLP S WAPPING remains effective even with constructed Hebbian MLPs in Figure 9. Swapping out a h = 1024 data-dependent constructed MLP keeps the edit score above 0.98 through up to 10% edited facts, while the strongest tuned local-editing baseline reaches only 0.847 at 10%. The MLP S WAPPING non-fact PPL ratio remains below 1.11 ×.25 2% 5% 10% 
+
+> Edited facts (%)
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+> 1.8
+> 2.0
+> 2.2
+> 2.4
+> Non-Fact PPL Ratio
+
+Non-Fact PPL Ratio vs. Edited Facts 
+
+> Method
+> MEMIT
+> AlphaEdit
+> ROME
+> MLP Swap (GD MLPs)
+
+Figure 8: Non-fact-token perplexity ratio for the fact-editing setup of Figure 3c. AlphaEdit and MEMIT have nearly unchanged non-fact loss but weaker edit scores at larger edit fractions; ROME edits target prompts while severely damaging non-fact loss and specificity. MLP S WAPPING keeps near-perfect edit scores with a small non-fact PPL increase, at most 1.06 ×.
+
+A.5 Additional Empirical Results 
+
+A.5.1 Training-Accuracy Transformer Capacity 
+
+In Figure 10, we rerun the main-text Transformer capacity experiment from Figure 1c, but with a 99% training accuracy criterion instead of fact-adaptive accuracy (as defined in Section A.4.3). Unlike the evaluation accuracy plot, we fix the hidden dimension 
+
+m ∈ { 44, 88, 176, 352, 704, 1408 } and binary-search for the maximum number of facts 
+
+F ∈ [1, 65536 ] that the Transformer is able to store. Relative to the fact-adaptive frontier in Figure 1c, the train-side plot stores roughly 2–8 ×
+
+more facts at a fixed parameter budget for GD MLPs and for all of our construction variants. The gaps close the most for the weakest constructions, especially NTK and our unwhitened method; in particular, the suboptimal fixed-d asymptotics of the NTK construction are avoided under the train-accuracy criterion. This suggests that without the stricter fact-adaptive criterion, the surrounding attention layer uses its parameters to help store the fact set, rather than solely relying upon the inserted fact-storing MLP. 
+
+A.5.2 Anisotropic MLP Capacity 
+
+Figure 11 uses the same MLP capacity protocol as Appendix A.3.1, but evaluates the different MLP families on anisotropic keys and values. We apply the rank-1 spike model from Appendix A.3.2 with β = 1.5. We then estimate the resulting fact-storage frontier for 
+
+d ∈ { 64, 90, 128 }.Although anisotropic embeddings degrade the attainable fact-storage capacity for all meth-ods relative to the isotropic setting (Figure 2c), our data-dependent construction remains only 4–8 × worse than GD, as in the isotropic case. On the other hand, the NTK and un-whitened constructions struggle to store facts at the W = Θ(F log F) scaling once both keys and values are anisotropic. We find that whitening improves fact-storage capacity substantially more in the anisotropic case. 
+
+A.5.3 Margin and Capacity Scaling Under LLM Embeddings 
+
+In this section, we explore the margin scaling and MLP and Transformer Block capacity scaling when using our construction on embeddings sampled from an intermediate LM layer. Concretely, we replace the synthetic spherical key/value embeddings used in Sec-tions 4 and 5 with paired (x, y) embeddings captured from a real language model. The intent is to check that the margin bounds and the predicted storage-capacity scaling remain 26 2 5 10 
+
+Edited Facts (%)   
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Edit Score
+> AlphaEdit (h=1024)
+> MEMIT (h=1024)
+> ROME (h=1024)
+> MLP Swap (h=1024) 2510
+
+Edited Facts (%) 
+
+> 0.98
+> 1.00
+> 1.02
+> 1.04
+> 1.06
+> 1.08
+> 1.10
+> 1.12
+> 1.14
+> Non-Fact PPL Ratio
+> AlphaEdit (h=1024)
+> MEMIT (h=1024)
+> ROME (h=1024)
+> MLP Swap (h=1024)
+
+Figure 9: Fact-editing score (top) and non-fact-token perplexity ratio (bottom) for the 
+
+h = 1024 data-dependent constructed-MLP setting. MLP S WAPPING achieves an edit score above 0.98 through up to 10% edited facts—13 percentage points higher than the next highest baseline—all while non-fact PPL ratio remains below 1.11 ×.meaningful when the keys and values come from those that an intermediate layer of an LM presents to its MLP blocks. 
+
+LM embeddings. We stream the train split of WikiText through Qwen3-0.6B-Base and, at the middle decoder block (layer 14 of 28, the “mid layer”), record per-token MLP inputs x
+
+(post-RMSNorm hidden state) and outputs y (pre-residual), keeping N = 500 , 000 pairs. A factset of size F is then built by uniformly sampling F of these (xi, yi) pairs, taking xi as the input and yi as the output embedding under the identity mapping. 
+
+Margin scaling. Figure 12 shows the Section 4 margin scaling sweep on the captured Qwen3 mid-layer embeddings. We construct our bilinear random-feature Hebbian variant with d = M = 1024, sweeping F from 4 to 128 over five seeds per point. In both the arbitrary-keys/values and the isotropic regimes, the fitted bound tracks the empirical minimum margin γmin closely ( R2 ≥ 0.95), suggesting that our margin scaling laws continue to hold on real, anisotropic LM embeddings. 27 Figure 10: Transformer fact-storage capacity under a 99% training accuracy criterion. 
+
+Transformer train-accuracy capacity is 2-8 × higher than fact-adaptive capacity for our constructions and fixes the asymptotics for NTK – this suggests that attention parameters are learning to participate in storing the fact set. 
+
+MLP storage capacity. Figure 13 reproduces the standalone-MLP fact-storage capacity scaling of Section 4, but with the random key/value embeddings replaced by the captured Qwen3 mid-layer embeddings. Following the protocol in Appendix A.3.1, we binary-search over MLP hidden width W for the minimum width that achieves a 98% per-fact recall threshold using our whitened bilinear-RF Hebbian construction for F ∈ { 29, 2 10 , . . . , 2 14 }.Notably, the facts F vs. parameters W scaling follows the predicted W ≈ Θ(F log F) capacity scaling on LM embeddings. 
+
+Transformer block storage capacity. For the Transformer block (Figure 14), we use the same insert-then-train-attention hidden-width capacity sweep as the main-text Figure 1c: a frozen whitened-construction MLP is inserted into a single Transformer block whose input and output embeddings are the captured Qwen3 x and y, and we binary-search for the smallest hidden width reaching the success threshold. Here, we require 100% SSFR training 
+
+accuracy on the trained fact set rather than fact-adaptive evaluation accuracy. Moreover, we keep the post-attention residual (rather than disabling it), leave the value/output projections trainable (rather than freezing them to identity), and evaluate on the same inserted MLP (rather than swapping in an eval-MLP for a held-out fact set). Notably, as in the MLP case, the facts F vs. parameters W scaling follows the predicted W ≈ Θ(F log F) capacity scaling on LM embeddings. 28 Figure 11: MLP fact-storage capacity under anisotropic keys and values. Our data-dependent construction achieves asymptotically optimal fact-storage capacity (only 4-8 ×
+
+worse than GD), while NTK fails to achieve the desired W = Θ(F log F) scaling under anisotropy. 
+
+## B Theory 
+
+B.1 Information-Theoretic Lower Bound on Fact Storage 
+
+We prove the counting lower bound used in Theorem 2.4. 
+
+Proof of Theorem 2.4. Let b be the constant number of bits used to store each trainable param-eter. A model with W trainable parameters has at most 2 bW distinct parameter settings, and therefore can realize at most 2 bW distinct input-output behaviors on the fixed key set K.On the other hand, the number of possible fact sets on K and V is 
+
+|{ f : [|K|] → [|V|]}| = |V||K|,since each key can be assigned any value independently. If a model class g stores every fact set using W parameters, then the number of realizable behaviors must be at least the number of fact sets: 2bW ≥ | V||K|.Taking logarithms gives 
+
+bW ≥ | K| log 2 |V|.Because b is constant, 
+
+W ≥ |K| log 2 |V|
+
+b = Ω(|K| log |V|) .29 10 1 10 2                  
+
+> Number of facts F
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> Minimum margin  min
+> 1e8
+> Empirical min
+> Fitted theory
+> Qwen3-0.6B layer 14
+> arbitrary keys, arbitrary values
+> Fitted bound: min =C1Kdiag min Vmin CxEKEv
+> R2= 0.977, MSE=1.35e+14 10 110 2
+> Number of facts F
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> Minimum margin  min
+> 1e8
+> Empirical min
+> Fitted theory
+> Qwen3-0.6B layer 14
+> isotropic keys, isotropic values
+> Fitted bound: min =CsCxFL /( md )
+> R2= 0.955, MSE=2.64e+14
+
+Figure 12: Bilinear-RF margin scaling on Qwen3-0.6B mid-layer embeddings. Left: arbi-trary keys and values, where the measured margin tracks the deterministic bound through the key/value-geometry terms Kdiag min , EK, Ev and the composite cross-talk scale √EK
+
+√Ev κ.Right: the isotropic-key / isotropic-value bound, where the margin follows the single cross-talk term pFL /(md ). In both regimes the bound tracks the empirically measured minimum margin γmin (R2 ≥ 0.95), suggesting that our margin scaling laws hold for LM embeddings. 
+
+Figure 13: Standalone-MLP fact-storage capacity on Qwen3-0.6B mid-layer embeddings. 
+
+Our whitened bilinear-RF construction achieves the expected W ≈ Θ(F log F) capacity scaling on LM embeddings. 
+
+B.2 Hebbian MLP Construction 
+
+B.2.1 MLPs Are Hebbians 
+
+We formally restate and prove Theorem 3.1. 
+
+Theorem B.1 (MLPs are Hebbians) . Fix a feature map ϕ : Rd → Rm and B ∈ Rdv ×m, and define the MLP 
+
+MLP (x) := Bϕ(x).
+
+For the gated architecture used in this paper, the feature map is 
+
+ϕ(x) = ( Ax ) ⊙ σ(Gx ).30 Figure 14: Transformer-block fact-storage capacity on Qwen3-0.6B mid-layer embeddings (training-accuracy criterion). Our whitened bilinear-RF construction, inserted into a full Transformer block, retains the expected W ≈ Θ(F log F) scaling on LM embeddings. 
+
+Given stored inputs x1, . . . , xF, let yi := MLP (xi) and define the empirical feature covariance 
+
+ˆΣ := 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+ϕ(xi)ϕ(xi)⊤.
+
+Assume ˆΣ is invertible, and define the whitened kernel K(x, z) := ϕ(x)⊤ ˆΣ−1ϕ(z)
+
+and the corresponding whitened kernel Hebbian memory Hwhite (z) := 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yi K(xi, z).
+
+Then Hwhite (z) = MLP (z) for all z ∈ Rd.
+
+In other words, the MLP is exactly a kernel Hebbian memory with whitened kernel K. Proof. Let ˆW := 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yiϕ(xi)⊤
+
+denote the Hebbian weight matrix on the stored examples. Since yi = MLP (xi) = Bϕ(xi),we have ˆW = 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+Bϕ(xi)ϕ(xi)⊤ = B 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+ϕ(xi)ϕ(xi)⊤
+
+!
+
+= B ˆΣ.31 Now expand the whitened kernel Hebbian memory: 
+
+Hwhite (z) = 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yi K(xi, z)= 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yi ϕ(xi)⊤ ˆΣ−1ϕ(z)= 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+yiϕ(xi)⊤
+
+!
+
+ˆΣ−1ϕ(z)= ˆW ˆΣ−1ϕ(z)= B ˆΣ ˆΣ−1ϕ(z)= Bϕ(z)= MLP (z).Therefore Hwhite (z) = MLP (z) for all z ∈ Rd, so the MLP is exactly a kernel Hebbian memory with whitened kernel K.
+
+B.2.2 Bilinear MLP Featurization Induces the K2 Kernel 
+
+We first prove that our bilinear MLP construction converges to a Hebbian MLP with quadratic ( K2) kernel when the number of random features m scales as Θ(d2):
+
+Lemma B.2 (Bilinear MLP featurization induces sketched K2 kernel.) . Let rows (Ar, Gr )mr=1
+
+of matrices A, G be i.i.d. standard Gaussian vectors in Rd, and define the bilinear feature map g(x) := 1
+
+√m
+
+ (A⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+x)mr=1 ∈ Rm.
+
+Then the kernel induced by this feature map is 
+
+ˆK(x, z) := ⟨g(x), g(z)⟩ = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(A⊤ 
+
+> r
+
+x)( A⊤ 
+
+> r
+
+z) ( G⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+z).
+
+and satisfies 
+
+E[ ˆK(x, z)] = ⟨x, z⟩2 = K2(x, z),
+
+so ˆK is an unbiased random-feature sketch of the exact quadratic kernel K 2.Proof. The kernel identity follows by expanding the inner product of the feature vectors: 
+
+⟨g(x), g(z)⟩ = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(A⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+x)( A⊤ 
+
+> r
+
+z)( G⊤ 
+
+> r
+
+z) = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(A⊤ 
+
+> r
+
+x)( A⊤ 
+
+> r
+
+z) ( G⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+z).For the expectation, the pairs (Ar, Gr ) are i.i.d., so it suffices to compute one summand. Using independence of Ar and Gr and the Gaussian covariance identity, 
+
+E[( A⊤ 
+
+> r
+
+x)( A⊤ 
+
+> r
+
+z)] = ⟨x, z⟩, E[( G⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+z)] = ⟨x, z⟩.Therefore 
+
+E[ ˆK(x, z)] = E[( a⊤ 
+
+> 1
+
+x)( a⊤ 
+
+> 1
+
+z)] E[( b⊤ 
+
+> 1
+
+x)( b⊤ 
+
+> 1
+
+z)] = ⟨x, z⟩2.For fixed x, z, standard concentration bounds for Gaussian chaos terms (Vershynin, 2018) im-ply that the sketching error scales as ˆK(x, z) − K2(x, z) = O(m−1/2 ) with high probability. In Appendix B.8.4, we show that exact off-diagonal K2 entries have size Θ(1 /d) with high probability in the isotropic keys and values setting; these off-diagonal terms are precisely what drive the cross-talk contribution in the margin decomposition. Consequently, taking 
+
+m ≳ d2 suffices to make the sketching noise smaller than the natural off-diagonal K2 scale, so that the sketching makes the margin no worse than the margin with the exact-K2 kernel. 32 Algorithm 1 Sketched-K2 Hebbian Construction with Optional Whitening 
+
+Require: Keys {ki}Fi=1 ⊂ Rd, value embeddings {vj}Fj=1 ⊂ Rd, mapping f : [F] → [F]
+
+Require: Codes {cj}Fj=1 ⊂ Rdc (default cj = vj), feature width m
+
+Require: Optional whitening: mode ∈ { none , diag , full } (default none ), ridge λ > 0
+
+Ensure: Feature map g, readout B ∈ Rdc ×m, predictor ˆ c(x) = B g(x) 
+
+> 1:
+
+Sample rows Ar, Gr i.i.d.
+
+∼ N (0, Id) for r = 1, . . . , m 
+
+> 2:
+
+Define g(x) = 1√m
+
+ (A⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+x)mr=1 
+
+> 3:
+
+Form C f ∈ RF×dc with row i equal to c⊤  
+
+> f(i)
+> 4:
+
+Form Φ ∈ RF×m with row i equal to g(ki)⊤ 
+
+> 5:
+
+Compute raw Hebbian readout B0 ← 1 
+
+> F
+
+C⊤ 
+
+> f
+
+Φ 
+
+> 6:
+
+if mode is none then  
+
+> 7:
+
+B ← B0 
+
+> 8:
+
+else if mode is diag then  
+
+> 9:
+
+Σ ← 1 
+
+> F
+
+Φ⊤Φ 
+
+> 10:
+
+for r = 1, . . . , m do  
+
+> 11:
+
+B:, r ← B0,:, r /(Σrr + λ) 
+
+> 12:
+
+end for  
+
+> 13:
+
+else if mode is full then  
+
+> 14:
+
+if m ≤ F then  
+
+> 15:
+
+Σ ← 1 
+
+> F
+
+Φ⊤Φ 
+
+> 16:
+
+B ← B0(Σ + λIm)−1 
+
+> 17:
+
+else  
+
+> 18:
+
+B ← C⊤ 
+
+> f
+
+(ΦΦ ⊤ + λIF )−1Φ {dual branch } 
+
+> 19:
+
+end if  
+
+> 20:
+
+end if  
+
+> 21:
+
+Return ˆ c(x) = B g(x) and retrieval scores sj(x) = ⟨vj, ˆ c(x)⟩
+
+B.2.3 Sketched-K2 Construction 
+
+Algorithm 1 provides a pseudocode implementation of our the full bilinear MLP construc-tion used in our experiments. 
+
+B.2.4 Kernel Whitening 
+
+Here, we describe the kernel whitening procedure used in Section 4 to improve our Hebbian MLP’s fact storage capacity. For the sketched-K2 feature map, let 
+
+Φ =
+
+
+
+g(k1)⊤
+
+...
+
+g(kF )⊤
+
+ ∈ RF×m, C f =
+
+
+
+c⊤ 
+
+> f(1)
+
+...
+
+c⊤ 
+
+> f(F)
+
+ ∈ RF×dc ,with g(x) = 1√m
+
+ (A⊤ 
+
+> r
+
+x)( G⊤ 
+
+> r
+
+x)mr=1 as in Theorem 4.3. The raw Hebbian readout is 
+
+B0 = 1
+
+F C⊤ 
+
+> f
+
+Φ, ˆΣ = 1
+
+F Φ⊤Φ. (12) The whitened construction replaces the raw Hebbian readout by the full ridge-whitened readout indexed by λ ≥ 0, 
+
+Bλ = B0( ˆΣ + λIm)−1. (13) This rescales the bilinear features according to their empirical covariance, mitigating the feature imbalance that appears at finite width. Unless stated otherwise, our construction uses λ = 10 −6 by default. 33 When m > n, we instead perform the corresponding dual solve for numerical stability: 
+
+Bλ = C⊤ 
+
+> f
+
+(ΦΦ ⊤ + λIn)−1Φ. (14) The primal and dual forms are equivalent up to scaling. 
+
+Whitening to reduce key crowding EK. Let g : Rd → Rm, Φ ∈ Rn×m and ˆΣ be as defined above. The unwhitened Gram matrix on the stored keys is Kraw := ΦΦ ⊤. Full whitening replaces this by the preconditioned Gram matrix 
+
+Kwhite := Φ ˆΣ−1Φ⊤ =  Φ ˆΣ−1/2   Φ ˆΣ−1/2 ⊤,equivalently using whitened features ˜ g(·) = ˆΣ−1/2 g(·).Recall the key-crowding statistic: 
+
+EK (i) := ∑ 
+
+> t̸=i
+
+K2
+
+> ti
+
+, EK := max  
+
+> i
+
+EK (i).Since EK (i) ≤ ∑t K2 
+
+> ti
+
+and max i(·) ≤ ∑i(·), we always have 
+
+EK ≤ ∥ K∥2
+
+> F
+
+. (15) 
+
+Lemma B.3 (Whitening minimizes upper bound on EK). Assume ˆΣ ≻ 0. For any PSD preconditioner M ⪰ 0, define KM := ΦMΦ⊤ (i.e. using features M1/2 g(·)). Among all M ⪰ 0
+
+with fixed average self-kernel 
+
+1
+
+F tr (KM) = tr (M ˆΣ) = m, (16) 
+
+the choice M⋆ = ˆΣ−1 (full whitening) minimizes ∥KM∥2
+
+> F
+
+. Consequently, by equation 15, whitening minimizes an explicit upper bound on E K:EK (Kwhite ) ≤ ∥ Kwhite ∥2 
+
+> F
+
+= min  
+
+> M⪰0: tr (MˆΣ)= m
+
+∥KM∥2
+
+> F
+
+.
+
+Proof. Write ¯Φ := Φ/√F so that ˆΣ = ¯Φ⊤ ¯Φ and KM = F ¯ΦM ¯Φ⊤. Using ∥AA ⊤∥F =
+
+∥A⊤A∥F with A = ¯ΦM1/2 ,
+
+∥KM∥2 
+
+> F
+
+= F2∥ ¯ΦM ¯Φ⊤∥2 
+
+> F
+
+= F2∥M1/2 ˆΣM1/2 ∥2
+
+> F
+
+.Let A := ˆΣ1/2 M ˆΣ1/2 ⪰ 0. Then tr (A) = tr (M ˆΣ) = m and ∥M1/2 ˆΣM1/2 ∥F = ∥A∥F, so minimizing ∥KM∥2 
+
+> F
+
+under equation 16 is equivalent to minimizing ∥A∥2 
+
+> F
+
+subject to A ⪰ 0and tr (A) = m. If {λr }mr=1 are the eigenvalues of A, then ∥A∥2 
+
+> F
+
+= ∑r λ2 
+
+> r
+
+and ∑r λr = m. By Cauchy–Schwarz, ∑r λ2 
+
+> r
+
+≥ (∑r λr )2/m = m, with equality iff all λr = 1, i.e. A = Im. Thus ˆΣ1/2 M ˆΣ1/2 = Im, so M = ˆΣ−1.
+
+B.2.5 Data-Dependent Construction 
+
+Our data-dependent construction used in Section 4 keeps the same bilinear architecture as the sketched-K2 MLP, but refines the bilinear feature factors using the fact set and key/value embeddings. We describe our procedure here. Let 
+
+K ∈ Rn×d, C f ∈ Rn×dc ,where the rows of K are the stored keys and the rows of C f are the corresponding target codes. For random feature matrices A, G ∈ Rm×d, define 
+
+Φ(A, G) := ( KA ⊤) ⊙ (KG ⊤) ∈ Rn×m.34 We initialize A0 and G0 with the same random bilinear sketch used in the sketched-K2
+
+construction, and form the corresponding Hebbian 
+
+B0 := 1
+
+n C⊤ 
+
+> f
+
+Φ(A0, G0) ∈ Rdc ×m.The data-dependent kernel is obtained by performing two least-squares solves: 
+
+G1 ∈ argmin 
+
+> G∈Rm×d
+
+C f − Φ(A0, G)B⊤
+
+> 0
+> 2
+> F
+
+, (17) 
+
+A1 ∈ argmin 
+
+> A∈Rm×d
+
+C f − Φ(A, G1)B⊤
+
+> 0
+> 2
+> F
+
+. (18) Note that each subproblem is linear because Φ(A, G) is linear in either factor once the other is held fixed. After these two updates, we discard the intermediate readout B0 and form the learned feature matrix 
+
+Φ1 := Φ(A1, G1).We then replace B0 with the full ridge-whitened readout from Equation (13): 
+
+Bλ = 1
+
+n C⊤ 
+
+> f
+
+Φ1
+
+ 1
+
+n Φ⊤ 
+
+> 1
+
+Φ1 + λIm
+
+−1
+
+.
+
+B.2.6 Bit Complexity 
+
+We now extend the real-valued parameter-count statement of Corollary 4.4 to a bounded-precision bit complexity theorem. The proof has three steps: (i) positive margin implies robustness to output perturbations, (ii) the bilinear MLP is Lipschitz in its parameters on the stored keys, and (iii) sufficiently fine parameter quantization therefore preserves all margins. 
+
+Setup. Recall from Equation (7) that our bilinear MLP has the form 
+
+gθ(x) = B (Ax ) ⊙ (Gx ), θ = ( A, G, B), (19) with A, G ∈ Rm×d and B ∈ Rd×m. Let P := dim (θ) denote the total number of scalar parameters, so P ≍ md up to an absolute constant factor. For a stored fact set f : [F] → [|V|], define the minimum margin 
+
+γmin (θ) := min  
+
+> i∈[F]
+
+min     
+
+> j̸=f(i)
+
+gθ(ki), v f (i) − vj .We also write 
+
+RK := max  
+
+> i∈[F]
+
+∥ki∥2, RV := max  
+
+> a∈[|V|]
+
+∥va∥2.Note that in the isotropic and unit-norm key/value regime of Section 4.1 and Appendix B.8.4, one has RK ≤ 1 and RV ≤ 1. 
+
+Lemma B.4 (Margin robustness under output perturbations) . Let θ⋆ be any parameter vector such that γmin (θ⋆) ≥ γ0 > 0. Assume that for some eθ,
+
+max  
+
+> i∈[F]
+
+geθ(ki) − gθ⋆ (ki) 2 ≤ γ0
+
+4RV
+
+.
+
+Then eθ stores the same fact set in the sense of Definition 2.1, and in fact 
+
+γmin (eθ) ≥ γ0
+
+2 .35 Proof. Fix any stored key ki and any competitor j̸ = f (i). Then 
+
+D
+
+geθ(ki), v f (i) − vj
+
+E
+
+=
+
+D
+
+gθ⋆ (ki), v f (i) − vj
+
+E
+
++
+
+D
+
+geθ(ki) − gθ⋆ (ki), v f (i) − vj
+
+E
+
+≥ γ0 − geθ(ki) − gθ⋆ (ki) 2 ∥v f (i) − vj∥2
+
+≥ γ0 − γ0
+
+4RV
+
+ ∥v f (i)∥2 + ∥vj∥2
+
+
+
+≥ γ0 − γ0
+
+4RV
+
+(2RV ) = γ0
+
+2 .Since this holds for every i and every j̸ = f (i), we obtain γmin (eθ) ≥ γ0/ 2 > 0, which implies that eθ stores the same fact set. 
+
+Lemma B.5 (Bilinear MLPs are Lipschitz in their parameters on stored keys) . Fix any x ∈ Rd.Let θ = ( A, G, B) and θ′ = ( A′, G′, B′), and define M := max 
+
+n
+
+∥A∥op , ∥G∥op , ∥B∥op , ∥A′∥op , ∥G′∥op , ∥B′∥op 
+
+o
+
+.
+
+Then 
+
+gθ(x) − gθ′ (x) 2 ≤ 3M2∥x∥22∥θ − θ′∥2,
+
+where 
+
+∥θ − θ′∥22 := ∥A − A′∥2 
+
+> F
+
++ ∥G − G′∥2 
+
+> F
+
++ ∥B − B′∥2
+
+> F
+
+.
+
+Consequently, on any parameter region on which the operator norms of A, G, B are uniformly bounded by M, the map θ 7 → gθ(ki) is 3M2 R2
+
+> K
+
+-Lipschitz for every stored key ki satisfying ∥ki∥2 ≤ RK.Proof. Write 
+
+gθ(x) − gθ′ (x) = B(Ax ⊙ Gx ) − B′(A′x ⊙ G′x)= ( B − B′)( Ax ⊙ Gx ) + B′
+
+(Ax ⊙ Gx ) − (A′x ⊙ G′x)
+
+
+
+= ( B − B′)( Ax ⊙ Gx ) + B′
+
+(( A − A′)x) ⊙ Gx 
+
+
+
++ B′
+
+A′x ⊙ (( G − G′)x)
+
+
+
+.Using ∥u ⊙ v∥2 ≤ ∥ u∥2∥v∥∞ ≤ ∥ u∥2∥v∥2 together with ∥Tx ∥2 ≤ ∥ T∥op ∥x∥2 gives 
+
+∥(B − B′)( Ax ⊙ Gx )∥2 ≤ ∥ B − B′∥op ∥Ax ∥2∥Gx ∥2 ≤ M2∥x∥22∥B − B′∥F,
+
+∥B′((( A − A′)x) ⊙ Gx )∥2 ≤ ∥ B′∥op ∥(A − A′)x∥2∥Gx ∥2 ≤ M2∥x∥22∥A − A′∥F,
+
+∥B′(A′x ⊙ (( G − G′)x)) ∥2 ≤ ∥ B′∥op ∥A′x∥2∥(G − G′)x∥2 ≤ M2∥x∥22∥G − G′∥F.Summing the three bounds and using a + b + c ≤ 3√a2 + b2 + c2 yields 
+
+∥gθ(x) − gθ′ (x)∥2 ≤ 3M2∥x∥22
+
+q
+
+∥A − A′∥2 
+
+> F
+
++ ∥G − G′∥2 
+
+> F
+
++ ∥B − B′∥2 
+
+> F
+
+= 3M2∥x∥22∥θ − θ′∥2.
+
+Theorem B.6 (Bounded-bit implementation) . Fix a fact set and a real-valued parameter vector 
+
+θ⋆ for a bilinear MLP of the form in Equation (19) . Assume: (i) Positive margin: 
+
+γmin (θ⋆) ≥ γ0 > 0. 
+
+(ii) Bounded dynamic range: every coordinate of θ⋆ lies in [−Crng , Crng ].(iii) Parameter Lipschitzness on stored keys: there exists Lθ > 0 such that for all θ, θ′ ∈
+
+[−Crng , Crng ]P,
+
+max  
+
+> i∈[F]
+
+∥gθ(ki) − gθ′ (ki)∥2 ≤ Lθ ∥θ − θ′∥2. (20) 36 Then there exists a floating-point parameter vector eθ that stores the same fact set and satisfies 
+
+γmin (eθ) ≥ γ0
+
+2 .
+
+Moreover, one may choose eθ by rounding each coordinate of θ⋆ to a binary floating-point representa-tion with t mantissa bits, where t = O log 4Crng Lθ RV
+
+√P
+
+γ0
+
+!! 
+
+.
+
+In this case, each coordinate can be encoded using at most O log log Crng + log 4Crng Lθ RV
+
+√P
+
+γ0
+
+!! 
+
+bits. Hence, the total number of bits needed to encode the quantized parameter vector eθ is at most 
+
+Bits (eθ) ≤ P · O log log Crng + log 4Crng Lθ RV
+
+√P
+
+γ0
+
+!! 
+
+. (21) 
+
+Proof. Let eθ be obtained by rounding each coordinate of θ⋆ to a binary floating-point representation with t mantissa bits. For standard floating-point rounding, each coordinate incurs relative error at most O(2−t), and hence absolute error at most 
+
+O(2−t) Crng .Therefore 
+
+∥eθ − θ⋆∥2 ≤ O(2−t) Crng 
+
+√P.Choosing 
+
+t = O log 4Crng Lθ RV
+
+√P
+
+γ0
+
+!! 
+
+ensures that 
+
+∥eθ − θ⋆∥2 ≤ γ0
+
+4Lθ RV
+
+.Applying the Lipschitz assumption (Equation (20)), max  
+
+> i∈[F]
+
+∥geθ(ki) − gθ⋆ (ki)∥2 ≤ Lθ ∥eθ − θ⋆∥2 ≤ γ0
+
+4RV
+
+.Lemma B.4 therefore implies that eθ stores the same fact set and that γmin (eθ) ≥ γ0/2. It remains to count bits. Each nonzero floating-point coordinate can be written in the form 
+
+±m 2e,where the mantissa m is represented to t bits of precision. Since every coordinate lies in [−Crng , Crng ], the exponent satisfies |e| = O(log Crng ), and hence the exponent can be encoded using O(log log Crng ) bits. Thus each coordinate can be encoded using at most 
+
+O log log Crng + t = O log log Crng + log 4Crng Lθ RV
+
+√P
+
+γ0
+
+!! 
+
+bits. Multiplying by the P coordinates yields Equation (21). Next, we specialize the previous bit complexity theorem to our sketched bilinear MLP construction (Algorithm 1) by bounding its dynamic range and Lipschitz constant. In the isotropic unit-norm regime of Section 4.1 and Appendix B.8.4, they reduce to Crng , Lθ ≤
+
+dO(1), yielding an explicit bit-complexity bound. 37 Proposition B.7 (Dynamic range and stored-key Lipschitzness for the unwhitened sketched-K2 construction) . Let a1, . . . , am, b1, . . . , bm ∈ Rd be sampled i.i.d. from N(0, Id),and consider the sketched-K 2 feature map g(x) = 1
+
+√m
+
+ (a⊤ 
+
+> r
+
+x)( b⊤ 
+
+> r
+
+x)mr=1.
+
+Let ¯A, ¯G ∈ Rm×d be the matrices whose rows are a⊤ 
+
+> r
+
+and b⊤ 
+
+> r
+
+, respectively, and realize g in bilinear MLP form by setting 
+
+A = m−1/4 ¯A, G = m−1/4 ¯G.
+
+Let the raw Hebbian readout be 
+
+B0 = 1
+
+F C⊤ 
+
+> f
+
+Φ,
+
+where the rows of Φ ∈ RF×m are g(ki)⊤ and the rows of C f ∈ RF×d are the value embeddings 
+
+v⊤ 
+
+> f(i)
+
+.Assume m, F, δ−1 ≤ dO(1).
+
+Then, with probability at least 1 − δ over the draw of {ar, br }mr=1, the resulting bilinear MLP 
+
+x 7 → B0
+
+ (Ax ) ⊙ (Gx )
+
+has parameter dynamic range and stored-key parameter Lipschitz constant bounded by Crng , Lθ ≤ dO(1) poly (RK, RV ).
+
+where one may take Crng ≤ dO(1) max {1, RV R2 
+
+> K
+
+}, Lθ ≤ dO(1) R2 
+
+> K
+
+max {1, R2 
+
+> V
+
+R4 
+
+> K
+
+}.
+
+Proof. Standard Gaussian random matrix bounds (Vershynin, 2018) imply that with proba-bility at least 1 − δ over the draw of {ar, br }mr=1,
+
+∥A∥op , ∥G∥op ≲ m−1/4 √m + √d +
+
+q
+
+log (1/ δ)
+
+
+
+.Under the assumption m, δ−1 ≤ dO(1), it follows that 
+
+∥A∥op , ∥G∥op ≤ dO(1).Next, since each value embedding has norm at most RV ,
+
+∥C f ∥op ≤ ∥ C f ∥F ≤ √F R V .Also, 
+
+∥Φ∥op ≤ ∥ Φ∥F ≤ √F max  
+
+> i∈[F]
+
+∥g(ki)∥2.For every stored key ki,
+
+∥g(ki)∥2 = (Ak i) ⊙ (Gk i) 2 ≤ ∥ Ak i∥2 ∥Gk i∥2 ≤ ∥ A∥op ∥G∥op R2
+
+> K
+
+.Therefore 
+
+∥Φ∥op ≤ √F ∥A∥op ∥G∥op R2
+
+> K
+
+,and hence 
+
+∥B0∥op ≤ 1
+
+F ∥C f ∥op ∥Φ∥op ≤ RV ∥A∥op ∥G∥op R2 
+
+> K
+
+≤ dO(1) RV R2
+
+> K
+
+with probability at least 1 − δ.Now define 
+
+M := max {∥ A∥op , ∥G∥op , ∥B0∥op }.38 From the previous bounds, 
+
+M ≤ dO(1) max {1, RV R2 
+
+> K
+
+}
+
+with probability at least 1 − δ.To pass from operator norms to coordinate bounds, note that for any matrix T,
+
+|Tab | = |e⊤ 
+
+> a
+
+Te b| ≤ ∥ T∥op .Hence every scalar entry of A, G, B0 is bounded by M, and so one may take 
+
+Crng ≤ M ≤ dO(1) max {1, RV R2 
+
+> K
+
+}.Finally, Lemma B.5 yields 
+
+Lθ ≤ 3M2 R2 
+
+> K
+
+≤ dO(1) R2 
+
+> K
+
+max {1, R2 
+
+> V
+
+R4 
+
+> K
+
+},which proves the claim. 
+
+Corollary B.8 (Bit complexity in the isotropic regime for the unwhitened construction) .
+
+Assume the isotropic key/value regime of Corollary 4.4, and consider the sketched- K2 construction of Algorithm 1. Choose the width m so that the corresponding real-valued construction satisfies P ≍ md ≍ F log (F/δ)
+
+and has constant slack margin 
+
+γmin (θ⋆) ≥ c0 > 0
+
+with high probability. Assume further that F, δ−1 ≤ dC for an absolute constant C . Then with high probability the same fact set can be stored using 
+
+Bits (eθ) = O
+
+
+
+F log (F/δ) log d
+
+
+
+. (22) 
+
+Proof. By the isotropic real-valued capacity result, the unwhitened construction stores F
+
+facts using 
+
+P ≍ md ≍ F log (F/δ)
+
+parameters, up to an absolute constant factor. In the isotropic unit-norm regime, RK, RV ≤ 1. Since F ≤ dO(1), Proposition B.7 yields 
+
+Crng , Lθ ≤ dO(1)
+
+with high probability. Applying Theorem B.6, Bits (eθ) ≤ P O log log Crng + log 4Crng Lθ RV
+
+√Pc0
+
+!! 
+
+.Since Crng , Lθ , P ≤ dO(1) under the standing assumption F, δ−1 ≤ dC, the quantity inside the outer O(·) is O(log d). Combining this with P ≍ F log (F/δ) yields Equation (22). 
+
+B.3 NTK Baseline 
+
+For completeness, we describe the NTK baseline we implement from Nichani et al. (2024). Let K ∈ RF×d be the matrix whose ith row is k⊤ 
+
+> i
+
+, and let C f ∈ RF×dc be the matrix whose ith row is c⊤ 
+
+> f(i)
+
+, where typically cj = vj. Given hidden width m, sample random gate directions 
+
+wr i.i.d.
+
+∼ N (0, Id) and random output directions pr ∈ Rdc with ∥pr ∥2 = 1 for r = 1, . . . , m.Writing Wgate ∈ Rm×d for the matrix with rows w⊤ 
+
+> r
+
+and P = [ p1, . . . , pm] ∈ Rdc ×m, define the degree-1 Hermite feature matrix 
+
+H := He 1(KW ⊤
+
+> gate
+
+) = KW ⊤ 
+
+> gate
+
+∈ RF×m,39 where He 1(t) = t is applied entrywise. The up-projection is then chosen as 
+
+Wup := 1
+
+m
+
+ H ⊙ (C f P)⊤K ∈ Rm×d.The NTK MLP construction is then ˆcNTK (x) = P
+
+
+
+σ(Wgate x) ⊙ (Wup x)
+
+
+
+.Throughout this work, we take σ = ReLU. Note that Nichani et al. (2024)’s construction requires choosing a Hermite degree k. This choice plays a role analogous to our kernel choice: it determines which degree polynomial interactions are emphasized by the construction. In the most favorable case k = 1, the fit uses the linear features He 1(KW ⊤
+
+> gate
+
+) = KW ⊤
+
+> gate
+
+, and the realized finite-width model remains a gated bilinear MLP. Thus, in expectation over the random features, the k = 1 baseline captures quadratic interactions, like how our sketched bilinear construction approximates a quadratic kernel. This result, and the fact that the capacity bounds in Nichani et al. (2024) degrade exponentially with k, makes using k = 1 the fairest comparison to our sketched-K2
+
+construction. The main difference is that the NTK construction folds the target codes into the hidden coefficients through C f P, whereas our construction uses an explicit bilinear random-feature map followed by a Hebbian readout. 40 B.4 Margin Bounds Setup 
+
+We lay out the setup we’ll use throughout the appendix to prove our margin bounds. 
+
+Stored items and kernel 
+
+We store F key–value items {(kt, vt)}Ft=1 with keys kt ∈ Rd and values vt ∈ Rd. A feature map ϕ : Rd → Rp induces a kernel K : Rd × Rd → R
+
+ˆKti := K(kt, ki) = ⟨ϕ(kt), ϕ(ki)⟩ (t, i ∈ [F]) .We write ˆ K ∈ RF×F for the Gram matrix. 
+
+Codes and retrieval output 
+
+Each index t ∈ [F] has an associated code vector ct ∈ Rd. Given a stored query at index i
+
+(i.e. query key ki), the retrieval output is 
+
+yi :=
+
+> F
+
+# ∑
+
+> t=1
+
+ct ˆKti ∈ Rd. (23) Unless otherwise noted, for simplicity, we assume ct = vt for all the upcoming theorems and their proofs. 
+
+Pairwise margin 
+
+For a stored index i and a competitor j̸ = i, we define the pairwise margin 
+
+γij := ⟨vi − vj, yi⟩. (24) We write γmin := min i̸ =j γij for the worst-case (minimum) pairwise margin. Expanding, we see that the pairwise margin decomposes into signal and cross-talk components. 
+
+γij = ˆKii ⟨vi − vj, ci⟩
+
+| {z }
+
+> signal
+
++ ∑ 
+
+> t̸=i
+
+ˆKti ⟨vi − vj, ct⟩
+
+| {z }
+
+> cross-talk
+
+. (25) 
+
+Margin convention (absorbing the competitor) 
+
+For the pairwise margin γij , the single term t = j inside the cross-talk sum in equation 25 corresponds to the specific competitor item. For simplicity of our proofs, in the rest of the appendix, we re-define the signal and cross-talk by absorbing the competitor term into the signal: 
+
+γij = esij 
+
+|{z} 
+
+> signal
+
++ ezij 
+
+|{z} 
+
+> cross-talk
+
+(26) with 
+
+esij := ˆKii ⟨vi − vj, ci⟩ + ˆKji ⟨vi − vj, cj⟩, ezij := ∑
+
+> t/∈{ i,j}
+
+ˆKti ⟨vi − vj, ct⟩ (27) 
+
+B.5 Embedding Geometric Summary Statistics Definitions 
+
+We collect here the formal definitions of all geometric summary statistics that enter our margin bounds. Throughout, ˆK denotes the kernel Gram matrix with entries ˆKti = K(kt, ki),and v1, . . . , vF ∈ Rd are the stored value vectors with associated Hebbian codes c1, . . . , cF ∈
+
+Rd.
+
+Key-geometry statistics. 
+
+41 Definition B.9 (Diagonal and off-diagonal kernel energies) .
+
+Kdiag min := min 
+
+> i∈[F]
+
+ˆKii , Koff max := max   
+
+> i̸=j
+
+| ˆKij |.
+
+Kdiag min is the minimum kernel self-similarity; Koff max is the maximum off-diagonal kernel entry. 
+
+Definition B.10 (Kernel column energy) .
+
+EK := max  
+
+> i∈[F]
+
+# ∑ 
+
+> t̸=i
+
+ˆK2
+
+> ti
+
+.
+
+EK measures the worst-case squared ℓ2 energy of an off-diagonal kernel column, capturing key-embedding crowding: it grows when keys cluster in embedding space and kernel overlaps are large. 
+
+Value-geometry statistics. Definition B.11 (Value separability) .
+
+Vmin := min   
+
+> i̸=j
+
+⟨vi − vj, vi⟩, Vmax := max   
+
+> i̸=j
+
+|⟨ vi − vj, vj⟩| .
+
+Vmin is the signal-side value separability floor; Vmax is the cross-talk-side value interaction ceiling. For each pair i̸ = j, let Y(ij ) :=  ⟨vi − vj, ct⟩ 
+
+> t/∈{ i,j}
+
+∈ RF−2 denote the vector of value-difference inner products with all non-target, non-competitor codes, and let 1 ∈ RF−2
+
+denote the all-ones vector. 
+
+Definition B.12 (Mean competitor alignment) .
+
+BY := max   
+
+> i̸=j
+
+# ∑
+
+> t/∈{ i,j}
+
+vi − vj, ct = max  
+
+> i̸=j
+
+D
+
+1, Y(ij )E
+
+.
+
+BY controls the bias contribution to cross-talk arising from the mean of the kernel off-diagonal entries (equal to 1/ d under isotropic keys). 
+
+Definition B.13 (Value-difference energy) .
+
+Ev := max  
+
+> i∈[F]
+
+max   
+
+> j̸=i
+
+# ∑ 
+
+> t̸=i
+
+⟨vi − vj, ct⟩2.
+
+Ev measures the worst-case squared ℓ2 energy of the value-difference inner-product vector, capturing value-embedding interference: it grows when value embeddings cluster and non-target codes align with the target direction. 
+
+Definition B.14 (Value sparsity) . Recall Y(ij ) from Definition B.12. Define 
+
+Lv := max  
+
+> i̸=j
+
+∥Y(ij )∥21
+
+∥Y(ij )∥22
+
+Lv ∈ [1, F − 2] is an effective sparsity parameter: it equals 1 when the energy of Y(ij )
+
+is concentrated on a single coordinate and equals F − 2 when it is spread uniformly. It amplifies cross-talk when value-difference inner products have heavy-tailed distributions across competitors. 
+
+Key–value coupling. Definition B.15 (Coupling factor) . For stored index i and competitor j̸ = i, let EK (i) :=
+
+∑t̸ =i ˆK2 
+
+> ti
+
+and Ev(i, j) := ∑t̸ =i⟨vi − vj, ct⟩2 be the pairwise energies. Define the pairwise coupling 
+
+κij :=
+
+# ∑ 
+
+> t̸=i
+
+ˆKti ⟨vi − vj, ct⟩
+
+pEK (i) pEv(i, j) ∈ [0, 1 ],42 κ := max  
+
+> i∈[F]
+
+max   
+
+> j̸=i
+
+κij .
+
+κ quantifies the worst-case alignment between the kernel column pattern and the value-interference pattern: κ = 0 when the two are orthogonal and κ = 1 when they are perfectly aligned. 
+
+B.6 Cross-Talk Bounds 
+
+We start by providing upper bounds for the cross-talk term ezij .
+
+Cross-talk as inner product. First, we define cross-talk as an inner product. Concretely, fix 
+
+(i, j) with j̸ = i and define the off-diagonal kernel column 
+
+X(ij ) :=   ˆKti 
+
+ 
+
+> t/∈{ i,j}
+
+∈ RF−2. (28) And for the value/code side: 
+
+Y(ij ) :=  ⟨vi − vj, ct⟩)t/∈{ i,j} ∈ RF−2, (29) Then the cross-talk term is the inner product 
+
+ezij := ∑
+
+> t/∈{ i,j}
+
+ˆKti ⟨vi − vj, ct⟩ = ⟨X(ij ), Y(ij )⟩. (30) We consider the largest (worst case) possible cross-talk: 
+
+ezmax := max   
+
+> i̸=j
+
+|ezij |. (31) Note that ezij ≤ ezmax for all i̸ = j.
+
+Cross-talk summary statistics. For each (i, j) define the (squared) energies 
+
+eEv(i, j) := ∥Y(ij )∥22 = ∑
+
+> t/∈{ i,j}
+
+⟨vi − vj, ct⟩2, eEK (i, j) := ∥X(ij )∥22 = ∑
+
+> t/∈{ i,j}
+
+ˆK2
+
+> ti
+
+. (32) Define the coupling factor 
+
+eκij := |⟨ X(ij ), Y(ij )⟩| ∥X(ij )∥2 ∥Y(ij )∥2
+
+∈ [0, 1 ], (33) (setting eκij = 0 if a norm is zero). Now define the worst-case summary statistics 
+
+eEv := max  
+
+> i̸=j
+
+eEv(i, j), eEK := max  
+
+> i̸=j
+
+eEK (i, j), eκ := max   
+
+> i̸=j
+
+eκij . (34) 
+
+B.6.1 Arbitrary Keys, Arbitrary Values 
+
+Theorem B.16 (Cross-talk bound — arbitrary keys, arbitrary values) . With the summary statistics (equation 34), 
+
+ezmax ≤
+
+qeEK
+
+qeEv eκ. (35) 
+
+Proof. Fix i ∈ [F] and j̸ = i. If ∥X(ij )∥2 = 0 or ∥Y(ij )∥2 = 0, then ezij = 0 and eκij = 0, so the claim is trivial. Otherwise, by definition of eκij in equation 33, 
+
+|ezij | = |⟨ X(ij ), Y(ij )⟩| = ∥X(ij )∥2 ∥Y(ij )∥2 eκij =
+
+qeEK (i, j)
+
+qeEv(i, j) eκij .Using eEK (i, j) ≤ eEK, eEv(i, j) ≤ eEv, and eκij ≤ eκ and taking max i̸ =j yields equation 35. 43 B.6.2 Arbitrary Keys, Isotropic Values 
+
+Theorem B.17 (Cross-talk bound — arbitrary keys, isotropic values) . Assume v1, . . . , vF are i.i.d. uniform on Sd−1 ⊂ Rd. Treat the kernel matrix ˆK as arbitrary. Fix δ ∈ (0, 1 ) and let L := log 
+
+ C0 F2
+
+δ
+
+
+
+for a sufficiently large absolute constant C0. Then with probability at least 1 − δ (over the values), the following hold: 
+
+eEv ≤ C1
+
+(F − 2) + Ld − 1 ,
+
+eκ ≤ C2
+
+r LF − 2 .
+
+Consequently, combining these summary-statistic bounds with Theorem B.16 yields 
+
+ezmax ≤ C3
+
+qeEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2 .
+
+In particular, if F − 2 ≥ L and d ≥ 2, then 
+
+ezmax ≤ C4
+
+qeEK
+
+r Ld .
+
+Proof. The proof combines two auxiliary concentration bounds via a union bound. 
+
+Concentration of eEv (invoke Lemma B.41). Apply Lemma B.41 with failure probability 
+
+δ/ 2. This yields an event E1 such that P(E c 
+
+> 1
+
+) ≤ δ/ 2 and on E1, eEv ≤ C (F−2)+ eLd−1 with 
+
+eL = log ( C0 F2 
+
+> δ/2
+
+). Since eL = log ( 2C0 F2 
+
+> δ
+
+) ≤ log ( C′  
+
+> 0F2
+> δ
+
+) for C′ 
+
+> 0
+
+= 2C0, we may rewrite the bound using L = log ( C′  
+
+> 0F2
+> δ
+
+) after adjusting the leading constant. 
+
+Concentration of eκ (invoke Lemma B.42). Apply Lemma B.42 with failure probability 
+
+δ/ 2. This yields an event E2 such that P(E c 
+
+> 2
+
+) ≤ δ/ 2 and on E2, eκ ≤ C
+
+q eLF−2 , with the same logarithmic factor eL as above. Again we rewrite in terms of L = log ( C0 F2 
+
+> δ
+
+) by enlarging the absolute constant. 
+
+Union bound and plug-in. By a union bound, 
+
+P(E1 ∩ E 2) ≥ 1 − P(E c 
+
+> 1
+
+) − P(E c 
+
+> 2
+
+) ≥ 1 − δ.On E1 ∩ E 2, plug the bounds on eEv and eκ into Theorem B.16 to obtain the stated cross-talk bound. If additionally F − 2 ≥ L, then p1 + L/(F − 2) ≤ √2 and hence 
+
+ezmax ≤ C
+
+qeEK
+
+r Ld − 1 ≤ C
+
+qeEK
+
+r Ld
+
+which is exactly the final bound stated in the theorem. 
+
+B.6.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) 
+
+Lemma B.18 (Mean +residual deterministic cross-talk decomposition) . Fix a pair (i, j) with j̸ = i. For any scalar μ ∈ R, define the centered truncated column 
+
+X◦(ij ) := X(ij ) − μ 1.
+
+Then 
+
+ezij = ⟨X(ij ), Y(ij )⟩ = μ ⟨1, Y(ij )⟩ + ⟨X◦(ij ), Y(ij )⟩.44 Consequently, define BY := max   
+
+> i̸=j
+
+⟨1, Y(ij )⟩ , E◦ 
+
+> K
+
+(i, j) := ∥X◦(ij )∥22, κ◦(ij ) := |⟨ X◦(ij ), Y(ij )⟩| ∥X◦(ij )∥2 ∥Y(ij )∥2
+
+,
+
+with the convention κ◦(ij ) = 0 if ∥X◦(ij )∥2 ∥Y(ij )∥2 = 0. Also define the worst-case centered energy and centered coupling E◦ 
+
+> K
+
+:= max   
+
+> i̸=j
+
+E◦ 
+
+> K
+
+(i, j), κ◦ := max   
+
+> i̸=j
+
+κ◦(ij ).
+
+Recalling eEv from equation 34, we have the deterministic bound 
+
+ezmax ≤ | μ| BY +
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦.
+
+Moreover, an “effective coupling” form follows by taking the maximum before separating the kernel-side summary statistics: 
+
+ezmax ≤ | μ| BY +
+
+qeEv max  
+
+> i̸=j
+
+q 
+
+E◦ 
+
+> K
+
+(i, j) κ◦(ij )
+
+.
+
+Defining 
+
+κ◦ 
+
+> eff
+
+:= max  
+
+> i̸=j
+
+q 
+
+E◦ 
+
+> K
+
+(i, j) κ◦(ij )
+
+= max  
+
+> i̸=j
+
+|⟨ X◦(ij ), Y(ij )⟩| ∥Y(ij )∥2
+
+we have the deterministic bound 
+
+ezmax ≤ | μ| BY +
+
+qeEv κ◦
+
+> eff
+
+.
+
+Proof. The decomposition follows by substituting X(ij ) = μ 1 + X◦(ij ) into ezij = ⟨X(ij ), Y(ij )⟩.For the bound, fix (i, j). By the triangle inequality, 
+
+|ezij | ≤ | μ| ⟨1, Y(ij )⟩ + ⟨X◦(ij ), Y(ij )⟩ .By definition of the pairwise coupling κ◦(ij ), ⟨X◦(ij ), Y(ij )⟩ ≤ ∥ X◦(ij )∥2 ∥Y(ij )∥2 κ◦(ij ). Since 
+
+∥Y(ij )∥2 ≤ p eEv and ∥X◦(ij )∥2 =
+
+q
+
+E◦ 
+
+> K
+
+(i, j), we obtain 
+
+|ezij | ≤ | μ| BY +
+
+qeEv
+
+q
+
+E◦ 
+
+> K
+
+(i, j) κ◦(ij ).Taking max i̸ =j gives 
+
+ezmax ≤ | μ| BY +
+
+qeEv max  
+
+> i̸=j
+
+q 
+
+E◦ 
+
+> K
+
+(i, j) κ◦(ij )
+
+= |μ| BY +
+
+qeEv κ◦
+
+> eff
+
+.Finally, since 
+
+q
+
+E◦ 
+
+> K
+
+(i, j) ≤ pE◦ 
+
+> K
+
+and κ◦(ij ) ≤ κ◦ for all (i, j), we also have κ◦ 
+
+> eff
+
+≤ pE◦ 
+
+> K
+
+κ◦,which yields the stated bound ezmax ≤ | μ| BY + pE◦
+
+> K
+
+p eEv κ◦.
+
+Theorem B.19 (Cross-talk bound — isotropic keys, arbitrary values (bilinear kernel)) . As-sume keys k1, . . . , kF are i.i.d. uniform on Sd−1 and independent of the feature weights (ar, br )mr=1, as defined in the bilinear random features setup (Lemma B.2). Fix deterministic values {vt}Ft=1 ⊂ Rd
+
+and codes {ct}Ft=1 ⊂ Rd. Fix δ ∈ (0, 1 ) and set L := log   C0 F2
+
+> δ
+
+. Assume m ≤ d2/L and let 
+
+μ = 1 /d . Let σ2 := E( ˆKti − μ)2 = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+). Let Lv be as in Definition B.14. Then with probability at least 1 − δ (over keys and features), 
+
+ezmax ≤ 1
+
+d BY + C
+
+qeEv
+
+
+
+σ√L + L2
+
+m
+
+ √Lv. (36) 
+
+In particular, under m ≤ d2/L one has σ ≍ 1/ √m, so 
+
+ezmax ≤ 1
+
+d BY + C
+
+qeEv
+
+r Lm + L2
+
+m
+
+! √Lv.45 Proof. We use the effective-coupling reduction from Lemma B.18 and then invoke Lemma B.48. 
+
+Deterministic reduction to κ◦
+
+> eff
+
+. Lemma B.18 (with μ = 1/ d) gives 
+
+ezmax ≤ 1
+
+d BY +
+
+qeEv κ◦
+
+> eff
+
+.
+
+Concentration of κ◦ 
+
+> eff
+
+(invoke Lemma B.48). Apply Lemma B.48 with failure probability δ
+
+to obtain, with probability at least 1 − δ,
+
+κ◦ 
+
+> eff
+
+≤ C
+
+
+
+σ√L + L2
+
+m
+
+ √Lv.Substitute this bound into the deterministic reduction to obtain equation 36. 
+
+B.6.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) 
+
+Theorem B.20 (Cross-talk bound — isotropic keys, isotropic values (bilinear kernel)) . Assume F ≥ 3. Keys k1, . . . , kF are i.i.d. uniform on Sd−1. Values v1, . . . , vF are i.i.d. uniform on Sd−1
+
+and independent of the keys and features. The kernel is the bilinear random-feature kernel from Lemma B.2 with m features. Fix δ ∈ (0, 1 ), and define L := log 
+
+ C0 F2
+
+δ
+
+
+
+.
+
+Let 
+
+σ2 := E[( ˆKti − 1/ d)2] = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+, t̸ = i.
+
+Assume m ≤ d2
+
+L , L3 ≤ c0σ2m2.
+
+Then, with probability at least 1 − δ, the following hold simultaneously: BY ≤ C1
+
+r FL d ,
+
+eEv ≤ C2
+
+(F − 2) + Ld − 1 ,
+
+q
+
+E◦ 
+
+> K
+
+≤ C3 σ
+
+q
+
+(F − 2) + L,
+
+κ◦ ≤ C4
+
+r LF − 2 .
+
+Consequently, 
+
+ezmax ≤ 1
+
+d BY +
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦.
+
+In particular, if F − 2 ≥ L, then 
+
+ezmax ≤ C6
+
+√L
+
+r Fd3 + C7
+
+√L
+
+r Fmd .
+
+Proof. Concentration and union bound. Apply Lemma B.40, Lemma B.41, Lemma B.47, and Lemma B.43, each with failure probability δ/ 4. Increasing C0 if necessary lets all four events be written with the same 
+
+L = log 
+
+ C0 F2
+
+δ
+
+
+
+.46 A union bound gives simultaneous validity with probability at least 1 − δ.
+
+Mean–residual reduction. On this event, Lemma B.18 with μ = 1/ d gives 
+
+ezmax ≤ 1
+
+d BY +
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦.
+
+Mean term. The mean term satisfies 1
+
+d BY ≤ C
+
+r FL d3 = C√L
+
+r Fd3 .
+
+Residual term. Assume now F − 2 ≥ L. By Lemma B.47, 
+
+q
+
+E◦ 
+
+> K
+
+≤ Cσ√F − 2. Therefore 
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦ ≤ Cσ√F − 2
+
+s
+
+(F − 2) + Ld − 1
+
+r LF − 2 .Canceling √F − 2, 
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦ ≤ Cσ√L
+
+s
+
+(F − 2) + Ld − 1 .Since F − 2 ≥ L,
+
+(F − 2) + L ≤ 2(F − 2) ≤ 2F.Also d − 1 ≍ d after adjusting constants. Hence 
+
+q
+
+E◦
+
+> K
+
+qeEv κ◦ ≤ Cσ
+
+r FL d .Finally, m ≤ d2/L implies 1
+
+d2 ≤ 1
+
+mL ≤ 1
+
+m ,so 
+
+σ2 = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+≤ Cm .Thus 
+
+σ
+
+r FL d ≤ C
+
+r FL md = C√L
+
+r Fmd .
+
+Combine. Combining the mean and residual estimates gives the final bound. 
+
+B.7 Signal Bounds 
+
+We now provide lower bounds for the signal term esij .
+
+Signal as difference of weighted kernel values. Recall that under the “absorbing the competitor” convention (equation 26), the two-term signal is 
+
+esij = ˆKii ⟨vi − vj, vi⟩ + ˆKji ⟨vi − vj, vj⟩ = ˆKii ⟨vi − vj, vi⟩ − ˆKji ⟨vj − vi, vj⟩. (37) Since ˆK is a Gram matrix, we always have ˆKii = ∥ϕ(ki)∥22 ≥ 0. Further, define the smallest (worst-case) signal by 
+
+esmin := min   
+
+> i̸=j
+
+esij . (38) 47 Signal summary statistics. Define the value-side inner products 
+
+Vij := ⟨vi − vj, vi⟩, Bij := ⟨vi − vj, vj⟩, (i̸ = j). (39) Across our bounds below we will assume, unless stated otherwise, 
+
+Vij ≥ 0 for all i̸ = j. (40) This holds automatically when all values share a common norm: if ∥vi∥2 = ∥vj∥2 = r then by Cauchy–Schwarz ⟨vi, vj⟩ ≤ ∥ vi∥2∥vj∥2 = r2, hence Vij = r2 − ⟨ vi, vj⟩ ≥ 0. Recall from Definitions B.9 and B.11 the kernel and value-side extrema: 
+
+Kdiag min = min 
+
+> i∈[F]
+
+ˆKii , Koff max = max   
+
+> i̸=j
+
+| ˆKij |, (41) 
+
+Vmin = min   
+
+> i̸=j
+
+⟨vi − vj, vi⟩, Vmax = max   
+
+> i̸=j
+
+⟨vi − vj, vj⟩ . (42) 
+
+B.7.1 Arbitrary Keys, Arbitrary Values 
+
+Theorem B.21 (Deterministic signal lower bound — arbitrary keys, arbitrary values) . Under the positivity condition (equation 40), and with the summary statistics (Definitions B.9 and B.11), 
+
+esmin ≥ Kdiag min Vmin − Koff max Vmax .
+
+Proof. Fix a pair (i, j) with i̸ = j. From equation 37 and equation 39, 
+
+esij = ˆKii Vij + ˆKji Bij .By definition, ˆKii ≥ Kdiag min . Also Vij ≥ Vmin by definition of Vmin . Under the positivity assumption (equation 40), we have Vij ≥ 0 for all i̸ = j, and therefore multiplying the inequalities ˆ Kii ≥ Kdiag min and Vij ≥ Vmin preserves order: ˆKii Vij ≥ Kdiag min Vmin .For the second term, we use xy ≥ −| x| | y|:ˆKji Bij ≥ −| ˆKji | | Bij |.By definition | ˆKji | ≤ Koff max and |Bij | ≤ Vmax , hence ˆKji Bij ≥ − Koff max Vmax .Adding the two bounds yields esij ≥ Kdiag min Vmin − Koff max Vmax , resulting in the claimed bound for esmin .
+
+B.7.2 Arbitrary Keys, Isotropic Values 
+
+Theorem B.22 (Signal lower bound — arbitrary keys, isotropic values) . Assume v1, . . . , vF
+
+are i.i.d. uniform on Sd−1 ⊂ Rd, and treat the kernel matrix ˆK as arbitrary (or condition on it). Fix 
+
+δ ∈ (0, 1 ) and let L := log 
+
+ C0 F2
+
+δ
+
+
+
+, εv := C1
+
+r Ld − 1 .
+
+Then with probability at least 1 − δ (over the values), 
+
+esmin ≥ Kdiag min (1 − εv) − Koff max (1 + εv),
+
+where K diag min and K off max are the kernel extrema (Definition B.9). 
+
+48 Proof. The proof relies on a single auxiliary concentration bound. 
+
+Concentration of the value-side extrema. Apply Lemma B.37 with failure probability δ.This yields an event Ev such that P(E cv ) ≤ δ and on Ev,max   
+
+> i̸=j
+
+⟨vi, vj⟩ ≤ εv.Hence, on Ev,
+
+Vmin ≥ 1 − εv, Vmax ≤ 1 + εv.
+
+Plug-in. On Ev, the deterministic signal lower bound gives 
+
+esmin ≥ Kdiag min Vmin − Koff max Vmax ≥ Kdiag min (1 − εv) − Koff max (1 + εv),which is exactly the claimed bound. 
+
+B.7.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) 
+
+Theorem B.23 (Signal lower bound — isotropic keys, arbitrary values (bilinear kernel)) .
+
+Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1, the kernel is the bilinear random-feature kernel from Lemma B.2 with m features, and the values {vt}Ft=1 are deterministic and satisfy the positivity condition (equation 40). Let Vmin and Vmax be as in Definition B.11. Fix δ ∈ (0, 1 ) and set L := log ( C0 F2 
+
+> δ
+
+). Let μ := 1 /d and let σ2 := E[( ˆKij − μ)2] = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+) (see Lemma B.44). Then with probability at least 1 − δ (over keys and features), 
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+Vmin −
+
+
+
+μ + C2(σ√L + L2/m)
+
+
+
+Vmax .
+
+Moreover, if L ≥ 1 and m ≥ L3, then the off-diagonal coefficient simplifies and 
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+Vmin − C3 σ√L V max .
+
+Proof. The proof combines two auxiliary concentration bounds via a union bound. 
+
+Concentration of the diagonal term. Apply Lemma B.39 with failure probability δ/ 2. This yields an event E1 such that P(E c 
+
+> 1
+
+) ≤ δ/2 and on E1,
+
+Kdiag min ≥ 1 − C
+
+r Lm ,after adjusting the absolute constant hidden in L = log ( C0 F2 
+
+> δ
+
+).
+
+Concentration of the off-diagonal term. Apply Lemma B.38 with failure probability δ/2. This yields an event E2 such that P(E c 
+
+> 2
+
+) ≤ δ/2 and on E2,
+
+Koff max ≤ μ + C
+
+
+
+σ√L + L2
+
+m
+
+
+
+,again after adjusting the absolute constant hidden in L.
+
+Union bound and plug-in. By a union bound, 
+
+P(E1 ∩ E 2) ≥ 1 − P(E c 
+
+> 1
+
+) − P(E c 
+
+> 2
+
+) ≥ 1 − δ.On E1 ∩ E 2, the deterministic signal lower bound gives 
+
+esmin ≥ Kdiag min Vmin − Koff max Vmax .Substituting the bounds for Kdiag min and Koff max gives, after renaming absolute constants, 
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+Vmin −
+
+
+
+μ + C2(σ√L + L2/m)
+
+
+
+Vmax ,49 which is exactly the stated lower bound. 
+
+Simplification of the off-diagonal coefficient. If L ≥ 1 and m ≥ L3, then σ2 = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+)
+
+implies σ ≳ 1/ d = μ, so μ ≤ Cσ ≤ Cσ√L. Hence 
+
+μ + C
+
+
+
+σ√L + L2
+
+m
+
+
+
+≤ Cσ√L,and substituting this into the previous bound yields the refined inequality. 
+
+B.7.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) 
+
+Theorem B.24 (Signal lower bound — isotropic keys, isotropic values (bilinear kernel)) .
+
+Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1, values v1, . . . , vF are i.i.d. uniform on Sd−1
+
+and independent of the keys and features, and the kernel is the bilinear random-feature kernel from Lemma B.2 with m features. Fix δ ∈ (0, 1 ) and set L := log ( C0 F2 
+
+> δ
+
+). Assume m ≤ d2/L . Let 
+
+μ := 1 /d and σ2 := E[( ˆKij − μ)2] = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+). Then with probability at least 1 − δ (over keys, features, and values), 
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+(1 − εv) −
+
+
+
+μ + C2(σ√L + L2/m)
+
+
+
+(1 + εv), εv = C3
+
+q Ld−1 .
+
+Moreover, if L ≥ 1 and m ≥ L3, then 
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+(1 − εv) − C4 σ√L (1 + εv), εv = C3
+
+q Ld−1 .
+
+Proof. The proof combines three auxiliary concentration bounds via a union bound. 
+
+Concentration of the value-side extrema. Apply Lemma B.37 with failure probability δ/ 3. This yields an event Ev such that P(E cv ) ≤ δ/3 and on Ev,max   
+
+> i̸=j
+
+⟨vi, vj⟩ ≤ εv.Hence, on Ev,
+
+Vmin ≥ 1 − εv, Vmax ≤ 1 + εv.
+
+Concentration of the diagonal term. Apply Lemma B.39 with failure probability δ/ 3. This yields an event E1 such that P(E c 
+
+> 1
+
+) ≤ δ/3 and on E1,
+
+Kdiag min ≥ 1 − C
+
+r Lm ,after adjusting the absolute constant hidden in L.
+
+Concentration of the off-diagonal term. Apply Lemma B.38 with failure probability δ/3. This yields an event E2 such that P(E c 
+
+> 2
+
+) ≤ δ/3 and on E2,
+
+Koff max ≤ μ + C
+
+
+
+σ√L + L2
+
+m
+
+
+
+,again after adjusting the absolute constant hidden in L.
+
+Union bound and plug-in. By a union bound, 
+
+P(Ev ∩ E 1 ∩ E 2) ≥ 1 − P(E cv ) − P(E c 
+
+> 1
+
+) − P(E c 
+
+> 2
+
+) ≥ 1 − δ.On this intersection, the deterministic signal lower bound gives 
+
+esmin ≥ Kdiag min Vmin − Koff max Vmax .50 Substituting the bounds for Kdiag min , Koff max , Vmin , and Vmax yields the stated lower bound. 
+
+Simplification of the off-diagonal coefficient. If L ≥ 1 and m ≥ L3, then the same reasoning as above gives 
+
+μ + C
+
+
+
+σ√L + L2
+
+m
+
+
+
+≤ Cσ√L,and substituting this estimate into the previous bound yields the refined inequality. 
+
+B.8 Margin Bounds 
+
+We now combine our signal and cross-talk bounds to bound the Hebbian memory margin. 
+
+B.8.1 Arbitrary Keys, Arbitrary Values 
+
+Theorem B.25 (Margin bound — arbitrary keys, arbitrary values) . Assume the positivity condition equation 40 (i.e., Vij ≥ 0 for all i̸ = j ). Let Kdiag min , Koff max (Definition B.9), Vmin , and Vmax (Definition B.11) be the signal-side summary statistics, and let eEK, eEv, and eκ be the cross-talk summary statistics from equation 34. Then 
+
+γmin ≥ Kdiag min Vmin − Koff max Vmax −
+
+qeEK
+
+qeEv eκ. (43) 
+
+Moreover, if we instead keep the original signal/cross-talk decomposition (equation 25) (i.e., without absorbing the competitor term), then applying Cauchy–Schwarz with the coupling factor κ from Definition B.15 yields the alternative bound 
+
+γmin ≥ Kdiag min Vmin − pEK
+
+√Ev κ, (44) 
+
+where E K and E v are as defined in Definitions B.10 and B.13. Proof. Under the positivity condition (equation 40), the deterministic signal lower bound gives 
+
+esmin ≥ Kdiag min Vmin − Koff max Vmax .Further, Theorem B.16 yields 
+
+ezmax ≤
+
+qeEK
+
+qeEv eκ.Recalling that γmin ≥ esmin − ezmax , we therefore have 
+
+γmin ≥ esmin − ezmax ≥ Kdiag min Vmin − Koff max Vmax −
+
+qeEK
+
+qeEv eκ,Finally, to obtain equation 44, start from the original decomposition equation 25: 
+
+γij = ˆKii Vij + zij , zij := ∑ 
+
+> t̸=i
+
+ˆKti ⟨vi − vj, ct⟩.By definition of the coupling factor κij (Definition B.15), |zij | ≤ pEK (i) pEv(i, j) κij ≤√EK
+
+√Ev κ. Since ˆ Kii ≥ Kdiag min and Vij ≥ Vmin , taking min i̸ =j yields equation 44. 
+
+Corollary B.26 (Arbitrary-embedding margin scaling — simplified) . Under the assumptions of Theorem B.25, further reasonably assuming d ≥ 4 log F and using the penalty statistics Ssig ,Pkey , P val , P align from Section 4.2.2, for some C ∈ (0, 1 ) we have 
+
+γmin ≥ C S sig − Pkey Pval Palign 
+
+r F log Fmd .51 Proof. The statistics EK, Ev, κ (Section 4.2.2) sum over t̸ = i (the competitor t = j included), so they coincide with the untruncated statistics of Definitions B.10, B.13 and B.15 and Theorem B.25 (Equation (44)) applies: γmin ≥ Kdiag min Vmin − √EK
+
+√Ev κ. Substituting √EK =
+
+Pkey 
+
+√F/m, √Ev = Pval 
+
+√F/d, and κ = Palign 
+
+plog (F)/F gives the exact identity 
+
+pEK
+
+√Ev κ = Pkey Pval Palign 
+
+q Fm · Fd · log FF = Pkey Pval Palign 
+
+q F log Fmd .For the signal, the definition of Ssig gives Kdiag min Vmin =  1 − plog (F)/d Ssig . Since d ≥
+
+4 log F forces plog (F)/d ≤ 12 , and Ssig ≥ 0 (as Kdiag min ≥ 0 and Vmin ≥ 0 by Equation (40)), we get Kdiag min Vmin ≥ C S sig with C := 12 . Combining the two equations proves the claim. 
+
+Corollary B.27 (Arbitrary-embedding fact-storage capacity) . Under the assumptions of Corol-lary B.26, the margin lower bound is positive precisely when Pkey Pval Palign 
+
+r F log Fmd < C S sig , i.e. md > 1
+
+C2 F log F
+
+ Pkey Pval Palign 
+
+Ssig 
+
+2
+
+.
+
+Hence our construction stores all F facts with positive margin using a parameter budget W = md = Θ F log F
+
+ Pkey Pval Palign 
+
+Ssig 
+
+2!
+
+,
+
+the same rate fact-storage rate as in the isotropic setting up to the penalization factors. 
+
+B.8.2 Arbitrary Keys, Isotropic Values 
+
+Theorem B.28 (Margin bound — arbitrary keys, isotropic values) . Assume v1, . . . , vF are i.i.d. uniform on Sd−1 ⊂ Rd, and treat the kernel matrix ˆK as arbitrary. Fix δ ∈ (0, 1 ) and let L := log 
+
+ C0 F2
+
+δ
+
+
+
+, εv := C1
+
+r Ld − 1 .
+
+Define the (untruncated) kernel-column energy EK := max  
+
+> i∈[F]
+
+# ∑ 
+
+> t̸=i
+
+ˆK2
+
+> ti
+
+.
+
+Then with probability at least 1 − δ (over the values), 
+
+γmin ≥ Kdiag min (1 − εv) − Koff max − C2
+
+pEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2 . (45) 
+
+In particular, if F − 2 ≥ L, then 
+
+γmin ≥ Kdiag min (1 − εv) − Koff max − C3
+
+pEK
+
+r Ld . (46) 
+
+Proof. The proof combines the signal and cross-talk bounds via a union bound. 
+
+Signal lower bound. Apply the signal bound from Theorem B.22 with failure probability 
+
+δ/2. This yields an event Esig such that P(E c
+
+> sig
+
+) ≤ δ/2 and on Esig ,
+
+esmin ≥ Kdiag min (1 − εv) − Koff max (1 + εv), (47) after the standard adjustment of the absolute constant hidden in L = log ( C0 F2 
+
+> δ
+
+) so that replacing δ by δ/2 only changes the constant. 
+
+Cross-talk bound. Apply the cross-talk bound from Theorem B.17 with failure probability 
+
+δ/2. This yields an event Ecross such that P(E c
+
+> cross
+
+) ≤ δ/2 and on Ecross ,
+
+ezmax ≤ CpEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2 . (48) 52 Here we used the trivial bound eEK ≤ EK, since dropping coordinates can only decrease the 
+
+ℓ2 norm. Again we have absorbed the harmless δ 7 → δ/ 2 change into the absolute constant inside L.
+
+Union bound and combine. By a union bound, 
+
+P(Esig ∩ E cross ) ≥ 1 − P(E c
+
+> sig
+
+) − P(E c
+
+> cross
+
+) ≥ 1 − δ.On Esig ∩ E cross , use γmin ≥ esmin − ezmax . Substituting equation 47 and equation 48 yields 
+
+γmin ≥ Kdiag min (1 − εv) − Koff max (1 + εv) − C1
+
+pEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2
+
+= Kdiag min (1 − εv) − Koff max −
+
+"
+
+Koff max εv + C1
+
+pEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2
+
+#
+
+. (49) 
+
+Absorb the competitor term. We claim that 
+
+Koff max ≤ pEK. (50) Choose indices (a, b) with a̸ = b such that | ˆKba | = Koff max . Then by definition of EK,
+
+EK ≥ ∑ 
+
+> t̸=a
+
+ˆK2 
+
+> ta
+
+≥ ˆK2 
+
+> ba
+
+=  Koff max 
+
+2,which proves equation 50. Therefore, 
+
+Koff max εv ≤ pEK εv = C2
+
+pEK
+
+r Ld − 1 ≤ C3
+
+pEK
+
+r Ld − 1
+
+r
+
+1 + LF − 2 ,since p1 + L/(F − 2) ≥ 1. Absorbing this into the bracket in equation 49 yields the claimed bound. 
+
+Simplified form when F − 2 ≥ L. If F − 2 ≥ L, then p1 + L/(F − 2) ≤ √2. Also d − 1 ≍ d
+
+for d ≥ 2, so after adjusting the absolute constant we obtain the simplified bound stated in the theorem. 
+
+B.8.3 Isotropic Keys, Arbitrary Values (Bilinear Kernel) 
+
+Theorem B.29 (Margin bound — isotropic keys, arbitrary values (bilinear kernel)) . Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1, the kernel is the bilinear random-feature kernel from Lemma B.2 with m features, the values v1, . . . , vF ∈ Rd are deterministic, and the positivity condition ⟨vi − vj, vi⟩ ≥ 0 holds for all i ̸ = j. Let 
+
+μ := 1
+
+d , σ2 := E[( ˆKti − μ)2] = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+,
+
+and fix δ ∈ (0, 1 ). Set L := log 
+
+ C0 F2
+
+δ
+
+
+
+, εk :=
+
+r Lmand assume in addition that F − 2 ≥ L, m ≥ L3, and m ≤ d2/L. Recall the centered-sum budget BY (Definition B.12) and let Lv be as in Definition B.14. Then with probability at least 1 − δ (over the keys and features), 
+
+γmin ≥
+
+
+
+1 − C1εk
+
+
+
+Vmin − C2
+
+
+
+BY + √Ev
+
+√Lv
+
+ 
+
+σ√L
+
+
+
+. (51) 
+
+Proof. The proof combines the signal and cross-talk bounds via a union bound. 53 Signal lower bound. Apply the signal bound from Theorem B.23 with failure probability 
+
+δ/2. This yields an event Esig such that P(E c
+
+> sig
+
+) ≤ δ/2 and on Esig ,
+
+esmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+Vmin −
+
+ 1
+
+d + C2
+
+ σ√L + L2
+
+> m
+
+
+
+Vmax . (52) As before, replacing δ by δ/2 only changes the absolute constant hidden in L.
+
+Cross-talk bound. Apply the cross-talk bound from Theorem B.19 with failure probability 
+
+δ/2. This yields an event Ecross such that P(E c
+
+> cross
+
+) ≤ δ/2 and on Ecross ,
+
+ezmax ≤ 1
+
+d BY + C1
+
+qeEv
+
+
+
+σ√L + L2
+
+m
+
+√Lv. (53) After adjusting the absolute constant, 
+
+ezmax ≤ 1
+
+d BY + C2
+
+qeEv
+
+
+
+σ√L + L2
+
+m
+
+√Lv. (54) 
+
+Union bound and combine. By a union bound, 
+
+P(Esig ∩ E cross ) ≥ 1 − δ.On this intersection, use γmin ≥ esmin − ezmax . Substituting equation 52 and equation 54 gives 
+
+γmin ≥
+
+
+
+1 − C1
+
+q Lm
+
+
+
+Vmin − 1
+
+d (BY + Vmax )
+
+− C2
+
+
+
+Vmax +
+
+qeEv
+
+√Lv
+
+ 
+
+σ√L + L2
+
+m
+
+
+
+. (55) 
+
+Absorb the value-side terms. Since Vmax ≤ √Ev and p eEv ≤ √Ev, and Lv ≥ 1 by Definition B.14 (which holds even in the degenerate case eEv = 0, where the cross-talk term vanishes but the signal-side Vmax need not, by the convention Lv = 1), we have Vmax +p eEv
+
+√Lv ≤ √Ev
+
+√Lv + √Ev
+
+√Lv = 2√Ev
+
+√Lv. Therefore, after adjusting the absolute constant, 
+
+C2
+
+
+
+Vmax +
+
+qeEv
+
+√Lv
+
+ 
+
+σ√L + L2
+
+m
+
+
+
+≤ C3
+
+√Ev
+
+√Lv
+
+
+
+σ√L + L2
+
+m
+
+
+
+.
+
+Absorb the d−1 factor. Since L = log ( C0 F2 
+
+> δ
+
+) ≥ 1 and σ2 = Θ  1 
+
+> d2
+
++ 1
+
+> m
+
+ implies σ ≳ 1 /d, we have 1 
+
+> d
+
+≤ C σ√L. Therefore, using also Vmax ≤ √Ev ≤ √Ev
+
+√Lv,1
+
+d (BY + Vmax ) ≤ C1
+
+
+
+BY + √Ev
+
+√Lv
+
+
+
+σ√L ≤ C2
+
+
+
+BY + √Ev
+
+√Lv
+
+ 
+
+σ√L + L2
+
+m
+
+
+
+.Plugging the last two estimates into equation 55 and using m ≥ L3, we have γmin ≥
+
+
+
+1 − C4
+
+q Lm
+
+
+
+Vmin − C5
+
+
+
+BY + √Ev
+
+√Lv
+
+
+
+σ√L, which is exactly the stated bound. 
+
+B.8.4 Isotropic Keys, Isotropic Values (Bilinear Kernel) 
+
+Theorem B.30 (Margin bound — isotropic keys, isotropic values (bilinear kernel)) . Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1, values v1, . . . , vF are i.i.d. uniform on Sd−1 and independent of the keys, and the kernel is the bilinear random-feature kernel from Lemma B.2 with mfeatures. Fix δ ∈ (0, 1 ) and set L := log 
+
+ C0 F2
+
+δ
+
+
+
+.
+
+Assume F ≥ 2L , m ≥ L3, and m ≤ d2/L . Then, with probability at least 1 − δ (over keys, features, and values), the minimum “absorbed-competitor” margin satisfies 
+
+γmin ≥ 1 − C1
+
+r Lm − εv − C3
+
+√L
+
+r Fd3 − C4
+
+√L
+
+r Fmd , εv := C2
+
+r Ld − 1 . (56) 54 Proof. Signal lower bound. Apply the signal bound from Theorem B.24 with failure probability δ/2. Since m ≥ L3, this yields an event Esig with P(E c
+
+> sig
+
+) ≤ δ/2 on which 
+
+esmin ≥
+
+
+
+1 − C1
+
+r Lm
+
+
+
+(1 − εv) − C4 σ√L (1 + εv),with εv as in the theorem statement, after the standard adjustment of the absolute constant hidden in L.
+
+Cross-talk bound. Apply the cross-talk bound from Theorem B.20 with failure probability 
+
+δ/ 2. Since F ≥ 2L gives F − 2 ≥ L, this yields an event Ecross with P(E c
+
+> cross
+
+) ≤ δ/ 2 on which 
+
+ezmax ≤ C6
+
+√L
+
+r Fd3 + C7
+
+√L
+
+r Fmd .
+
+Union bound and combine. By a union bound, P(Esig ∩ E cross ) ≥ 1 − δ. On this intersec-tion, γmin ≥ esmin − ezmax gives 
+
+γmin ≥
+
+
+
+1 − C1
+
+r Lm
+
+
+
+(1 − εv) − C4 σ√L (1 + εv) − C6
+
+√L
+
+r Fd3 − C7
+
+√L
+
+r Fmd .Since m ≤ d2/L forces σ ≍ 1 /√m, and εv = O(1), the signal off-diagonal penalty obeys C4 σ√L (1 + εv) ≤ C√L/m and is absorbed into the first term. Expanding  1 − C√L/m(1 − εv) ≥ 1 − C√L/m − εv and renaming the absolute constants yields Equation (56). 
+
+Corollary B.31 (Isotropic margin scaling — simplified) . Under the assumptions of Theorem B.30 and m , d ≤ F, retaining only the dominant cross-talk term gives, with probability at least 1 − δ,
+
+γmin ≥ 1 − C
+
+r F log (F/δ)
+
+md .
+
+Proof. The dominant cross-talk term in Equation (56) is C4
+
+√LpF/(md ); under the standing assumptions, the remaining terms are lower order and are absorbed into the constant C.Since L = log (C0 F2/δ) = Θ(log (F/δ)) , we have √LpF/(md ) = Θ p F log (F/δ)/(md ),which yields the stated form. 
+
+Corollary B.32 (Isotropic fact-storage capacity) . Under the assumptions of Corollary B.31, the margin lower bound is positive precisely when C
+
+r F log (F/δ)
+
+md < 1, i.e. md > C2 F log (F/δ).
+
+Hence our construction stores all F facts with positive margin using a parameter budget W = md = Θ(F log F) ,
+
+the information-theoretically optimal fact-storage rate. 
+
+55 B.8.5 Summary Table: Margin Bounds Across Regimes 
+
+Random keys Arbitrary keys Random values 
+
+γmin ≥ 1
+
+− C
+
+r FL md 
+
+γmin ≥ Kdiag min (1 − εv) − Koff max 
+
+− CpEK
+
+r Ld
+
+Arbitrary values 
+
+γmin ≥
+
+
+
+1 − εk
+
+
+
+Vmin 
+
+− C
+
+
+
+BY + √Ev
+
+√Lv
+
+r Lm
+
+γmin ≥ Kdiag min Vmin 
+
+− pEK
+
+√Ev κ
+
+Table 2: Margin bounds across key/value geometry regimes. Each cell shows the decoding margin scaling for a given key/value geometry. The top-left (isotropic) cell is the baseline. Relaxing the key geometry introduces key-geometry statistics ( Kdiag min , Koff max , EK); relaxing value geometry introduces value-geometry statistics ( Vmin , BY, Vmax , Ev, Lv); relaxing both geometries introduces a coupling factor κ. The arbitrary keys and values cell uses the raw summary-statistic form of Theorem B.25, which is equivalent to the penalty-statistic general margin/capacity bound in Corollary B.27 of the main text. See Theorems B.25, B.28, B.29 and B.30 for formal statements and Appendix A.3.2 for empirical scaling results. 
+
+B.8.6 A Welch/Frobenius Upper Bound in the Isotropic Key/Value Regime 
+
+In the main text, Theorem 4.3 provides a lower bound on the minimum margin achieved by our construction in the isotropic key/value regime. We now show that this lower bound is asymptotically tight, up to constants and logarithmic factors, by proving a matching upper bound on the best possible margin of any admissible rank-limited kernel memory in this regime. The key idea is that the arbitrary-keys / isotropic-values analysis in Section B.8.2 is controlled by the column energy 
+
+Ecol (i) := ∑ 
+
+> t̸=i
+
+ˆK2
+
+> ti
+
+.Thus, to upper bound the achievable margin, it suffices to show that for any rank-m kernel, some column must have nontrivial off-diagonal squared mass. We achieve this using a Welch / Frobenius argument: intuitively, low rank forces a non-negligible amount of kernel mass off the diagonal, which in turn yields an unavoidable cross-talk floor. We begin by formalizing the class of kernels under consideration. 
+
+Definition B.33 (Rank-m kernel) . Let k1, . . . , kF ∈ Rd be the stored keys. We say that ˆK ∈ RF×F is a rank-m kernel if there exists a feature map ϕ(·) with ϕ(ki) ∈ Rm such that ˆKij = ⟨ϕ(ki), ϕ(kj)⟩ for all i, j ∈ [F].Equivalently, ˆ K ⪰ 0 and rank ( ˆK) ≤ m.The following lemma is the kernel-side ingredient. It lower bounds the maximum column energy of any PSD rank-m kernel in terms of its diagonal. 
+
+Lemma B.34 (Welch/Frobenius lower bound for rank-m kernels) . Let ˆK ∈ RF×F be a rank- mkernel in the sense of Definition B.33. Define Ecol (i) := ∑ 
+
+> t̸=i
+
+ˆK2
+
+> ti
+
+, Ecol := max  
+
+> i∈[F]
+
+Ecol (i).
+
+Then 
+
+∥ ˆK∥2 
+
+> F
+
+≥ tr ( ˆK)2
+
+m ,56 and consequently Ecol ≥ 1
+
+F
+
+tr ( ˆK)2
+
+m −
+
+> F
+
+# ∑
+
+> i=1
+
+ˆK2
+
+> ii
+
+!
+
+.
+
+In particular, if 
+
+ˆKii ∈ [1 − εdiag , 1 + εdiag ] for all i ∈ [F],
+
+then Ecol ≥ F(1 − εdiag )2
+
+m − (1 + εdiag )2.
+
+Proof. Since ˆK ⪰ 0 and rank ( ˆK) ≤ m, let λ1, . . . , λr be the nonzero eigenvalues of ˆK, where 
+
+r ≤ m. Then tr ( ˆK) = 
+
+> r
+
+# ∑
+
+> a=1
+
+λa, ∥ ˆK∥2 
+
+> F
+
+=
+
+> r
+
+# ∑
+
+> a=1
+
+λ2
+
+> a
+
+.Applying Cauchy–Schwarz to (λ1, . . . , λr ) gives 
+
+ r
+
+# ∑
+
+> a=1
+
+λa
+
+2
+
+≤ r
+
+> r
+
+# ∑
+
+> a=1
+
+λ2 
+
+> a
+
+≤ m
+
+> r
+
+# ∑
+
+> a=1
+
+λ2
+
+> a
+
+,hence 
+
+∥ ˆK∥2 
+
+> F
+
+≥ tr ( ˆK)2
+
+m .Next expand the Frobenius norm entrywise: 
+
+∥ ˆK∥2 
+
+> F
+
+=
+
+> F
+
+# ∑
+
+> i=1
+
+ˆK2 
+
+> ii
+
++
+
+> F
+
+# ∑
+
+> i=1
+
+# ∑ 
+
+> t̸=i
+
+ˆK2 
+
+> ti
+
+=
+
+> F
+
+# ∑
+
+> i=1
+
+ˆK2 
+
+> ii
+
++
+
+> F
+
+# ∑
+
+> i=1
+
+Ecol (i).Therefore F
+
+# ∑
+
+> i=1
+
+Ecol (i) ≥ tr ( ˆK)2
+
+m −
+
+> F
+
+# ∑
+
+> i=1
+
+ˆK2
+
+> ii
+
+.Since the maximum is at least the average, 
+
+Ecol = max  
+
+> i
+
+Ecol (i) ≥ 1
+
+F
+
+> F
+
+# ∑
+
+> i=1
+
+Ecol (i) ≥ 1
+
+F
+
+tr ( ˆK)2
+
+m −
+
+> F
+
+# ∑
+
+> i=1
+
+ˆK2
+
+> ii
+
+!
+
+.If moreover ˆ Kii ∈ [1 − εdiag , 1 + εdiag ] for all i, then tr ( ˆK) = 
+
+> F
+
+# ∑
+
+> i=1
+
+ˆKii ≥ F(1 − εdiag )
+
+and F
+
+# ∑
+
+> i=1
+
+ˆK2 
+
+> ii
+
+≤ F(1 + εdiag )2.Substituting these into the previous display yields 
+
+Ecol ≥ 1
+
+F
+
+F2(1 − εdiag )2
+
+m − F(1 + εdiag )2
+
+!
+
+= F(1 − εdiag )2
+
+m − (1 + εdiag )2.57 Regarding the assumption ˆKii ∈ [1 − εdiag , 1 + εdiag ],note that for the exact quadratic kernel on unit-norm isotropic keys, one has 
+
+K2(ki, ki) = ⟨ki, ki⟩2 = 1exactly. For the sketched / bilinear random-feature kernel used in our construction, the diagonal is generally not exactly 1, but it instead concentrates near 1 with high probability by Lemma B.39. Combining the kernel-side lower bound with the isotropic-value competitor argument used in the proof of Remark 4.2 yields the desired asymptotic optimality statement. 
+
+Corollary B.35 (Rank-m kernels are asymptotically unbeatable in the isotropic key/value regime) . Assume the isotropic key/value setting, and let ˆK be any rank- m kernel independent of the values, with ˆKii ∈ [1 − εdiag , 1 + εdiag ] for all i ∈ [F].
+
+Then the isotropic-value competitor argument used in the proof of Remark 4.2 yields 
+
+γmin ≤ (1 + εdiag ) − Ω
+
+r Ecol log Fd
+
+!
+
++ O
+
+r log Fd
+
+!
+
++ O
+
+r Ecol log (1/ δ)
+
+d
+
+!
+
++ O
+
+r Ecol 
+
+d
+
+!
+
+.
+
+Combining with Lemma B.34 yields 
+
+γmin ≤ (1 + εdiag ) − Ω
+
+s   F(1−εdiag )2 
+
+> m
+
+− (1 + εdiag )2 log Fd
+
+ + lower-order terms .
+
+In particular, if εdiag = o(1) and F /m → ∞, then up to constants and logarithmic factors, 
+
+γmin ≤ 1 − Ω
+
+r (F/m) log Fd
+
+!
+
+.
+
+Equivalently, no admissible rank- m kernel can asymptotically beat the p(F/m) log F/d margin floor in the isotropic key/value regime, up to constants and logs. Proof. Apply the isotropic-value competitor argument used in the proof of Remark 4.2 to the column i⋆ with Ecol (i⋆) = Ecol . This gives 
+
+γmin ≤ ˆKi⋆i⋆ − Ω
+
+r Ecol log Fd
+
+!
+
++ O | ˆKi⋆i⋆ |
+
+r log Fd
+
+!
+
++ O
+
+r Ecol log (1/ δ)
+
+d
+
+!
+
++ O
+
+r Ecol 
+
+d
+
+!
+
+,after absorbing harmless constant-factor differences into the big-O/big-Ω notation. Using ˆKi⋆i⋆ ≤ 1 + εdiag gives the first bound. The second bound results from substituting the lower bound on Ecol from Lemma B.34. Finally, if εdiag = o(1), then 
+
+F(1 − εdiag )2
+
+m − (1 + εdiag )2 = Θ
+
+ Fm
+
+
+
+whenever F/m → ∞, so the dominant negative term scales as 
+
+r (F/m) log Fd ,which proves the last claim. 58 B.9 Auxiliary Results 
+
+B.9.1 Signal Bounds: Isotropic Values 
+
+Lemma B.36 (Isotropic inner-product concentration) . Let v ∼ Unif (Sd−1) with d ≥ 2. Then for any fixed w ∈ Rd and all t ≥ 0, ∥⟨ w, v⟩∥ ψ2 ≲ ∥w∥2/√d − 1 and ⟨w, v⟩2 − E[⟨w, v⟩2] ψ1 ≲ 
+
+> ∥w∥22
+> d−1
+
+. I.e. ⟨w, v⟩ is sub-Gaussian and ⟨w, v⟩2 − E[⟨w, v⟩2] is sub-exponential, with the correspond-ing scale parameters. Proof. This is a standard consequence of concentration of measure on the sphere, see Ver-shynin (2026). 
+
+Lemma B.37 (Max pairwise inner product for isotropic values) . Assume v1, . . . , vF are i.i.d. uniform on Sd−1 with d ≥ 2. Fix δ ∈ (0, 1 ) and set L := log 
+
+ C0 F2
+
+δ
+
+
+
+(57) 
+
+for a sufficiently large absolute constant C 0. Then with probability at least 1 − δ,
+
+max   
+
+> i̸=j
+
+⟨vi, vj⟩ ≤ C1
+
+r Ld − 1 . (58) 
+
+Proof. Fix a pair (i, j) with i̸ = j. Condition on vi and define Fi := σ(vi). Then vj is still uniform on Sd−1 and independent of Fi. Applying Lemma B.36 with w = vi (note 
+
+∥vi∥2 = 1) yields that conditional on Fi, the scalar ⟨vi, vj⟩ is centered sub-Gaussian with scale ≲ 1 /√d − 1 . Equivalently, there exist absolute constants c, C0 > 0 such that for all 
+
+t ≥ 0, 
+
+P
+
+
+
+⟨vi, vj⟩ ≥ t Fi
+
+
+
+≤ 2e−c(d−1)t2
+
+. (59) Since the bound from equation 59 does not depend on the realized vi, it also holds uncondi-tionally: 
+
+P
+
+
+
+⟨vi, vj⟩ ≥ t
+
+
+
+≤ 2e−c(d−1)t2
+
+.Now take a union bound over all pairs (i, j) with i̸ = j (at most F2 pairs): 
+
+P
+
+
+
+max   
+
+> i̸=j
+
+⟨vi, vj⟩ ≥ t
+
+
+
+≤ ∑ 
+
+> i̸=j
+
+P
+
+
+
+⟨vi, vj⟩ ≥ t
+
+
+
+≤ 2F2e−c(d−1)t2
+
+.Choose t := CpL/(d − 1) with C large enough so that 2 F2e(−c(d−1)t2) ≤ δ. This yields equation 58. 
+
+B.9.2 Signal Bounds: Isotropic Keys and Bilinear Random Features 
+
+Lemma B.38 (Uniform off-diagonal bound (isotropic keys, bilinear kernel)) . Assume keys are i.i.d. uniform on Sd−1 and the kernel is the bilinear random-feature kernel from Lemma B.2 with m features. Let μ := E[ ˆKij ] = 1 /d for i̸ = j and let σ2 := E[( ˆKij − μ)2] as in Lemma B.44. Fix 
+
+δ ∈ (0, 1 ) and define L := log ( C0 F2 
+
+> δ
+
+). Assume that m ≤ d2/L . Then with probability at least 1 − δ
+
+(over keys and features), 
+
+max  
+
+> i̸=j
+
+ˆKij − μ ≤ C1
+
+
+
+σ√L + L2
+
+m
+
+
+
+, (60) 
+
+and hence Koff max = max   
+
+> i̸=j
+
+| ˆKij | ≤ μ + C2
+
+
+
+σ√L + L2
+
+m
+
+
+
+. (61) 59 Proof. For any fixed pair (i, j) with i̸ = j, apply Lemma B.46 with failure probability 
+
+δ′ := δ/F2. With L′ := log (6 /δ′) = log (6F2/δ) ≤ L (for C0 large enough), the assumption 
+
+m ≤ d2/L implies m ≤ d2/L′, so Lemma B.46 yields 
+
+ˆKij − μ ≤ C
+
+q L′ 
+
+> m
+
++ (L′ )2 
+
+> m
+
++
+
+> √L′
+> d
+
+
+
+with probability at least 1 − δ′. A union bound over the at most F2 off-diagonal pairs gives that, with probability at least 1 − δ,max  
+
+> i̸=j
+
+ˆKij − μ ≤ C
+
+q Lm + L2 
+
+> m
+
++
+
+> √Ld
+
+
+
+.Finally, since σ2 = Θ(1 /d2 + 1 /m) by Lemma B.44, we have √L/m + √L/d ≲ σ√L,proving equation 60. Equation equation 61 follows by the triangle inequality. 
+
+Lemma B.39 (Uniform diagonal lower bound (bilinear kernel)) . Assume the bilinear random-feature kernel from Lemma B.2 with m features, and assume ∥ki∥2 = 1. Then there exist absolute constants c , C0 > 0 such that for every t ∈ (0, 1 ) and every i ∈ [F],
+
+P  ˆKii ≤ 1 − t ≤ e−cmt 2
+
+. (62) 
+
+Consequently, for any δ ∈ (0, 1 ) and L := log ( C0 F2 
+
+> δ
+
+), with probability at least 1 − δ,Kdiag min = min 
+
+> i∈[F]
+
+ˆKii ≥ 1 − C1
+
+r Lm . (63) 
+
+Proof. Fix i and write ˆKii = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+Zr, Zr :=  (a⊤ 
+
+> r
+
+ki)( b⊤ 
+
+> r
+
+ki)2 = ( Gr Hr )2,where Gr, Hr i.i.d. 
+
+∼ N (0, 1 ). Then E[Zr ] = 1 and Var (Zr ) = E[Z2 
+
+> r
+
+] − (E[Zr ]) 2 = 9 − 1 = 8. Let Yr := 1 − Zr. Then E[Yr ] = 0, Var (Yr ) = 8, and since Zr ≥ 0 we have Yr ≤ 1. Therefore, for t ∈ (0, 1 ),
+
+P( ˆKii ≤ 1 − t) = P
+
+> m
+
+# ∑
+
+> r=1
+
+Yr ≥ mt 
+
+!
+
+.By the one-sided Bernstein inequality for independent mean-zero variables bounded above by 1, 
+
+P
+
+> m
+
+# ∑
+
+> r=1
+
+Yr ≥ mt 
+
+!
+
+≤ exp − (mt )2
+
+2(8m + mt  
+
+> 3
+
+)
+
+!
+
+= exp 
+
+
+
+− mt 2
+
+2(8 + t/3 )
+
+
+
+≤ e−cmt 2
+
+for an absolute c > 0, proving equation 62. The uniform bound (equation 63) follows by a union bound over i ∈ [F].
+
+B.9.3 Cross-Talk Bounds: Isotropic Values 
+
+Lemma B.40 (Mean-term concentration BY (isotropic values)) . Assume v1, . . . , vF are i.i.d. uniform on Sd−1. Fix δ ∈ (0, 1 ) and let L := log ( C0 F2 
+
+> δ
+
+). Then with probability at least 1 − δ (over the values), BY := max  
+
+> i∈[F]
+
+max   
+
+> j̸=i
+
+⟨1, Y(ij )⟩ ≤ C1
+
+r FL d . (64) 
+
+Proof. Fix a pair (i, j) with j̸ = i and set wij := vi − vj. Let 
+
+Fij := σ(vi, vj).60 Conditional on Fij , the random variables θt := ⟨wij , vt⟩ for t /∈ { i, j} are independent, centered, and sub-Gaussian with ∥θt∥ψ2 ≲ ∥wij ∥2/√d − 1 by Lemma B.36. Therefore, conditional on Fij , the sum 
+
+⟨1, Y(ij )⟩ = ∑
+
+> t/∈{ i,j}
+
+θt
+
+is centered sub-Gaussian with ⟨1, Y(ij )⟩ ψ2 ≲ ∥wij ∥2
+
+q F−2 
+
+> d−1
+
+≲
+
+q Fd . Hence for all s ≥ 0, 
+
+P
+
+
+
+⟨1, Y(ij )⟩ ≥ C
+
+q Fs d Fij 
+
+
+
+≤ 2e−s.This conditional tail bound is uniform in Fij , so taking expectations over Fij yields the same inequality unconditionally. Now choose s = L = log ( C0 F2 
+
+> δ
+
+) so that 2 e−s ≤ δ/F2. Union bound over all pairs (i, j) (at most F(F − 1) ≤ F2 choices) gives equation 64. 
+
+Lemma B.41 (Value-difference energy concentration eEv (isotropic values)) . Assume v1, . . . , vF
+
+are i.i.d. uniform on Sd−1. Fix δ ∈ (0, 1 ) and let L := log ( C0 F2 
+
+> δ
+
+). Then with probability at least 
+
+1 − δ (over the values), 
+
+eEv := max  
+
+> i∈[F]
+
+max   
+
+> j̸=i
+
+# ∑
+
+> t/∈{ i,j}
+
+⟨vi − vj, vt⟩2 ≤ C1
+
+(F − 2) + Ld − 1 . (65) 
+
+Proof. Fix a pair (i, j) with j̸ = i and write wij := vi − vj. Let Fij := σ(vi, vj) and, for 
+
+t /∈ { i, j}, define θt := ⟨wij , vt⟩. Conditional on Fij , the θt are independent, centered, sub-Gaussian, therefore the centered squares 
+
+Zt := θ2 
+
+> t
+
+− E[θ2 
+
+> t
+
+| F ij ]
+
+are independent and sub-exponential with ∥Zt∥ψ1 ≲ ∥wij ∥22/(d − 1) by Lemma B.36. Write eEv(i, j) := ∑
+
+> t/∈{ i,j}
+
+θ2 
+
+> t
+
+= ∑
+
+> t/∈{ i,j}
+
+E[θ2 
+
+> t
+
+| F ij ] + ∑
+
+> t/∈{ i,j}
+
+Zt.Since vt is isotropic, E[θ2 
+
+> t
+
+| F ij ] = ∥wij ∥22/d and hence ∑t/∈{ i,j} E[θ2 
+
+> t
+
+| F ij ] = ( F − 2)∥wij ∥22/d.Also ∥wij ∥2 ≤ 2. A standard Bernstein inequality for sums of independent sub-exponential variables implies that for all s ≥ 0, 
+
+P
+
+
+
+# ∑
+
+> t/∈{ i,j}
+
+Zt ≥ C ∥wij ∥22
+
+d − 1
+
+ q
+
+(F − 2)s + s Fij 
+
+
+
+≤ 2e−s.As in Lemma B.40, the bound is uniform in Fij , so the same tail holds unconditionally. Using p(F − 2)s ≤ (F−2)+ s 
+
+> 2
+
+and absorbing constants yields 
+
+P
+
+ eEv(i, j) ≥ C ∥wij ∥22
+
+d − 1
+
+ (F − 2) + s
+
+≤ 2e−cs .Since ∥wij ∥22 ≤ 4, choosing s = L = log ( C0 F2 
+
+> δ
+
+) makes the right-hand side ≤ δ/F2. Union bounding over all pairs (i, j) yields equation 65. 
+
+Lemma B.42 (Coupling concentration eκ (isotropic values)) . Assume v1, . . . , vF are i.i.d. uniform on Sd−1. Treat the kernel matrix ˆK as arbitrary/deterministic. Fix δ ∈ (0, 1 ) and let L := log ( C0 F2 
+
+> δ
+
+).Then with probability at least 1 − δ (over the values), the coupling statistic eκ from equation 34 satisfies 
+
+eκ ≤ C1
+
+r LF − 2 . (66) 61 Proof. Fix a pair (i, j) with j̸ = i. If ∥X(ij )∥2 = 0 or ∥Y(ij )∥2 = 0 then eκij = 0, so assume both norms are positive and set 
+
+u(ij ) := X(ij )/∥X(ij )∥2.Write wij := vi − vj and let Fij := σ(vi, vj). For t /∈ { i, j} define θt := ⟨wij , vt⟩. Let 
+
+Sij := ⟨u(ij ), Y(ij )⟩ = ∑
+
+> t/∈{ i,j}
+
+u(ij ) 
+
+> t
+
+θt.Then 
+
+eκij = |⟨ X(ij ), Y(ij )⟩| ∥X(ij )∥2∥Y(ij )∥2
+
+= |⟨ u(ij ), Y(ij )⟩| ∥Y(ij )∥2
+
+= |Sij |∥Y(ij )∥2
+
+.
+
+Numerator tail. Conditional on Fij , the vectors (vt)t/∈{ i,j} are i.i.d. uniform on Sd−1, so each 
+
+θt = ⟨wij , vt⟩ is centered sub-Gaussian with ∥θt∥ψ2 ≲ ∥wij ∥2/√d − 1 by Lemma B.36. Since 
+
+∑t/∈{ i,j}(u(ij ) 
+
+> t
+
+)2 ≤ 1, Sij is centered sub-Gaussian with ∥Sij ∥ψ2 ≲ ∥wij ∥2/√d − 1 . Hence for all s ≥ 0, 
+
+P
+
+
+
+|Sij | ≥ C ∥wij ∥2
+
+q sd−1 Fij 
+
+
+
+≤ 2e−s.The right-hand side does not depend on Fij , so taking expectation over Fij yields the same bound unconditionally. 
+
+Denominator lower tail. Conditional on Fij , the centered squares Zt := θ2 
+
+> t
+
+− E[θ2 
+
+> t
+
+| F ij ] are independent, mean-zero, and sub-exponential with ∥Zt∥ψ1 ≲ ∥wij ∥22/(d − 1) (Lemma B.36). A Bernstein inequality for sums of independent sub-exponential variables (applied to −Zt)yields that for all s ≥ 0, 
+
+P ∥Y(ij )∥22 ≤ ∑
+
+> t/∈{ i,j}
+
+E[θ2 
+
+> t
+
+| F ij ] − C ∥wij ∥22
+
+d − 1
+
+ q
+
+(F − 2)s + s Fij 
+
+!
+
+≤ e−s.Again the bound is uniform in Fij , so it holds unconditionally after taking the expec-tation. Since vt is isotropic, E[θ2 
+
+> t
+
+| F ij ] = ∥wij ∥22/d, and hence ∑t/∈{ i,j} E[θ2 
+
+> t
+
+| F ij ] = (F − 2)∥wij ∥22/d. Using 1/ d ≥ 1/ (2(d − 1)) for d ≥ 2, the complement event implies 
+
+∥Y(ij )∥22 ≥ ∥wij ∥22
+
+d − 1
+
+ F − 22 − C q
+
+(F − 2)s + s
+
+.
+
+A high-probability ratio bound. On the intersection of the numerator and denominator events, if F − 2 ≥ C0s, then ∥Y(ij )∥2 ≥ c ∥wij ∥2
+
+p(F − 2)/(d − 1) and hence 
+
+eκij = |Sij |∥Y(ij )∥2
+
+≤ C
+
+r sF − 2 .If instead F − 2 < C0s, then ps/(F − 2) ≥ c and the same bound holds trivially since 
+
+eκij ≤ 1. Overall, for the fixed (i, j) the bound holds with failure probability at most 3 e−s.
+
+Choose s and union bound. Set s = L = log ( C0 F2 
+
+> δ
+
+). Then for a fixed (i, j) the failure probability is ≤ 3e−L ≤ δ/F2 (for C0 large enough). Union bounding over all pairs (i, j)
+
+yields equation 66. 
+
+Lemma B.43 (Centered coupling concentration κ◦ (isotropic values)) . Assume v1, . . . , vF
+
+are i.i.d. uniform on Sd−1. Let X◦(ij ) ∈ RF−2, i̸ = j , be deterministic vectors or random vectors independent of the values. Define 
+
+κ◦(ij ) :=
+
+D
+
+X◦(ij ), Y(ij )E
+
+∥X◦(ij )∥2∥Y(ij )∥2
+
+, κ◦ := max   
+
+> i̸=j
+
+κ◦(ij ),62 with the convention κ◦(ij ) = 0 if a denominator vanishes. Fix δ ∈ (0, 1 ), and set L := log 
+
+ C0 F2
+
+δ
+
+
+
+.
+
+Then, with probability at least 1 − δ,
+
+κ◦ ≤ C
+
+r LF − 2 .
+
+Proof. Condition on {X◦(ij ) : i̸ = j}. After conditioning, these columns are deterministic and independent of the values. The proof of Lemma B.42 applies unchanged with X(ij ) replaced by X◦(ij ). Removing the conditioning proves the claim. 
+
+B.9.4 Cross-Talk Bounds: Isotropic Keys and Bilinear Random Features 
+
+Lemma B.44 (Bilinear kernel mean and variance (isotropic keys)) . Let ˆK be the bilinear random-feature kernel from Lemma B.2 with m features and Gaussian weights (ar, br )mr=1. Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1. Fix t ̸ = i and write ρ = ⟨kt, ki⟩. Then: 1. (Conditional mean) E[ ˆKti | ρ] = ρ2.2. (Unconditional mean) μ := E[ ˆKti ] = E[ρ2] = 1/ d. 3. (Variance scale) letting σ2 := E[( ˆKti − μ)2], we have σ2 = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+)
+
+Proof. Condition on (kt, ki) and hence on ρ. Write ˆKti = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+Ur, Ur := ( a⊤ 
+
+> r
+
+kt)( a⊤ 
+
+> r
+
+ki) ( b⊤ 
+
+> r
+
+kt)( b⊤ 
+
+> r
+
+ki),with (ar, br ) i.i.d. standard Gaussian. Let Ar := ( a⊤ 
+
+> r
+
+kt)( a⊤ 
+
+> r
+
+ki) and Br := ( b⊤ 
+
+> r
+
+kt)( b⊤ 
+
+> r
+
+ki) so that Ur = Ar Br and Ar is independent of Br.
+
+Mean. Since (a⊤ 
+
+> r
+
+kt, a⊤ 
+
+> r
+
+ki) is centered bivariate Gaussian with covariance ρ, E[Ar | ρ] = ρ
+
+and likewise E[Br | ρ] = ρ, hence E[Ur | ρ] = ρ2 and E[ ˆKti | ρ] = ρ2. Averaging over isotropic keys yields μ = E[ρ2] = 1/ d.
+
+Variance scale. A Wick/Isserlis calculation gives E[A2 
+
+> r
+
+| ρ] = 1 + 2ρ2 and hence Var (Ur |
+
+ρ) = 1 + 4ρ2 + 3ρ4. Therefore Var ( ˆKti | ρ) = 1 
+
+> m
+
+(1 + 4ρ2 + 3ρ4). Using the law of total variance gives σ2 = E[Var ( ˆKti | ρ)] + Var (ρ2) = Θ( 1 
+
+> m
+
+) + Θ( 1 
+
+> d2
+
+), where Var (ρ2) = Θ(1 /d2)
+
+follows from E[ρ2] = 1/ d and E[ρ4] = 3/ (d(d + 2)) .
+
+Lemma B.45 (Gaussian-chaos entry concentration, centered at ρ2). Let x, y ∈ Rd be determin-istic unit vectors and set ρ := ⟨x, y⟩. Let {ar, br }mr=1 be i.i.d. with ar, br ∼ N (0, Id), and define the bilinear random-feature kernel 
+
+ˆK(x, y) := 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(a⊤ 
+
+> r
+
+x)( a⊤ 
+
+> r
+
+y)( b⊤ 
+
+> r
+
+x)( b⊤ 
+
+> r
+
+y).
+
+Then there exists a universal constant C > 0 such that, for all u ≥ 0,
+
+P
+
+ ˆK(x, y) − ρ2 ≥ C
+
+q um + u2
+
+> m
+
+ 
+
+≤ 2e−u.
+
+Proof. Fix x, y and write 
+
+Zr := ( a⊤ 
+
+> r
+
+x)( a⊤ 
+
+> r
+
+y)( b⊤ 
+
+> r
+
+x)( b⊤ 
+
+> r
+
+y) − ρ2, r ∈ [m].63 Then {Zr }mr=1 are i.i.d. and mean-zero. Moreover, Zr is a centered degree-4 polynomial in jointly Gaussian random variables with bounded covariance, so ∥Zr ∥L2 ≤ C; by Gaussian hypercontractivity (Theorem B.50 with k = 4), ∥Zr ∥Lp ≤ (p − 1)2∥Zr ∥L2 ≤ C′ p2 for all 
+
+p ≥ 2. A standard moment-to-tail conversion then yields a sub-Weibull ( 12 ) tail: there exists a universal constant C0 > 0 such that, for all u ≥ 0, 
+
+P
+
+
+
+|Zr | ≥ C0(√u + u2)
+
+
+
+≤ 2e−u.Applying Lemma B.49 with weights wr ≡ 1 /m (so that ∥w∥2 = m−1/2 and ∥w∥∞ = m−1)yields the claim. 
+
+Lemma B.46 (Gaussian-chaos entry concentration, centered at μ). Let x, y i.i.d. 
+
+∼ Unif (Sd−1)
+
+be independent of {ar, br }mr=1, and set μ := 1 /d and ρ := ⟨x, y⟩. Fix δ ∈ (0, 1 ) and define L := log (6/ δ). Assume m ≤ d2
+
+L . (67) 
+
+Then there exists a universal constant C > 0 such that 
+
+P
+
+ ˆK(x, y) − μ ≤ C
+
+q Lm + L2 
+
+> m
+
++
+
+q Ld2
+
+ 
+
+≥ 1 − δ.
+
+Proof. By the triangle inequality, 
+
+| ˆK(x, y) − μ| ≤ | ˆK(x, y) − ρ2| + |ρ2 − μ|.
+
+Control random-feature fluctuation. Condition on x, y and apply Lemma B.45 with u = L
+
+to obtain 
+
+P
+
+
+
+| ˆK(x, y) − ρ2| ≤ C
+
+q Lm + L2
+
+> m
+
+
+
+x, y
+
+
+
+≥ 1 − δ/3 for a suitable universal constant C > 0. 
+
+Control geometric fluctuation. Recall that if x, y i.i.d. 
+
+∼ Unif (Sd−1), then ρ d
+
+= g1/∥g∥2 for 
+
+g ∼ N (0, Id). Let X := ∥g∥22 ∼ χ2
+
+> d
+
+, so that ρ2 = g21/X. Since g21 ∼ χ21 and X ∼ χ2
+
+> d
+
+,Theorem B.53 implies that, each with probability at least 1 − δ/3, 
+
+|g21 − 1| ≤ C(√L + L), |X − d| ≤ C(√dL + L)
+
+for a universal constant C > 0. In particular, whenever d ≥ C′ L for a suitable absolute constant C′, the second estimate forces X ≥ d/ 2; when d ≲ L the final bound of this step is vacuous up to constants and can be absorbed by enlarging C. So assume X ≥ d/ 2. Writing 
+
+ρ2 − μ = g21d − XXd and using X ≥ d/ 2 together with the triangle inequality |g21d − X| ≤ 
+
+d |g21 − 1| + |X − d|,
+
+|ρ2 − μ| = |g21d − X|
+
+Xd ≤ 2
+
+d |g21 − 1| + 2
+
+d2 |X − d|.Substituting the two chi-square estimates and using d ≥ 1, 
+
+|ρ2 − μ| ≤ Cd (√L + L) + Cd2 (√dL + L) ≤ Cd
+
+ √L + L.Thus, on the intersection of the two chi-square events (of probability at least 1 − 2δ/3), 
+
+|ρ2 − μ| ≤ Cd
+
+ √L + L.
+
+Combine and simplify. Taking a union bound over both gives, with probability at least 1 − δ,
+
+| ˆK(x, y) − μ| ≤ C
+
+q Lm + L2 
+
+> m
+
++
+
+√Ld + Ld
+
+
+
+.Finally, under equation 67, we have L/d ≤ √L/m, so the L/d term is absorbed, yielding the stated bound. 64 Lemma B.47 (Centered column-energy concentration E◦ 
+
+> K
+
+(isotropic keys, bilinear kernel; sharpened)) . Assume keys k1, . . . , kF are i.i.d. uniform on Sd−1, independent of the bilinear random features from Lemma B.2. Let 
+
+μ := 1
+
+d , σ2 := E[( ˆKti − μ)2] = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+, t̸ = i.
+
+Fix δ ∈ (0, 1 ), and define L := log 
+
+ C0 F2
+
+δ
+
+
+
+.
+
+Assume m ≤ d2
+
+L , L3 ≤ c0σ2m2.
+
+Then, for c 0 > 0 sufficiently small and C 0 sufficiently large, with probability at least 1 − δ,E◦ 
+
+> K
+
+≤ Cσ2 (F − 2) + L.
+
+Equivalently, q
+
+E◦ 
+
+> K
+
+≤ Cσ
+
+q
+
+(F − 2) + L.
+
+In particular, if F − 2 ≥ L, then q
+
+E◦ 
+
+> K
+
+≤ Cσ√F − 2. 
+
+Proof. Assume F ≥ 3. For each i ∈ [F], define 
+
+Ci := ∑ 
+
+> t̸=i
+
+( ˆKti − μ)2.For each i̸ = j,
+
+E◦ 
+
+> K
+
+(i, j) = ∑
+
+> t/∈{ i,j}
+
+( ˆKti − μ)2 ≤ C i.Thus 
+
+E◦ 
+
+> K
+
+≤ max  
+
+> i
+
+Ci.Fix i, and set qi = ki. For q ∈ Sd−1, define A(q) as in Lemma B.60. Then, for every x ∈ Sd−1,
+
+x⊤ A(q)x = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(a⊤ 
+
+> r
+
+x)( a⊤ 
+
+> r
+
+q)( b⊤ 
+
+> r
+
+x)( b⊤ 
+
+> r
+
+q) = ˆK(x, q).Therefore ˆKti = k⊤ 
+
+> t
+
+A(qi)kt, t̸ = i.Define 
+
+τi := tr A(qi)
+
+d , Bi := A(qi) − τi Id, βi := τi − μ.Then tr Bi = 0, and ˆKti − μ = k⊤ 
+
+> t
+
+Bikt + βi.Let 
+
+Gi := σ (ki, {(ar, br )}mr=1) .Conditional on Gi, the vectors {kt : t̸ = i} are independent uniform spherical vectors. Define 
+
+vi := 2∥Bi∥2
+
+> F
+
+d(d + 2) + β2 
+
+> i
+
+, ri := ∥Bi∥op 
+
+d + |βi|.By Lemma B.61, with probability at least 1 − δ/4, simultaneously for every i ∈ [F],
+
+vi ≤ Cσ2, r2 
+
+> i
+
+L2 ≤ Cσ2 L.65 On this event, Lemma B.57, applied conditionally with n = F − 1 and s = L, gives 
+
+P
+
+
+
+Ci > C
+
+
+
+(F − 1)σ2 + σ2 L
+
+
+
+Gi
+
+
+
+≤ e−L,because L ≥ log (e(F − 1)) after increasing C0. Union bounding over i ∈ [F],
+
+Fe −L = F δ
+
+C0 F2 ≤ δ/4 for C0 sufficiently large. Combining the conditional square-sum event with the parameter event yields, with probability at least 1 − δ,max  
+
+> i
+
+Ci ≤ Cσ2 (F − 1) + L.Since F ≥ 3, F − 1 ≤ 2(F − 2), so 
+
+E◦ 
+
+> K
+
+≤ Cσ2 (F − 2) + L.Taking square roots proves q
+
+E◦ 
+
+> K
+
+≤ Cσ
+
+q
+
+(F − 2) + L.If F − 2 ≥ L, then (F − 2) + L ≤ 2(F − 2), giving 
+
+q
+
+E◦ 
+
+> K
+
+≤ Cσ√F − 2. 
+
+Lemma B.48 (Concentration of the effective coupling κ◦ 
+
+> eff
+
+(isotropic keys, bilinear kernel)) .
+
+Assume the setting of Theorem B.19: isotropic keys, bilinear kernel, and deterministic values/codes. Let μ = 1 /d and σ2 = Θ( 1 
+
+> d2
+
++ 1 
+
+> m
+
+). Fix δ ∈ (0, 1 ) and let L := log ( C0 F2 
+
+> δ
+
+). Assume additionally that m ≤ d2/L. Define 
+
+κ◦ 
+
+> eff
+
+:= max  
+
+> i̸=j
+
+|⟨ X◦(ij ), Y(ij )⟩| ∥Y(ij )∥2
+
+and Lv := max  
+
+> i̸=j
+
+∥Y(ij )∥21
+
+∥Y(ij )∥22
+
+Then with probability at least 1 − δ (over keys and features), 
+
+κ◦ 
+
+> eff
+
+≤ C
+
+
+
+σ√L + L2
+
+m
+
+ √Lv.
+
+Proof. Fix a pair (i, j) with j̸ = i. Write θt := ˆKti − μ for t /∈ { i, j}, so that X◦(ij ) = ( θt)t/∈{ i,j}.Then 
+
+|⟨ X◦(ij ), Y(ij )⟩| ∥Y(ij )∥2
+
+= ∑t/∈{ i,j} θt Y(ij )
+
+> t
+
+∥Y(ij )∥2
+
+≤
+
+
+
+max  
+
+> t/∈{ i,j}
+
+|θt|
+
+ ∥Y(ij )∥1
+
+∥Y(ij )∥2
+
+.Taking a maximum over (i, j) and using the definition of Lv gives 
+
+κ◦ 
+
+> eff
+
+≤
+
+
+
+max   
+
+> p̸=q
+
+| ˆKpq − μ|
+
+ √Lv.Now apply Lemma B.38 with failure probability δ to bound max p̸ =q | ˆKpq − μ| ≤ C(σ√L + 
+
+> L2
+> m
+
+). Multiplying by √Lv completes the proof. 66 B.9.5 Additional Concentration Tools 
+
+Lemma B.49 (Weighted Bernstein for sub-Weibull (1 / 2)-type tails) . Let Z1, . . . , ZN be inde-pendent, mean-zero random variables such that 
+
+P
+
+
+
+|Zr | ≥ C0(σ√u + u2/m)
+
+
+
+≤ 2e−u for all u ≥ 0, r ∈ [N].
+
+Then there exist absolute constants C, c > 0 such that for every deterministic w ∈ RN and every t ≥ 0,
+
+P
+
+> N
+
+# ∑
+
+> r=1
+
+wr Zr ≥ C
+
+
+
+σ∥w∥2
+
+√t + t2
+
+m ∥w∥∞
+
+!
+
+≤ 2e−ct .
+
+Consequently, for u = log (C1/δ), with probability at least 1 − δ,
+
+> N
+
+# ∑
+
+> r=1
+
+wr Zr ≤ C2
+
+
+
+σ∥w∥2
+
+√u + u2
+
+m ∥w∥∞
+
+
+
+.
+
+Proof. The assumed tail bound is equivalent up to absolute constants to the statement that each Zr is sub-Weibull of order α = 12 with generalized Bernstein–Orlicz parameters ν ≍ σ
+
+and L ≍ (σm)−1. Applying Theorem 2.4 of (Bong & Kuchibhotla, 2023) to the weighted sum ∑Nr=1 wr Zr gives 
+
+P
+
+> N
+
+# ∑
+
+> r=1
+
+wr Zr ≥ C
+
+
+
+σ∥w∥2
+
+√t + σL t 2∥w∥∞
+
+!
+
+≤ 2e−ct .Since σL ≍ 1/ m, this becomes 
+
+P
+
+> N
+
+# ∑
+
+> r=1
+
+wr Zr ≥ C
+
+
+
+σ∥w∥2
+
+√t + t2
+
+m ∥w∥∞
+
+!
+
+≤ 2e−ct .Setting t = log (C1/δ) yields the stated high-probability bound. 
+
+Theorem B.50 (Gaussian hypercontractivity; Nelson–Gross) . Let G ∼ N (0, In), and let P(G)
+
+be a polynomial of degree at most k in the standard Gaussian variables. Then, for every q ≥ 2,
+
+∥P(G)∥Lq ≤ (q − 1)k/2 ∥P(G)∥L2 .This is the standard degree-k polynomial-chaos corollary of the Gaussian hypercontractivity theorem; see O’Donnell (O’Donnell, 2014, Theorem 11.23). 
+
+Theorem B.51 (Sub-Weibull average bound from moment growth) . Let W1, . . . , Wm be independent mean-zero random variables. Suppose that, for some ρ ≥ 1 and K > 0,
+
+∥Wr ∥Lp ≤ Kp ρ for every p ≥ 2 and every r ∈ [m].
+
+Then there is a constant C ρ > 0, depending only on ρ, such that for every u ≥ 1,
+
+P 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+Wr > CρK
+
+r um + uρ
+
+m
+
+!
+
+≤ 2e−u.
+
+In particular, if W 1, . . . , Wm are independent centered degree-k Gaussian chaoses with k ≥ 2 and 
+
+∥Wr ∥L2 ≤ K0,
+
+then 
+
+P 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+Wr > CkK0
+
+r um + uk/2 
+
+m
+
+!! 
+
+≤ 2e−u.67 Proof. Set α := 1 /ρ ∈ (0, 1 ]. By a standard argument, the moment growth condition implies the Orlicz-norm bound 
+
+∥Wr ∥ψα := inf {c > 0 : E exp (( |Wr |/c)α) ≤ 2} ≤ CρK for every r ∈ [m] :indeed, monotonicity of p 7 → ∥Wr ∥Lp and the assumption give ∥Wr ∥Lαj ≤ CρKj 1/ α
+
+for every integer j ≥ 1, and expanding the exponential and using j! ≥ (j/e)j shows 
+
+E exp  (|Wr |/(AρK)) α ≤ 2 for Aρ sufficiently large. Now apply the generalized Bernstein–Orlicz inequality (Kuchibhotla & Chakrabortty, 2022, Theorem 3.1) to Z := 1 
+
+> m
+
+∑mr=1 Wr, with weights ar = 1 /m and br := ar ∥Wr ∥ψα , so that ∥b∥2 ≤ CρK/√m and ∥b∥∞ ≤ CρK/m. The defining tail property of their generalized Bernstein–Orlicz norm yields, for every u ≥ 1, 
+
+P
+
+
+
+|Z| > Cα
+
+
+
+∥b∥2
+
+√u + ∥b∥∞u1/ α 
+
+≤ 2e−u.Substituting the bounds on ∥b∥2 and ∥b∥∞ and using 1/ α = ρ gives the stated tail bound. Finally, if Wr is a centered degree-k Gaussian chaos with ∥Wr ∥L2 ≤ K0, Theorem B.50 gives 
+
+∥Wr ∥Lp ≤ (p − 1)k/2 ∥Wr ∥L2 ≤ CkK0 pk/2 , p ≥ 2. Apply the first part with ρ = k/2 and K = CkK0.
+
+Theorem B.52 (Operator norm from bilinear forms on nets) . Let A ∈ Rn×m, let 0 < ε < 1 / 2,and let N ⊂ Sn−1, M ⊂ Sm−1 be finite ε-nets. Then 
+
+max    
+
+> x∈N ,y∈M
+
+|x⊤ Ay | ≤ ∥ A∥op ≤ 11 − 2ε max    
+
+> x∈N ,y∈M
+
+|x⊤ Ay |.
+
+In particular, for ε = 1/4 ,
+
+∥A∥op ≤ 2 max    
+
+> x∈N ,y∈M
+
+|x⊤ Ay |.
+
+Moreover, for every d ≥ 1, the sphere Sd−1 admits a 1 / 4-net of cardinality at most 9d. Hence one may choose such nets with 
+
+|N | ≤ 9n and |M| ≤ 9m.This is Vershynin (Vershynin, 2026, Lemma 4.4.2 and Corollary 4.2.11). 
+
+Theorem B.53 (Laurent–Massart weighted chi-square tail) . Let Y1, . . . , YD be independent standard Gaussian random variables, and let a 1, . . . , aD ≥ 0. Define Z :=
+
+> D
+
+# ∑
+
+> i=1
+
+ai(Y2 
+
+> i
+
+− 1).
+
+Then, for every x > 0,
+
+P  Z ≥ 2∥a∥2
+
+√x + 2∥a∥∞ x ≤ e−x,
+
+and 
+
+P  Z ≤ − 2∥a∥2
+
+√x ≤ e−x.
+
+In particular, if Q ∼ χ2
+
+> D
+
+, then 
+
+P
+
+
+
+Q − D ≥ 2√Dx + 2x
+
+
+
+≤ e−x,
+
+and 
+
+P
+
+
+
+D − Q ≥ 2√Dx 
+
+
+
+≤ e−x.This is Laurent–Massart (Laurent & Massart, 2000, Lemma 1). 68 Lemma B.54 (Weighted product-Gaussian chaos) . Let (gr, hr )mr=1 be independent pairs of independent standard Gaussians, and let a = ( a1, . . . , am) ∈ Rm be deterministic. Then, for every t ≥ 0,
+
+P
+
+> m
+
+# ∑
+
+> r=1
+
+ar gr hr > C
+
+
+
+∥a∥2
+
+√t + ∥a∥∞t
+
+!
+
+≤ 2e−t.
+
+Proof. For independent g, h ∼ N(0, 1 ), conditioning on g gives 
+
+Eeλgh = Eeλ2 g2/2 = ( 1 − λ2)−1/2 , |λ| < 1. Therefore, for |λ| ≤ c/∥a∥∞,log E exp λ
+
+> m
+
+# ∑
+
+> r=1
+
+ar gr hr
+
+!
+
+= − 12
+
+> m
+
+# ∑
+
+> r=1
+
+log (1 − λ2a2 
+
+> r
+
+) ≤ Cλ2∥a∥22.If a = 0, the claim is trivial. Otherwise, Chernoff’s bound gives 
+
+P
+
+> m
+
+# ∑
+
+> r=1
+
+ar gr hr > ν
+
+!
+
+≤ exp 
+
+
+
+−λν + Cλ2∥a∥22
+
+
+
+for every 0 ≤ λ ≤ c/∥a∥∞. Optimizing with 
+
+λ = c min 
+
+(
+
+ν
+
+∥a∥22
+
+, 1
+
+∥a∥∞
+
+)
+
+gives 
+
+P
+
+> m
+
+# ∑
+
+> r=1
+
+ar gr hr > C(∥a∥2
+
+√t + ∥a∥∞t)
+
+!
+
+≤ e−t.Apply the same argument to − ∑r ar gr hr and union bound. 
+
+Lemma B.55 (Square-sum concentration from a two-level tail) . Let X1, . . . , Xn be independent random variables. Assume that, for constants v > 0, r > 0, and C 0 ≥ 1,
+
+EX2 
+
+> i
+
+≤ vand, for every u ≥ 1,
+
+P  |Xi| > C0(√vu + ru ) ≤ 2e−u.
+
+Assume also that r2 ≤ C0v.
+
+Then, for every s ≥ 1,
+
+P
+
+> n
+
+# ∑
+
+> i=1
+
+X2 
+
+> i
+
+> C
+
+
+
+nv + vs + r2s2!
+
+≤ Ce −s,
+
+where C depends only on C 0.Proof. We first reduce the problem to sums of variables with exponential tails. For each i, let 
+
+Ri have the same distribution as |Xi|, with the variables R1, . . . , Rn independent. Define 
+
+Ti := inf u ≥ 1 : Ri ≤ C0(√vu + ru ) .Then, by definition, 
+
+Ri ≤ C0(pvT i + rT i).Moreover, for every u ≥ 1, if Ti > u, then 
+
+Ri > C0(√vu + ru ),69 and hence the assumed tail bound gives 
+
+P(Ti > u) ≤ 2e−u.Since the desired estimate depends only on the marginal laws and independence, we may work with this coupled representation and write, after changing the absolute constant, 
+
+|Xi| ≤ C(pvT i + rT i), P(Ti > u) ≤ 2e−u, u ≥ 1. Squaring the domination gives 
+
+X2 
+
+> i
+
+≤ C
+
+
+
+vT i + r2T2
+
+> i
+
+
+
+.Hence n
+
+# ∑
+
+> i=1
+
+X2 
+
+> i
+
+≤ C v
+
+> n
+
+# ∑
+
+> i=1
+
+Ti + r2 n
+
+# ∑
+
+> i=1
+
+T2
+
+> i
+
+!
+
+.It remains to control the two sums involving Ti.The tail bound P(Ti > u) ≤ 2e−u implies, for every p ≥ 2, 
+
+∥Ti∥Lp ≤ Cp , ∥T2 
+
+> i
+
+∥Lp = ∥Ti∥2 
+
+> L2p
+
+≤ Cp 2.Consequently, 
+
+∥Ti − ETi∥Lp ≤ Cp , ∥T2 
+
+> i
+
+− ET2 
+
+> i
+
+∥Lp ≤ Cp 2.Also ETi ≤ C and ET2 
+
+> i
+
+≤ C. Applying Theorem B.51 to the centered variables Ti − ETi with 
+
+ρ = 1 gives 
+
+P
+
+> n
+
+# ∑
+
+> i=1
+
+Ti > C(n + s)
+
+!
+
+≤ Ce −s.Similarly, applying Theorem B.51 to T2 
+
+> i
+
+− ET2 
+
+> i
+
+with ρ = 2 gives 
+
+P
+
+> n
+
+# ∑
+
+> i=1
+
+T2 
+
+> i
+
+> C(n + s2)
+
+!
+
+≤ Ce −s.On the intersection of these two events, 
+
+> n
+
+# ∑
+
+> i=1
+
+X2 
+
+> i
+
+≤ C
+
+
+
+v(n + s) + r2(n + s2)
+
+
+
+.Since r2 ≤ C0v, the term r2n is absorbed by vn . Therefore 
+
+> n
+
+# ∑
+
+> i=1
+
+X2 
+
+> i
+
+≤ C
+
+
+
+nv + vs + r2s2
+
+with probability at least 1 − Ce −s.
+
+Lemma B.56 (Spherical quadratic-form tail) . Let x ∼ Unif (Sd−1), and let B ∈ Rd×d be symmetric and trace-free. Then, for every u ≥ 1,
+
+P
+
+
+
+|x⊤ Bx | > C
+
+ ∥B∥F
+
+d
+
+√u + ∥B∥op 
+
+d u
+
+ 
+
+≤ 2e−u.
+
+Proof. Write 
+
+x = g
+
+∥g∥2
+
+, g ∼ N (0, Id).Diagonalize B = Q diag (λ1, . . . , λd)Q⊤. By rotational invariance, 
+
+g⊤ Bg d
+
+=
+
+> d
+
+# ∑
+
+> i=1
+
+λi g2 
+
+> i
+
+.70 Since tr B = ∑i λi = 0, 
+
+g⊤ Bg =
+
+> d
+
+# ∑
+
+> i=1
+
+λi(g2 
+
+> i
+
+− 1).Apply Theorem B.53 to the positive and negative parts of the weights λi. Equivalently, apply it to the two weighted sums associated with λ+ 
+
+> i
+
+and λ− 
+
+> i
+
+. This gives, for all u ≥ 1, 
+
+P
+
+
+
+|g⊤ Bg | > C  ∥B∥F
+
+√u + ∥B∥op u
+
+≤ 2e−u.Choose a numerical constant a ≥ 1, to be fixed below. Applying the above Gaussian quadratic-form bound with au in place of u, we get 
+
+P
+
+
+
+|g⊤ Bg | > Ca
+
+ ∥B∥F
+
+√u + ∥B∥op u
+
+≤ 2e−au .Also, by the lower-tail part of Theorem B.53 applied to ∥g∥22 ∼ χ2
+
+> d
+
+,
+
+P
+
+
+
+∥g∥22 < d/2 
+
+
+
+≤ e−cd .If u ≤ c1d, with c1 > 0 chosen small enough, then e−cd ≤ e−2u. On the event ∥g∥22 ≥ d/2, 
+
+|x⊤ Bx | = |g⊤ Bg |∥g∥22
+
+≤ Ca
+
+ ∥B∥F
+
+d
+
+√u + ∥B∥op 
+
+d u
+
+
+
+.Thus, for u ≤ c1d, the failure probability is at most 2 e−au + e−2u. Choosing a large enough and enlarging the constant in the threshold gives failure probability at most 2 e−u. If u > c1d,then the same inequality holds deterministically after enlarging C, because 
+
+|x⊤ Bx | ≤ ∥ B∥op ≤ C ∥B∥op 
+
+d u.This proves the claim. 
+
+Lemma B.57 (Spherical quadratic square-sum bound) . Let x1, . . . , xn be i.i.d. uniform on 
+
+Sd−1 ⊂ Rd. Let B ∈ Rd×d be deterministic, symmetric, and trace-free, and let β ∈ R. Define Xℓ := x⊤ 
+
+> ℓ
+
+Bx ℓ + β.
+
+Set v := 2∥B∥2
+
+> F
+
+d(d + 2) + β2, r := ∥B∥op 
+
+d + |β|.
+
+Then, for every s ≥ 1,
+
+P
+
+> n
+
+# ∑
+
+> ℓ=1
+
+X2 
+
+> ℓ
+
+> C
+
+
+
+nv + vs + r2s2!
+
+≤ e−s.
+
+Proof. For x ∼ Unif (Sd−1), isotropy gives 
+
+E[x⊤ Bx ] = tr Bd = 0. The fourth-moment identity for the sphere gives 
+
+E[( x⊤ Bx )2] = (tr B)2 + 2∥B∥2
+
+> F
+
+d(d + 2) = 2∥B∥2
+
+> F
+
+d(d + 2) .Therefore 
+
+EX2 
+
+> ℓ
+
+= v.Moreover,  ∥B∥op 
+
+d
+
+2
+
+≤ ∥B∥2
+
+> F
+
+d2 ≤ C 2∥B∥2
+
+> F
+
+d(d + 2) ≤ Cv ,71 and β2 ≤ v, so 
+
+r2 ≤ Cv .By Lemma B.56, for every u ≥ 1, 
+
+P
+
+
+
+|x⊤ Bx | > C
+
+ ∥B∥F
+
+d
+
+√u + ∥B∥op 
+
+d u
+
+ 
+
+≤ 2e−u.Since ∥B∥F /d ≤ C√v, ∥B∥op /d ≤ r, and |β| ≤ √v, this implies 
+
+P  |Xℓ| > C(√vu + ru ) ≤ 2e−u.Lemma B.55 applies because r2 ≤ Cv . It gives 
+
+P
+
+> n
+
+# ∑
+
+> ℓ=1
+
+X2 
+
+> ℓ
+
+> C
+
+
+
+nv + vs + r2s2!
+
+≤ Ce −s.Replacing s in the equation above by s + c0, for a sufficiently large absolute constant c0, and enlarging C, changes the right-hand side to e−s and leaves the threshold in the same form. This proves the claim. 
+
+Lemma B.58 (Scalar weight regularity for one bilinear column) . Let α1, . . . , αm, β1, . . . , βm be independent standard Gaussians, and define 
+
+γr = αr βr, ηr = αr β2 
+
+> r
+
+, ζr = α2 
+
+> r
+
+βr.
+
+If m ≥ C∗ L3, then, with probability at least 1 − Ce −L,
+
+1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(α2 
+
+> r
+
+β2 
+
+> r
+
+− 1) ≤ C
+
+r Lm + L2
+
+m
+
+!
+
+,
+
+> m
+
+# ∑
+
+> r=1
+
+γ2 
+
+> r
+
+≤ Cm ,
+
+> m
+
+# ∑
+
+> r=1
+
+η2 
+
+> r
+
+≤ Cm ,
+
+> m
+
+# ∑
+
+> r=1
+
+ζ2 
+
+> r
+
+≤ Cm ,
+
+and 
+
+∥γ∥2 
+
+> ∞
+
+L ≤ Cm .
+
+Proof. The variable α2 β2 − 1 is a centered degree-four Gaussian polynomial with bounded 
+
+L2-norm. By Theorem B.50, 
+
+∥α2 β2 − 1∥Lp ≤ Cp 2, p ≥ 2. Applying Theorem B.51 with ρ = 2 gives 
+
+1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(α2 
+
+> r
+
+β2 
+
+> r
+
+− 1) ≤ C
+
+r Lm + L2
+
+m
+
+!
+
+with probability at least 1 − 2e−L.Next, 
+
+Eγ2 
+
+> r
+
+= 1, Eη2 
+
+> r
+
+= 3, Eζ2 
+
+> r
+
+= 3. The centered variables 
+
+γ2 
+
+> r
+
+− 1, η2 
+
+> r
+
+− 3, ζ2 
+
+> r
+
+− 3are centered Gaussian polynomials of degrees 4, 6, 6, respectively, with bounded L2-norms. Applying Theorem B.51 with ρ = 2 for γ2 
+
+> r
+
+− 1 and ρ = 3 for the degree-six terms gives 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+γ2 
+
+> r
+
+≤ C, 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+η2 
+
+> r
+
+≤ C, 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+ζ2 
+
+> r
+
+≤ C
+
+with probability at least 1 − Ce −L, provided m ≥ C∗ L3.72 It remains to control ∥γ∥∞. Since 2|αβ | ≤ α2 + β2,and α2 + β2 ∼ χ22, there is an absolute constant c > 0 such that 
+
+P(|αβ | > u) ≤ 2e−cu .Thus 
+
+P
+
+
+
+∥γ∥2 
+
+> ∞
+
+L > Cm 
+
+
+
+≤ 2m exp −c
+
+r Cm L
+
+!
+
+.Since m ≥ C∗ L3, write m = L3y with y ≥ C∗. Then 
+
+r mL = L√y,whereas 
+
+L + log (2m) + 1 = L + log (2L3y) + 1 ≤ C(L + log y) ≤ CL √y.Choosing the absolute constants C∗ and C sufficiently large therefore ensures 
+
+c
+
+r Cm L ≥ L + log (2m) + 1. Therefore 2m exp −c
+
+r Cm L
+
+!
+
+≤ e−L.A union bound over the above events completes the proof. 
+
+Lemma B.59 (Weighted Gaussian product bounds) . Let U, V ∈ Rn×m have independent standard Gaussian entries, and let Γ = diag (γ1, . . . , γm) be deterministic. Then, for every s ≥ 1,with probability at least 1 − 4e−s,
+
+∥UΓV⊤∥op ≤ C
+
+
+
+∥γ∥2
+
+√n + s + ∥γ∥∞(n + s)
+
+
+
+,
+
+and 
+
+tr (UΓV⊤) ≤ C  √n ∥γ∥2
+
+√s + ∥γ∥∞s .
+
+Furthermore, if 
+
+∥γ∥22 ≤ C0m, ∥γ∥2
+
+> ∞
+
+s ≤ C0m, n ≥ s,
+
+then, with probability at least 1 − 6e−s,
+
+∥UΓV⊤∥2 
+
+> F
+
+≤ Cn 2m.
+
+Proof. For fixed x, y ∈ Sn−1,
+
+x⊤UΓV⊤y =
+
+> m
+
+# ∑
+
+> r=1
+
+γr (u⊤ 
+
+> r
+
+x)( v⊤ 
+
+> r
+
+y),where ur, vr are the columns of U, V. The variables (u⊤ 
+
+> r
+
+x)( v⊤ 
+
+> r
+
+y) are independent products of independent standard Gaussians. Lemma B.54 gives, for every t ≥ 0, 
+
+P
+
+
+
+|x⊤UΓV⊤y| > C(∥γ∥2
+
+√t + ∥γ∥∞t)
+
+
+
+≤ 2e−t.Take 1 / 4-nets N , M of Sn−1 with cardinalities at most 9 n. Set t = s + 2n log 9, union bound over N × M , and apply Theorem B.52. This proves the operator bound. For the trace, tr (UΓV⊤) = 
+
+> n
+
+# ∑
+
+> ℓ=1
+> m
+
+# ∑
+
+> r=1
+
+γrUℓrVℓr.73 This is again a weighted sum of products of independent standard Gaussians, with weights 
+
+γr repeated n times. Lemma B.54 therefore gives the stated trace bound. For the Frobenius bound, first note 
+
+∥UΓ∥2 
+
+> F
+
+=
+
+> m
+
+# ∑
+
+> r=1
+
+γ2 
+
+> r
+
+∥ur ∥22.This is a weighted chi-square variable with mean n∥γ∥22 ≤ Cnm . By Theorem B.53, using 
+
+∥γ∥2
+
+> ∞
+
+s ≤ C0m, we get 
+
+∥UΓ∥2 
+
+> F
+
+≤ Cnm 
+
+with probability at least 1 − e−s.Condition on U, Γ, and set 
+
+R := ΓU⊤UΓ.Then 
+
+∥UΓV⊤∥2 
+
+> F
+
+= tr (VRV ⊤).Writing the rows of V as g1, . . . , gn ∈ Rm,tr (VRV ⊤) = 
+
+> n
+
+# ∑
+
+> ℓ=1
+
+g⊤ 
+
+> ℓ
+
+Rg ℓ.Diagonalize R, and apply Theorem B.53. With conditional probability at least 1 − e−s,tr (VRV ⊤) ≤ n tr R + 2
+
+q
+
+n tr (R2)s + 2∥R∥op s.On {∥ UΓ∥2 
+
+> F
+
+≤ Cnm },tr R = ∥UΓ∥2 
+
+> F
+
+≤ Cnm ,
+
+∥R∥op ≤ tr R ≤ Cnm ,and tr (R2) ≤ ∥ R∥op tr R ≤ Cn 2m2.Since n ≥ s, all three terms are bounded by Cn 2m. Thus 
+
+∥UΓV⊤∥2 
+
+> F
+
+≤ Cn 2m.Union bounding the events completes the proof. 
+
+Lemma B.60 (Bilinear one-column matrix regularity) . Fix δ ∈ (0, 1 ), and define L := log 
+
+ C0 F2
+
+δ
+
+
+
+.
+
+Assume m ≤ d2
+
+L , m ≥ C∗ L3.
+
+Let a1, b1, . . . , am, bm ∈ Rd be i.i.d. standard Gaussian vectors—the bilinear random features of Lemma B.2. For q ∈ Sd−1, define A(q) := 12m
+
+> m
+
+# ∑
+
+> r=1
+
+(a⊤ 
+
+> r
+
+q)( b⊤ 
+
+> r
+
+q)( arb⊤ 
+
+> r
+
++ bra⊤ 
+
+> r
+
+),
+
+and N(q) := A(q) − qq ⊤.
+
+Let k1, . . . , kF be i.i.d. uniform on Sd−1, independent of the features. Then, with probability at least 
+
+1 − δ/4 , simultaneously for all i ∈ [F],
+
+∥N(ki)∥2 
+
+> F
+
+≤ C d2
+
+m ,74 ∥N(ki)∥op ≤ C
+
+r dm + d
+
+√mL 
+
+!
+
+,
+
+and 
+
+| tr N(ki)| ≤ C
+
+r dL m .
+
+Proof. It suffices to prove the result for a fixed deterministic q ∈ Sd−1 with failure probability at most Ce −L. Conditional on the keys, the vectors ki are deterministic and independent of the feature randomness. A union bound over i ∈ [F] gives failure probability at most 
+
+CFe −L = CF δ
+
+C0 F2 ≤ δ/4 for C0 sufficiently large. Fix q. By rotational invariance, assume q = e1. Write 
+
+ar = ( αr, ur ), br = ( βr, vr ),where αr, βr ∼ N(0, 1 ), ur, vr ∼ N (0, Id−1), and all variables are independent across r. Set 
+
+n = d − 1. The r-th summand is 
+
+Sr = 12 αr βr (arb⊤ 
+
+> r
+
++ bra⊤ 
+
+> r
+
+),and ESr = e1e⊤ 
+
+> 1
+
+. In block form, 
+
+N(e1) = 
+
+ N11 N⊤
+
+> 1⊥
+
+N1⊥ N⊥⊥ 
+
+
+
+,where 
+
+N11 = 1
+
+m
+
+> m
+
+# ∑
+
+> r=1
+
+(α2 
+
+> r
+
+β2 
+
+> r
+
+− 1),
+
+N1⊥ = 12m
+
+> m
+
+# ∑
+
+> r=1
+
+(ηr ur + ζr vr ),and, with U, V ∈ Rn×m having columns ur, vr, Γ = diag (γ1, . . . , γm),
+
+N⊥⊥ = 12m (UΓV⊤ + VΓU⊤),with 
+
+γr = αr βr, ηr = αr β2 
+
+> r
+
+, ζr = α2 
+
+> r
+
+βr.Let G be the good event from Lemma B.58. On G,
+
+|N11 | ≤ C
+
+r Lm + L2
+
+m
+
+!
+
+,
+
+∥γ∥22 ≤ Cm , ∥γ∥2 
+
+> ∞
+
+L ≤ Cm , ∑
+
+> r
+
+η2 
+
+> r
+
+≤ Cm , ∑
+
+> r
+
+ζ2 
+
+> r
+
+≤ Cm .Also P(Gc) ≤ Ce −L.Conditional on the scalar weights, 
+
+Sη := ∑
+
+> r
+
+ηr ur ∼ N 0, ∑
+
+> r
+
+η2
+
+> r
+
+!
+
+In
+
+!
+
+, Sζ := ∑
+
+> r
+
+ζr vr ∼ N 0, ∑
+
+> r
+
+ζ2
+
+> r
+
+!
+
+In
+
+!
+
+.On G, both covariance scalars are at most Cm . Therefore ∥Sη ∥22/(Cm ) and ∥Sζ ∥22/(Cm ) are stochastically dominated, up to an absolute constant, by χ2
+
+> n
+
+. By the chi-square consequence of Theorem B.53, with conditional failure probability at most 2 e−L,
+
+∥Sη ∥2 ≤ C√m(√n + √L), ∥Sζ ∥2 ≤ C√m(√n + √L).75 Hence 
+
+∥N1⊥∥2 ≤ C
+
+r n + Lm .Since m ≥ C∗ L3 and m ≤ d2/L,
+
+d2 ≥ mL ≥ C∗ L4,so d ≥ cL 2 and n + L ≤ Cd . Therefore 
+
+∥N1⊥∥2 ≤ C
+
+r dm .By Lemma B.59, on G, with conditional probability at least 1 − 4e−L,
+
+∥UΓV⊤∥op ≤ C
+
+√m√n + L +
+
+r mL (n + L)
+
+
+
+.The same bound holds for VΓU⊤. Thus 
+
+∥N⊥⊥ ∥op ≤ C
+
+r n + Lm + n + L
+
+√mL 
+
+!
+
+≤ C
+
+r dm + d
+
+√mL 
+
+!
+
+.Combining block estimates gives 
+
+∥N(e1)∥op ≤ C
+
+r dm + d
+
+√mL 
+
+!
+
+.For the Frobenius bound, Lemma B.59 gives 
+
+∥UΓV⊤∥2 
+
+> F
+
+≤ Cn 2m,because ∥γ∥22 ≤ Cm , ∥γ∥2 
+
+> ∞
+
+L ≤ Cm , and n = d − 1 ≥ L. Thus 
+
+∥N⊥⊥ ∥2 
+
+> F
+
+≤ C d2
+
+m .The scalar and vector blocks satisfy 
+
+|N11 |2 ≤ C d2
+
+m , ∥N1⊥∥22 ≤ C dm ≤ C d2
+
+m .Therefore 
+
+∥N(e1)∥2 
+
+> F
+
+≤ C d2
+
+m .Finally, tr N(e1) = N11 + tr N⊥⊥ = N11 + 1
+
+m tr (UΓV⊤).By Lemma B.59, 1
+
+m | tr (UΓV⊤)| ≤ C
+
+r dL m +
+
+r Lm
+
+!
+
+≤ C
+
+r dL m .The scalar term N11 is absorbed by the same bound. Hence 
+
+| tr N(e1)| ≤ C
+
+r dL m .This proves the fixed-direction estimate. Rotational invariance and the initial union bound over the keys complete the proof. 76 Lemma B.61 (Bilinear one-column quadratic-form parameters) . Assume the setting of Lemma B.60. Suppose also that m ≤ d2
+
+L , L3 ≤ c0σ2m2,
+
+where 
+
+σ2 = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+.
+
+For q ∈ Sd−1, define 
+
+τ(q) := tr A(q)
+
+d , B(q) := A(q) − τ(q)Id, β(q) := τ(q) − 1
+
+d .
+
+Also define v(q) := 2∥B(q)∥2
+
+> F
+
+d(d + 2) + β(q)2, r(q) := ∥B(q)∥op 
+
+d + |β(q)|.
+
+If c0 > 0 is sufficiently small and C0 sufficiently large, then with probability at least 1 − δ/ 4,simultaneously for every i ∈ [F],v(ki) ≤ Cσ2, r(ki)2 L2 ≤ Cσ2 L.
+
+Proof. Since m ≤ d2/L,1
+
+d2 ≤ 1
+
+mL ≤ 1
+
+m .Thus 
+
+σ2 = Θ
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+≍ 1
+
+m .The assumption L3 ≤ c0σ2m2 implies m ≥ C∗ L3, after choosing c0 > 0 sufficiently small. Hence Lemma B.60 applies. Also 
+
+d2 ≥ mL ≥ C∗ L4,so d ≥ cL 2.Work on the event from Lemma B.60. Fix i, write q = ki, A = A(q), and N = N(q) = 
+
+A − qq ⊤. Since 
+
+A = qq ⊤ + N,we have tr A = 1 + tr N, β(q) = tr Nd .Using the trace bound, 
+
+|β(q)| ≤ C
+
+r Ldm .Since d ≥ L,
+
+β(q)2 ≤ C Ldm ≤ C 1
+
+m ≤ Cσ2.Next, 
+
+B(q) = 
+
+
+
+qq ⊤ − 1
+
+d Id
+
+
+
++
+
+
+
+N − tr Nd Id
+
+
+
+.The trace-removal map is an orthogonal projection in Frobenius norm, and 
+
+qq ⊤ − 1
+
+d Id
+
+> 2
+> F
+
+= 1 − 1
+
+d ≤ 1. Therefore 
+
+∥B(q)∥2 
+
+> F
+
+≤ C
+
+
+
+1 + ∥N∥2
+
+> F
+
+
+
+≤ C
+
+
+
+1 + d2
+
+m
+
+
+
+.77 Hence 2∥B(q)∥2
+
+> F
+
+d(d + 2) ≤ C
+
+ 1
+
+d2 + 1
+
+m
+
+
+
+≤ Cσ2.Together with β(q)2 ≤ Cσ2, this proves v(q) ≤ Cσ2.For r(q), use 
+
+∥B(q)∥op ≤ 1 + ∥N∥op + | tr N|
+
+d .Therefore 
+
+∥B(q)∥op 
+
+d ≤ C 1
+
+d + 1
+
+√dm + 1
+
+√mL +
+
+r Ld3m
+
+!
+
+.Since d ≥ L2, all terms except 1/ d are dominated by C/√mL . Also 
+
+|β(q)| ≤ C
+
+r Ldm ≤ C 1
+
+√mL .Thus 
+
+r(q) ≤ C
+
+ 1
+
+d + 1
+
+√mL 
+
+
+
+.Squaring and multiplying by L2,
+
+r(q)2 L2 ≤ C
+
+ L2
+
+d2 + Lm
+
+
+
+.Since m ≤ d2/L,
+
+L2
+
+d2 ≤ Lm .Therefore 
+
+r(q)2 L2 ≤ C Lm ≤ Cσ2 L.The estimates hold simultaneously for all q = ki.78 B.10 Hebbian MLPs within Transformers 
+
+B.10.1 Noisy Margin 
+
+Clean and Noisy Margins Given per-item queries q1, . . . , qF, define 
+
+γmin (q) := min  
+
+> i∈[F]
+
+min   
+
+> j̸=i
+
+γij (qi).Notably, let the noisy margin, for noisy queries ˜ k, be 
+
+γmin ( ˜k) := min  
+
+> i∈[F]
+
+min   
+
+> j̸=i
+
+γij ( ˜ki).and the clean margin for noiseless queries k be 
+
+γmin (k) := min  
+
+> i∈[F]
+
+min   
+
+> j̸=i
+
+γij (ki).
+
+Noisy queries. We query with eki (instead of ki), assuming 
+
+∥eki − ki∥2 ≤ ϵ ∀i ∈ [F]. (68) 
+
+Lipschitz stability in the query argument. Assume that for some Lk and all queries of interest, 
+
+K(kt, q) − K(kt, q′) ≤ Lk ∥q − q′∥2 ∀t ∈ [F]. (69) (Here q, q′ range over a set containing {ki} ∪ { eki}.) 
+
+Theorem B.62 (Noised margin bound with Lipschitz stability (isotropic values)) . Assume noisy queries (Equation (68) ), lipschitz stability on the kernel (Equation (69) ), and isotropic values. Fix δ ∈ (0, 1 ) and set L = log ( C0 F2 
+
+> δ
+
+). Then with probability at least 1 − δ, simultaneously for all i ∈ [F] and all j ̸ = i, 
+
+γij (eki) ≥ γij (ki) − 2(1 + μv) Lk ϵ − 2√2 Lk ϵ
+
+r FL d . (70) 
+
+Moreover, using the standard isotropic-values coherence bound for μv from Lemma B.37, the same event implies the simplified form 
+
+γij (eki) ≥ γij (ki) − 2 Lk ϵ − C1 Lk ϵ
+
+r FL d , (71) 
+
+for an absolute constant C1 > 0. Further, in the common regime FL ≥ d (so that √FL /d ≥ 1), we have 
+
+γij (eki) ≥ γij (ki) − C2 Lk ϵ
+
+r FL d , (72) 
+
+for an absolute constant C 2 > 0.Proof. Fix i ∈ [F] and j̸ = i, and define 
+
+∆t,i := K(kt, eki) − K(kt, ki).Subtracting the noisy and clean margin gives the exact expansion 
+
+γij (eki) − γij (ki) = 
+
+> F
+
+# ∑
+
+> t=1
+
+∆t,i ⟨vi − vj, vt⟩. (73) 
+
+Bound ∆t,i by Lipschitzness. By Equation (69) and Equation (68), |∆t,i| ≤ Lkϵ for all t.79 Handle t = i and t = j. Using ⟨vi − vj, vi⟩ ≤ 1 + μv and ⟨vi − vj, vj⟩ ≤ 1 + μv,
+
+∆i,i⟨vi − vj, vi⟩ + ∆j,i⟨vi − vj, vj⟩ ≥ − 2(1 + μv) Lkϵ.
+
+Concentrate the sum over t /∈ { i, j}. Let 
+
+Sij := ∑
+
+> t/∈{ i,j}
+
+∆t,i ⟨vi − vj, vt⟩.Condition on (vi, vj). Then (vt)t/∈{ i,j} are independent isotropic vectors, so by the isotropic inner-product sub-Gaussianity lemma (Lemma B.36), each ⟨vi − vj, vt⟩ is mean-zero and sub-Gaussian with parameter ≲ ∥vi − vj∥2/√d ≤ 2 /√d. By standard sub-Gaussian closure under weighted sums (see, e.g., the proof of Lemma B.42), Sij is sub-Gaussian with variance proxy at most 4
+
+d ∑
+
+> t/∈{ i,j}
+
+∆2 
+
+> t,i
+
+≤ 4
+
+d · F (Lkϵ)2.Hence the usual one-sided sub-Gaussian tail bound yields 
+
+P Sij ≤ − u ≤ exp − u2 d
+
+8FL 2 
+
+> k
+
+ϵ2
+
+!
+
+∀u ≥ 0. With u := 2√2 Lkϵ
+
+q FL d , the right-hand side equals e−L = δ/(C0 F2). A union bound over all ordered pairs (i, j) gives that with probability at least 1 − δ/ 2, simultaneously for all i
+
+and j̸ = i,
+
+Sij ≥ − 2√2 Lkϵ
+
+r FL d .
+
+Combine. Plugging the bounds for the t = i, j terms and for Sij into Equation (73) yields Equation (70). 
+
+Absorb the μv term. By the standard coherence bound for isotropic values (Lemma B.37), with probability at least 1 − δ/ 2 we have μv ≤ C
+
+q Ld−1 for an absolute C. Since 
+
+q Ld−1 ≤
+
+q FL d , the term 2 μv Lkϵ can be absorbed into the 
+
+q FL d term, giving Equation (71) (after adjusting C1). Finally, in the regime FL ≥ d, we have 2 Lkϵ ≤ 2Lkϵ
+
+q FL d , so the 2 Lkϵ term can also be absorbed into the 
+
+q FL d term, yielding Equation (72). 
+
+Corollary B.63 (Noised min-margin bound for bilinear-MLP stored-query retrieval (isotropic values)) . Consider the isotropic-keys/isotropic-values bilinear-MLP setting of Section B.8.4, and assume the kernel satisfies Equation (69) with Lipschitz constant Lbil . Fix δ ∈ (0, 1 ) and set L = log ( C0 F2 
+
+> δ
+
+) for an absolute C . Assume also the common regime FL ≥ d . Then with probability at least 1 − δ,
+
+γmin (ek) ≥ γmin (k) − C2 Lbil ϵ
+
+r FL d . (74) 
+
+Proof. Apply Theorem B.62 in the regime FL ≥ d using Equation (72) with Lk = Lbil . Since the bound holds simultaneously for all (i, j), we may take the minimum over i ∈ [F] and 
+
+j̸ = i:
+
+γmin (ek) = min  
+
+> i
+
+min   
+
+> j̸=i
+
+γij (eki) ≥ min  
+
+> i
+
+min   
+
+> j̸=i
+
+γij (ki) − C2 Lbil ϵ
+
+r FL d = γmin (k) − C2 Lbil ϵ
+
+r FL d .80 Corollary B.64 (Condition on ϵ for γmin (ek) > 0) . Under the assumptions of Corollary B.63, assume the clean margin is strictly positive: 
+
+γmin (k) > 0. (75) 
+
+A sufficient condition for γmin (ek) > 0 is 
+
+ϵ < γmin (k)
+
+C2 Lbil 
+
+r dFL . (76) 
+
+Proof. By Equation (74), 
+
+γmin (ek) ≥ γmin (k) − C2 Lbil ϵ
+
+r FL d .If Equation (76) holds, the subtracted term is < γmin (k), so the right-hand side is positive. 
+
+Corollary B.65 (Noise-robust fact-storage capacity remains information-theoretically opti-mal) . Fix δ ∈ (0, 1 ) and set L := log ( C0 F2 
+
+> δ
+
+) for an absolute C0. Consider the iso–iso bilinear-MLP model with dimension d. There exist universal constants c , C, c0 > 0 such that if d ≥ CL , m ≥ CL 3, F ≤ c min 
+
+n d3
+
+L , md L
+
+o
+
+, (77) 
+
+then γmin (k) ≥ c0 with probability at least 1 − δ (by the combined margin bound of Section B.8.4). If additionally 
+
+ϵ ≤ c0
+
+2 C2 Lbil 
+
+r dFL , (78) 
+
+then γmin (ek) ≥ c0/2 with probability at least 1 − δ.In the sketch-limited regime F ≲ md /L , the parameter count W ≍ md thus satisfies W ≍ FL ≍
+
+F log (F/δ), i.e. the (noise-robust) fact-storage scaling is information-theoretically optimal up to constants (subject to Equation (78) ). Proof. Under Equation (77), the combined margin bound of Section B.8.4 yields γmin (k) ≥ c0
+
+with probability at least 1 − δ. Then apply Equation (74): 
+
+γmin (ek) ≥ c0 − C2 Lbil ϵ
+
+r FL d .If Equation (78) holds, the subtracted term is at most c0/2, giving γmin (ek) ≥ c0/2. Finally, when F ≲ md /L, we have md ≍ FL ≍ F log (F/δ).81 C Additional Related Work 
+
+Empirical studies: probing and editing LLM knowledge. Geva et al. (2021; 2022) observed that knowledge is often stored within MLPs via key–value mappings, motivating a line of work that attempts to reverse engineer the facts encoded in MLPs (Dai et al., 2022; Nanda et al., 2023) and to edit them (Dai et al., 2022; Meng et al., 2023a;c; Gupta et al., 2024; Gu et al., 2024; Fang et al., 2025; Sun et al., 2025). These studies provide strong empirical evidence that MLPs act as a locus of factual storage in large language models. 
+
+Empirical studies: scaling factual knowledge. A related empirical line of work formal-izes factual knowledge as associative recall over key–value stores and studies its scaling behavior (Elhage et al., 2022; Allen-Zhu & Li, 2024; Zucchet et al., 2025). These works con-sistently find that trained models store facts at the asymptotically optimal rate implied by Theorem 2.4 (Allen-Zhu & Li, 2024; Zucchet et al., 2025; Morris et al., 2025), which motivates the search for explicit constructions with comparable parameter efficiency. 82
