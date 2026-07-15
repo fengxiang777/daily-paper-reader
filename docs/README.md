@@ -6,109 +6,67 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-14
-- 运行时间：2026-07-14 21:39:59 UTC
+- 最新运行日期：2026-07-15
+- 运行时间：2026-07-15 21:01:11 UTC
 - 运行状态：成功
-- 本次总论文数：29
-- 精读区：18
-- 速读区：11
+- 本次总论文数：15
+- 精读区：6
+- 速读区：9
 
 ### 今日简报（AI）
-1) 今日聚焦 LLM 破解开放数学难题与小型视觉语言模型的多语言推理突破。  
-2) 最值得看：ProofCouncil 用代理合作实现定理证明，Test-Time Scaling 让小模型追平巨无霸。  
-3) 建议普通读者重点阅读这两篇，理解“推理时计算”如何让模型变聪明。
-- 详情：[/202607/14/README](/202607/14/README)
+今日聚焦多智能体系统的自我进化与可靠执行，精读了两篇关于递归自我改进和记忆驱动操作的高分论文，并速读了容错协作、语义导航与复杂度感知等新工作。  
+最值得关注的方向是：通过目标-基准驱动的架构让AI代理实现递归式自我提升，以及利用记忆引导冻结的视觉-语言-动作模型来完成稳定操作。  
+建议普通读者从“代理如何判断任务难度并自适应调整”切入，这是当前智能体落地可靠性的关键一环。
+- 详情：[/202607/15/README](/202607/15/README)
 
 ### 精读区论文标签
-1. [ProofCouncil: An LLM Agent for Solving Open Mathematical Problems](/202607/14/2607.09474v1-proofcouncil-an-llm-agent-for-solving-open-mathematical-problems)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：ProofCouncil是一个采用作者-评审架构的LLM智能体，自主解决数学开放问题
-2. [Test-Time Scaling for Small VLMs on Multilingual Visual MCQ](/202607/14/2607.09438v1-test-time-scaling-for-small-vlms-on-multilingual-visual-mcq)  
+1. [How to Realize Recursively Self-Improving Agents and Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture](/202607/15/2607.12254v1-how-to-realize-recursively-self-improving-agents-and-personal-singularity-a-goal--scope--tool--and-benchmark-driven-multi-agent-architecture)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：研究小视觉语言模型在多语言视觉多选题上的测试时缩放
-3. [Scalable Visual Pretraining for Language Intelligence](/202607/14/2607.09657v1-scalable-visual-pretraining-for-language-intelligence)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出视觉预训练提升语言智能，挑战纯文本预训练范式
-4. [Metadata-Free Meta-Reweighted Direct Preference Optimization under Noisy Preference Labels](/202607/14/2607.09796v1-metadata-free-meta-reweighted-direct-preference-optimization-under-noisy-preference-labels)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出在噪声偏好下改进DPO语言模型对齐的方法，直接针对RLHF对齐问题
-5. [Dynamic Agent Skills: A Lifecycle Survey and Taxonomy of Evolving Skill Libraries](/202607/14/2607.10113v1-dynamic-agent-skills-a-lifecycle-survey-and-taxonomy-of-evolving-skill-libraries)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：大语言模型智能体演化技能库的综述
-6. [GRASP: GRanularity-Aware Search Policy for Agentic RAG](/202607/14/2607.10463v1-grasp-granularity-aware-search-policy-for-agentic-rag)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：强化学习框架训练智能体自适应协调检索工具
-7. [ARMOR: Stabilizing On-Policy LLM RL with Off-Policy Anchor Samples](/202607/14/2607.10481v1-armor-stabilizing-on-policy-llm-rl-with-off-policy-anchor-samples)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出ARMOR框架稳定LLM在策略RL并解决过优化问题
-8. [NetInjectBench: Benchmarking Indirect Prompt Injection in Tool-Using Large Language Model Agents for Network Operations](/202607/14/2607.10490v1-netinjectbench-benchmarking-indirect-prompt-injection-in-tool-using-large-language-model-agents-for-network-operations)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：针对网络操作工具使用型LLM智能体的提示注入基准
-9. [Agentic-DPO: From Imitation to Agentic Policy Optimization on Expert Trajectories](/202607/14/2607.10601v1-agentic-dpo-from-imitation-to-agentic-policy-optimization-on-expert-trajectories)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：Agentic-DPO是一种轻量级离线RL方法，用专家轨迹训练LLM智能体
-10. [WasteAssistant: Regulation-Guided Visual Question Answering Framework for Intelligent Waste Segregation and Sustainable Managemen](/202607/14/2607.10610v1-wasteassistant-regulation-guided-visual-question-answering-framework-for-intelligent-waste-segregation-and-sustainable-managemen)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：集成视觉语言模型和多模态大语言模型进行废物分类视觉问答
-11. [To Answer or to Abstain: Mitigating Search-Agent Hallucinations via Abstention-Aware Reinforcement Learning](/202607/14/2607.10738v1-to-answer-or-to-abstain-mitigating-search-agent-hallucinations-via-abstention-aware-reinforcement-learning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：带弃权奖励整形的强化学习缓解搜索智能体幻觉
-12. [Traj-VLN: Learning Pixel-Space Interaction via Autoregressive Trajectory Generation](/202607/14/2607.10744v1-traj-vln-learning-pixel-space-interaction-via-autoregressive-trajectory-generation)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：LLM代理用于视觉语言导航任务，结合自回归轨迹生成
-13. [Predictive Divergence Masks for LLM RL](/202607/14/2607.10848v1-predictive-divergence-masks-for-llm-rl)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：用预测性散度方向准则改进LLM强化学习的信赖域掩码
-14. [SETA: Scaling Environments for Terminal Agents](/202607/14/2607.10891v1-seta-scaling-environments-for-terminal-agents)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：为训练终端智能体提供可验证的规模化强化学习环境
-15. [ToolAtlas: Learning Once, Reusing Everywhere with Tool-Side Memory](/202607/14/2607.11126v1-toolatlas-learning-once-reusing-everywhere-with-tool-side-memory)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：ToolAtlas为LLM智能体构建持久化工具侧记忆，支持工具复用与组合
-16. [Proxy Exploration and Reusable Guidance: A Modular LLM Post-Training Paradigm via Proxy-Guided Update Signals](/202607/14/2607.11505v1-proxy-exploration-and-reusable-guidance-a-modular-llm-post-training-paradigm-via-proxy-guided-update-signals)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：代理引导的解耦探索与对齐的模块化后训练
-17. [Actor as Its Own Critic: Unifying Region Understanding and Localization via CycleGRPO](/202607/14/2607.11581v1-actor-as-its-own-critic-unifying-region-understanding-and-localization-via-cyclegrpo)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：统一的强化学习框架，用于联合优化多模态LLM的区域理解与定位
-18. [Extending LLM Context via Associative Recurrent Memory](/202607/14/2607.11614v1-extending-llm-context-via-associative-recurrent-memory)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：关联循环记忆Transformer以恒定内存扩展大语言模型上下文
+   evidence：提出了一个受控的多智能体架构，通过有限范围和目标契约实现递归自我改进
+2. [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](/202607/15/2607.08448v2-harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：记忆引导的智能体框架引导冻结VLA进行鲁棒操作，结合LLM智能体与多模态技能
+3. [SynthDocBench: Controlled Benchmark for Long-Context Visual Document Understanding](/202607/15/2607.10400v1-synthdocbench-controlled-benchmark-for-long-context-visual-document-understanding)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：可控的长上下文视觉文档理解基准测试
+4. [Traj-VLN: Learning Pixel-Space Interaction via Autoregressive Trajectory Generation](/202607/15/2607.10744v2-traj-vln-learning-pixel-space-interaction-via-autoregressive-trajectory-generation)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：结合VLMs实现视觉语言导航，赋能具身智能体在未知环境中遵循指令
+5. [Mixture of Cognitive Experts in Large Vision-Language Models](/202607/15/2607.10796v1-mixture-of-cognitive-experts-in-large-vision-language-models)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：集成多编码器视觉专家以改进LVLM推理
+6. [MonkeyOCRv2: A Visual-Text Foundation Model for Document AI](/202607/15/2607.11562v1-monkeyocrv2-a-visual-text-foundation-model-for-document-ai)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：视觉-文本预训练模型用于文档AI，处理文档图像和文本
 
 ### 速读区论文标签
-1. [Scene Graph Thinking: Reinforcing Structured Visual Reasoning for Multimodal Large Language Models](/202607/14/2607.05716v3-scene-graph-thinking-reinforcing-structured-visual-reasoning-for-multimodal-large-language-models)  
+1. [Distributed Agent System: Fault-Tolerant Collaboration Among Embodied Agents](/202607/15/2607.10811v1-distributed-agent-system-fault-tolerant-collaboration-among-embodied-agents)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：基于场景图的范式以改进多模态大语言模型的视觉推理
-2. [TurnOPD: Making On-Policy Distillation Turn-Aware for Efficient Long-Horizon Agent Training](/202607/14/2607.05804v1-turnopd-making-on-policy-distillation-turn-aware-for-efficient-long-horizon-agent-training)  
+   evidence：提出一种分布式框架，用于长时任务中异构LLM智能体的容错协作
+2. [Instance-Enriched Semantic Maps for Visual Language Navigation](/202607/15/2607.12630v1-instance-enriched-semantic-maps-for-visual-language-navigation)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：轮次感知在线策略蒸馏提高长程语言智能体训练效率
-3. [MLPs are Hebbians: Constructing Efficient Fact-Storing MLPs for Transformers](/202607/14/2607.10034v1-mlps-are-hebbians-constructing-efficient-fact-storing-mlps-for-transformers)  
+   evidence：基于实例级语义地图和LLM推理的视觉语言导航智能体
+3. [Do AI Agents Know When a Task Is Simple? Toward Complexity-Aware Reasoning and Execution](/202607/15/2607.13034v1-do-ai-agents-know-when-a-task-is-simple-toward-complexity-aware-reasoning-and-execution)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：为Transformer构建信息论最优事实存储MLP的理论构造
-4. [AgentAbstain: Do LLM Agents Know When Not to Act?](/202607/14/2607.10059v1-agentabstain-do-llm-agents-know-when-not-to-act)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：智能体弃权基准评估大语言模型智能体何时不应行动
-5. [Tool-Adaptive LLM Reranker](/202607/14/2607.10555v1-tool-adaptive-llm-reranker)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：将LLM重排序形式化为智能体马尔可夫决策过程并用强化学习优化，将RL应用于语言模型任务
-6. [MemDecay: Region-Aware KV Cache Eviction for Efficient LLM Agent Inference](/202607/14/2607.10582v1-memdecay-region-aware-kv-cache-eviction-for-efficient-llm-agent-inference)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：针对LLM智能体上下文的区域感知KV缓存淘汰
-7. [Structured Thoughts For Improved Reasoning And Context Pruning](/202607/14/2607.10386v1-structured-thoughts-for-improved-reasoning-and-context-pruning)  
+   evidence：LLM智能体缺乏任务感知的执行范围估计；提出E3方法以减少不必要计算
+4. [Continual Learning with Elastic Regularization and Synthetic Replay for Federated MLLM Fine-Tuning](/202607/15/2607.12112v1-continual-learning-with-elastic-regularization-and-synthetic-replay-for-federated-mllm-fine-tuning)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过结构化思维块进行上下文剪枝提升效率
-8. [Large language model agents accelerate inverse design of metal-organic frameworks for gas separation](/202607/14/2607.10559v1-large-language-model-agents-accelerate-inverse-design-of-metal-organic-frameworks-for-gas-separation)  
+   evidence：联邦多模态大语言模型的持续学习微调
+5. [VisCo: Leveraging Large Language Models as Intrinsic Encoders for Visual Token Compression](/202607/15/2607.12756v1-visco-leveraging-large-language-models-as-intrinsic-encoders-for-visual-token-compression)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出LEMO Agent，一个用于闭环逆向设计的大语言模型智能体框架，展示了自主智能体的构建
-9. [EasyOPD: An Easy-to-use On-Policy Distillation Framework for Large Language Models](/202607/14/2607.11012v1-easyopd-an-easy-to-use-on-policy-distillation-framework-for-large-language-models)  
+   evidence：提出VisCo，一种利用预训练大语言模型作为编码器的训练高效视觉令牌自压缩方法
+6. [EvoGraph-R1: Self-Evolving Multimodal Knowledge Hypergraphs for Agentic Retrieval](/202607/15/2607.12764v1-evograph-r1-self-evolving-multimodal-knowledge-hypergraphs-for-agentic-retrieval)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：EasyOPD基于分布式RL框架verl构建在策略蒸馏框架，服务于LLM训练
-10. [Cross-Layer Misalignment Detection in Agent Skills: A Progressive Loading-Aware Contrastive Learning Approach](/202607/14/2607.10534v1-cross-layer-misalignment-detection-in-agent-skills-a-progressive-loading-aware-contrastive-learning-approach)  
+   evidence：面向智能体检索的自进化多模态知识超图
+7. [Training-Free Acceleration for Vision-Language-Action Models with Action Caching and Refinement](/202607/15/2607.06370v1-training-free-acceleration-for-vision-language-action-models-with-action-caching-and-refinement)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：利用分层对比学习检测智能体技能描述的不一致
-11. [MMRM: A Multiplex Multimodal Representation Model for Product Ranking in E-commerce Search](/202607/14/2607.11030v1-mmrm-a-multiplex-multimodal-representation-model-for-product-ranking-in-e-commerce-search)  
+   evidence：通过动作缓存加速视觉-语言-动作模型，利于多模态模型部署
+8. [Do We Really Need Multimodal Emotion Language Models Larger Than 1B Parameters?](/202607/15/2607.12787v1-do-we-really-need-multimodal-emotion-language-models-larger-than-1b-parameters)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：利用多路协作信号微调多模态大模型，用于电商产品排序
+   evidence：质疑多模态情感识别大模型参数规模的必需性
+9. [ExToken: Structured Exploration for Efficient Vision-Language-Action Reinforcement Fine-tuning](/202607/15/2607.12931v1-extoken-structured-exploration-for-efficient-vision-language-action-reinforcement-fine-tuning)  
+   标签：评分：6.0/10、query:rl-mm-llm-ag
+   evidence：引入ExToken，一种面向VLA模型的结构化探索方法
 
 
 <div class="dpr-home-promo-card">

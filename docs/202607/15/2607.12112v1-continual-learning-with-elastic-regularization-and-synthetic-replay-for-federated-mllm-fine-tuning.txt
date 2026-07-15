@@ -1,0 +1,1044 @@
+Title: Continual Learning with Elastic Regularization and Synthetic Replay for Federated MLLM Fine-Tuning
+
+URL Source: https://arxiv.org/pdf/2607.12112v1
+
+Published Time: Wed, 15 Jul 2026 11:55:19 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+> IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING 1
+
+# Continual Learning with Elastic Regularization and Synthetic Replay for Federated MLLM Fine-Tuning 
+
+Jing Liu, Chenxuanyin Zou, Jiayang Ren, Gaoyun Fang, Chengfang Li, Yan Wang, Zhenchao Ma, and Bo Hu 
+
+Abstract —Federated fine-tuning of Multimodal Large Language Models (MLLMs) across distributed networks enables privacy-sensitive adaptation to evolving data streams, yet a fundamental obstacle prevents robust deployment in dynamic environments: catastrophic forgetting, wherein sequential task updates erase previously acquired knowledge across visual, linguistic, and cross-modal representations. Addressing this challenge is especially critical for autonomous networked AI operating in safety-sensitive domains, such as content moderation, where reliable retention of prior knowledge underpins system integrity. To overcome this, we propose Federated Continual Multimodal Learning ( FedCMM ), a framework that embeds continual-learning safeguards into the federated optimization loop at three complementary levels. At the parameter level, modality-aware elastic weight consolidation computes separate Fisher information matrices for the vision encoder, language backbone, and cross-modal projector, providing granular, asymmetry-aware protection against modality-specific forgetting. At the data level, each client trains a lightweight local generative replay module to synthesize raw-data-free embedding-level multimodal replay tuples without any raw data sharing. At the aggregation level, Task-similarity-aware gradient aggregation autonomously filters and reweights client updates by gradient cosine similarity, suppressing conflicting directions and stabilizing the global learning trajectory. Extensive experiments on two benchmarks demonstrate that FedCMM consistently outperforms recent baselines on accuracy and backward transfer, confirming that holistic, modality-aware optimization enables robust evolutive adaptation across heterogeneous networked AI deployments. 
+
+Index Terms —Federated Learning, Continual Learning, Mul-timodal Large Language Models, Catastrophic Forgetting, Au-tonomous Optimization, Networked AI, Privacy Preservation 
+
+I. I NTRODUCTION J. Liu is with the Department of Electrical and Computer Engineering, The University of British Columbia, Vancouver, BC V6T 1Z4, Canada, and also with the College of Future Information Technology, Fudan University, Shanghai 200433, China (e-mail: jing.liu@ieee.org). C. Zou and J. Ren are with the Department of Chemical and Biological Engineering, The University of British Columbia, Vancouver, BC V6T 1Z4, Canada (e-mails: {zcxy, rjy12307}@mail.ubc.ca). G. Fang is with the Dyson School of Design Engineering, Royal College of Science, Imperial College London, South Kensington Campus, London SW7 2AZ, United Kingdom (e-mail: p.fang23@imperial.ac.uk). C. Li is with the the Suzhou Institute of Biomedical Engineering and Technology (SIBET), Chinese Academy of Sciences, Suzhou 215163, China (e-mail: licf@sibet.ac.cn). Y. Wang is with the School of Data Science and Engineering, East China Nor-mal University, Shanghai 200062, China (e-mail: yanwang@dase.ecnu.edu.cn). Z. Ma is with the Department of Electrical and Computer Engineering, The University of British Columbia, Vancouver, BC V6T 1Z4, Canada (e-mail: zhenchaoma@ece.ubc.ca). B. Hu is with the College of Future Information Technology, Fudan University, Shanghai 200433, China (e-mail: bohu@fudan.edu.cn). 
+
+# THE proliferation of Multimodal Large Language Mod-els (MLLMs) has marked a significant milestone in artificial intelligence, demonstrating unprecedented capabil-ities in understanding and generating content that integrates vision and language [1], [2]. Driven by these capabilities, MLLMs are increasingly pivotal in high-stakes, real-world applications ranging from medical diagnosis and autonomous driving to content moderation in safety-critical networked deployments [3], [4]. However, deploying and maintaining MLLMs in privacy-sensitive domains necessitates training methodologies that do not rely on centralized data storage. Federated Learning (FL) has emerged as a leading paradigm for privacy-preserving machine learning, enabling collaborative model training on decentralized data sources without exposing raw user data [5]–[7]. Consequently, the federated fine-tuning of MLLMs represents a critical frontier for developing adaptable and secure autonomous AI systems that can be continuously improved in dynamic network environments [8]. A fundamental challenge arises when these decentralized data streams are non-stationary, evolving over time as new concepts, tasks, or data distributions emerge. In such scenarios, MLLMs must be updated sequentially to stay current, a process known as continual learning that is fraught with the peril of catastrophic forgetting, wherein the model’s performance on previously learned tasks deteriorates drastically upon learning new ones [9], [10]. A comprehensive taxonomy of continual learning strategies has been established [11], yet most approaches were designed for centralized settings and do not address the federated, multimodal regime. The problem is particularly acute in safety-critical applications: a model proficient at detecting known forms of hateful content [3] must be updated to recognize new evolving patterns, while a disaster-response classifier must retain prior event categories as new crisis types emerge [4]. Addressing catastrophic forgetting within a federated framework is therefore not merely a technical curiosity but a practical necessity for building robust and reliable autonomous MLLMs. The intersection of continual learning and federated learn-ing introduces a complex set of technical barriers. At its core, catastrophic forgetting stems from the stability-plasticity dilemma, where a model must be plastic enough to acquire new knowledge yet stable enough to retain old informa-tion [12]. Foundational continual learning methods developed for centralized settings, such as regularization-based approaches like Elastic Weight Consolidation (EWC) [13] and Synaptic Intelligence [14], or replay-based strategies that rehearse on stored exemplars [15], offer partial solutions. However, their arXiv:2607.12112v1 [cs.LG] 13 Jul 2026 2 IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING 
+
+direct application in FL is problematic: regularization methods often struggle to scale in the complex parameter spaces of MLLMs [16], while replay-based methods conflict with the core privacy principles of FL if raw data is stored or shared. Moreover, the inherent statistical heterogeneity (non-IID data) across clients in FL exacerbates forgetting, as divergent local updates can destructively interfere with one another during aggregation [17], [18]. Practical implementation challenges further compound these issues, particularly for MLLMs. A key difficulty lies in the multi-faceted nature of knowledge within these models: information is encoded not just within the vision encoder and language model separately but also in the intricate cross-modal alignment modules, which introduce unique vulnerability to modality-specific forgetting and adversarial drift [19]. A continual learning strategy must therefore be modality-aware, protecting critical parameters across all three components without stifling the model’s ability to learn new cross-modal relationships. Furthermore, client drift becomes substantially more pronounced in a continual learning context [20]: in a given round, some clients might be training on a new task while others remain on older data, producing gradient updates that are misaligned in their objectives. Adaptive server-side optimization methods [21], [22] reduce drift in static settings but are not designed for the evolving task objectives of continual learning. Client-side generative replay [23] can partially alleviate data-level forgetting, yet synchronizing it across tasks in a privacy-preserving federated regime remains an open challenge. Recent advancements in Federated Continual Learning (FCL) have begun to tackle some of these issues. Methods such as FedWeIT [24] and Learning without Forgetting (LwF) [25] adapt knowledge distillation techniques to the federated setting, using the global model’s outputs on new data as soft labels to preserve old knowledge. Others directly apply regularization by computing parameter importance on the server, while FedProx-style methods [26] penalize deviations from the global model. More recent studies have expanded the landscape: AF-FCL selectively reuses prior knowledge under heteroge-neous task drift [27], FedCBDR improves replay balance for federated class-incremental learning [28], cooperative multi-model training across heterogeneous devices addresses system heterogeneity from a signal-processing perspective [29], and Sec-MMFL studies privacy leakage and modality-specific protection in multimodal federated learning [30]. Although these methods mark clear progress, they are still not designed for continual federated adaptation of large MLLMs with modality-aware consolidation, privacy-preserving multimodal replay, and aggregation-time conflict suppression handled in one unified pipeline. The limitations of existing methods motivate a new approach that synergistically integrates solutions to the core challenges of multimodal forgetting, federated data heterogeneity, and privacy exposure. Our key insight is that an effective autonomous optimization framework for networked MLLMs must operate at three distinct levels. At the parameter level, modality-aware regularization protects established knowledge through parameter importance estimation [13] applied to parameter-efficient adapter representations [31]. At the data level, a raw-data-free rehearsal mechanism actively combats forgetting, extending exemplar replay [32] to a local generative synthesis paradigm suitable for federated LLM adaptation [33]. At the aggregation level, a similarity-driven autonomous strategy mit-igates interference from heterogeneous client updates, moving beyond static parameter isolation [34] toward gradient-informed coordination. By combining these three pillars, it becomes possible to balance stability and plasticity in the complex, distributed, and evolutive training environment of MLLMs deployed across networked AI infrastructures. To address these challenges, we propose Federated Continual Multimodal Learning ( FedCMM ), a comprehensive framework designed to enable MLLMs to learn a sequence of tasks in a federated setting while mitigating catastrophic forgetting. The core innovation of FedCMM lies in its tripartite architecture that harmonizes parameter-level regularization, data-level rehearsal, and server-level aggregation. First, we introduce Modality-Aware Elastic Weight Consolidation (MA-EWC), a novel regularization strategy that computes and protects critical parameters independently for the vision encoder, the language model, and the cross-modal projector. Granular per-modality protection prevents destructive interference. Second, we design a Privacy-Preserving Federated Replay (PPFR) mechanism, where each client trains a lightweight, local generative replay module to synthesize raw-data-free embedding-level replay tuples from past tasks. During subsequent training, clients use these replay tuples for rehearsal, effectively refreshing old knowledge without sharing any raw data. Third, we develop Task-Similarity-aware Gradient Aggregation (TSGA), a server-side algorithm that weights client model updates based on their gradient cosine similarity, down-weighting updates that are likely to conflict with the current learning trajectory and thus reducing inter-client interference. Our work offers several key contributions:  
+
+> •
+
+We propose FedCMM , a federated continual multimodal learn-ing framework designed to mitigate catastrophic forgetting during privacy-preserving sequential MLLM fine-tuning.  
+
+> •
+
+We introduce three complementary components: MA-EWC for modality-specific parameter protection, privacy-preserving federated replay for synthetic rehearsal, and TSGA for similarity-aware aggregation.  
+
+> •
+
+We conduct extensive experiments on two challenging continual federated benchmarks that show that FedCMM 
+
+outperforms strong federated continual learning baselines. The remainder of this paper is organized as follows. Sec. II reviews related work. Sec. IV presents the technical details of our proposed FedCMM framework. Sec. V presents the experimental setup, main results, and analysis. Finally, Sec. VI concludes the paper and discusses future work. II. R ELATED WORK 
+
+A. Regularization and Replay in Continual Learning 
+
+Continual Learning (CL) aims to enable models to learn from a continuous stream of data without catastrophically forgetting previously acquired knowledge [9]. The core challenge is balancing the stability required to retain old knowledge with the LIU et al : CONTINUAL LEARNING FOR FEDERATED MLLM FINE-TUNING 3
+
+plasticity needed to acquire new information [12]. Research in CL is extensive and can be broadly categorized into three main families. Regularization-based methods, such as EWC [13] and Synaptic Intelligence (SI) [14], introduce a penalty term into the loss function to constrain updates to parameters deemed important for past tasks. While effective, these methods can be computationally expensive and may underperform under significant task distribution shifts. In contrast, replay-based methods store a small buffer of exemplars from past tasks for rehearsal during the learning of new tasks [15]. Approaches like Gradient Episodic Memory (GEM) [15] and iCaRL [32] have demonstrated strong performance, but their memory requirements and, more critically, the privacy implications of storing raw data make them unsuitable for many real-world applications. A third category, parameter-isolation methods, allocates distinct subsets of model parameters for different tasks to prevent interference [34]. However, such methods often suffer from limited scalability and poor knowledge transfer between tasks. All these foundational CL strategies were designed for centralized training and cannot be directly applied in a federated setting due to privacy and communication constraints. 
+
+B. Optimization Under Heterogeneity in Federated Learning 
+
+FL provides a framework for training models on decen-tralized data while preserving user privacy [6]. The seminal Federated Averaging (FedAvg) algorithm [5] introduced a simple yet effective procedure of local client training followed by server-side model averaging. A primary challenge in FL is managing statistical heterogeneity (non-IID data) across clients, which can cause client drift and lead to poor convergence and performance [17]. A significant body of work has sought to address client drift. One line of research focuses on client-side regularization; FedProx [26], for instance, adds a proximal term to the local loss function to limit the divergence of local models from the global model. Another popular approach involves improving the server-side aggregation algorithm. For example, FedAdam and FedYogi [21] adapt concepts from adaptive optimizers to the server’s update rule to achieve faster and more stable convergence. Similarly, SCAFFOLD [22] uses control variates to correct for client drift at both the client and server levels. While these methods improve the robustness of FL on static, non-IID data distributions, they inherently assume that the underlying tasks are fixed and are not designed to handle the dynamic, non-stationary data streams encountered in continual learning scenarios. 
+
+C. Federated Continual Learning Under Task Drift 
+
+FCL has recently emerged to address the problem of learning a sequence of tasks in a federated environment. Most existing FCL methods adapt centralized CL techniques to the constraints of FL. For instance, LwF-style methods [25] and FedWeIT [24] are federated adaptations of knowledge distillation, where the global model from a previous task serves as a "teacher" to regularize the training of the new model, thereby preserving old knowledge without requiring old data. Similarly, EWC-style methods extend regularization-based consolidation to the federated setting [13]. Another line of work has explored federated replay mechanisms. Given the privacy constraints of FL, generative replay has become a promising direction [23]. Recent work has further expanded FCL toward harder settings, including accurate forgetting under heterogeneous clients [27], online data streams [20], and balanced replay for class-incremental federated learning [28]. However, these approaches have predominantly been evaluated on unimodal benchmarks and do not address the modality-specific interference, multimodal replay quality, and aggregation conflicts that arise in MLLM adaptation. Our work fills this gap by proposing a holistic framework specifically tailored for the multimodal setting. III. P RELIMINARIES 
+
+FL enables model training on decentralized data without requiring data centralization. Consider a federated network of 
+
+K clients, indexed by k ∈ { 1, . . . , K }. Each client k possesses a local dataset Dk = {(xi, y i)}Nk
+
+> i=1
+
+, where Nk = |D k| is the number of local samples. The total number of samples in the network is N = ∑Kk=1 Nk. The goal of FL is to collaboratively train a single global model with parameters w by minimizing a global objective function L(w), which is a weighted average of the local client objectives Lk(w):
+
+min  
+
+> w
+
+L(w) = 
+
+> K
+
+∑
+
+> k=1
+
+Nk
+
+N Lk(w), (1) where Lk(w) = 1
+
+> Nk
+
+∑ 
+
+> (xi,y i)∈D k
+
+ℓ(f (xi; w), y i) is the local loss on client k’s data, with f (·; w) representing the model’s prediction and ℓ(·, ·) being a task-specific loss function. The canonical FL algorithm, FedAvg [5], iteratively performs the following steps: (1) a central server broadcasts the current global model w to a subset of clients; (2) each selected client performs multiple local training steps on its data to obtain updated local parameters wk; (3) the clients send their updated parameters back to the server, which aggregates them to produce the next global model w ← ∑ 
+
+> kNk
+> N
+
+wk.CL, also called lifelong learning, addresses the challenge of training a model on a sequence of tasks over time without access to the full data from previous tasks. Formally, the model is exposed to a sequence of T tasks, T = {T 1, T2, . . . , TT }, where each task Tj has an associated data distribution P (j)(x, y ). The primary challenge in CL is catastrophic forgetting, where the model’s performance on earlier tasks {T 1, . . . , Tj−1} degrades significantly after being trained on the current task Tj . The objective of CL is to learn the parameters w(T ) for the model after the final task TT such that the model performs well across all tasks seen so far. A successful CL method must balance plasticity, the ability to learn new knowledge from the current task, with stability, the ability to retain knowledge from past tasks. The federated continual multimodal learning setting integrates the challenges of FL and CL in the context of MLLMs. In this setting, a sequence of T distinct multimodal tasks arrives over time. The data for each task Tj is distributed across the K federated clients, where each client k holds a local dataset D(j) 
+
+> k
+
+. Each data sample is a multimodal pair (xi, y i),where the input xi = ( vi, ti) consists of a visual component 
+
+vi ∈ V (e.g., an image) and a textual component ti ∈ T (e.g., 4 IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING Federated Clients Server Aggregation 
+
+... 
+
+> (Non-IID, Heterogeneous)
+
+⋮⋮ 4) Continual Learning with Dual Regularization    
+
+> (a) Parameter Regularization
+> Important Unimportant
+> (b) Synthetic Replay
+> Old Model Soft Targets
+> Embedding Replay Tuples
+> 6) Similarity-aware Aggregation
+> Client Updates Client Similarity
+> 7) Global Model Update
+
+Continual / Sequential Tasks Legend 
+
+> Task
+> Task
+
+... 
+
+> (Non-IID, Heterogeneous)
+> Task
+
+... 
+
+> (Non-IID, Heterogeneous)
+> Current Model
+
+🔒   
+
+> ⋮⋮
+> Global model at Global model at
+> Generator
+> Client 1 Client
+> Client
+> Update Broadcast
+> Data Distribution Model Evolution
+
+... 
+
+⋮
+
+⋮
+
+> Replay Flow
+
+❄ Frozen (Backbone)  
+
+> 🔒 Privacy-preserving Model Flow
+> Aggregation Weights
+
+🔒  
+
+> 1) MLLM Modules
+> Vision Encoder
+> ❄
+> Embedding Layer
+> Cross-modal Projector
+> ❄
+> 2) Sequence Assembly 3) Prediction
+> Classi fi er
+> Task Loss
+> Resampler
+
+Client Local Training on Task 
+
+> 5) Privacy-preserving Replay Buffer
+> Lang. Backbone
+> ❄
+> +
+> Tasks 1~
+
+Fig. 1: Overview of the FedCMM framework for privacy-preserving federated continual multimodal learning. For task Tj and communication round r, the server broadcasts w(j−1)  
+
+> r−1
+
+to selected clients. Each client trains on D(j) 
+
+> k
+
+∪ B (j−1)  
+
+> k
+
+, uses MA-EWC to protect modality-specific parameters wV , wL, and wP ,and uploads the local update ∆wk . The server then computes TSGA scores sk , filters conflicting updates, aggregates accepted clients with weights αk to form ∆w(j) 
+
+> r
+
+, and broadcasts the updated global model for the next round and task, with replay buffers and continual task evolution maintained locally. 
+
+a text prompt). The model f (·; w) is an MLLM parameterized by w.When the system is learning task Tj , it is assumed that data from previous tasks {T 1, . . . , Tj−1} is no longer directly available, and client data cannot be shared with the server or other clients due to privacy constraints. The global objective at the end of learning task TT is to find optimal model parameters 
+
+w∗ that minimize the average loss across all tasks encountered: 
+
+w∗ = arg min 
+
+w
+
+1
+
+T
+
+T∑
+
+j=1 
+
+L(j)(w), (2) where L(j)(w) = ∑Kk=1 
+
+N (j)
+
+> k
+
+N (j) L(j)
+
+k (w) is the global loss for task Tj . The core challenge is to minimize the objective in Eq. 2 under the dual constraints of (1) not having direct access to past task data and (2) adhering to the privacy-preserving communication protocol of federated learning. IV. M ETHOD 
+
+A. Method Overview 
+
+To address the challenge of catastrophic forgetting in federated continual learning for MLLMs, we propose FedCMM ,a framework that integrates three synergistic components to balance knowledge stability and plasticity. As illustrated in Fig. 1, FedCMM embeds continual-learning safeguards directly into the federated training loop. Each client combines current-task data with synthetic replay samples, constrains important modality-specific parameters through MA-EWC, and uploads only its local model update. The server then evaluates update consistency through TSGA, suppresses conflicting directions, and broadcasts the aggregated global model for the next round and task. Formally, when learning the j-th task Tj , each participating client k aims to find local model parameters 
+
+w(j)
+
+k that minimize a composite loss function on its local data 
+
+D(j)
+
+k and a set of locally generated embedding-level replay tuples B(j−1) 
+
+k from the previous task. The local objective for client k is: 
+
+L(j)
+
+k (w) = L(j)
+
+task (w) + γ L(j−1) 
+
+replay (w) + λ L(j−1) 
+
+MA-EWC ,k (w) (3) where L(j)
+
+task is the supervised loss on current-task real samples, 
+
+L(j−1) 
+
+replay is the embedding-level rehearsal loss (see Eq. 6), γ
+
+weights the replay contribution, and λ balances the MA-EWC regularization. After local training, the server aggregates the resulting client updates using the TSGA mechanism to produce the new global model w(j). For clarity, we explicitly partition the trainable parameters as 
+
+w = wV ∪ wL ∪ wP , wV ∩ wL = wV ∩ wP = wL ∩ wP = ∅ (4) where the three subsets correspond to the vision encoder, the language backbone, and the cross-modal projector. In the MLLM forward pass, the vision encoder extracts visual representations hV , which are mapped by the cross-modal projector into the language embedding space as projected tokens 
+
+ˆhV . Specifically, the projected tokens are concatenated with text token embeddings hT and jointly processed by the language backbone to produce the output logits. Since we employ Low-Rank Adaptation (LoRA) [31] for parameter-efficient fine-tuning (PEFT), wV , wL, and wP refer specifically to the trainable LoRA adapter parameters within each module, while the dense pre-trained backbone weights are kept frozen. The LIU et al : CONTINUAL LEARNING FOR FEDERATED MLLM FINE-TUNING 5
+
+task and replay contributions to Eq. 3 are: 
+
+L(j)
+
+> task
+
+(w) = E(x,y )∼D (j)
+
+> k
+
+[ℓ(f (x; w), y )] , (5) 
+
+L(j−1)  
+
+> replay
+
+(w) = E(ˆhV ,ˆhT ,ˆy)∼B (j−1) 
+
+> k
+
+[ℓ(femb (ˆhV , ˆhT ; w), ˆy)] ,
+
+(6) Here f (x; w) is the standard MLLM forward on raw image-text inputs, while femb (ˆhV , ˆhT ; w) injects the generated embeddings directly at the visual-token and text-prompt level, bypassing the input encoder; γ weights the replay contribution. 
+
+B. Modality-Aware Elastic Weight Consolidation 
+
+A primary challenge in applying continual learning tech-niques to MLLMs is the complex and modular nature of their architecture. Knowledge is distributed across a vision encoder, a language model, and a cross-modal projector that aligns the two modalities. Standard regularization methods like Elastic Weight Consolidation (EWC) [13] treat all model parameters uniformly. A uniform penalty is suboptimal because it overlooks that the importance of parameters can vary significantly across different modalities. Forgetting might occur in the visual understanding part while the linguistic part remains stable, or vice-versa. To address this, we introduce Modality-Aware EWC (MA-EWC), which applies a more granular regularization by treating each core module of the MLLM independently. The total set of trainable parameters w is partitioned into three disjoint subsets: vision parameters wV , language parameters wL, and cross-modal projector parameters wP . For each subset, client 
+
+k computes a separate diagonal Fisher Information Matrix (FIM) at the end of learning task Tj−1. The FIM serves as a proxy for parameter importance, with larger diagonal values indicating parameters that are more critical for performance on past tasks. The client-specific FIM for a parameter set wM
+
+(where M ∈ { V, L, P }) is approximated as: 
+
+F(j−1)  
+
+> M,k
+
+= E(x,y )∼D (j−1) 
+
+> k
+
+[(
+
+∇wM log p(y|x; w(j−1) ∗ 
+
+> M
+
+)
+
+)2]
+
+, (7) At the element level, the diagonal approximation is accumulated sample-wise as 
+
+F (j−1)  
+
+> M,k,i
+
+≈ 1
+
+|D (j−1)  
+
+> k
+
+|
+
+∑
+
+> (x,y )∈D (j−1)
+> k
+
+(
+
+∂ log p(y | x; w(j−1) ∗ 
+
+> M
+
+)
+
+∂w M,i 
+
+)2
+
+, (8) where w(j−1) ∗ 
+
+> M
+
+are the optimal parameters for module M after task Tj−1. In the federated setting, each client k independently computes and stores its own modular FIM F(j−1)  
+
+> M,k
+
+over its local dataset D(j−1)  
+
+> k
+
+and retains the corresponding reference parameters w(j−1) ∗ 
+
+> M,k
+
+, consistent with the per-client notation used in Alg. 1. The MA-EWC regularization loss is then the sum of the penalties for each module: 
+
+L(j−1) 
+
+> MA-EWC ,k
+
+(w) = 12
+
+∑  
+
+> M∈{ V,L,P }
+
+∑
+
+> i∈wM
+
+F (j−1)  
+
+> M,k,i
+
+(wi − w(j−1) ∗ 
+
+> i
+
+)2, (9) which can be rewritten as the sum of modality-specific penalties:         
+
+> L(j−1)
+> MA-EWC ,k (w) = L(j−1)
+> V,k (wV) + L(j−1)
+> L,k (wL) + L(j−1)
+> P,k (wP)
+
+, (10) where 
+
+L(j−1)  
+
+> M,k
+
+(wM ) = 12
+
+∑
+
+> i∈wM
+
+F (j−1)  
+
+> M,k,i
+
+(wi − w(j−1) ∗ 
+
+> i
+
+)2. (11) where F (j−1)  
+
+> M,k,i
+
+is the i-th diagonal element of the client-specific FIM for module M . By separating the FIM computation, MA-EWC can, for example, heavily penalize changes to critical vision parameters if the new task is visually similar to a past one, while allowing more flexibility in the language parameters if the new task introduces novel textual concepts. A modality-specific approach thus provides a more effective safeguard against the nuanced forms of forgetting. 
+
+C. Privacy-Preserving Federated Replay 
+
+Rehearsal, or replaying exemplars from past tasks, is one of the most effective strategies for mitigating catastrophic forgetting. However, in the federated setting, storing and replaying raw data from previous tasks is infeasible due to privacy constraints and storage limitations on client devices. To overcome this, we propose Privacy-Preserving Federated Replay, a mechanism that leverages client-side generative models to create synthetic embedding-level replay tuples while avoiding raw-data exchange. After a client k completes its training on task Tj , it uses its local dataset D(j) 
+
+> k
+
+to train a lightweight, local replay generator G(j) 
+
+> k
+
+. Importantly, PPFR does not attempt to generate raw image pixels or free-form text tokens. Instead, it operates in the frozen MLLM representation space and synthesizes multimodal replay tuples consisting of a visual-token embedding, a text-prompt prototype embedding, and a replay label. In our implementation, G(j) 
+
+> k
+
+is a compact latent-noise module driven by Gaussian codes z ∼ N (0, I), a 64-dimensional latent space, and an event-conditioned code. A two-layer visual decoder maps the latent code to the MiniCPM visual-token embedding space, while a prompt-prototype table with a small residual MLP produces the corresponding textual embedding. The replay label is obtained from the local event label during fitting and stored as a teacher-smoothed soft target. The generator is trained locally for 5 fitting epochs at the task boundary with a combination of embedding reconstruction, image-text alignment, teacher KL, and cross-entropy losses. When the next task Tj+1 is introduced, client k samples 
+
+G(j) 
+
+> k
+
+to synthesize a small buffer of replay tuples B(j) 
+
+> k
+
+=
+
+{(ˆhV,i , ˆhT,i , ˆyi)}|B| 
+
+> i=1
+
+. Since G(j) 
+
+> k
+
+, the generated replay buffer, and the Fisher statistics remain local, PPFR avoids raw-data exchange, although it is not intended to provide a formal differential-privacy guarantee. The generated buffer B(j) 
+
+> k
+
+is then interleaved with the new task’s data D(j+1)  
+
+> k
+
+for local training. Including these synthetic embedding-level samples in the training process, as reflected in Eq. 3, allows the model to rehearse prior event knowledge while avoiding storage or transmission of raw multimodal posts. We formalize the replay synthesis process as              
+
+> B(j)
+> k=
+> {
+> (ˆhV,i ,ˆhT,i ,ˆyi)
+> ∣∣∣(ˆhV,i ,ˆhT,i ,ˆyi)∼G(j)
+> k(zi, c i),zi∼ N (0,I)
+> }|B|
+> i=1
+
+, (12) 6 IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING 
+
+where ci is the sampled local event code used to condition replay generation. We define the replay-augmented dataset by 
+
+˜D(j+1)  
+
+> k
+
+= D(j+1)  
+
+> k
+
+∪ B (j) 
+
+> k
+
+. (13) 
+
+D. Task-Similarity-Aware Gradient Aggregation 
+
+In federated continual learning, client drift is exacerbated because the statistical heterogeneity across clients is com-pounded by temporal heterogeneity. At any given time, different clients might be training on different tasks or on data that represents different facets of the same task, leading to local updates that may conflict with each other. A naive federated averaging of these updates can lead to destructive interference, harming the global model’s performance on both old and new tasks. To address this, we introduce TSGA, a server-side mechanism to modulate the aggregation process. The core idea is to identify and down-weight client updates that are outliers, as they are likely to be either off-topic for the current learning objective or of low quality. After receiving the parameter updates ∆wk = wk − wg from each participating client k in a given round, the server first computes the average update direction: 
+
+¯g = 1
+
+|S| 
+
+∑
+
+> k∈S
+
+∆wk
+
+∥∆wk∥ , (14) where S is the set of participating clients. The server then measures the alignment of each client’s update with this average direction using cosine similarity: 
+
+sk = ∆wk · ¯g
+
+∥∆wk∥∥ ¯g∥ . (15) Clients whose updates are poorly aligned with the consensus direction (i.e., have a low similarity score sk) are likely to be sources of interference. We introduce a similarity threshold τ .Any client with sk < τ is considered an outlier and is excluded from the current round. The filtered participant set is 
+
+S′ = {k ∈ S | sk ≥ τ }, (16) and, if this set is empty, the round falls back to S′ = S to preserve a well-defined aggregation step even under highly conflicting two-client rounds. The filtered set is then used with normalized aggregation weights 
+
+αk = Nk
+
+∑ 
+
+> i∈S ′
+
+Ni
+
+, k ∈ S ′, (17) and the final global model is updated using a weighted average over only the clients in S′:
+
+wg ← wg + ∑
+
+> k∈S ′
+
+αk∆wk. (18) By filtering out potentially disruptive updates, TSGA ensures a more stable and coherent learning trajectory for the global model, improving its ability to consolidate knowledge from diverse clients in a sequential learning environment. The complete FedCMM workflow is summarized in Alg. 1 and Alg. 2. The first algorithm captures the task-level server coordination, and the second details the client-side rehearsal and local update procedure. 
+
+Algorithm 1 FedCMM task-level server coordination.  
+
+> 1:
+
+Server executes:  
+
+> 2:
+
+Initialize global model parameters w(0)  
+
+> 3:
+
+for each task Tj for j = 1 , . . . , T do  
+
+> 4:
+
+for each round r = 1 , . . . , R j do  
+
+> 5:
+
+Sr ← Select a random subset of C clients  
+
+> 6:
+
+Broadcast w(j) 
+
+> r−1
+
+to all clients in Sr 
+
+> 7:
+
+Initialize empty list of updates U ← []  
+
+> 8:
+
+for each client k ∈ S r in parallel do  
+
+> 9:
+
+∆wk ← ClientUpdate (k, w(j)
+
+> r−1
+
+, Tj ) 
+
+> 10:
+
+Add ∆wk to U 
+
+> 11:
+
+end for  
+
+> 12:
+
+// Aggregate with TSGA  
+
+> 13:
+
+¯g ← 1 
+
+> |S r|
+
+∑  
+
+> k∈S r
+> ∆wk
+> ∥∆wk∥
+> 14:
+
+S′ 
+
+> r
+
+← { k ∈ S r | cosine (∆ wk, ¯g) ≥ τ } 
+
+> 15:
+
+if S′ 
+
+> r
+
+= ∅ then  
+
+> 16:
+
+S′ 
+
+> r
+
+← S r 
+
+> 17:
+
+end if  
+
+> 18:
+
+∆w(j) 
+
+> r
+
+← ∑
+
+> k∈S ′
+> r
+> Nk
+
+∑
+
+> i∈S ′
+> r
+> Ni
+
+∆wk 
+
+> 19:
+
+w(j) 
+
+> r
+
+← w(j) 
+
+> r−1
+
++ ∆ w(j) 
+
+> r
+> 20:
+
+end for  
+
+> 21:
+
+w(j) ← w(j) 
+
+> Rj
+> 22:
+
+Server signals clients to prepare for next task:  
+
+> 23:
+
+for each client k = 1 , . . . , K in parallel do  
+
+> 24:
+
+Set client model to w(j) 
+
+> 25:
+
+Train local generator G(j) 
+
+> k
+
+on its data D(j) 
+
+> k
+> 26:
+
+Compute FIMs F(j) 
+
+> M,k
+
+on data D(j) 
+
+> k
+> 27:
+
+Store G(j) 
+
+> k
+
+and FIMs locally for use in task Tj+1  
+
+> 28:
+
+end for  
+
+> 29:
+
+end for  
+
+> 30:
+
+return w(T )
+
+V. E XPERIMENTS 
+
+Experiments were conducted on two federated continual social-event benchmarks in which every task is an image-text classification problem. The evaluation follows chronological event streams so that the model must preserve earlier event knowledge while adapting to later multimodal distributions. 
+
+A. Datasets and Evaluation Metrics 
+
+Datasets and Metrics. We use PHEME [35] and Crisis-MMD [4], two social-media event datasets that support image-text event understanding. PHEME contains rumor and breaking-news discussions collected from social media, with 6,273 text posts and 2,089 associated images across seven events. CrisisMMD contains crisis-related tweets from natural disasters, with 16,097 text instances and 18,126 images annotated for emergency-response categories. Following chronological event-incremental evaluation, events are ordered by time and grouped into three tasks with a [2 , 2, 3] class split for each dataset, yielding T = 3 tasks per stream. All datasets are split into train/validation/test partitions with a 70/10/20 ratio. Unless otherwise noted, client data is partitioned across 10 clients with a Dirichlet label-skew distribution using concentration α = 0 .5;LIU et al : CONTINUAL LEARNING FOR FEDERATED MLLM FINE-TUNING 7
+
+Algorithm 2 FedCMM client rehearsal and local update.  
+
+> 1:
+
+procedure CLIENT UPDATE (k, w, Tj ) 
+
+> 2:
+
+Load local dataset D(j) 
+
+> k
+
+for task Tj 
+
+> 3:
+
+// PPFR: Generate embedding-level replay tuples  
+
+> 4:
+
+if j > 1 then  
+
+> 5:
+
+// Load G(j−1)  
+
+> k
+
+and F(j−1)  
+
+> M,k
+
+from previous task  
+
+> 6:
+
+B(j−1)  
+
+> k
+
+← Generate replay tuples using G(j−1)  
+
+> k
+> 7:
+
+else  
+
+> 8:
+
+B(j−1)  
+
+> k
+
+← ∅  
+
+> 9:
+
+end if  
+
+> 10:
+
+// Local Training  
+
+> 11:
+
+Set local model to wk ← w 
+
+> 12:
+
+for each local epoch e = 1 , . . . , E do  
+
+> 13:
+
+for each batch in D(j) 
+
+> k
+
+∪ B (j−1)  
+
+> k
+
+do  
+
+> 14:
+
+Compute loss L(j) 
+
+> k
+
+using Eq. 3 with F(j−1)  
+
+> M,k
+> 15:
+
+Update wk with gradient descent  
+
+> 16:
+
+end for  
+
+> 17:
+
+end for  
+
+> 18:
+
+return ∆wk = wk − w 
+
+> 19:
+
+end procedure 
+
+we additionally report the severe non-IID setting α = 0 .1. Let 
+
+Ai,j be the accuracy on task Tj after training up to task Ti. We adopt three standard continual learning metrics: i) Average Accuracy (Acc) , computed as 1
+
+> T
+
+∑Tj=1 AT,j ; ii) Backward Transfer (BWT) , computed as 1 
+
+> T−1
+
+∑T −1 
+
+> j=1
+
+(AT,j − Aj,j ) to quantify forgetting; and iii) Forward Transfer (FWT) , computed as 1 
+
+> T−1
+
+∑Tj=2 Aj−1,j . Higher Acc and FWT are better, and BWT is better when closer to zero. 
+
+B. Baseline Methods and Implementation Details 
+
+We compare FedCMM against a comprehensive set of baselines: Joint Training (upper bound with all task data), 
+
+Fine-tuning (sequential lower bound), FedAvg-CL [5], FedProx-CL [26], LwF-FL [25], EWC-FL [13], FedWeIT [24], and GEM-FL [15]. GEM-FL stores raw replay exemplars and is therefore treated as a privacy-violating rehearsal reference. We also include AF-FCL [27], a generative-replay method based on ac-curate forgetting, and TEKNet-FL [36], a federated adaptation of the temporal event knowledge learner. All experiments were implemented using PyTorch and Hugging Face Transformers. The base MLLM was openbmb/MiniCPM-V-2.6-int4 .We employed PEFT with LoRA [31] using rank r = 8 and scaling factor 8. Each dataset is trained as a 3-task stream, with 50 federated rounds per task, 10 total clients, and 5 sampled clients per round unless otherwise stated. Local training uses paged AdamW with learning rate 2 × 10 −5, cosine decay, per-device batch size 1, and 16 gradient-accumulation steps. Each selected client performs one local epoch per federated round. PPFR fits only the local replay generator for 5 epochs at each task boundary, using a 64-dimensional Gaussian latent code and an embedding-level replay budget of |B| = 100 . The main hyperparameters are λ = 500 for MA-EWC and τ = 0 .5 for TSGA, selected by the sensitivity analysis. Experiments were conducted on NVIDIA L60 GPUs. 
+
+C. Main Results 
+
+Table I reports the comparison under moderate and severe heterogeneity. On PHEME with α = 0 .5, FedCMM reaches 86.3% Acc, improving over TEKNet-FL by 1.7% and over AF-FCL by 2.2%. The gain is not limited to the final event group: BWT improves from -10.2% for TEKNet-FL to -8.7%, indicating less damage to earlier events. Under the severe 
+
+α = 0 .1 split, all methods lose accuracy, but the ranking is not a simple shifted copy of the moderate case: GEM-FL has slightly higher Acc than AF-FCL, whereas AF-FCL has stronger FWT. 
+
+FedCMM retains a 1.1% Acc lead and keeps BWT 0.4% closer to zero than TEKNet-FL. On CrisisMMD, FedCMM obtains 84.4% and 79.6% under α = 0 .5 and α = 0 .1, respectively, below the non-continual Joint Training upper bound but above the strongest continual baselines. Several close comparisons are dataset-dependent; for example, AF-FCL is slightly stronger than TEKNet-FL in severe CrisisMMD Acc, while TEKNet-FL gives better FWT on severe CrisisMMD and moderate PHEME, reflecting a trade-off between forward plasticity and forgetting resistance. GEM-FL is competitive because raw exemplars provide direct rehearsal, yet it stores original samples and is not a privacy-preserving federated option. The gaps are therefore not uniform across datasets or metrics: CrisisMMD benefits more from visually grounded evidence, while PHEME depends more on event-specific textual shifts and stance cues. Across both streams, the strongest improvements appear on BWT, suggesting that the proposed modules mainly reduce forgetting while preserving enough plasticity for later crisis and rumor events. 
+
+D. Ablation Studies 
+
+To validate each component’s contribution, we conducted ablation studies on PHEME under α = 0 .5. Table II removes each component individually, and Table III analyzes the MA-EWC design. 
+
+Contribution of each component. As shown in Table II, FedAvg-CL reaches 73.8% Acc with a BWT of -22.7%, indicating severe forgetting under event-incremental PHEME. Adding all three components increases Acc to 86.3% and improves BWT to -8.7%. The component effects are not identical across metrics. Removing PPFR causes the largest retention loss, reducing Acc to 82.4% and worsening BWT to -13.6%, which indicates that embedding replay is the main anchor for old-event decision boundaries. Removing MA-EWC gives 83.7% Acc and weaker FWT, suggesting that replay alone cannot fully stabilize modality-specific adapters. Removing TSGA gives 84.5% Acc; its BWT is slightly better than removing MA-EWC, but the full method still improves both retention and transfer. Notably, the nonparallel pattern across metrics is expected because replay, consolidation, and aggregation filtering affect different failure modes. The ablation pattern also shows that no single component fully explains the final performance: replay improves retention, MA-EWC constrains module drift, and TSGA reduces server-side interference. 
+
+Analysis of MA-EWC. Table III shows that the Fisher penalty must respect the MLLM module structure. Removing EWC 8 IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING 
+
+TABLE I: Performance comparison on 3-task PHEME and CrisisMMD under moderate and severe non-IID partitions. The values in parentheses indicate the Dirichlet heterogeneity parameter α. Higher is better for Acc and FWT, while BWT is better when closer to zero. Best results are highlighted in bold .
+
+Method PHEME (0.5) PHEME (0.1) CrisisMMD (0.5) CrisisMMD (0.1) 
+
+Acc ↑ BWT ↑ FWT ↑ Acc ↑ BWT ↑ FWT ↑ Acc ↑ BWT ↑ FWT ↑ Acc ↑ BWT ↑ FWT ↑
+
+Joint Training 89.2 — — 89.2 — — 91.4 — — 91.4 — —Fine-tuning 68.4 -29.1 0.4 65.7 -32.4 0.0 62.6 -30.8 0.5 56.1 -36.8 0.4 FedAvg-CL [5] 73.8 -22.7 0.8 68.9 -27.9 0.4 70.9 -24.9 1.0 65.1 -31.2 0.7 FedProx-CL [26] 75.4 -20.9 0.7 70.2 -25.6 0.5 72.0 -23.8 1.3 67.3 -28.1 0.6 LwF-FL [25] 77.1 -18.7 1.2 72.6 -23.5 0.9 75.9 -19.6 1.4 69.7 -25.2 1.1 EWC-FL [13] 78.6 -16.8 1.0 74.9 -20.1 0.8 77.1 -18.7 1.4 72.4 -22.2 1.0 FedWeIT [24] 80.4 -14.9 1.5 76.9 -17.0 1.2 79.4 -15.2 1.7 73.5 -20.1 1.6 GEM-FL [15] 83.2 -12.0 1.9 79.6 -14.5 1.2 82.2 -12.0 2.2 76.9 -16.0 1.9 AF-FCL [27] 84.1 -10.9 1.8 79.4 -14.9 1.7 82.6 -11.2 2.1 78.1 -14.4 1.7 TEKNet-FL [36] 84.6 -10.2 2.3 80.7 -13.0 1.6 83.4 -10.5 2.3 78.0 -14.7 2.4 
+
+FedCMM (Ours) 86.3 -8.7 2.0 81.8 -12.6 1.9 84.4 -8.8 2.5 79.6 -12.8 2.1 10 50 100 500 1k 2k                  
+
+> (a) MA-EWC coefficient λ
+> 78
+> 80
+> 82
+> 84
+> 86
+> 88
+> Acc (%)
+> PHEME CrisisMMD
+> 0.2 0.4 0.6 0.8
+> (b) TSGA threshold τ
+> 78
+> 80
+> 82
+> 84
+> 86
+> 88
+> Acc (%)
+> PHEME CrisisMMD
+> 020 50 100 150
+> (c) Replay buffer size | |
+> 78
+> 80
+> 82
+> 84
+> 86
+> 88
+> Acc (%)
+> PHEME CrisisMMD
+> 23510
+> (d) Sampled clients per round C
+> 78
+> 80
+> 82
+> 84
+> 86
+> 88
+> Acc (%)
+> PHEME CrisisMMD
+
+Fig. 2: Parameter sensitivity of FedCMM on PHEME and CrisisMMD, where the four panels analyze hyperparameters λ, τ , |B| , and C.TABLE II: Result of component ablation on PHEME ( α = 0 .5). 
+
+Configuration MA-EWC PPFR TSGA Acc ↑ BWT ↑ FWT ↑
+
+FedAvg-CL [5] ✗ ✗ ✗ 73.8 -22.7 0.8 
+
+FedCMM w/o-MA ✗ ✓ ✓ 83.7 -10.9 1.7 
+
+FedCMM w/o-R ✓ ✗ ✓ 82.4 -13.6 1.6 
+
+FedCMM w/o-G ✓ ✓ ✗ 84.5 -9.5 1.9 
+
+FedCMM ✓ ✓ ✓ 86.3 -8.7 2.0 
+
+TABLE III: Result of MA-EWC ablation on PHEME ( α = 0 .5). 
+
+Configuration V L P Sep. Acc ↑ BWT ↑ FWT ↑
+
+FedCMM no-EWC ✗ ✗ ✗ ✗ 82.8 -12.4 1.5 
+
+FedCMM uni-EWC ✓ ✓ ✓ ✗ 84.3 -10.9 1.7 
+
+FedCMM V ✓ ✗ ✗ ✗ 83.1 -11.7 1.8 
+
+FedCMM L ✗ ✓ ✗ ✗ 83.9 -10.8 1.5 
+
+FedCMM ✓ ✓ ✓ ✓ 86.3 -8.7 2.0 
+
+> Notes : V = Vision Encoder, L = Language Backbone, P = Projector, Sep. = Separate Fisher Matrices.
+
+entirely gives 82.8% Acc and -12.4% BWT. A uniform EWC penalty improves this to 84.3%, but still trails the full modality-aware design. Single-branch protection is unstable and metric-dependent: vision-only protection reaches 83.1% Acc but gives relatively high FWT, while language-only protection gives higher Acc and BWT but lower FWT. Notably, visual stabilization appears to help early adaptation to new events, whereas language-side protection better preserves accumulated rumor cues. The full model separately protects the vision encoder, language backbone, and projector, reaching 86.3% and the best BWT of -8.7%. In turn, the evidence supports the claim that forgetting in social-event MLLM adaptation is distributed across visual, textual, and cross-modal alignment modules. The separate Fisher design is therefore not only a stronger regularizer, but also a better match to how multimodal adapters store task-specific evidence. 
+
+E. Parameter Sensitivity and Robustness 
+
+Sensitivity to hyperparameters. Fig. 2 shows sensitivity analyses for four key hyperparameters. The curves are not perfectly symmetric because the two benchmarks fail in different ways: PHEME is dominated by cross-event semantic shift, while CrisisMMD is more affected by noisy image-text alignment and class imbalance. For MA-EWC strength λ, both datasets peak at λ = 500 , but the decline after the peak is sharper on CrisisMMD. Increasing λ from 500 to 2000 reduces CrisisMMD from 84.4% to 80.3%, whereas PHEME decreases from 86.3% to 84.2%. In particular, over-constraining adapters can suppress crisis-event adaptation even when it protects old tasks. For the TSGA threshold τ , 0.5 gives the best result, but the neighboring points are uneven: τ = 0 .3 is more competitive on CrisisMMD (83.1%), whereas PHEME is less sensitive at 
+
+τ = 0 .7. The replay buffer trend is also nonuniform. Moving from no replay to |B| = 100 improves PHEME by 3.9% and CrisisMMD by 4.6%, but the intermediate gains differ across datasets, and increasing to 150 does not help. Consequently, low-quality synthetic tuples can begin to dilute current-task supervision. Finally, sampling C = 5 clients per round is best, while the C = 3 and C = 10 gaps differ across datasets. In aggregate, the pattern across all four parameters indicates that the default configuration is not an isolated lucky point; it lies in a stable region where consolidation, replay, and aggregation filtering remain balanced. 
+
+Robustness to data heterogeneity. Fig. 3 confirms that 
+
+FedCMM remains more stable as the client label distribution becomes skewed. On PHEME, FedAvg-CL decreases from 80.6% at α = 1 .0 to 69.4% at α = 0 .1, while FedCMM 
+
+decreases from 89.7% to 81.8%. Notably, the gap is not constant: it is 9.1% under the mild split, 12.5% at α = 0 .5, and LIU et al : CONTINUAL LEARNING FOR FEDERATED MLLM FINE-TUNING 91.0 0.5 0.1       
+
+> (a) PHEME
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> Acc (%)
+> FedAvg-CL FedCMM
+> 1.0 0.5 0.1
+> (b) CrisisMMD
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> Acc (%)
+> FedAvg-CL FedCMM
+> Fig. 3: Robustness to client heterogeneity on PHEME and CrisisMMD. TABLE IV: Accuracy of task-order robustness on PHEME. ∆denotes the accuracy drop from synchronized to asynchronous progression.
+
+Method Sync. ↑ Async. ↑ ∆ ↑
+
+FedAvg-CL [5] 73.8 65.7 -8.1 EWC-FL [13] 78.6 71.4 -7.2 
+
+FedCMM 86.3 82.4 -3.9 
+
+12.4% under severe heterogeneity. On CrisisMMD, FedAvg-CL falls from 74.0% to 65.6%, whereas FedCMM falls from 86.1% to 79.6%. A related asymmetry appears in the degradation pattern: the moderate-to-severe drop is larger than the mild-to-moderate drop, especially for FedAvg-CL on CrisisMMD. Disaster events appear to have more heterogeneous visual evidence across clients. Importantly, the proposed method does not eliminate non-IID sensitivity; rather, it reduces the additional forgetting caused by skewed client updates. In turn, the results support the role of TSGA as a stabilizer rather than as a substitute for better client coverage. The remaining drop at α = 0 .1 also shows that the evaluation is not saturated, leaving visible room for stronger personalization or adaptive client sampling. 
+
+Robustness to task ordering. Table IV evaluates desynchro-nized client progression on PHEME, where 30% of clients lag one task behind at each boundary. Notably, the setting is harsher than ordinary label skew because stale clients optimize an earlier event distribution while synchronized clients have already moved to the next group. FedAvg-CL drops from 73.8% to 65.7%, and EWC-FL drops from 78.6% to 71.4%. FedCMM 
+
+drops from 86.3% to 82.4%, losing less than 4%. A smaller degradation is consistent with the interaction between TSGA and PPFR: stale updates tend to have lower agreement with the round consensus, and replay keeps the retained clients from over-specializing to only the latest event. Beyond a simple heterogeneity test, the asynchronous setting specifically probes whether aggregation can tolerate clients being at different points in the continual stream. Moreover, the property is important for social-event deployments, where clients may receive delayed event evidence or skip event groups entirely. 
+
+F. Local-Epoch Sensitivity and Efficiency Analysis 
+
+Effect of local epoch number E. Fig. 4 shows average accuracy as E increases from 1 to 4. All methods peak at 
+
+E = 1 , confirming that aggressive local training amplifies client drift in temporally skewed social-event streams. On PHEME, FedAvg-CL drops from 73.8% to 71.2%, EWC-FL drops from 78.6% to 75.0%, and FedCMM drops from 86.3% to 83.5%. On CrisisMMD, the absolute decline is larger for the baselines 1 2 3 4                                                
+
+> (a) PHEME
+> 60
+> 70
+> 80
+> 90
+> Acc (%)
+> FedCMM EWC-FL FedAvg-CL
+> 1234
+> (b) CrisisMMD
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> Acc (%)
+> FedCMM EWC-FL FedAvg-CL
+> Fig. 4: Effect of local epoch number Eon PHEME and CrisisMMD. TABLE V: Federated rounds to first reach 50% ( R50 ↓) and 75% ( R75 ↓)accuracy, and final accuracy at round 50 (Final ↑) on PHEME and CrisisMMD.
+> Method PHEME CrisisMMD
+> R50 ↓R75 ↓Final ↑R50 ↓R75 ↓Final ↑
+> Joint Training ——89.2 ——91.4 FedAvg-CL [5] 18 —73.8 23 —70.9 EWC-FL [13] 13 28 78.6 15 33 77.1
+> FedCMM 813 86.3 10 19 84.4
+
+but not by a fixed margin: FedAvg-CL loses 10.8%, EWC-FL loses 9.3%, and FedCMM loses 5.45%. The intermediate points also differ; for example, FedAvg-CL on PHEME is relatively flat from E = 2 to E = 3 before dropping at E = 4 , whereas all methods on CrisisMMD show a steeper and more consistent decline. In particular, the nonparallel degradation shows that FedCMM is not merely an upward-shifted baseline. Replay and aggregation filtering reduce the damage caused by longer client-side optimization, but they do not make large local epochs harmless. For this reason, the default setting uses one local epoch for the MLLM update, while PPFR’s five fitting epochs apply only to the small replay generator at task boundaries. The result also suggests that increasing local computation is not a reliable substitute for communication in federated continual MLLM adaptation. 
+
+Convergence efficiency. Table V reports the number of federated rounds needed to first reach 50% and 75% accuracy, and the final accuracy at round 50, under α = 0 .5. At the 50% milestone, FedCMM converges in 8 rounds on PHEME and 10 rounds on CrisisMMD, achieving speedups of approximately 2.25 × over FedAvg-CL (18 and 23 rounds) and 1.6 × over EWC-FL (13 and 15 rounds). At the more demanding 75% target, FedCMM requires 13 and 19 rounds, while EWC-FL needs 28 and 33 rounds, roughly twice as many; FedAvg-CL cannot reach 75% within the 50-round budget on either benchmark, saturating below that threshold. At the final checkpoint (round 50), FedCMM achieves 86.3% on PHEME and 84.4% on CrisisMMD, exceeding EWC-FL by 7.7% and 7.3%, respectively. 
+
+G. Discussion 
+
+Superior performance of FedCMM across both benchmarks stems from three complementary mechanisms: i) Modality-aware regularization via MA-EWC applies module-specific Fisher penalties to the vision encoder, language backbone, and cross-modal projector independently, preventing the uniform parameter shrinkage that causes a single-branch EWC to under-protect whichever modality updates most aggressively in the 10 IEEE JOURNAL OF SELECTED TOPICS IN SIGNAL PROCESSING 
+
+current task; ii) Privacy-preserving replay via PPFR restores sample-space supervision without exposing raw client data, and the empirical gap between PPFR and standard exemplar replay (GEM-FL) confirms that synthetic embeddings preserve enough decision geometry to achieve comparable retention; and iii) Similarity-aware aggregation via TSGA filters out client updates that are directionally misaligned with the consensus, reducing the amplification of task-ordering drift that ordinary FedAvg cannot suppress. Nevertheless, several limitations warrant attention: optimal λ and τ values are currently determined by grid search rather than adaptive scheduling; the Fisher diagonal approximation may underestimate parameter importance in cross-modal projector layers where interference is most nonlinear; and scaling to T ≥ 6 tasks has not been validated. Future work will pursue learnable hyperparameter schedules [10], more expressive Fisher surrogates for low-rank adapters, and extended evaluation on the seven-task PHEME →CrisisMMD combined stream [11], [36]. VI. C ONCLUSION 
+
+In this paper, we have addressed catastrophic forgetting in the federated fine-tuning of Multimodal Large Language Models on evolving data streams. Our proposed FedCMM framework synergistically integrates modality-aware parameter regulariza-tion, raw-data-free embedding-level replay, and similarity-aware gradient aggregation, enabling MLLMs to learn sequentially without sacrificing prior knowledge. Extensive experiments show that FedCMM consistently achieves the best average accuracy and BWT, while remaining competitive on FWT. The framework’s robustness to data heterogeneity and asynchronous task ordering further highlights its practical utility for real-world networked AI deployments. Future work will focus on improving efficiency and autonomous hyperparameter adaptation, advancing toward evolutive optimization in large-scale distributed AI systems. REFERENCES [1] J.-B. Alayrac, J. Donahue, P. Luc, A. Miech, I. Barr, Y. Hasson, K. Lenc, A. Mensch, K. Millican, M. Reynolds et al. , “Flamingo: a visual language model for few-shot learning,” in NeurIPS , vol. 35, 2022, pp. 23 716– 23 736. [2] J. Liu, Y. Du, K. Yang, J. Wu, Y. Wang, X. Hu, Z. Wang, Y. Liu, P. Sun, A. Boukerche, and V. C. M. Leung, “Edge-cloud collaborative computing on distributed intelligence and model optimization: A survey,” 
+
+IEEE Commun. Surveys Tuts. , vol. 28, pp. 5049–5080, 2026. [3] D. Kiela, H. Bhooshan, H. Firooz, and D. Testuggine, “The hateful memes challenge: Detecting hate speech in multimodal memes,” in NeurIPS ,vol. 33, 2020, pp. 2611–2624. [4] F. Alam, F. Ofli, and M. Imran, “Crisismmd: Multimodal twitter datasets from natural disasters,” in ICWSM , vol. 12, no. 1, 2018, pp. 465–467. [5] B. McMahan, E. Moore, D. Ramage, S. Hampson, and B. A. y. Arcas, “Communication-efficient learning of deep networks from decentralized data,” in AISTATS , 2017, pp. 1273–1282. [6] P. Kairouz, H. B. McMahan, B. Avent, A. Bellet, M. Bennis, A. Bhagoji, K. Bonawitz et al. , “Advances and open problems in federated learning,” 
+
+Found. Trends Mach. Learn. , vol. 14, no. 1–2, pp. 1–210, 2021. [7] M. Ribero, H. Vikalo, and G. de Veciana, “Federated learning at scale: Addressing client intermittency and resource constraints,” IEEE J. Sel. Top. Signal Process. , 2024. [8] J. Wu, J. Liu, Y. Liu, L. Wang, Z. Wang, W. Chen, Z. Tian, R. Yu, and V. C. M. Leung, “A survey on cloud-edge-terminal collaborative intelligence in aiot networks,” Aug. 2025. [9] G. I. Parisi, R. Kemker, J. L. Part, C. Kanan, and S. Wermter, “Continual lifelong learning with neural networks: A review,” Neural Netw. , vol. 113, pp. 54–71, 2019. [10] L. Wang, X. Zhang, H. Su, and J. Zhu, “A comprehensive survey of continual learning: Theory, method and application,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 46, no. 8, pp. 5057–5076, 2024. [11] J. Dong, X. Liu, A. van den Hengel, J. He, and C. Feng, “Federated continual learning via knowledge fusion: A survey,” IEEE Trans. Knowl. Data Eng. , vol. 36, no. 9, pp. 4177–4196, 2024. [12] M. Mermillod, A. Bugaiska, and P. Bonin, “The stability-plasticity dilemma: Investigating the continuum from catastrophic forgetting to age-limited learning effects,” Front. Psychol. , vol. 4, p. 504, 2013. [13] J. Kirkpatrick, R. Pascanu, N. Rabinowitz, J. Veness, G. Desjardins, A. A. Rusu, K. Milan, J. Quan, T. Ramalho, A. Grabska-Barwinska 
+
+et al. , “Overcoming catastrophic forgetting in neural networks,” Proc. Natl. Acad. Sci. , vol. 114, no. 13, pp. 3521–3526, 2017. [14] F. Zenke, B. Poole, and S. Ganguli, “Continual learning through synaptic intelligence,” in ICML , 2017, pp. 3987–3995. [15] D. Lopez-Paz and M. Ranzato, “Gradient episodic memory for continual learning,” in NeurIPS , vol. 30, 2017. [16] R. Greidi and K. Cohen, “Sparse training for federated learning with regularized error correction,” IEEE J. Sel. Top. Signal Process. , 2024. [17] Y. Zhao, M. Li, L. Lai, N. Suda, D. Civin, and V. Chandra, “Federated learning with non-iid data,” arXiv preprint arXiv:1806.00582 , 2018. [18] Y. J. Cho, J. Wang, T. Chirvolu, and G. Joshi, “Communication-efficient and model-heterogeneous personalized federated learning via clustered knowledge transfer,” IEEE J. Sel. Top. Signal Process. , vol. 17, no. 1, pp. 40–53, 2023. [19] Y. Lai, L. Wu, H. Lin, and J. Liu, “Bad-mfl: A cross-modality bi-trigger backdoor attack against multimodal federated learning,” IEEE Internet Things J. , vol. 12, no. 19, pp. 39 326–39 337, Oct. 2025. [20] G. Serra and F. Buettner, “Federated continual learning goes online: Uncertainty-aware memory management for vision tasks and beyond,” in ICLR , Oct. 2024. [21] S. J. Reddi, Z. Charles, M. Zaheer, Z. Garrett, K. Rush, J. Koneˇ cný, S. Kumar, and H. B. McMahan, “Adaptive federated optimization,” in 
+
+ICLR , 2021. [22] S. P. Karimireddy, S. Kale, M. Mohri, S. Reddi, S. Stich, and A. T. Suresh, “Scaffold: Stochastic controlled averaging for federated learning,” in ICML , 2020, pp. 5132–5143. [23] H. Shin, J. K. Lee, J. Kim, and J. Kim, “Continual learning with deep generative replay,” in NeurIPS , vol. 30, 2017. [24] J. Yoon, W. Jeong, G. Lee, E. Yang, and S. J. Hwang, “Federated continual learning with weighted inter-client transfer,” in ICML , 2021, pp. 12 073–12 086. [25] Z. Li and D. Hoiem, “Learning without forgetting,” in ECCV , 2016, pp. 614–629. [26] T. Li, A. K. Sahu, A. Talwalkar, and V. Smith, “Federated optimization in heterogeneous networks,” MLSys , vol. 2, pp. 429–450, 2020. [27] A. Wuerkaixi, S. Cui, J. Zhang, K. Yan, B. Han, G. Niu, L. Fang, C. Zhang, and M. Sugiyama, “Accurate forgetting for heterogeneous federated continual learning,” in ICLR , 2024. [28] Z. Qi, Y.-P. Tang, L. Meng, H. Yu, X. Li, and X. Meng, “Class-wise balancing data replay for federated class-incremental learning,” in NeurIPS , 2025. [29] J. Xu, S. Wan, Y. Li, S. Luo, Z. Chen, Y. Shao, Z. Chen, S.-L. Huang, and L. Song, “Cooperative multi-model training for personalized federated learning over heterogeneous devices,” IEEE J. Sel. Top. Signal Process. ,vol. 19, pp. 195–207, 2024. [30] T. Xiao, Y. Li, Y. Qi, Y. Liu, H. Wang, Y. Wang, and R. Li, “Enhancing privacy in multimodal federated learning with information theory,” 
+
+NeurIPS , vol. 38, pp. 142 199–142 215, Apr. 2026. [31] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “Lora: Low-rank adaptation of large language models,” in 
+
+ICLR , 2022. [32] S.-A. Rebuffi, A. Kolesnikov, G. Sperl, and C. H. Lampert, “icarl: Incremental classifier and representation learning,” in CVPR , 2017, pp. 2001–2010. [33] R. Ye, W. Wang, J. Chai, D. Li, Z. Li, Y. Xu, Y. Du, Y. Wang, and S. Chen, “Openfedllm: Training large language models on decentralized private data via federated learning,” in ACM KDD , 2024, pp. 6137–6147. [34] A. A. Rusu, N. C. Rabinowitz, G. Desjardins, H. Soyer, J. Kirkpatrick, K. Kavukcuoglu, R. Pascanu, and R. Hadsell, “Progressive neural networks,” in arXiv preprint arXiv:1606.04671 , 2016. [35] E. Kochkina, M. Liakata, and A. Zubiaga, “All-in-one: Multi-task learning for rumour verification,” in COLING , Aug. 2018, pp. 3402–3413. [36] S. Qian, S. Zhang, D. Xue, H. Zhang, and C. Xu, “Learning temporal event knowledge for continual social event classification,” IEEE Trans. Knowl. Data Eng. , vol. 37, no. 6, pp. 3485–3498, Jun. 2025.
