@@ -1,0 +1,999 @@
+Title: SIVA-RL: Sensitivity-Invariance Visual Alignment for Multimodal Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2607.13931v1
+
+Published Time: Thu, 16 Jul 2026 01:29:07 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# SIVA-RL: SENSITIVITY –I NVARIANCE VISUAL 
+
+# ALIGNMENT FOR MULTIMODAL REINFORCEMENT 
+
+# LEARNING 
+
+Cheng Tang 1 Junzhi Ning 1 Min Cen 1 Wei Li 1,2 Xinyi Zeng 1,3 Pinxian Zeng 5 Rongbin Li 1
+
+Qiming Zhu 4 Dongzhan Zhou 1 Yuqiang Li 1 Junjun He 1 Yirong Chen 1 Ming Hu 11Shanghai Artificial Intelligence Laboratory 2Shanghai Jiao Tong University 3Sichuan University 
+
+> 4
+
+The Chinese University of Hong Kong, Shenzhen 5University of Macau 
+
+ABSTRACT 
+
+Reinforcement learning with verifiable rewards (RLVR) drives multimodal rea-soning, but answer-level correctness does not guarantee that a vision-language model grounds its predictions in visual evidence. Existing visual-intervention methods contrast policy behavior on original and modified images, yet assign su-pervision by the type of intervention rather than its observed effect. This assump-tion fails: identical operators produce heterogeneous outcomes across samples. We propose SIVA-RL , a Sensitivity-Invariance Visual Alignment framework that replaces operator-conditioned regularization with sample-wise, outcome-conditioned supervision. SIVA-RL constructs localized interventions through token-aligned, distance-constrained within-image PatchSwap. A frozen audit pol-icy then scores each clean–intervention pair, and the observed reward drop be-comes soft routing weights. Large-drop pairs drive sensitivity alignment, low-drop pairs drive clean-anchored invariance alignment, and ambiguous pairs are down-weighted. This design decouples intervention construction from supervision as-signment and is compatible with both GRPO and DAPO backbones. Across nine multimodal reasoning benchmarks spanning mathematical, logical, and vision-dependent tasks, SIVA-RL improves 3B and 7B models over matched RL base-lines in every setting. It yields an 8.79 percentage-point gain on vision-dependent reasoning and up to 14.9% relative overall improvement across all four GRPO-and DAPO-based configurations. code 
+
+1 INTRODUCTION 
+
+Reinforcement learning with verifiable rewards (RLVR) improves the reasoning capabilities of large language and vision-language models Shao et al. (2024); Guo et al. (2025); Huang et al. (2025b); Yao et al. (2025); Meng et al. (2025). By optimizing task-level correctness, RLVR elicits multi-step reasoning without densely annotated reasoning trajectories. Final-answer rewards indicate whether a prediction is correct, but not how it was obtained. A vision-language model can therefore receive high reward while relying on language priors, answer-frequency biases, or memorized reasoning templates rather than the visual evidence the task requires Goyal et al. (2017); Agrawal et al. (2018); Niu et al. (2021); Xia et al. (2025). This reward ambiguity is acute in vision-dependent tasks such as counting, geometry, and diagram understanding. Recent multimodal RL methods strengthen visual dependence through auxiliary perception signals, visual credit assignment, or comparisons between clean and visually modified inputs Xiao et al. (2025); Huang et al. (2025a); Wang et al. (2026c); Li et al. (2026). Perturbation-driven methods, most prominently PAPO Wang et al. (2025b), regularize the policy by contrasting its behavior under original and corrupted images. A common design ties the intervention type to a predetermined objective: destructive interventions encourage separation, whereas mild or semantics-preserving transformations encourage consistency Liu et al. (2026); Li et al. (2025); Zhang et al. (2025b); Gao et al. (2026). This operator-conditioned design assumes that the same visual operator induces a sufficiently similar effect across samples. 1arXiv:2607.13931v1 [cs.CV] 15 Jul 2026 (a) (b) (c) Figure 1: Paired intervention audit and SIVA-RL overview. (a) Visual interventions induce four paired-outcome categories. (b) Black-image, random-mask, and PatchSwap interventions all produce mixtures of outcome-drop and outcome-stable cases among the 906 clean-correct examples. 
+
+(c) SIVA-RL routes each valid pair toward sensitivity or clean-anchored consistency according to its observed outcome change. Our paired intervention audit reveals operator–effect heterogeneity at the sample level. We sample 200 examples from each of the nine benchmarks in our main evaluation, yielding 1,800 examples. For each clean image and its intervention view, we categorize the answer transition as outcome-drop , outcome-stable , reversal , or persistent-error . Among the 906 examples answered correctly on their clean images, black-image, random-mask, and PatchSwap interventions produce outcome-drop rates of 67.8%, 62.9%, and 61.8%. The corresponding outcome-stable rates remain high at 32.2%, 37.1%, and 38.2%. The same operator thus produces both drop and stable outcomes within one clean-correct subset. Intervention identity alone cannot prescribe a uniform optimization direction (Figure 1). The audit supports one conclusion: paired outcomes are useful for assigning perturbation-based su-pervision, but they do not identify the visual evidence responsible for a prediction. A large reward drop indicates that the policy behavior is sensitive to the intervention. The change may arise from task-relevant evidence or from intervention-induced artifacts. A stable outcome may instead re-flect irrelevant modification, redundant visual evidence, or reliance on a language prior Goyal et al. (2017); Agrawal et al. (2018). We therefore treat paired outcome changes as operational routing signals, not certificates of semantic invariance, causal attribution, or visual grounding. This heterogeneity raises the central question of this work: how should clean–intervention pairs receive different optimization directions and strengths when the same operator produces heteroge-neous sample-level outcomes? Our key idea separates intervention construction from the determina-tion of its training effect. Large-drop pairs provide sensitivity signals and receive a margin-bounded separation objective. Low-drop pairs provide outcome-stability signals and receive a conservative, clean-anchored consistency objective. Ambiguous pairs receive little or no auxiliary supervision. A clean-correctness gate anchors alignment to a correct clean response, though the gate does not certify that the response came from visual evidence. Building on this principle, we introduce SIVA-RL , a Sensitivity– Invariance Visual Alignment framework for multimodal reinforcement learning. SIVA-RL decomposes intervention-guided su-pervision into three stages: intervention construction , sample-wise outcome valuation , and policy alignment . SIVA-RL first constructs localized intervention views through token-aligned, within-image PatchSwap. PatchSwap modifies local visual content and spatial relationships while preserv-ing most unmodified regions and the overall image context. An audit policy then evaluates each clean–intervention pair, and its clean-anchored reward change determines soft routing weights for a dual-direction alignment objective. Reliable large-drop pairs are separated, valid low-drop pairs are softly aligned with their clean counterparts, and ambiguous pairs are de-emphasized. Here, “in-variance” denotes bounded, intervention-conditioned policy consistency, not semantic invariance or causal irrelevance of the modified content. SIVA-RL thus shifts visual-intervention-based multi-modal RL from operator-conditioned regularization to sample-wise, outcome-conditioned selective supervision. We evaluate SIVA-RL on GRPO- and DAPO-based multimodal RL backbones across model scales and nine benchmarks spanning mathematical, logical, counting, multi-disciplinary, and vision-dependent reasoning. SIVA-RL improves its corresponding RL backbones in every configuration. 2Controlled ablations confirm the utility of outcome-conditioned routing and the complementary roles of the sensitivity and invariance branches. Our main contributions are summarized as follows: • Diagnosing ambiguity in intervention-defined supervision. We show that the same visual intervention can induce mixed outcome-drop and outcome-stable behavior within clean-correct examples. Moreover, low-drop pairs are not necessarily reliable invari-ance signals, as they may arise from task-irrelevant perturbations, redundant evidence, or language-prior shortcuts. This finding motivates moving beyond operator-defined supervi-sion toward sample-wise effect estimation. • Outcome-conditioned selective visual alignment. We formulate visual-intervention-based multimodal RL as a selective supervision problem. The observed clean-to-intervention reward drop determines the direction and strength of auxiliary alignment: large-drop pairs encourage sensitivity, reliable low-drop pairs receive bounded clean-anchored consistency, and ambiguous pairs are down-weighted or skipped. This design separates intervention construction from supervision assignment. • SIVA-RL for scalable multimodal RL. We instantiate the formulation with token-aligned distance-constrained PatchSwap, frozen paired outcome valuation, clean-rollout re-scoring, and margin-bounded dual-direction alignment. SIVA-RL plugs into both GRPO and DAPO, consistently improves 3B and 7B backbones across nine benchmarks, and yields larger gains on vision-dependent reasoning. Ablations and training diagnostics validate the roles of localized intervention, soft routing, and sensitivity–invariance alignment. 
+
+2 RELATED WORK 
+
+Multimodal reinforcement learning with verifiable rewards. Reinforcement learning with ver-ifiable rewards (RLVR) improves reasoning in large language and vision-language models. GRPO enables critic-free optimization through group-relative advantages. DAPO extends GRPO with im-proved clipping, dynamic sampling, and entropy regularization for large-scale training Shao et al. (2024); Yu et al. (2026). Recent work brings RLVR to multimodal reasoning through visual cold-start data, rule-verifiable rewards, and group- or step-level policy optimization Huang et al. (2025b); Yao et al. (2025); Meng et al. (2025); Wang et al. (2026a). These methods share one limitation: final-answer rewards give no direct signal about whether the policy grounds its predictions in task-relevant visual evidence. SIVA-RL complements these RLVR backbones. SIVA-RL augments policy opti-mization with outcome-conditioned intervention alignment and instantiates with both GRPO- and DAPO-style training. 
+
+Visual perception and intervention supervision. One line of work strengthens visual grounding through auxiliary perception rewards, clean–intervention policy contrast, or token- and trajectory-level visual credit assignment Xiao et al. (2025); Wang et al. (2025b); Huang et al. (2025a); Wang et al. (2026c); Li et al. (2026). Another line introduces distorted, masked, mixed, or otherwise in-tervened inputs to improve visual exploration, sensitivity, and robustness Liu et al. (2026); Li et al. (2025); Zhang et al. (2025b); Gao et al. (2026). These methods establish the value of supervision beyond answer correctness. Many of them, however, determine the optimization target from the intervention type, or use interventions mainly to redistribute visual credit across tokens. SIVA-RL instead evaluates the sample-wise behavioral effect of each localized intervention. The paired out-come then determines both the direction and strength of supervision. This design separates interven-tion construction from outcome valuation and softly routes valid pairs toward sensitivity alignment or bounded clean-anchored consistency. 
+
+3 METHOD 
+
+3.1 OVERVIEW AND BASE RL B ACKBONE 
+
+We consider a multimodal reasoning dataset D = {(qi, x i, a ⋆i )}Ni=1 , where qi, xi, and a⋆i denote the question, image, and target answer, respectively. For each clean input, the rollout policy samples a 3Original image 𝒙𝒙  Question q 
+
+(a) Visual Intervention Pair Construction               
+
+> In △ABC, ∠B = 60 °,∠C = 30 °
+> and D lies on BE.
+> If ∠A = 60 °,
+> what is ∠CDE?
+> Localized PatchSwap(distance-constrained)
+> candidate cells target cells distant source cells
+> Intervened image �𝒙𝒙 Question q
+> In △ABC, ∠B = 60 °,∠C = 30 °
+> and D lies on BE.
+> If ∠A = 60 °,
+> what is ∠CDE?
+
+�𝑥𝑥 = (1 − 𝑀𝑀 )⨀𝑥𝑥 + 𝑀𝑀⨀𝑃𝑃 (𝑥𝑥 )
+
+𝑥𝑥 
+
+q
+
+Policy Model 
+
+> （shared ）
+> �𝑦𝑦 1𝑐𝑐𝑐𝑐
+> ⋮
+> �𝑦𝑦 2𝑐𝑐𝑐𝑐
+> �𝑦𝑦 𝑖𝑖 𝑐𝑐𝑐𝑐
+> Answer
+> Verifier
+> 𝑅𝑅 1𝑐𝑐𝑐𝑐
+> 𝑅𝑅 2𝑐𝑐𝑐𝑐
+> 𝑅𝑅 𝑖𝑖 𝑐𝑐𝑐𝑐
+> ⋮
+
+(b) Paired Outcome Valuation 
+
+�𝑥𝑥 
+
+q
+
+> �𝑦𝑦 1𝑐𝑐 𝑖𝑖
+> ⋮
+> �𝑦𝑦 2𝑐𝑐 𝑖𝑖
+> �𝑦𝑦 𝑖𝑖 𝑐𝑐 𝑖𝑖
+> Answer
+> Verifier
+> Clean-valid gate
+> Is clean correct?
+> Yes →auxiliary routing
+> No →skip auxiliary loss
+
+∆𝒊𝒊 = 𝑹𝑹 𝒊𝒊 𝒄𝒄𝒄𝒄 − 𝑹𝑹 𝒊𝒊 𝒄𝒄 𝒊𝒊 
+
+Outcome-Conditioned Routing         
+
+> Small ∆𝑖𝑖 Large ∆𝑖𝑖 invariance sensitivity
+> Medium ∆𝑖𝑖
+> Weight
+> ∆𝑖𝑖
+> 1
+> 0
+> Abstain(skip)
+
+(c) Dual-Direction Sensitivity—Invariance Alignment 
+
+Update Shared Policy 𝝅𝝅 𝜽𝜽 
+
+RL objective+SIVA alignment+ KL regularization             
+
+> �𝑦𝑦 1𝑐𝑐𝑐𝑐
+> ⋮
+> �𝑦𝑦 2𝑐𝑐𝑐𝑐
+> �𝑦𝑦 𝑖𝑖 𝑐𝑐𝑐𝑐
+> 1) Backbone RL
+> Clean rollouts
+> Reference Model
+> Answer
+> Verifier
+> 𝑟𝑟 1
+> 𝑟𝑟 2
+> 𝑟𝑟 3
+> 𝑟𝑟 𝐺𝐺
+> ⋮
+> Group Estimate
+> 𝐴𝐴 1
+> 𝐴𝐴 2
+> 𝐴𝐴 3
+> 𝐴𝐴 𝐺𝐺
+> ⋮
+> 2) Clean-Anchored Re-scoring
+> �𝑦𝑦 𝑖𝑖 𝑐𝑐𝑐𝑐
+> ⋮ Stop-gradient
+> anchor
+> Clean rollouts( anchor)
+> ⋮
+> Score under 𝒙𝒙 (clean) ⋮
+> Score under �𝒙𝒙 (Intervened )
+> Log-probs(anchor)
+> Log-probs(Intervened)
+> Clean-Anchored
+> Divergence
+> 3)Alignment + Policy Update
+> Clean
+> Pull Together
+> Small ∆𝑖𝑖
+> Clean Pull Apart
+> Large ∆𝑖𝑖
+> Invariance Alignment Sensitivity Alignment
+> Intervened Intervened
+> 𝑅𝑅 1𝑐𝑐 𝑖𝑖
+> 𝑅𝑅 2𝑐𝑐 𝑖𝑖
+> 𝑅𝑅 𝑖𝑖 𝑐𝑐 𝑖𝑖
+> ⋮
+
+Figure 2: Overview of SIVA-RL. The upper branch represents the standard clean-image RLVR backbone. (a) Token-aligned, distance-constrained PatchSwap constructs a localized candidate intervention ˜xi. (b) A frozen audit policy performs paired decoding and converts the clean-to-intervention reward drop into sensitivity and invariance weights. (c) The clean rollout responses are re-scored under both visual conditions. Large-drop pairs are encouraged to exceed a sensitivity margin, while valid low-drop pairs are constrained within an invariance margin. group of G responses, 
+
+yi,g ∼ πθold 
+
+ · | qi, x i
+
+, g = 1 , . . . , G. (1) Each response receives a verifiable reward ri,g ; the backbone algorithm then computes a group-relative advantage Ai,g and the corresponding actor update. We denote the full GRPO- or DAPO-style backbone objective as Lbase Shao et al. (2024); Yu et al. (2026). Backbone-specific advantage estimation, clipping, filtering, and regularization are detailed in the appendix. SIVA-RL preserves the clean-image backbone update and augments it with an outcome-conditioned intervention-alignment objective. As illustrated in Figure 2, the framework has three components: 
+
+(a) localized intervention construction, (b) outcome-conditioned soft routing, and (c) clean-anchored dual-direction alignment. The routing branch determines whether a candidate intervention reinforces sensitivity, encourages invariance, or abstains. The alignment branch reuses existing clean-rollout responses. This reuse avoids additional stochastic sampling beyond the paired audit used for out-come valuation. 3.2 LOCALIZED PATCH SWAP CONSTRUCTION 
+
+Given an image xi, we partition its pixel space into a grid Ωi aligned with the effective visual-token grid after patchification and spatial merging. Let pi,u denote the image cell indexed by u ∈ Ωi. We first sample candidate cells with ratio η and then select effective replacement targets with probability 
+
+ρ:
+
+Ci ∼ SampleMask(Ω i, η ), Ci,u ∈ { 0, 1}, (2) 
+
+Bi,u ∼ Bernoulli( ρ), (3) 
+
+Ti,u = Ci,u Bi,u . (4) Here Ci,u = 1 marks cell u as eligible for intervention; Ti,u = 1 marks it as an active replacement target. Eligible but unselected cells appear unmodified in the intervention. For every target cell u, we form a valid within-image source set 
+
+Si(u) = v ∈ Ωi : Ci,v = 0 , ¯di(u, v ) ≥ dmin , si(u) ∼ Unif  Si(u), (5) 4where ¯di(u, v ) ∈ [0 , 1] is the normalized grid distance between u and v, and dmin excludes spatially adjacent sources. The intervention view is then assembled as 
+
+˜pi,u =
+
+pi,s i(u), Ti,u = 1 ,pi,u , Ti,u = 0 , ˜xi = Assemble  {˜pi,u }u∈Ωi
+
+. (6) Distance-constrained within-image PatchSwap disrupts localized evidence and spatial relationships while preserving the image’s global statistics and style. The construction yields interventions harder than global masking yet less destructive than complete visual removal. PatchSwap thus exposes evidence-dependent reasoning without collapsing the visual context. Grid resolution, candidate ratio 
+
+η, replacement probability ρ, and minimum distance dmin are specified in Appendix A. 3.3 OUTCOME -C ONDITIONED SOFT ROUTING 
+
+The same PatchSwap operator can produce different behavioral effects across samples. SIVA-RL therefore assigns no fixed optimization role to constructed interventions. SIVA-RL instead evaluates each clean–intervention pair with a frozen audit policy π¯θ , a no-gradient snapshot of the current policy. For compactness, let xcl  
+
+> i
+
+= xi and xci  
+
+> i
+
+= ˜ xi. Paired sampled audit decoding and answer evaluation are defined by 
+
+ˆyvi,m ∼ π¯θ (· | qi, x vi ), Rvi = 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+rans (ˆ yvi,m , a ⋆i ), v ∈ { cl , ci }, (7) where rans is the answer-level verifier used for intervention valuation, and Rvi is the empirical veri-fier score over the sampled audit rollouts for view v. The audit policy is fixed during the update, and no gradient is propagated through the decoded answers or their rewards. We define the clean-anchored validity gate and observed reward drop as 
+
+bi = I[Rcl  
+
+> i
+
+≥ τc] Φ cl  
+
+> i
+
+Φci  
+
+> i
+
+, ∆i = Rcl  
+
+> i
+
+− Rci  
+
+> i
+
+, (8) where Φvi ∈ { 0, 1} indicates that the sampled audit outputs for view v contain a parseable response for the answer verifier. A clean–intervention pair is valid when bi = 1 . The clean-outcome gate prevents failed clean predictions from contributing spurious sensitivity or invariance signals. To obtain routing weights, we define 
+
+Ramp( z; a, b ) = clip 
+
+ z − ab − a , 0, 1
+
+
+
+, a < b, (9) and compute 
+
+wsen  
+
+> i
+
+= bi Ramp(∆ i; δlo sen , δ hi sen ),winv  
+
+> i
+
+= bi
+
+1 − Ramp(∆ i; δlo inv , δ hi inv ) . (10) The sensitivity weight increases monotonically with the reward drop. The invariance weight is highest for valid pairs where the intervention changes little or nothing. When δhi inv < δ lo sen , the gap between the two thresholds defines an explicit abstention band where neither branch receives weight. More generally, uncertain pairs receive reduced auxiliary weights rather than hard intervention la-bels. The four outcome transitions from Section 1 serve as a diagnostic lens only. Training operates on the empirical reward drop ∆i, the validity gate bi, and the resulting soft routing weights. 3.4 CLEAN -A NCHORED DUAL -D IRECTION ALIGNMENT 
+
+After routing, SIVA-RL reuses every response yi,g already sampled from the clean-image rollout. The same token sequence is teacher-forced and re-scored under the clean and intervention visual conditions using the trainable policy πθ :
+
+ℓvi,g,t = log πθ (yi,g,t | qi, x vi , y i,g,<t ), v ∈ { cl , ci }. (11) Because routing weights are defined at the input-pair level, all G responses for example i share the same wsen  
+
+> i
+
+and winv  
+
+> i
+
+.5We treat the clean-conditioned likelihood as a stop-gradient anchor. Let sg[ ·] denote the stop-gradient operator. The clean-anchored token discrepancy and its response-level average are 
+
+zi,g,t = ℓcf  
+
+> i,g,t
+
+− sg[ ℓcl 
+
+> i,g,t
+
+], di,g,t = exp( zi,g,t ) − zi,g,t − 1,Di,g = 1
+
+|T i,g |
+
+X
+
+> t∈T i,g
+
+di,g,t , (12) where Ti,g denotes the valid response-token set. The quantity di,g,t is a non-negative Monte Carlo surrogate for the token-level clean-to-intervention KL divergence. Only tokens drawn from the clean rollout are evaluated, so Di,g approximates the full-vocabulary KL rather than computing it exactly. SIVA-RL applies two margin-based objectives: 
+
+Lsen =
+
+P 
+
+> i,g
+
+wsen  
+
+> i
+
+[msen − Di,g ]+
+
+P 
+
+> i,g
+
+wsen  
+
+> i
+
++ ϵ ,
+
+Linv =
+
+P 
+
+> i,g
+
+winv  
+
+> i
+
+[Di,g − minv ]+
+
+P 
+
+> i,g
+
+winv  
+
+> i
+
++ ϵ ,
+
+(13) where [z]+ = max( z, 0) . For a reliable high-drop pair, Lsen enforces a minimum divergence of msen 
+
+between clean and intervention policies. For a valid low-drop pair, Linv constrains this discrepancy below minv . Thus, dual-direction refers to pushing apart versus pulling together under the same clean-anchored measure—not to a symmetric divergence objective. The complete objective is 
+
+LSIVA = Lbase + λsen Lsen + λinv Linv , (14) where λsen and λinv control the two auxiliary branches. Setting either to zero recovers the corre-sponding single-branch variant. All backbone-specific regularizers are absorbed into Lbase ; routing thresholds, margins, and loss coefficients are reported in Appendix A. 
+
+4 EXPERIMENTS 
+
+We evaluate SIVA-RL across multiple multimodal RL backbones and model scales. The main eval-uation covers nine benchmarks spanning mathematical, logical, counting, and multi-disciplinary multimodal reasoning. We also compare SIVA-RL with reported results from proprietary, general-purpose, and math-oriented multimodal VLMs. Appendix D provides additional medical-domain evaluations. The experiments answer four questions: (1) Does SIVA-RL consistently improve its corresponding RL backbone across model scales? (2) How competitive are the resulting models un-der broader multimodal reasoning comparisons? (3) How do intervention construction and outcome-conditioned alignment contribute to the final performance? (4) Does the same PatchSwap operator continue to induce heterogeneous routing behavior during training? 4.1 EXPERIMENTAL SETUP 
+
+Models and RL backbones. We experiment with Qwen2.5-VL-3B and Qwen2.5-VL-7B Bai et al. (2025) on both GRPO- and DAPO-style policy-optimization backbones Shao et al. (2024); Yu et al. (2026), training on ViRL39K Wang et al. (2026a). All backbone–scale configurations share the same training data and SIVA-RL hyperparameters. For each configuration, SIVA-RL augments the corresponding RL objective with localized intervention construction, outcome-conditioned routing, and dual-direction alignment (Section 3). Training applies a uniform-sensitivity warm-up followed by outcome-conditioned dual-direction alignment. Appendix A provides the optimization and validation settings. 
+
+Benchmarks and metrics. Following prior perception-aware multimodal RL evaluation protocols Wang et al. (2025b; 2026c), we organize the main benchmark suite into two groups. The general multimodal reasoning group includes Geometry3K (Geo3K) Lu et al. (2021), MathVista Lu et al. (2024), We-Math Qiao et al. (2025), MMK12 Meng et al. (2025), and MathVerse Zhang et al. (2024). The vision-dependent group includes LogicVista Xiao et al. (2024), the counting subset of Super-CLEVR Li et al. (2023), MMMU-Pro Yue et al. (2025), and the vision-only subset of MathVerse, denoted MathVerse-V Zhang et al. (2024). We report Avg@8 accuracy (%) for each benchmark. The general, vision-dependent, and overall scores are benchmark-level macro averages. 6Table 1: Main results on general multimodal reasoning, vision-dependent multimodal reason-ing, and overall performance with Qwen2.5-VL-3B and Qwen2.5-VL-7B as backbones. ∆%rel 
+
+denotes the relative overall improvement over the matched RL baseline at the same scale. 
+
+Method General Multimodal Reasoning Vision-Dependent Multimodal Reasoning Overall Geo3k MathVista We-Math MMK12 MathVerse AVG LogicVista Counting MMMU-Pro MathVerse V AVG AVG ∆%rel 
+
+GRPO-3B 28.72 59.34 58.90 57.24 55.25 51.89 38.14 55.81 25.66 52.26 42.97 47.92 –
+
+GRPO-3B + SIVA-RL 34.26 62.12 61.92 64.63 59.66 56.52 42.42 75.19 29.12 55.68 50.60 53.89 +12.46 GRPO-7B 40.18 65.48 68.12 72.26 66.51 62.51 45.62 73.94 35.17 61.71 54.11 58.78 –
+
+GRPO-7B + SIVA-RL 44.41 69.24 69.53 76.03 69.29 65.70 45.83 88.75 37.43 65.64 59.42 62.90 +7.01 DAPO-3B 31.20 60.89 59.95 66.83 56.25 55.02 40.69 74.25 28.42 53.09 49.11 52.40 –
+
+DAPO-3B + SIVA-RL 37.81 61.41 62.59 68.74 61.18 58.35 43.34 80.25 30.04 58.49 53.03 55.98 +6.83 DAPO-7B 35.92 61.91 58.51 75.93 55.64 57.58 37.05 90.05 29.02 51.04 51.79 55.01 –
+
+DAPO-7B + SIVA-RL 42.95 64.09 70.50 79.68 69.73 65.39 47.23 92.25 36.94 65.91 60.58 63.25 +14.98 
+
+Table 2: Comparison with reported results of proprietary, general-purpose, and math-oriented multimodal VLMs. Bold and underlined denote the best and second-best results; green subscripts indicate gains over the base model. 
+
+Method Mathematical Multimodal Reasoning Geo3k MathVista We-Math MathVerse MathVerse V MMK12 AVG Proprietary Models 
+
+GPT-4o OpenAI (2024a) – 64.7 62.8 50.2 53.8 55.8 57.5 GPT-4o-mini OpenAI (2024b) – 59.9 56.3 42.3 45.1 51.9 51.1 Gemini-2.0-Flash Google DeepMind (2024) – 70.4 47.4 47.8 48.7 65.2 55.9 
+
+General-Purpose Multimodal VLMs 
+
+Qwen2.5-VL-72B Bai et al. (2025) – 74.2 49.1 47.3 48.6 70.5 57.9 InternVL2.5-8B Chen et al. (2024) – 64.9 44.9 37.0 40.2 46.8 46.8 InternVL2.5-78B Chen et al. (2024) – 64.9 44.9 37.0 40.2 59.8 49.4 LLaVA-OneVision-7B Li et al. (2024) – 58.5 44.1 – – – 51.3 LLaVA-OneVision-72B Li et al. (2024) – 67.1 32.0 27.2 30.1 – 39.1 LLaVA-OneVision-1.5-8B An et al. (2025) – 69.6 61.5 – – – 65.6 LLaVA-Critic-R1-7B Wang et al. (2025a) 35.4 68.7 62.6 58.9 53.1 57.4 56.0 R1-OneVision-7B Yang et al. (2025) 30.6 64.9 55.2 61.7 44.3 43.3 50.0 
+
+Math-Specific Multimodal VLMs 
+
+MM-Eureka-7B Meng et al. (2025) 36.4 59.1 45.3 57.6 56.4 60.6 52.6 MM-Eureka-7B-CPGD Meng et al. (2025) 37.6 64.2 64.3 63.7 59.2 64.7 59.0 ADORA-7B Gui & Ren (2025) 41.2 61.1 53.0 45.2 41.8 49.8 48.7 R1-VL-7B Zhang et al. (2025a) 31.9 63.5 56.1 42.0 43.2 55.3 48.7 VLAA-Thinker-7B Chen et al. (2025) 24.2 67.4 65.9 47.9 52.0 63.2 53.4 VL-Rethinker-7B Wang et al. (2026a) 33.6 61.3 66.5 64.0 60.8 59.8 57.7 RACRO-7B-CRO-GRPO Gou et al. (2025) 41.4 61.7 68.9 65.7 61.7 70.5 61.7 ThinkLite-VL-7B Wang et al. (2026b) 34.4 68.9 63.5 49.5 46.0 56.2 53.1 
+
+RL-based Qwen2.5-VL Variants 
+
+PAPO-3B Wang et al. (2025b) 31.0 61.4 60.1 57.1 54.0 57.4 53.5 VPPO-3B Huang et al. (2025a) 35.8 63.6 61.4 61.3 58.1 65.3 57.6 DVRP-3B Gao et al. (2026) 34.5 65.5 60.3 57.7 54.5 61.2 55.6 PAPO-7B Wang et al. (2025b) 40.3 69.5 66.8 68.4 65.0 72.5 63.7 DVRP-7B Gao et al. (2026) 43.4 70.9 67.8 68.9 65.3 74.1 65.1 
+
+Our Models 
+
+Qwen2.5-VL-3B (base) 20.6 40.6 23.9 30.9 28.2 34.8 29.8 DAPO + SIVA-RL 37.8 (+17.2) 61.4 (+20.8) 62.6 (+38.7) 61.2 (+30.3) 58.5 (+30.3) 68.7 (+33.9) 58.4 (+28.6) 
+
+GRPO + SIVA-RL 34.3 (+13.7) 62.1 (+21.5) 61.9 (+38.0) 59.7 (+28.8) 55.7 (+27.5) 64.6 (+29.8) 56.4 (+26.6) 
+
+Qwen2.5-VL-7B (base) 33.8 55.9 41.8 45.6 36.9 43.7 43.0 DAPO + SIVA-RL 43.0 (+9.2) 64.1 (+8.2) 70.5 (+28.7) 69.7 (+24.1) 65.9 (+29.0) 79.7 (+36.0) 65.5 (+22.5) 
+
+GRPO + SIVA-RL 44.4 (+10.6) 69.2 (+13.3) 69.5 (+27.7) 69.3 (+23.7) 65.6 (+28.7) 76.0 (+32.3) 65.7 (+22.7) 
+
+External results. Results for external models are taken from their original papers or official reports, and unavailable entries are denoted by “–”. Benchmark coverage differs across models, so averages computed from available entries serve as references rather than a strict unified-protocol leaderboard. Appendix A provides the implementation and evaluation details. 4.2 MAIN RESULTS 
+
+Improvements over matched RL backbones. SIVA-RL consistently improves all four matched backbone–scale configurations in Table 1. Absolute overall gains range from 3.58 to 8.24 points, corresponding to relative improvements from 6.83% to 14 .98% over the matched RL baseline. The 7Table 3: Ablation of intervention construction and outcome-conditioned alignment on Qwen2.5-VL-3B with GRPO. PatchSwap w/o dist. sets dmin = 0 .00 ; PatchSwap denotes the default distance-constrained construction. ∆base denotes the relative change of Overall AVG over the GRPO-3B baseline.                                                                                           
+
+> Setting General Multimodal Reasoning Vision-Dependent Multimodal Reasoning Overall Geo3k MathVista We-Math MMK12 MathVerse LogicVista Counting MMMU-Pro MathVerse VAVG ∆base
+> GRPO-3B baseline 28.72 59.34 58.90 57.24 55.25 38.14 55.81 25.66 52.26 47.92 –Random Mask 30.95 61.38 60.09 57.39 57.14 38.67 62.56 27.11 53.95 49.92 +4.17% Random Mask + SIVA-RL 31.47 60.40 60.01 59.42 58.20 38.93 68.62 28.11 54.95 51.12 +6.68% PatchSwap w/o dist. 30.30 58.02 59.60 52.01 56.39 38.93 63.38 26.08 52.99 48.64 +1.50% PatchSwap w/o dist. + SIVA-RL 33.96 62.64 61.28 60.38 59.00 42.20 75.38 28.30 55.66 53.20 +11.02% PatchSwap 31.66 59.36 60.89 55.61 58.14 40.35 64.50 27.63 55.13 50.36 +5.09%
+> PatchSwap + SIVA-RL 34.26 62.12 61.92 64.63 59.66 42.42 75.19 29.12 55.68 53.89 +12.46%
+
+Table 4: Stepwise ablation of outcome-conditioned alignment on Qwen2.5-VL-3B with a GRPO backbone. Complete results are reported on all nine benchmarks. ∆step is the relative change of Overall AVG over the previous row, showing the incremental contribution of each step.                                                                                
+
+> Setting General Multimodal Reasoning Vision-Dependent Multimodal Reasoning Overall Geo3k MathVista We-Math MMK12 MathVerse LogicVista Counting MMMU-Pro MathVerse VAVG ∆step
+> GRPO-3B baseline 28.72 59.34 58.90 57.24 55.25 38.14 55.81 25.66 52.26 47.92 –+PatchSwap 31.66 59.36 60.89 55.61 58.14 40.35 64.50 27.63 55.13 50.36 +5.09% +Hard Sens. 31.32 60.74 61.49 61.64 57.82 42.00 65.06 27.67 54.82 51.40 +2.07% +Soft Sens. 32.30 63.90 59.15 62.58 56.46 39.49 71.56 27.64 53.31 51.82 +2.90% +Soft Sens. + Warmup (w/o Inv.) 34.48 61.36 62.68 61.88 58.37 40.75 71.81 27.45 55.00 52.64 +1.58% +SIVA-RL 34.26 62.12 61.92 64.63 59.66 42.42 75.19 29.12 55.68 53.89 +2.37%
+
+gains hold for both GRPO and DAPO, and for both 3B and 7B models, indicating that SIVA-RL is not tied to a specific optimizer or model scale. The improvements are larger on the vision-dependent subset in every matched comparison. For instance, GRPO-3B gains +7 .63 points on vision-dependent benchmarks compared with +4 .63 
+
+points on general benchmarks, and DAPO-7B shows a similar pattern with +8 .79 versus +7 .81 
+
+points. This suggests that SIVA-RL provides more than a generic RL enhancement: it is particularly effective when correct reasoning depends on visual evidence, which is consistent with the goal of outcome-conditioned sensitivity–invariance alignment. 
+
+Comparison with existing multimodal VLMs. The 7B SIVA-RL models achieve the strongest full-suite averages among the reported 7B systems and perform strongly on We-Math, MathVerse, MathVerse-V, and MMK12 (Table 2). The 3B variants remain competitive with several much larger models. Some external results cover only subsets of the six benchmarks, so their partial averages serve as context rather than a unified leaderboard. 4.3 ABLATION STUDIES 
+
+Intervention Construction. Table 3 disentangles the effects of intervention construction and outcome-conditioned alignment. Among the construction-only variants, distance-constrained Patch-Swap achieves the highest overall average ( 50 .36 ). This variant outperforms random masking (49 .92 ) and unconstrained PatchSwap ( 48 .64 ). A minimum source distance avoids overly local replacements and preserves more visual context than random masking. Outcome-conditioned routing improves all three operators, reaching 51 .12 , 53 .20 , and 53 .89 with random masking, unconstrained PatchSwap, and distance-constrained PatchSwap. The best result combines SIVA-RL with distance-constrained PatchSwap. This combination demonstrates the com-plementary roles of intervention construction and sample-wise outcome valuation. 
+
+Outcome-Conditioned Alignment. Table 4 evaluates the alignment components while holding distance-constrained PatchSwap fixed. Hard and soft sensitivity are alternative routing strategies. Relative to PatchSwap alone ( 50 .36 ), they increase the overall average to 51 .40 and 51 .82 . The gain from soft sensitivity shows that outcome changes should not be treated as a binary signal. The magnitude of the clean-to-intervention reward drop instead provides a smoother and more reliable supervision strength. The advantage is clearest when interventions induce partial evidence corrup-tion rather than complete answer flips. 80 10 20 30 40 50 60 70 80 90                   
+
+> Stage-local step
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> Routing rate
+> (a) Sensitivity routing rate
+> GRPO-3B
+> DAPO-3B
+> DAPO-7B
+> GRPO-7B
+> 010 20 30 40 50 60 70 80 90
+> Stage-local step
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> Routing rate
+> (b) Invariance routing rate
+> 010 20 30 40 50 60 70 80 90
+> Stage-local step
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> Reward drop
+> (c) Mean answer-reward drop
+
+Figure 3: Training-time outcome-conditioned routing diagnostics. We report the sensitivity rout-ing rate, invariance routing rate, and mean paired answer-reward drop for the four backbone–scale configurations. The uniform-sensitivity warm-up raises performance to 52 .64 . Early-stage optimization therefore benefits from a stabilized alignment signal before outcome-conditioned routing. Invariance align-ment for clean-anchored low-drop pairs yields the complete SIVA-RL objective and raises the over-all average to 53 .89 . This step adds a 1.85 -point gain on the vision-dependent subset. Low-drop interventions are therefore not uninformative; they provide useful clean-anchored consistency con-straints. These results support the complementary roles of stabilized sensitivity learning and conser-vative alignment for valid low-drop interventions. 0.00 0.25 0.35 0.75 0.90           
+
+> Minimum source distance dmin
+> 0.2 0.4 0.6 0.8 1.0
+> Candidate-cell ratio
+> 46
+> 48
+> 50
+> 52
+> 54
+> 56
+> Avg@8 accuracy (%)
+> Aggregate hyperparameter sensitivity
+> General AVG Vision-Dependent AVG Overall AVG
+> sweep dmin sweep Default
+
+Figure 4: Hyperparameter sensitivity. 
+
+Macro Avg@8 under varying η and dmin .
+
+Hyperparameter Sensitivity. Figure 4 studies the strength and spatial extent of the PatchSwap inter-vention. The default setting η = 0 .6 and dmin =0.25 yields the strongest aggregate performance across the reported averages. A moderate candidate-cell ratio balances preservation of the original vi-sual context against modification of sufficient local evidence. Overly weak or overly dense interven-tions reduce performance on part of the benchmark suite. A moderate source-distance constraint is like-wise preferable to either unconstrained replacement or overly restrictive source selection. The η = 1 .0 configuration is a stress test. When all cells are eligible candidates and no standard non-candidate source remains, the implementation in-vokes the fallback source-sampling rule described in Appendix A. The η = 1 .0 setting therefore probes the robustness of the construction procedure under an extreme intervention ratio, not the default source-selection regime. 4.4 MECHANISTIC ANALYSIS 
+
+We examine whether SIVA-RL maintains heterogeneous supervision after the 200-step warm-up. We track the paired answer-reward drop and the fractions of pairs receiving non-zero sensitivity or invariance weights. Figure 3 shows that both branches remain active across all four backbone–scale configurations. Sensitivity routing increases with the observed reward drop, while invariance routing stays substantial throughout training. The same PatchSwap operator therefore yields both answer-changing and low-drop pairs. Importantly, neither branch collapses to a single dominant regime: sensitivity remains non-negligible for visually fragile pairs, whereas invariance is consistently as-signed to a large fraction of low-drop pairs. The mean reward drop also stays in a moderate range rather than vanishing, suggesting that the model does not simply learn to ignore the intervention. This behavior supports the sample-wise dual-direction routing underlying SIVA-RL. 
+
+5 CONCLUSION 
+
+We introduced SIVA-RL, an outcome-conditioned visual alignment framework motivated by the heterogeneous sample-level effects of visual interventions. SIVA-RL separates intervention con-9struction from supervision assignment. It routes each clean–intervention pair toward sensitivity or clean-anchored invariance alignment according to the observed reward change. Across GRPO- and DAPO-based 3B and 7B models, SIVA-RL improves performance on nine multimodal reasoning benchmarks, with the strongest gains on vision-dependent tasks. Ablations and training-time diag-nostics validate the complementary roles of localized PatchSwap, soft outcome-conditioned routing, and dual-direction alignment. These results establish sample-wise outcome valuation as an effective alternative to operator-defined intervention supervision in multimodal RL. 
+
+REFERENCES 
+
+Aishwarya Agrawal, Dhruv Batra, Devi Parikh, and Aniruddha Kembhavi. Don’t just assume; look and answer: Overcoming priors for visual question answering. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 4971–4980, 2018. Xiang An, Yin Xie, Kaicheng Yang, Wenkang Zhang, Xiuwei Zhao, Zheng Cheng, Yirui Wang, Songcen Xu, Changrui Chen, Didi Zhu, et al. Llava-onevision-1.5: Fully open framework for democratized multimodal training. arXiv preprint arXiv:2509.23661 , 2025. Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-VL technical report. arXiv preprint arXiv:2502.13923 , 2025. Hardy Chen, Haoqin Tu, Fali Wang, Hui Liu, Xianfeng Tang, Xinya Du, Yuyin Zhou, and Cihang Xie. Sft or rl? an early investigation into training r1-like reasoning large vision-language models. 
+
+arXiv preprint arXiv:2504.11468 , 2025. Zhe Chen, Weiyun Wang, Yue Cao, Yangzhou Liu, Zhangwei Gao, Erfei Cui, Jinguo Zhu, Shen-glong Ye, Hao Tian, Zhaoyang Liu, et al. Expanding performance boundaries of open-source multimodal models with model, data, and test-time scaling. arXiv preprint arXiv:2412.05271 ,2024. Shujian Gao, Yuan Wang, Jiangtao Yan, Zuxuan Wu, and Yu-Gang Jiang. Thinking with deltas: Incentivizing reinforcement learning via differential visual reasoning policy. arXiv preprint arXiv:2601.06801 , 2026. Google DeepMind. Introducing Gemini 2.0: Our new AI model for the agen-tic era. Google DeepMind blog, December 2024. URL https://blog. google/innovation-and-ai/models-and-research/google-deepmind/ google-gemini-ai-update-december-2024/ .Yunhao Gou, Kai Chen, Zhili Liu, Lanqing Hong, Xin Jin, Zhenguo Li, James T Kwok, and Yu Zhang. Reasoning-aligned perception decoupling for scalable multi-modal reasoning. arXiv preprint arXiv:2506.04559 , 2025. Yash Goyal, Tejas Khot, Douglas Summers-Stay, Dhruv Batra, and Devi Parikh. Making the v in vqa matter: Elevating the role of image understanding in visual question answering. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 6904–6913, 2017. Lujun Gui and Qingnan Ren. Training reasoning model with dynamic advantage estimation on reinforcement learning, 2025. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. Siyuan Huang, Xiaoye Qu, Yafu Li, Yun Luo, Zefeng He, Daizong Liu, and Yu Cheng. Spotlight on token perception for multimodal reinforcement learning. arXiv preprint arXiv:2510.09285 ,2025a. 10 Wenxuan Huang, Bohan Jia, Zijie Zhai, Shaosheng Cao, Zheyu Ye, Fei Zhao, Zhe Xu, Xu Tang, Yao Hu, and Shaohui Lin. Vision-r1: Incentivizing reasoning capability in multimodal large language models. arXiv preprint arXiv:2503.06749 , 2025b. Bo Li, Yuanhan Zhang, Dong Guo, Renrui Zhang, Feng Li, Hao Zhang, Kaichen Zhang, Peiyuan Zhang, Yanwei Li, Ziwei Liu, et al. Llava-onevision: Easy visual task transfer. arXiv preprint arXiv:2408.03326 , 2024. Qiming Li, Tianlun Li, Xiaolong Cheng, Hangyu Li, Ruiyan Gong, Kangning Niu, Kaitao Jiang, and Mu Xu. Prpo: Perception-reinforced policy optimization via token-level dynamic advantage reshaping. arXiv preprint arXiv:2606.08708 , 2026. Yuting Li, Lai Wei, Kaipeng Zheng, Jingyuan Huang, Linghe Kong, Lichao Sun, and Weiran Huang. Vision matters: Simple visual perturbations can boost multimodal math reasoning. arXiv e-prints ,pp. arXiv–2506, 2025. Zhuowan Li, Xingrui Wang, Elias Stengel-Eskin, Adam Kortylewski, Wufei Ma, Benjamin Van Durme, and Alan L Yuille. Super-clevr: A virtual benchmark to diagnose domain robust-ness in visual reasoning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 14963–14973, 2023. Xiangyan Liu, Jinjie Ni, Zijian Wu, Chao Du, Longxu Dou, Haonan Wang, Tianyu Pang, and Michael Shieh. Noisyrollout: Reinforcing visual reasoning with data augmentation. Advances in Neural Information Processing Systems , 38:2923–2957, 2026. Pan Lu, Ran Gong, Shibiao Jiang, Liang Qiu, Siyuan Huang, Xiaodan Liang, and Song-Chun Zhu. Inter-gps: Interpretable geometry problem solving with formal language and symbolic reasoning. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , pp. 6774–6786, 2021. Pan Lu, Hritik Bansal, Tony Xia, Jiacheng Liu, Chunyuan Li, Hannaneh Hajishirzi, Hao Cheng, Kai-Wei Chang, Michel Galley, and Jianfeng Gao. Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts. In International Conference on Learning Representations ,volume 2024, pp. 23439–23554, 2024. Fanqing Meng, Lingxiao Du, Zongkai Liu, Zhixiang Zhou, Quanfeng Lu, Daocheng Fu, Tiancheng Han, Botian Shi, Wenhai Wang, Junjun He, et al. Mm-eureka: Exploring the frontiers of multi-modal reasoning with rule-based reinforcement learning. arXiv preprint arXiv:2503.07365 , 2025. Yulei Niu, Kaihua Tang, Hanwang Zhang, Zhiwu Lu, Xian-Sheng Hua, and Ji-Rong Wen. Counter-factual vqa: A cause-effect look at language bias. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 12700–12710, 2021. OpenAI. Hello GPT-4o. OpenAI product announcement, May 2024a. URL https://openai. com/index/hello-gpt-4o/ .OpenAI. GPT-4o mini: Advancing cost-efficient intelligence. OpenAI prod-uct announcement, July 2024b. URL https://openai.com/index/ gpt-4o-mini-advancing-cost-efficient-intelligence/ .Runqi Qiao, Qiuna Tan, Guanting Dong, MinhuiWu MinhuiWu, Chong Sun, Xiaoshuai Song, Ji-apeng Wang, Zhuoma Gongque, Shanglin Lei, Yifan Zhang, et al. We-math: Does your large multimodal model achieve human-like mathematical reasoning? In Proceedings of the 63rd An-nual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 20023–20070, 2025. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemati-cal reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Haozhe Wang, Chao Qu, Zuming Huang, Wei Chu, Fangzhen Lin, and Wenhu Chen. Vl-rethinker: Incentivizing self-reflection of vision-language models with reinforcement learning. Advances in Neural Information Processing Systems , 38:30865–30891, 2026a. 11 Xiyao Wang, Chunyuan Li, Jianwei Yang, Kai Zhang, Bo Liu, Tianyi Xiong, and Furong Huang. Llava-critic-r1: Your critic model is secretly a strong policy model. arXiv preprint arXiv:2509.00676 , 2025a. Xiyao Wang, Zhengyuan Yang, Chao Feng, Hongjin Lu, Linjie Li, Chung-Ching Lin, Kevin Lin, Furong Huang, and Lijuan Wang. Sota with less: Mcts-guided sample selection for data-efficient visual reasoning self-improvement. Advances in Neural Information Processing Systems , 38: 118818–118850, 2026b. Zengbin Wang, Feng Xiong, Liang Lin, Xuecai Hu, Yong Wang, Yanlin Wang, Man Zhang, and Xiangxiang Chu. Visually-guided policy optimization for multimodal reasoning. arXiv preprint arXiv:2604.09349 , 2026c. Zhenhailong Wang, Xuehang Guo, Sofia Stoica, Haiyang Xu, Hongru Wang, Hyeonjeong Ha, Xiusi Chen, Yangyi Chen, Ming Yan, Fei Huang, et al. Perception-aware policy optimization for mul-timodal reasoning. arXiv preprint arXiv:2507.06448 , 2025b. Jiaer Xia, Yuhang Zang, Peng Gao, Sharon Li, and Kaiyang Zhou. Visionary-r1: Mitigating short-cuts in visual reasoning with reinforcement learning. arXiv preprint arXiv:2505.14677 , 2025. Tong Xiao, Xin Xu, Zhenya Huang, Hongyu Gao, Quan Liu, Qi Liu, and Enhong Chen. Perception-r1: Advancing multimodal reasoning capabilities of mllms via visual perception reward. arXiv preprint arXiv:2506.07218 , 2025. Yijia Xiao, Edward Sun, Tianyu Liu, and Wei Wang. Logicvista: Multimodal llm logical reasoning benchmark in visual contexts. arXiv preprint arXiv:2407.04973 , 2024. Yi Yang, Xiaoxuan He, Hongkun Pan, Xiyan Jiang, Yan Deng, Xingtao Yang, Haoyu Lu, Dacheng Yin, Fengyun Rao, Minfeng Zhu, et al. R1-onevision: Advancing generalized multimodal rea-soning through cross-modal formalization. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pp. 2376–2385, 2025. Huanjin Yao, Qixiang Yin, Jingyi Zhang, Min Yang, Yibo Wang, Wenhao Wu, Fei Su, Li Shen, Minghui Qiu, Dacheng Tao, et al. R1-sharevl: Incentivizing reasoning capability of multimodal large language models via share-grpo. arXiv preprint arXiv:2505.16673 , 2025. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al. Dapo: An open-source llm reinforcement learning system at scale. Advances in Neural Information Processing Systems , 38:113222–113244, 2026. Xiang Yue, Tianyu Zheng, Yuansheng Ni, Yubo Wang, Kai Zhang, Shengbang Tong, Yuxuan Sun, Botao Yu, Ge Zhang, Huan Sun, et al. Mmmu-pro: A more robust multi-discipline multimodal understanding benchmark. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 15134–15186, 2025. Jingyi Zhang, Jiaxing Huang, Huanjin Yao, Shunyu Liu, Xikun Zhang, Shijian Lu, and Dacheng Tao. R1-vl: Learning to reason with multimodal large language models via step-wise group relative policy optimization. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 1859–1869, 2025a. Jusheng Zhang, Kaitong Cai, Yijia Fan, Jian Wang, and Keze Wang. Cf-vlm: Counterfactual vision-language fine-tuning. arXiv preprint arXiv:2506.17267 , 2025b. Renrui Zhang, Dongzhi Jiang, Yichi Zhang, Haokun Lin, Ziyu Guo, Pengshuo Qiu, Aojun Zhou, Pan Lu, Kai-Wei Chang, Yu Qiao, et al. Mathverse: Does your multi-modal llm truly see the diagrams in visual math problems? In European Conference on Computer Vision , pp. 169–186. Springer, 2024. 12 APPENDIX CONTENTS 
+
+A Implementation Details 14 
+
+A.1 Training Recipe . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 A.2 Algorithm Pseudocode of SIVA-RL . . . . . . . . . . . . . . . . . . . . . . . . . 15 A.3 Backbone Instantiations and Final Objectives . . . . . . . . . . . . . . . . . . . . 15 
+
+B Full Hyperparameter Sensitivity Results 17 
+
+B.1 Sweep Setup and Full Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17 B.2 Findings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17 B.2.1 Both knobs have an interior optimum . . . . . . . . . . . . . . . . . . . . 18 B.2.2 Construction matters most where vision matters most . . . . . . . . . . . . 18 B.2.3 Gains come from routing, not a finely tuned operator . . . . . . . . . . . . 18 B.3 Discussion and Practical Recommendations . . . . . . . . . . . . . . . . . . . . . 18 
+
+C Training-Dynamics Diagnostics 19 
+
+C.1 Reward–Accuracy Dynamics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 C.2 Routing-Branch Separation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 
+
+D Additional Medical-Domain Evaluation 21 
+
+D.1 Setup and Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 D.2 Grounding Caveat . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 
+
+E Qualitative Case Studies 22 
+
+E.1 Visual Recovery . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 E.2 Misleading Black-Image Correctness . . . . . . . . . . . . . . . . . . . . . . . . . 24 E.3 PatchSwap-Only Instability (Chart) . . . . . . . . . . . . . . . . . . . . . . . . . . 25 E.4 Local Geometric Stability . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 E.5 Residual Failure: Dense Multi-Instance Counting . . . . . . . . . . . . . . . . . . 27 13 Table 5: Core training and rollout hyperparameters for SIVA-RL. 
+
+Hyperparameter Value General Training 
+
+Backbone models Qwen2.5-VL-3B and Qwen2.5-VL-7B Optimizer / learning rate / weight decay AdamW-bf16 / 10 −6 / 10 −2
+
+Maximum prompt / response length 4096 / 2048 
+
+Gradient checkpointing enabled Reward signal answer-accuracy scalar with format and parse validity checks 
+
+Rollout and Evaluation 
+
+Rollouts per prompt G = 5 for training rollouts Rollout temperature / top-p 1.0 / 0.99 
+
+Intervention valuation decoding sampled audit decoding with M = 4 rollouts per view; temper-ature 0.7, top-p 0.95 
+
+Validation decoding multiplicity GRPO: avg@8; DAPO: avg@8 
+
+Two-Stage Schedule 
+
+Math stage 1 ViRL39K train / MMK12 val; 4 GPUs; 200 max steps; Patch-Swap warm-up without SIVA routing Math stage 2 ViRL39K train / MMK12 val; 4 GPUs; 100 max steps; dual-direction SIVA alignment Medical stage 1 VQA-RAD SLAKE PathVQA train split/ validation split; 4
+
+GPUs; 200 max steps; PatchSwap warm-up without SIVA rout-ing Medical stage 2 VQA-RAD SLAKE PathVQA train split / validation split; 4
+
+GPUs; 100 max steps; dual-direction SIVA alignment 
+
+Batching 
+
+Math global / rollout / validation batch 
+
+128 / 256 in stage 1 and 512 in stage 2 / 512 
+
+Medical global / rollout / validation batch 
+
+64 / 384 / 256 
+
+Micro batch 4 for update and 8 for experience computation 
+
+Backbone-Specific RL Configuration 
+
+GRPO-backbone advantage estimator grpo ; reference-KL branch enabled; online filtering off; default actor clipping DAPO-backbone advantage estimator dapo ; reference-KL branch disabled; on-line filtering on with accuracy filter [0 .01 , 0.99] ; clip low 0.2,clip high 0.28 
+
+KL penalty type / coefficient low-variance KL / 10 −2
+
+A IMPLEMENTATION DETAILS 
+
+A.1 TRAINING RECIPE 
+
+The main text focuses on the SIVA-RL mechanism; this appendix reports the executable training recipe. Unless otherwise stated, all runs use Qwen2.5-VL backbones, AdamW-bf16, gradient check-pointing, same-image PatchSwap intervention views, and the reward function’s answer-accuracy component as rans . The answer reward is a scalar returned by the evaluator, not a strictly binary label. Training uses a two-stage schedule. Stage 1 is a 200-step PatchSwap perception-separation warm-up that treats all constructed intervention pairs as sensitivity-style perturbations without out-come routing or invariance alignment. Stage 2 runs 100 additional steps with SIVA-RL’s paired outcome valuation and dual-direction routing enabled. 14 Table 6: PatchSwap and outcome-routing hyperparameters for SIVA-RL. 
+
+Hyperparameter Value PatchSwap Intervention Views 
+
+Visual cell size 28 pixels, corresponding to a 14 -pixel vision patch with spatial merge size 2
+
+Patch source same-image non-candidate cells satisfying dmin ; if this source set is empty, or no source satisfies the distance constraint, we fall back to same-image cells excluding the target cell Math candidate-cell ratio / replace-ment probability 
+
+0.6 / 0.75 
+
+Medical candidate-cell ratio / re-placement probability 
+
+0.4 / 0.75 
+
+Outcome Valuation and Alignment 
+
+Clean correctness threshold τc 0.75 
+
+Sensitivity reward-drop interval [δsen low , δ sen high ] = [0 .05 , 0.5] 
+
+Invariance reward-drop interval [δinv low , δ inv high ] = [0 .0, 0.05] 
+
+Sensitivity coefficient / margin λsen = 0 .005 , msen = 0 .05 
+
+Invariance coefficient / margin λinv = 0 .001 , minv = 0 .01 
+
+A.2 ALGORITHM PSEUDOCODE OF SIVA-RL Algorithm 1 summarizes one SIVA-RL training step. SIVA-RL differs from a standard grouped-rollout RL update in one way: it separates the clean rollout used for policy optimization from the paired audit used for intervention outcome valuation. The audit averages answer rewards over M
+
+sampled rollouts and determines soft routing weights. The auxiliary loss then re-scores the already sampled clean responses under the clean and PatchSwap visual conditions. A.3 BACKBONE INSTANTIATIONS AND FINAL OBJECTIVES 
+
+Let ρi,g,t (θ) denote the clean-rollout importance ratio defined in the main text, and let 
+
+¯ρi,g,t (θ) = exp 
+
+
+
+clip  log ρi,g,t (θ), log(1 − ϵlow ), log(1 + ϵhigh )
+
+(15) be the clipped ratio used by the shared actor-loss routine in our code. With response-level advantage 
+
+Ai,g broadcast to all tokens of response yi,g , the per-token clipped actor loss can be written as 
+
+ℓPG  
+
+> i,g,t
+
+=
+
+(max( −Ai,g ρi,g,t , −Ai,g ¯ρi,g,t ) , Ai,g ≥ 0,
+
+min(max( −Ai,g ρi,g,t , −Ai,g ¯ρi,g,t ) , −Ai,g ϵdual ) , Ai,g < 0. (16) The clean-image policy-gradient term is then 
+
+LPG (θ) = Avg i,g,t 
+
+ℓPG 
+
+> i,g,t
+
+ . (17) Here ϵlow , ϵhigh , and ϵdual denote the clipping hyperparameters used by the actor-loss routine. In our implementation, the GRPO-backbone and DAPO-backbone share this same clipped actor-loss routine and differ primarily in the advantage estimator and associated training configuration. We therefore instantiate 
+
+LGbase (θ) = LPG (θ; Agrpo ) + βGref LKL -ref (θ) + βGprcp Lprcp (θ) + βGori Lori ent (θ) + βGaug Laug ent (θ), (18) and 
+
+LDbase (θ) = LPG (θ; Adapo ) + βDref LKL -ref (θ) + βDprcp Lprcp (θ) + βDori Lori ent (θ) + βDaug Laug ent (θ), (19) where Lprcp denotes an inherited perception-separation branch computed on the intervention-view condition, and disabled terms are omitted by setting their coefficients to zero according to the con-figuration. Stage-1 warm-up runs set use vac papo=false , so the full SIVA valuation loss and 15 Algorithm 1 SIVA-RL training step 
+
+Require: Current policy πθ , old policy πθold , audit policy π¯θ , batch B = {(qi, x i, a ⋆i )}Bi=1 
+
+Require: Group size G, audit sample count M , PatchSwap parameters (η, ρ, d min ), clean threshold τc,reward-drop intervals, margins (msen , m inv ), coefficients (λsen , λ inv )
+
+Phase 1: Clean grouped rollout and base RL statistics 
+
+1: for each prompt (qi, x i) in B do 
+
+2: Sample clean responses yi,g ∼ πθold (· | qi, x i) for g = 1 , . . . , G 
+
+3: Compute outcome rewards Ri,g and grouped response advantages Ai,g 
+
+4: end for Phase 2: Localized intervention construction 
+
+5: for each image xi do 
+
+6: Sample candidate cells Ci and effective targets Ti on the visual-cell grid 7: For each target cell, first sample a same-image non-candidate source cell with distance at least dmin ; if no valid source exists, fall back to all same-image cells except the target 8: Construct PatchSwap intervention view ˜xi
+
+9: end for Phase 3: Outcome-conditioned valuation 
+
+10: for each pair (qi, x i, ˜xi) do 
+
+11: Set xcl  
+
+> i
+
+= xi and xci  
+
+> i
+
+= ˜ xi
+
+12: for v ∈ { cl , ci } do 
+
+13: Sample ˆyvi,m ∼ π¯θ (· | qi, x vi ) for m = 1 , . . . , M without gradient updates 14: Compute Rvi = 1
+
+> M
+
+PMm=1 rans (ˆ yvi,m , a ⋆i )
+
+15: Compute parse-validity indicator Φvi
+
+16: end for 
+
+17: Compute validity gate bi = I[Rcl  
+
+> i
+
+≥ τc]Φ cl  
+
+> i
+
+Φci  
+
+> i
+
+and drop ∆i = Rcl  
+
+> i
+
+− Rci 
+
+> i
+
+18: Convert ∆i into soft routing weights wsen  
+
+> i
+
+and winv 
+
+> i
+
+19: end for Phase 4: Intervention-view re-scoring and alignment 
+
+20: for each sampled response yi,g do 
+
+21: Re-score the same token sequence under xcl  
+
+> i
+
+and xci 
+
+> i
+
+22: Compute sampled divergence surrogate Di,g 
+
+23: Accumulate wsen  
+
+> i
+
+[msen − Di,g ]+ and winv  
+
+> i
+
+[Di,g − minv ]+
+
+24: end for Phase 5: Policy update 
+
+25: Update θ using Lbase + λsen Lsen + λinv Linv and enabled backbone regularizers 
+
+outcome-dependent routing stay inactive. The warm-up instead uses PatchSwap intervention views as sensitivity-style perturbations through the inherited perception-separation branch. With SIVA enabled in stage 2, the final objectives become 
+
+LGSIVA (θ) = LGbase (θ) + λsen Lsen (θ) + λinv Linv (θ), (20) and 
+
+LDSIVA (θ) = LDbase (θ) + λsen Lsen (θ) + λinv Linv (θ). (21) The SIVA-specific alignment term is therefore shared across the two backbone families. Both reuse the same clean rollout responses, both compute the same outcome-conditioned sensitivity and low-drop consistency losses, and both differ only through the backbone configuration summarized in Tables 5 and 6. Throughout the appendix, we keep the same notation as in the main text: λsen 
+
+and λinv denote the sensitivity and invariance coefficients, msen and minv denote the corresponding margins, and Lprcp refers only to the inherited PAPO perception branch rather than to a SIVA-specific term. 16 B FULL HYPERPARAMETER SENSITIVITY RESULTS 
+
+B.1 SWEEP SETUP AND FULL RESULTS 
+
+Table 7 reports the complete per-benchmark sweeps over the candidate-cell ratio η and the minimum source distance dmin , the two knobs of the localized PatchSwap construction. We read these sweeps as a test of where and why the construction matters, not as a search for the best cell in the table. All sweeps use the GRPO-3B backbone and the two-stage SIVA-RL schedule of Appendix A. We isolate each construction hyperparameter with a one-factor-at-a-time protocol. When we vary the candidate-cell ratio η, the minimum source distance is fixed at its default dmin = 0 .25 . When we vary dmin , the candidate-cell ratio is fixed at η = 0 .6. All remaining settings match the main configuration: the replacement probability ρ, the grid resolution, the routing thresholds, the margins, and the loss coefficients are held at the values in Tables 5 and 6. Each cell of Table 7 is therefore a full training run scored under the same Avg@8 protocol as the main results. The numbers are directly comparable to the GRPO-3B baseline of 47 .92 .We sweep η and dmin because they control the two independent degrees of freedom of a localized PatchSwap view: how much of the image is eligible for replacement, and how far the replacement content is drawn from. The candidate-cell ratio η sets the spatial extent of the intervention. A small 
+
+η perturbs a few cells, while a large η exposes most of the grid to replacement. The minimum source distance dmin sets the semantic distance of the pasted content. A small dmin keeps the swap local and visually plausible, while a large dmin imports distant, unrelated structure. The replacement probability ρ and the grid resolution interact with both knobs, but they change the strength of the intervention rather than its spatial or semantic character. We therefore hold ρ and the grid fixed and report their setting only through the main configuration. Table 7: Full per-benchmark hyperparameter ablations on Qwen2.5-VL-3B. We vary one hy-perparameter at a time while keeping the others fixed. All results are Avg@8 accuracies (%).                                                                                                                                      
+
+> Benchmark Candidate-cell-ratio sweep ηMinimum source-distance sweep dmin
+> 0.2 0.4 0.6 0.8 1.0 0.00 0.25 0.35 0.75 0.90 General Reasoning
+> Geo3k 32.57 33.13 34.26 32.30 33.69 33.96 34.26 34.01 32.82 33.88 MathVista 62.90 62.42 62.12 63.52 61.29 62.64 62.12 63.05 61.12 62.71 We-Math 63.00 62.28 61.92 60.94 62.69 61.28 61.92 62.05 60.83 61.82 MMK12 60.56 59.77 64.63 60.67 59.97 60.38 64.63 61.52 60.52 59.55 MathVerse 58.47 58.90 59.66 57.63 60.09 59.00 59.66 59.68 59.74 59.58
+> General AVG 55.50 55.30 56.52 55.01 55.55 55.45 56.52 56.06 55.01 55.51
+> Vision-Dependent Reasoning
+> LogicVista 41.08 42.67 42.42 40.80 41.58 42.20 42.42 41.95 42.03 40.97 Counting 64.25 67.12 75.19 68.19 75.12 75.38 75.19 67.69 71.12 68.94 MMMU-Pro 27.75 28.27 29.12 28.59 28.06 28.30 29.12 28.27 27.64 28.25 MathVerse V55.44 55.86 55.68 54.66 56.61 55.66 55.68 57.10 56.16 56.14
+> Vision AVG 47.13 48.48 50.60 48.06 50.34 50.38 50.60 48.75 49.24 48.57
+> Overall AVG 51.78 52.27 53.89 51.92 53.23 53.20 53.89 52.81 52.44 52.43
+
+Read column by column, Table 7 shows that no single benchmark drives the aggregate trends. The overall average stays within a 2.1-point band across the entire η sweep and within a 1.5-point band across the dmin sweep. The per-benchmark optima are also dispersed: the best η for Geo3k, Math-Vista, and MathVerse differ from one another, and the same holds for dmin . The aggregate optimum at η = 0 .6, dmin = 0 .25 is therefore a robust compromise across benchmarks, not a setting tuned to any one of them. B.2 FINDINGS 
+
+Three trends stand out. 17 B.2.1 BOTH KNOBS HAVE AN INTERIOR OPTIMUM 
+
+Neither hyperparameter improves monotonically. The candidate-cell ratio η peaks at the default 
+
+η = 0 .6 (53 .89 overall), drops to 51 .92 at η = 0 .8, and then partially recovers to 53 .23 at η = 1 .0.The minimum source distance dmin shows a cleaner interior peak: accuracy is highest at dmin = 0 .25 
+
+(53 .89 ) and falls steadily as sources are forced farther away ( 52 .81 , 52 .44 , and 52 .43 at 0.35 , 0.75 ,and 0.90 ). Both profiles follow from the construction rationale in Section 3.2: a useful interven-tion must be hard enough to remove local visual evidence yet mild enough to keep the image in-distribution. A too-small dmin copies a near-duplicate neighbor and barely perturbs the evidence. A too-large dmin pastes an unrelated distant patch and drifts toward arbitrary corruption. The interme-diate setting balances these two failure modes. This balanced regime is exactly what SIVA-RL is designed to construct. B.2.2 CONSTRUCTION MATTERS MOST WHERE VISION MATTERS MOST 
+
+Sensitivity to both knobs concentrates in the vision-dependent group. Across the η sweep, the vision-dependent average moves by 3.5 points ( 47 .13 to 50 .60 ), whereas the general average moves by only 
+
+1.5 points ( 55 .01 to 56 .52 ). The counting subset is the extreme case and swings by roughly 11 points (64 .25 to 75 .19 ) as η varies. General reasoning can lean on textual structure and language priors, so it stays largely insensitive to how the visual intervention is built. Vision-dependent reasoning has no such fallback, so the construction directly governs the available learning signal. This contrast corroborates the central premise of the paper. The visual intervention becomes consequential when the task genuinely depends on visual evidence. The pattern mirrors our main results, where SIVA-RL gains are largest on the vision-dependent subset. B.2.3 GAINS COME FROM ROUTING , NOT A FINELY TUNED OPERATOR 
+
+Every configuration in Table 7 stays well above the GRPO-3B baseline of 47 .92 . Even the weakest setting ( 51 .78 at η = 0 .2) improves the overall average by 3.9 points. Two configurations are espe-cially telling. The η = 1 .0 stress test, which falls back to the relaxed source rule of Appendix A, still reaches 53 .23 . Removing the distance constraint entirely ( dmin = 0 .00 ) still reaches 53 .20 , close to the tuned 53 .89 . SIVA-RL therefore does not depend on a precisely calibrated perturbation operator. The construction hyperparameters mainly control the supply of informative clean–intervention pairs. The outcome-conditioned routing then decides how each pair is used. B.3 DISCUSSION AND PRACTICAL RECOMMENDATIONS 
+
+For practitioners, the sweep yields a simple recipe. Start from η = 0 .6 and dmin = 0 .25 , the aggregate optimum, and treat both as coarse knobs rather than quantities that require fine search. The flat interior of both profiles means that any η ∈ [0 .4, 0.6] and any dmin ∈ [0 .25 , 0.35] lands within roughly one point of the best overall average. A run that must minimize tuning cost can fix both knobs at their defaults and still capture most of the gain. This tolerance matters in multimodal RL, where a single configuration is expensive and a dense grid search over construction hyperparameters is rarely affordable. The sweep also clarifies what the construction hyperparameters do and do not control. They set the supply and difficulty of clean–intervention pairs, but they do not decide how those pairs are used. That decision belongs to the outcome-conditioned router of Section 3.3. The router reads the observed reward drop of each pair and assigns it to the sensitivity branch, the invariance branch, or neither. The router absorbs much of the variation that a fixed operator would otherwise propagate into training. This absorption is why even the unconstrained and stress-test settings stay close to the tuned optimum. Construction quality raises the ceiling of the available signal. Routing determines how much of that ceiling the policy reaches. 18 C TRAINING -D YNAMICS DIAGNOSTICS 
+
+We provide additional training-dynamics diagnostics for the math-domain runs. These plots are not used for model selection. They make the two-stage behavior of SIVA-RL more transparent. 50 100 150 200 250 300  
+
+> Training Step
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Reward Accuracy
+> Stage 1 Stage 2
+> Math Reward Curves: Stage 1 and Stage 2 on One Axis
+> GRPO-3B
+> DAPO-3B
+> GRPO-7B
+> DAPO-7B
+
+Figure 5: Math-domain reward-accuracy dynamics across the two-stage schedule. The dashed vertical line marks the transition from the 200-step PatchSwap/PAPO-style warm-up to the 100-step SIVA-RL stage, with curves shown for GRPO-3B, DAPO-3B, GRPO-7B, and DAPO-7B. C.1 REWARD –A CCURACY DYNAMICS 
+
+The routing stage reignites a plateauing warm-up. Figure 5 preserves the expected scale and backbone ordering throughout training: DAPO-7B leads, followed by GRPO-7B, DAPO-3B, and GRPO-3B. During the 200-step warm-up, reward accuracy rises quickly and then flattens as the uniform PatchSwap perturbation saturates. At the transition to Stage 2 (dashed line), every curve resumes a clear upward slope, and the larger models show a visible step up at the switch. The con-tinued improvement during the SIVA-RL stage indicates that outcome-conditioned routing supplies a learning signal that the uniform warm-up has already exhausted. This dynamic matches the step-wise ablation in Section 4.3: adding routing and invariance alignment on top of the warm-up raises the overall average from 52 .64 to 53 .89 .The backbone ordering is stable from the first steps to the last. The two 7B models start near 
+
+0.44 reward accuracy, while the two 3B models start near 0.32 . This 0.10 –0.13 scale gap persists through both stages and never closes. Within each scale, the DAPO backbone tracks above its GRPO counterpart for most of training, so the four curves stay ordered as DAPO-7B, GRPO-7B, DAPO-3B, and GRPO-3B without crossing. The warm-up does more than flatten for the strongest model. DAPO-7B peaks near 0.77 around step 165 and then drifts down to roughly 0.74 by the Stage-1/Stage-2 boundary, a mild regression under prolonged uniform perturbation. The switch to outcome-conditioned routing reverses this drift. DAPO-7B and GRPO-7B both jump discretely at the dashed line, and GRPO-7B then climbs from about 0.69 to 0.74 across Stage 2. The 3B models gain more gradually, while DAPO-7B holds near its post-jump level. Routing therefore helps most where the warm-up had stalled or regressed, not uniformly across configurations. C.2 ROUTING -B RANCH SEPARATION 
+
+Both routing branches stay active and separated. Figure 6 tracks the mean clean-to-intervention divergence D for the two routes during Stage 2. The sensitivity branch holds D at a positive, bounded level for all configurations, consistent with the sensitivity margin msen that pushes high-19 0 10 20 30 40 50 60 70 80 90          
+
+> Stage-local step
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Mean divergence D
+> (a) Sensitivity-routed mean divergence
+> GRPO-3B
+> DAPO-3B
+> DAPO-7B
+> GRPO-7B
+> 010 20 30 40 50 60 70 80 90
+> Stage-local step
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Mean divergence D
+> (b) Invariance-routed mean divergence
+
+Figure 6: intervention divergence dynamics during the math-domain SIVA-RL stage. The two panels report mean divergence D for sensitivity-routed and invariance-routed pairs, respectively. Each panel reports how the re-scored clean responses behave under PatchSwap interventions across backbone and model scales. drop pairs apart. The invariance branch starts higher in the first few steps and is then driven down toward the small invariance margin minv , where it stays for the rest of training. The two routes never collapse into a single regime, and sensitivity divergence remains above invariance divergence throughout. This separation is the training-time signature of the dual-direction objective. The sep-aration confirms the mechanistic claim in Section 4.4: the same PatchSwap operator keeps feeding both answer-changing and low-drop pairs rather than degenerating into a uniform perturbation loss. The two panels share a structure but sit at different scales; note the different y-axis ranges. In the sensitivity panel, the smoothed curves stay in a roughly 0.05 –0.15 band for all four configurations. They fluctuate around the sensitivity margin rather than collapsing below it. In the invariance panel, the transient at the start is the clearest signal. DAPO-3B enters Stage 2 near D = 0 .23 and is pulled down within about fifteen steps to a 0.03 –0.05 band, where the other configurations also settle. This early descent is the invariance objective acting on low-drop pairs and tightening clean-to-intervention consistency toward minv .After the transient, the two routes stay separated by a clear gap. Sensitivity divergence holds around 
+
+0.05 –0.15 while invariance divergence stays around 0.02 –0.06 , so the sensitivity band sits roughly two to three times higher throughout Stage 2. Late in training the sensitivity curves drift upward, with GRPO-7B and DAPO-3B reaching about 0.2 near the final steps. This upward drift shows that PatchSwap keeps producing strongly answer-changing pairs rather than running out of them. The faint unsmoothed traces spike as high as 0.4–0.5 in both panels. These bursts are individual high-divergence batches that the soft routing weights absorb without destabilizing the smoothed trend. 20 D ADDITIONAL MEDICAL -D OMAIN EVALUATION 
+
+D.1 SETUP AND RESULTS 
+
+These results provide an additional cross-domain evaluation of the full training recipe. The com-parison is made against the pretrained base model rather than a matched medical RL baseline, so the gains should not be attributed solely to the SIVA-RL auxiliary objective. For Qwen2.5-VL-3B (base) and Qwen2.5-VL-7B (base), the VQA-RAD, SLAKE, and PathVQA entries are our own Avg@8 evaluations of the official instruct checkpoints. Table 8: Full medical multimodal QA comparison across RL backbones and Qwen2.5-VL model scales. Results are reported on the medical validation suite with Avg@8 evaluation. 
+
+Method In-Domain Datasets Out-of-Domain Datasets Overall VQA-RAD SLAKE PathVQA MedXpertQA AVG Proprietary Models 
+
+Gemini-2.0-flash-lite 59.4 73.1 64.9 – –GPT-4.1-Nano 61.8 73.1 70.6 – –GPT-4o 63.9 71.6 75.9 – –
+
+General-Purpose Multimodal VLMs 
+
+Qwen-VL-Chat 47.0 56.0 55.1 – –Yi-VL-34B 53.0 58.9 47.3 – –LLaVA-v1.6-7B 52.6 57.9 47.9 – –LLaVA-v1.6-13B 55.8 58.9 51.9 – –LLaVA-v1.6-34B 58.6 67.3 59.1 – –LLaVA-v1.5-LLaMA3-8B 54.2 59.4 54.1 – –
+
+Medical Multimodal VLMs 
+
+Med-Flamingo 45.4 43.5 54.7 22.1 41.4 RadFM 50.6 34.6 38.7 23.4 36.8 LLaVA-Med-7B 51.4 48.6 56.8 20.8 44.4 LLaVA Med-LLaMA3-8B 60.2 61.2 54.5 – –PubMedVision-8B 63.8 74.5 59.9 – –HuatuoGPT-Vision-34B 68.1 76.9 63.5 22.1 57.7 MedVLThinker-7B 63.7 67.8 65.2 20.9 54.4 CAPO-7B 78.5 79.1 68.9 – –
+
+Medical Agentic Systems 
+
+MedAgents 65.6 67.9 63.2 – –MDAgents 66.8 68.2 65.4 – –AFlow 67.3 68.9 66.4 – –MMedAgent-RL-7B 71.5 76.2 72.3 – –
+
+Our Models 
+
+Qwen2.5-VL-3B (base) 54.6 57.9 49.2 20.7 45.6 DAPO + SIVA-RL 62.7 (+8.1) 68.1 (+10.2) 66.5 (+17.3) 23.0 (+2.3) 55.1 (+9.5) 
+
+GRPO + SIVA-RL 63.0 (+8.4) 68.8 (+10.9) 65.2 (+16.0) 24.5 (+3.8) 55.4 (+9.8) 
+
+Qwen2.5-VL-7B (base) 62.1 62.6 54.9 20.1 49.9 GRPO + SIVA-RL 67.1 (+5.0) 79.9 (+17.3) 80.7 (+25.8) 22.3 (+2.2) 62.5 (+12.6) 
+
+DAPO + SIVA-RL 67.4 (+5.3) 72.7 (+10.1) 77.4 (+22.5) 22.3 (+2.2) 60.0 (+10.1) 
+
+D.2 GROUNDING CAVEAT 
+
+Medical QA accuracy alone is not evidence of improved visual grounding. Medical benchmarks often combine image findings with clinical text, pathology, laboratory information, and diagnosis labels, so answer gains may reflect improved use of non-visual cues. A stricter evidence-level evalu-ation would separate visually observable findings from non-visual evidence and check whether gains 21 persist under text-only, blank-image, and leak-aware controls. We therefore treat the medical results above as cross-domain performance evidence, not a standalone proof of medical visual grounding. 
+
+E QUALITATIVE CASE STUDIES 
+
+We present qualitative cases to clarify what the quantitative gains in the main paper mean at the sample level. The cases are organized around diagnostic roles rather than visual appeal. They fall into five categories: 1. Visual recovery 2. Misleading black-image correctness 3. PatchSwap-only instability 4. Local geometric stability 5. Residual failure This structure matters because SIVA-RL does not assume that every visual intervention induces the same training signal. SIVA-RL instead interprets a perturbation through the paired outcome change: large drops provide sensitivity supervision, low-drop pairs provide invariance supervision, and persistent failures reveal limitations outside the current training signal. On the diagnostic benchmark probes, random mask, PatchSwap, and black-image interventions all produce mixtures of outcome-drop and outcome-stable behavior. The perturbation operator alone therefore cannot determine whether a paired example should be separated or kept consistent. The examples below illustrate this heterogeneity and show one failure mode that SIVA-RL does not eliminate. They clarify the limitations of SIVA-RL and identify directions for future work. 22 E.1 VISUAL RECOVERY 
+
+Case 1 — Visual Recovery 
+
+> clean image
+
+Task 
+
+Benchmark. MMK12, data 343. Gold. D. 
+
+Question. After running the visual program, what is the output value? 
+
+GRPO Baseline — wrong visual reading 
+
+Prediction. B on the clean image. 
+
+Saved response excerpt. The model reads the update as “ A = A + i2 · i” and then accumulates an incorrect sequence. 
+
+SIVA-RL — recovers the rendered loop 
+
+Prediction. D on the clean image. 
+
+Saved response excerpt. The model fol-lows the loop from i = 2 to i = 5 with “A = A + i · i”, producing the correct op-tion. 
+
+Interpretation 
+
+Outcome pattern. 
+
+Clean Black PatchSwap GRPO B C ASIVA-RL D C DThis case illustrates visual recovery rather than memorized answer correction. The black-image probe remains incorrect for SIVA-RL, so the correct clean prediction cannot be attributed to a text-only prior. The PatchSwap result stays correct because the local replacement does not destroy the program structure needed to read the loop. In SIVA-RL terms, this behavior is exactly the goal: preserve the response under low-impact local perturbations while still relying on the visible program when the image is available. 
+
+Figure 7: Visual recovery case. SIVA-RL corrects a baseline OCR/program-reading error by using the rendered loop, while the black-image response remains incorrect. 23 E.2 MISLEADING BLACK -I MAGE CORRECTNESS 
+
+Case 2 — Misleading Black-Image Correctness  
+
+> clean image black-image probe
+
+Task 
+
+Benchmark. 
+
+AI4Math MathVerse, AI4Math MathVerse 1328. 
+
+Gold. D. 
+
+Question. Use parallelogram 
+
+M N P R to find m∠RM N .Choices: A:33, B:38, C:71, D:109. 
+
+GRPO Baseline — black-correct but clean-failed 
+
+Predictions. Clean: no parse; black: D. 
+
+Saved response excerpt. On the clean dia-gram, it applies generic parallelogram facts but does not produce a valid final answer; on the black image, it guesses the correct option from text alone. 
+
+SIVA-RL — correct only with visible ge-ometry 
+
+Predictions. Clean: D; black: B. 
+
+Saved response excerpt. The clean re-sponse uses adjacent/supplementary angle constraints in the visible parallelogram and selects D. 
+
+Interpretation 
+
+This case shows why black-image correctness is not reliable evidence of invariance. The baseline becomes correct only after the diagram is removed. This behavior is more consistent with answer-prior guessing than with robust visual reasoning. Treating such a pair as positive invariance would reward visually unsupported behavior. SIVA-RL avoids this failure mode by conditioning the auxiliary direction on paired outcomes and validity checks rather than on the intervention identity alone. 
+
+Figure 8: Misleading black-image correctness. The baseline’s correct black-image answer is not evidence of robust visual reasoning; it masks a clean-image failure. 24 E.3 PATCH SWAP -O NLY INSTABILITY (C HART )
+
+Case 3 — PatchSwap Diagnostic (Chart)  
+
+> clean image PatchSwap intervention
+
+Task 
+
+Benchmark. 
+
+AI4Math MathVista, AI4Math MathVista 324. 
+
+Gold. no. 
+
+Question. Does Web Purple have the maximum area under the curve? 
+
+GRPO Baseline — PatchSwap-only fail-ure 
+
+Predictions. Clean: no; PatchSwap: yes. 
+
+Saved response excerpt. The clean re-sponse compares Chartreuse and Web Pur-ple correctly, but the PatchSwap response concludes that Web Purple is higher. 
+
+SIVA-RL — stable under local replace-ment 
+
+Predictions. Clean: no; PatchSwap: no. 
+
+Saved response excerpt. The response continues to compare the curve values and area under the localized intervention, keep-ing the correct answer. 
+
+Interpretation 
+
+Both models are correct on the clean image and on the black probe. Only PatchSwap exposes the baseline instability. This result supports the need for distance-constrained local interventions rather than only full-image removal. The baseline appears reliable under clean and black-image predictions, but the localized interven-tion changes the answer. This case is exactly where SIVA-RL’s PatchSwap construction is useful: it probes whether the model’s decision is stable to irrelevant local changes while preserving much of the original visual context. The SIVA-RL response remains correct under PatchSwap. This stability suggests that the low-drop consistency signal can suppress brittle local visual associations without forcing invariance to destructive full-image removal. 
+
+Figure 9: PatchSwap diagnostic case. A localized within-image replacement reveals a baseline stability gap that the black-image probe does not reveal. 25 E.4 LOCAL GEOMETRIC STABILITY 
+
+Case 4 — PatchSwap Diagnostic (Geometry)  
+
+> clean image PatchSwap intervention
+
+Task 
+
+Benchmark. 
+
+AI4Math MathVerse, AI4Math MathVerse 1331. 
+
+Gold. C. 
+
+Question. Find m∠B. Choices: A:29, B:58, C:61, D:122. 
+
+GRPO Baseline — local geometry break 
+
+Predictions. Clean: C; PatchSwap: B. 
+
+Saved response excerpt. The clean re-sponse uses the inscribed-angle relation, but the PatchSwap response treats the fig-ure as a generic triangle and switches to B. 
+
+SIVA-RL — consistent final decision 
+
+Predictions. Clean: C; PatchSwap: C. 
+
+Saved response excerpt. The model keeps the correct final option under the local-ized intervention instead of changing to the triangle-based answer. 
+
+Interpretation 
+
+This additional geometry case mirrors the chart case in a symbolic diagram. Clean accuracy alone does not reveal whether the model has learned a stable geometric relation or merely followed a fragile visual cue. PatchSwap exposes the baseline’s dependence on local diagram fragments: the answer changes from the correct arc/angle relation to a generic triangle answer. SIVA-RL keeps the decision fixed. This stability is the intended invariance behavior when the perturbation does not change the task-relevant relation. 
+
+Figure 10: Additional PatchSwap case on geometry. The localized intervention uncovers a base-line error that is absent on the clean image. 26 E.5 RESIDUAL FAILURE : D ENSE MULTI -I NSTANCE COUNTING 
+
+Case 5 — Residual Failure: Dense Multi-Instance Counting   
+
+> clean image PatchSwap intervention black-image probe
+
+Task 
+
+Benchmark. 
+
+BUAADreamer clevr count, sample 62. Gold. 8. 
+
+Question. How many different items are there in the image? 
+
+SIVA-RL Clean — near miss 
+
+Prediction. 9 on the clean image. 
+
+Saved response excerpt. The model enu-merates vehicle-like objects but double-counts or over-separates visually similar instances, producing one extra item. 
+
+Perturbed Views — unstable counts 
+
+Predictions. PatchSwap: 15; black: 0; random mask: 20. 
+
+Saved response excerpt. Under Patch-Swap and random mask, the model falls back to a generic item-counting strategy and over-counts fragmented or repeated vi-sual evidence. 
+
+Interpretation 
+
+This failure case marks a boundary of the current method. SIVA-RL improves whether the policy reacts to visual evidence, but it does not guarantee perfect object individuation in dense scenes with overlapping, visually similar instances. The clean prediction is already wrong, and all three per-turbed views remain wrong, so the example provides little reliable positive supervision for either sensitivity or invariance. Such persistent-error cases motivate stronger object-level counting super-vision or region-level credit assignment beyond the current answer-level paired-outcome signal. 
+
+Figure 11: Residual failure on dense multi-instance counting. Even after SIVA-RL, the model can over-count similar objects on the clean image and become more unstable under local or global visual perturbations. 27
