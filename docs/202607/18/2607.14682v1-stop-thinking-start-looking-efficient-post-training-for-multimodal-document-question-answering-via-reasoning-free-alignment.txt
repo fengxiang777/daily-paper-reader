@@ -1,0 +1,559 @@
+Title: Stop Thinking, Start Looking: Efficient Post-Training for Multimodal Document Question Answering via Reasoning-Free Alignment
+
+URL Source: https://arxiv.org/pdf/2607.14682v1
+
+Published Time: Fri, 17 Jul 2026 01:08:39 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Stop Thinking, Start Looking: Efficient Post-Training for Multimodal Document Question Answering via Reasoning-Free Alignment 
+
+Harikrishnan P M 1 Goutham Vignesh 1 Ganesh Parab 1 Saisubramaniam Gopalakrishnan 1 Vishal Vaddina 2
+
+Varun V 1 Rohit Agrawal 1
+
+## Abstract 
+
+Efficient multimodal document question answer-ing with explicit visual grounding, locating the precise document region that supports each an-swer remains an open challenge. Current ap-proaches bifurcate into Supervised Fine-Tuning (SFT), which requires large annotated datasets and reaches optimization plateaus, and reasoning-centric Reinforcement Learning (RL), which de-pends on verbose intermediate traces that inflate inference token cost without clear benefit. We introduce Perception-RFT , a training framework that applies Group Relative Policy Optimization (GRPO) to multimodal document QA, bypassing intermediate reasoning tokens to directly align vi-sual features with structured grounding outputs. To rigorously evaluate the necessity of reason-ing, we construct a reasoning variant under iden-tical reward settings. We find that reasoning-enabled models suppress their reasoning traces during training, converging to direct perception-based policies at the 4B parameter scale, reducing per-query inference token length by more than 60%, while reasoning-enabled RL underperforms perception-only training. Through a fine-grained analysis of Qwen3-VL-4B optimization dynam-ics, we confirm that SFT saturation and cold-start RL instability established in text-domain post-training extend to multimodal, and identify a pre-viously uncharacterized Grounding Divergence :a selective trade-off between semantic robustness and geometric precision on two out of distribu-tion (OOD) benchmarks (4,828 samples) under joint RL optimization. We further show that an early SFT →RL transition achieves comparable precision with 65% less training data. 
+
+> 1
+
+Phi Labs, Quantiphi, India 2Phi Labs, Quantiphi, Canada. Correspondence to: Harikrishnan P M <harikrish-nan.m@quantiphi.com >.
+
+Accepted to the ICML 2026 Workshop on Efficient Multimodal Question Answering (EMM-QA) , Seoul, South Korea. Copyright 2026 by the author(s). 
+
+## 1. Introduction 
+
+The multimodal question answering over documents re-quires more than just generating the correct text, it requires localizing the precise visual region that supports each an-swer (Xiao et al., 2025; Pantazopoulos & ¨Ozyi ˘git, 2025). This capability, which we term Document Visual Ground-ing (DVG) , requires models to jointly perform semantic extraction and precise geometric localization from a single document image. Efficient solutions to DVG are practically critical: in high-stakes settings such as legal auditing and financial analysis, stakeholders need answers grounded in their source regions, not just text output (Sun et al., 2024). However, despite strong textual understanding, MLLMs remain fragile at fine-grained spatial grounding under dis-tribution shifts (Fu et al., 2024; Li et al., 2025a), and exist-ing training strategies impose significant compute overhead without fully resolving this fragility. To address this challenge, existing approaches have largely bifurcated into two paradigms. Supervised Fine-Tuning (SFT), exemplified by large-scale benchmarks such as DOGR (Zhou et al., 2025), relies on scaling annotated datasets to enforce generalization. In contrast, reasoning-centric Reinforcement Learning (RL) approaches (Guo et al., 2025), such as DocThinker (Yu et al., 2025b), posit that ac-curate grounding requires explicit intermediate reasoning traces to bridge semantic understanding and spatial local-ization. However, the optimization dynamics underlying these paradigms is not yet sufficiently understood. Does scaling SFT truly improve robustness, or does it intro-duce hidden trade-offs? Are verbose reasoning traces necessary for grounding, or do they impose unnecessary computational overhead for inherently perceptual tasks? 
+
+We extend recent findings that challenge the view that “SFT memorizes while RL generalizes” (Chu et al., 2025; Jin et al., 2025) to the multimodal QA domain. We hypothe-size that DVG is a perception-dominant task, where direct alignment between visual features and spatial outputs is more effective than reasoning-mediated generation a view supported by recent studies showing that explicit reasoning introduces latency and instability for visual primitives (Yu et al., 2025a; Li et al., 2025b). 1arXiv:2607.14682v1 [cs.AI] 16 Jul 2026 Stop Thinking, Start Looking 
+
+To investigate this hypothesis, we introduce Perception-RFT , a training framework that applies Group Relative Policy Optimization (GRPO) (Shao et al., 2024) to the DVG domain, optimizing semantic and geometric correctness without requiring intermediate reasoning tokens. Crucially, rather than assuming that reasoning is unnecessary, we ex-plicitly enable reasoning within the same RL framework to study its role during optimization. This allows us to perform a controlled comparison between reasoning-enabled and reasoning-free training under identical reward formulations. Our analysis reveals a consistent behavioral pattern: when reasoning is enabled, models initially generate detailed rea-soning traces, but progressively compress and ultimately eliminate them as training proceeds. At convergence, the learned policy produces minimal or no reasoning tokens while maintaining or improving DVG performance. Further-more, reasoning-enabled RL does not improve performance and can underperform direct perception-based training, in-dicating that optimal grounding policies rely on direct per-ception rather than explicit reasoning. Beyond this central finding, we provide a fine-grained analy-sis of SFT and RL dynamics for DVG. We confirm that, the two dynamics established in text-domain post-training (Guo et al., 2025) extend to multimodal grounding: supervised optimization saturates while RL continues to improve task-aligned behavior, and SFT initialization is critical for stable geometric learning under RL. We further identify a previ-ously uncharacterized phenomenon, the Grounding Diver-gence : a selective trade-off in which localization improves while semantic robustness degrades on out-of-distribution documents under joint RL optimization. Finally, we show that an early transition from SFT to RL achieves comparable precision with significantly less supervised data. 
+
+## 2. Related Work 
+
+2.1. From OCR Pipelines to Native Perception 
+
+DVG has relied on pipelined systems (Huang et al., 2022; Cui et al., 2025) that fuse OCR tokens with spatial embed-dings, a paradigm modern LLMs perpetuate via external OCR inputs (OpenAI, 2023; Team et al., 2024; Vishal Ka-suba et al., 2025). Empirical studies reveal a critical modal-ity gap: without OCR, state-of-the-art models achieve near-zero IoU, and even Oracle OCR fails to resolve it. Models hallucinate boxes from text order rather than visual layout (Li et al., 2025a; Fu et al., 2024). Multi-stage workarounds such as DLaVA (Mohammadshirazi et al., 2024) boost ac-curacy but introduce significant pipeline complexity. Our work eliminates these external dependencies by aligning the MLLM’s internal features directly to coordinate regression. 
+
+2.2. Visual Grounding and Benchmarks 
+
+To enable native capability, recent works have integrated bounding box coordinates into the MLLM vocabulary. Gen-eralist models like Shikra (Chen et al., 2023), Kosmos (Lv et al., 2023) and Ferret (You et al., 2023) demonstrated that MLLMs could output coordinates for natural images. In the document domain, DOGR (Zhou et al., 2025) established a comprehensive benchmark, proposing a data engine to generate millions of supervised samples. However, these paradigms predominantly rely on SFT. We hypothesize that SFT optimization encounters a saturation point, where fur-ther training yields diminishing returns on geometric preci-sion while potentially degrading semantic flexibility on out of distribution (OOD) documents. 
+
+2.3. The Role of Reasoning in Vision Optimization 
+
+Recent work adopts reasoning-intensive RL strategies for visual tasks (Liu et al., 2025; Huang et al., 2025; Shen et al., 2025). Reasoning-Centric models such as DocThinker (Yu et al., 2025b) and Reason-RFT (Tan et al., 2025) demon-strate that explicit CoT reasoning traces benefit tasks with strong reasoning structure such as grounding via semantic decomposition and abstract visual problems like counting and geometric transformation. However, Perception-Centric studies (Yu et al., 2025a; Li et al., 2025b) show that such traces introduce latency and instability for visual primitives. Crucially, whether reasoning is retained or eliminated under RL in perception-dominant tasks and whether it helps or hurts remains underexplored. We investigate this directly by enabling reasoning within the same RL framework and analyzing its role during training. 
+
+## 3. Methodology 
+
+3.1. Task Formulation: Direct Perception 
+
+We formulate the task of Document Visual Grounding (DVG) as a generative Visual QA task with explicit ground-ing. Given a single document image d ∈ RH×W ×3 and a text query q, the policy πθ must generate a structured JSON output Y containing the textual answer A and its corresponding bounding box B:
+
+Y = {"answer" : A, "bbox 2d" : [ x1, y 1, x 2, y 2]}
+
+(1) where coordinates are normalized to the range [0 , 1000] 
+
+following the native Qwen3-VL architecture. 
+
+The “Direct Perception” Constraint: A critical deviation of our approach is the explicit suppression of reasoning. Unlike recent paradigms that rely on verbose intermediate traces (e.g. <think> tokens) to guide generation, we en-force a Direct Perception constraint via system prompting: 
+
+“Do NOT include explanations, reasoning, or intermediate 
+
+2Stop Thinking, Start Looking Model (Qwen3-VL) 
+
+> {“Answer”: ”684.93”, “Bbox_2d”: [x1, y1, x2, y2] }
+> System Prompt:
+> No Reasoning
+
+Direct Perception Path 
+
+Output Group (Sampling) 
+
+O1
+
+O2
+
+OG
+
+> {“Answer”: ”684.93”, “Bbox_2d”: [x1, y1, x2, y2] }
+> ...
+> {“Answer”: ”684.03”, “Bbox_2d”: [x1, y1, x2, y2] }
+
+GRPO Update (π8) 
+
+> Advantage Estimation
+> r - μ __________
+> σ
+
+The Direct Perception Flow The Gated Reward Mechanism 
+
+> Query: “What is the total gross amount"
+
+Reasoning-Free Rewards 
+
+> Format Constraint ( Binary Switch )
+
+0 1 ✅or ❌
+
+> Is Valid JSON?
+
+Aggregated Rewards 
+
+> Semantic Precision ( Quadratic Curve )Text Matching ( ANLS )
+> The Localization Gate ( The “Cliff-Edge” )Gated Spatial Reward ( Threshold = 0.6 )
+
+Model (Qwen3-VL) 
+
+> {“Answer”: ”684.93”, “Bbox_2d”: [x1, y1, x2, y2] }
+
+Direct Perception Path 
+
+Output Group (Sampling) 
+
+O1
+
+O2
+
+OG
+
+> {“Answer”: ”684.93”, “Bbox_2d”: [x1, y1, x2, y2] }
+> ...
+> {“Answer”: ”684.03”, “Bbox_2d”: [x1, y1, x2, y2] }
+
+GRPO Update (π*) 
+
+> Advantage Estimation
+> r - μ __________
+> σ
+
+The Direct Perception Flow 
+
+> Query: “What is the total gross amount"
+
+Aggregated Rewards 
+
+The Gated Reward Mechanism 
+
+Reasoning-Free Rewards 
+
+> Format Constraint ( Binary Switch )
+
+0 1 ✅or ❌
+
+> Is Valid JSON?
+> Semantic Precision ( Quadratic Curve )Text Matching ( ANLS )
+> The Localization Gate ( The “Cliff-Edge” )Gated Spatial Reward ( Threshold = 0.6 )
+> System Prompt:
+> No Reasoning
+
+Figure 1. The Perception-RFT Framework. Left: System prompting enforces the Direct Perception constraint. Right: The Gated Dense Reward mechanism stabilizes GRPO by defining separate shaping and success regions. (Best viewed zoomed in.) 
+
+steps; Output ONLY the final valid JSON result.” This forces the optimization process to bypass verbose thought chains and align visual features directly to coordinate regression outputs. 
+
+3.2. Optimization Framework: Perception-RFT 
+
+We optimize the policy πθ using Group Relative Policy Op-timization (GRPO) (Shao et al., 2024; Guo et al., 2025). As illustrated in Figure 1, while GRPO is conventionally uti-lized to elicit latent reasoning, we apply it to enforce Direct Perception Alignment in the DVG domain, a configuration we refer to as Perception-RFT . By explicitly bypassing the reasoning module, we force the policy to map visual features directly to coordinate output. For each query q, we sample a group of outputs G =
+
+{o1, . . . , o G} and compute the advantage Ai based on the group’s normalized reward distribution. The objective max-imizes the advantage of valid outputs while constraining policy drift: 
+
+J (θ) = Eq∼D
+
+"
+
+1
+
+G
+
+GX
+
+i=1 
+
+ πθ (oi|q)
+
+πold (oi|q) Ai − βD KL (πθ ∥πref )
+
+#
+
+(2) By bypassing “intermediate reasoning representations”, we shift the optimization landscape from maximizing logical consistency to maximizing joint semantic and geometric precision . This constraint is specific to the perception-only variant; a reasoning-enabled variant is introduced separately for controlled comparison. 
+
+3.3. Gated Dense Perception Reward 
+
+To enable precise visual grounding without the guidance of intermediate reasoning steps, we introduce a Gated Dense Reward mechanism. We hypothesize that standard dense rewards (e.g., IoU-based objectives employed in (Liu et al., 2025; Shen et al., 2025)) may inadvertently encourage mod-els to predict “safe”, oversized bounding boxes to maximize overlap coverage during early training stages. To proactively counteract this potential degeneracy, our function imposes a strict success gate that bifurcates the optimization surface. The total reward R is an equally weighted sum of three distinct objectives: 
+
+R = Rformat + Rsem + Rloc (3) 
+
+1. Format Consistency ( Rformat ): To ensure strict schema adherence for downstream parsing, we apply a binary re-ward. Rformat = 1 if and only if the output is valid JSON containing strictly formatted "answer" and "bbox 2d" 
+
+keys. If parsing fails, this component is 0. 
+
+2. Semantic Precision ( Rsem ): We utilize the Average Normalized Levenshtein Similarity (ANLS) (Biten et al., 3Stop Thinking, Start Looking 
+
+2019) to evaluate textual accuracy while remaining robust to minor OCR character variations. To penalize near-misses more aggressively than standard F1, we apply a quadratic scaling: 
+
+Rsem =
+
+(
+
+1.0 if ANLS = 1 .0 (Exact Match) ANLS (pred , gt )2 otherwise (4) 
+
+3. Gated Localization Reward ( Rloc ): This component prevents the model from converging to suboptimal overlaps. We define a Gated IoU function: 
+
+Rloc =
+
+
+
+1.0 if IoU ≥ τ (Success State) 
+
+λ · IoU if 0 < IoU < τ (Shaping State) 
+
+0.0 otherwise (5) 
+
+Mechanism: 
+
+• The Shaping State: When alignment is poor ( IoU <τ ), the reward is significantly scaled down. This pro-vides just enough gradient signal to guide the model towards the target, but prevents it from converging on suboptimal partial overlaps. The value λ = 0 .3 is set empirically. • The Success State: We set the success threshold 
+
+τ = 0 .6 empirically, positioning it slightly above the standard evaluation metric ( IoU ≥ 0.5). This encour-ages the policy to learn a geometric safety margin, ensuring that predictions remain robust even under mi-nor perturbations. Crossing this threshold triggers a discrete jump to maximum reward (1.0), creating a “cliff-edge” optimization surface. We emphasize that semantic and geometric objectives are jointly optimized under a unified reward without explicit bias toward either component. 
+
+3.4. Reasoning-Enabled Variant 
+
+To isolate the role of explicit reasoning, we construct a vari-ant where the model may generate intermediate <think> 
+
+traces before the structured JSON output. The reward function and optimization objective remain identical to Perception-RFT, with no supervision on the reasoning traces, enabling a controlled comparison under identical conditions. 
+
+3.5. Dataset Construction 
+
+To fuel this optimization, we prioritized high-fidelity super-vision over scale. We curated a comprehensive DVG corpus by manually aggregating and adapting established key infor-mation extraction (KIE) benchmarks specifically, DocILE 
+
+( ˇSimsa et al., 2023) and FormNLU (Ding et al., 2023). We explicitly selected these curated sources over recent au-tomated benchmarks such as BoundingDocs (Giovannini et al., 2025) to avoid the repeated token ambiguity inherent in OCR mapped datasets. Since our source datasets provide static Key-Value pairs, we implemented a task adaptation protocol to transform them into dynamic document visual QA samples. To ensure robustness, we employed a three-stage transformation strategy. First, we applied Semantic Augmentation (Tito et al., 2024), utilizing LLMs to gener-ate diverse natural language aliases for canonical keys (e.g., mapping “date issue” to “Invoice Date”) to enforce concep-tual understanding over simple string matching. Second, we enforced Phrasing Generalization by using disjoint prompt templates for training and evaluation. Finally, we mitigated spatial overfitting through Dynamic Sub-Sampling, select-ing a random subset (max 20%) of available keys per epoch to ensure the model treats every iteration as a fresh visual search task rather than a layout memorization exercise. 
+
+## 4. Experimental Setup 
+
+4.1. Datasets 
+
+Our experiments utilize a carefully stratified dataset to rig-orously test generalization across layout regimes. • Training Set (General Financial Documents): We aggregated DocILE and FormNLU to create a compre-hensive training corpus of 23,696 unique QA samples. Far from being limited to simple invoices, this set cov-ers a broad taxonomy of financial documents, includ-ing Tax Invoices, Purchase Orders, Receipts, Utility Bills, Credit/Debit Notes, and Tax Form 604s. This ensures the model learns a generalized representation of financial business document semantics and tabular structures. • In-Distribution (ID) Evaluation Set: A strictly held-out subset of 6,194 samples from the same financial business domain as the training set, used to measure in-distribution precision. • OOD Evaluation Sets: To assess generalization un-der distribution shift, we evaluate on two indepen-dent benchmarks. (1) DOGR-Bench (Zhou et al., 2025) (800 samples) comprises Crello artistic posters, ChartVQA bar graphs, and dense scientific PDFs vi-sually and structurally distant from our financial train-ing documents. (2) MMDocBench (Zhu et al., 2026) (4,028 samples; Key Information Extraction and Doc-ument QA subtasks) spans financial reports, receipts, scientific papers, and infographics. Together these benchmarks provide 4,828 OOD samples across di-verse visual topologies. 4Stop Thinking, Start Looking 
+
+4.2. Models and Baselines 
+
+We utilize Qwen3-VL-4B (Bai et al., 2025) as our founda-tion due to its strong native resolution handling. To demon-strate the accessibility of our approach, all experiments were conducted on a single NVIDIA A100 (80GB) using Un-sloth (Team, 2024). We employed LoRA (Hu et al., 2021) (r = 16 , α = 16 ) for memory-efficient adaptation across all stages. We evaluate the following configurations: 1. SFT (Supervised Fine-Tuning): Qwen3-VL-4B fine-tuned for 3 full epochs (1113 steps) on the 23k training set using the AdamW 8-bit optimizer. This represents the converged limit of standard supervised learning. 2. RFTs (SFT → RL): Perception-RFT applied via con-tinued training on the SFT model using a limited bud-get of 6k samples (< 10% of the SFT compute), with GRPO group size G = 8 .3. RFTb (Cold-Start RL): Perception-RFT applied di-rectly to the base model, without any supervised ini-tialization. 4. Reasoning-RFTb: A reasoning-enabled variant of RFTb, where the model is allowed to generate interme-diate reasoning traces (e.g., <think> tokens) before producing the final structured output. The reward func-tion and optimization setup remain identical to RFTb. 5. Gemini 3.0 Flash: Evaluated zero-shot on the same image-question input as our models, serving as a fron-tier generalist reference point. We exclude DocThinker (Yu et al., 2025b) from direct com-parison as no code, model weights, or compatible evaluation artifacts are publicly available beyond the paper itself. 
+
+4.3. Evaluation Metrics 
+
+We report three strict metrics without text normalization: • F1 EM : Measures the Exact Match token-level F1 of the answer string. • F1 loc : Defines visual grounding success strictly as IoU ≥ 0.5.• F1 all (Strict Joint Success): A compound metric re-quiring both perfect text extraction ( F1 EM = 1 .0) and successful localization ( IoU ≥ 0.5), simulating enter-prise auditing scenarios where partially correct answers are unacceptable. All reported metrics are averaged over 3 independent runs evaluated on held-out sets of 6,194 (ID) and 4,828 OOD samples (DOGR-Bench: 800; MMDocBench: 4,028). 
+
+## 5. Results and Analysis 
+
+5.1. Conceptual Framework 
+
+Our analysis centers on three dynamics: (1) SFT optimiza-tion saturates beyond a point where cross-entropy training fails to improve grounding precision; (2) SFT warm-start is required for stable geometric learning under RL, confirming cold-start instability established in prior work (Guo et al., 2025); and (3) the Grounding Divergence , a selective trade-off under distribution shift where localization gains are not matched by semantic robustness. 
+
+5.2. Main Results: Generalization and Alignment 
+
+We evaluate reinforcement learning for DVG across three settings: ID (Finance), and two OOD benchmarks, DOGR-Bench and MMDocBench. Table 1 compares the base model, supervised fine-tuning (SFT), and reinforcement fine-tuning under two regimes: RFTs and RFTb . External models are included only as reference points. 
+
+Beyond supervised saturation. On ID data, SFT estab-lishes a strong baseline ( F 1all = 0 .668 ), but RFTs improves performance further to 0.718 . Gains are observed in both ex-traction ( 0.756 → 0.773 ) and localization ( 0.769 → 0.821 ), indicating that reinforcement learning refines both seman-tic and geometric alignment beyond what likelihood-based training achieves. This confirms that supervised learning saturates while policy optimization continues to improve task-aligned behavior, consistent with known limitations of likelihood-based training. 
+
+Importance of supervised initialization. Comparing 
+
+RFTs and RFTb highlights the role of supervised initializa-tion. While RFTb improves over the base model, it remains substantially below RFTs on both ID and OOD. This indi-cates that SFT provides a stable initialization that enables more effective downstream optimization under RL, confirm-ing the cold-start instability finding of DeepSeek-R1 (Guo et al., 2025) in the multimodal document QA domain. 
+
+Generalization under distribution shift. Across both OOD benchmarks, RFTs achieves the highest joint ground-ing ( F 1all : DOGR 0.685 , MMDocBench 0.569 ) and the strongest localization gains over the base model (DOGR: 
+
+0.416 → 0.759 ; MMDocBench: 0.496 → 0.712 ). Se-mantic extraction, however, tells a more nuanced story. On DOGR-Bench, all trained variants fall below the zero-shot base ( 0.722 vs. 0.743 ) a clear Grounding Diver-gence. On MMDocBench, RFTb (0.702 ) exceeds the base (0.636 ), while SFT ( 0.616 ) and RFTs ( 0.620 ) fall below it. This suggests that cold-start RL, by avoiding SFT over-specialization, better preserves semantic flexibility and that the severity of the Grounding Divergence varies with vi-5Stop Thinking, Start Looking   
+
+> Table 1. Main results on ID and OOD evaluation sets. OOD results span two independent benchmarks: DOGR-Bench (800 samples) and MMDocBench (4,028 samples). RFTs achieves the strongest ID joint grounding. Gemini 3.0 Flash is evaluated zero-shot under identical input conditions as our models. DOGR SFT is evaluated on DOGR-Bench only.
+
+ID (Finance) OOD Model Setup F1 EM F1 loc F1 all DOGR-Bench MMDocBench 
+
+F1 EM F1 loc F1 all F1 EM F1 loc F1 all 
+
+Internal Baselines 
+
+Qwen3-VL-4B Zero-Shot 0.558 0.324 0.262 0.743 0.416 0.359 0.636 0.496 0.389 Qwen3-VL-4B SFT 0.756 0.769 0.668 0.722 0.736 0.666 0.616 0.685 0.555 
+
+Qwen3-VL-4B RFTs 0.773 0.821 0.718 0.722 0.759 0.685 0.620 0.712 0.569 Qwen3-VL-4B RFTb 0.601 0.496 0.411 0.732 0.667 0.600 0.702 0.673 0.552 
+
+External References 
+
+Gemini 3.0 Flash Zero-Shot 0.658 0.657 0.581 0.801 0.765 0.715 0.766 0.869 0.701 
+
+DOGR (Zhou et al., 2025) SFT – – – 0.832 – 0.730 – – –
+
+sual domain distance. This pattern is structurally distinct from catastrophic forgetting, where all capabilities degrade uniformly: here, geometric precision transfers robustly to unseen domains while semantic extraction does not, indicat-ing that RL optimization induces asymmetric generalization across task dimensions. In both cases, the net effect on joint grounding is positive, confirming that localization gains outweigh semantic regression as an operationally critical metric. 
+
+Scale versus alignment. Comparing against Gemini 3.0 Flash under identical zero-shot conditions reveals a clear specialist-vs-generalist trade-off. On ID, our task-aligned RFTs significantly outperforms Gemini 3.0 Flash ( F 1all :
+
+0.718 vs 0.581 ), demonstrating that RL-based alignment to the target task yields superior in-domain precision over a much larger frontier model. On DOGR-Bench, the gap nar-rows ( 0.685 vs 0.715 ), and on the broader MMDocBench, Gemini’s generalist training gives it an advantage ( 0.569 vs 
+
+0.701 ) expected given our model was trained exclusively on financial documents while Gemini was exposed to di-verse visual domains at scale. This confirms that task alignment is more critical than scale within the training domain, while generalist models retain a natural advan-tage on broader cross-domain evaluation. Crucially, the DOGR baseline comparison requires careful interpretation: the DOGR model was trained on a large-scale corpus ex-plicitly sourced from the same visual domains as DOGR-Bench (artistic posters, charts, scientific PDFs), making the benchmark effectively in-distribution for that model. Our model, trained exclusively on financial documents, treats DOGR-Bench as a genuine cross-domain test. Our 0.685 
+
+F 1all therefore reflects true out-of-distribution generaliza-tion rather than held-out performance within the training distribution. 
+
+5.3. Optimization Dynamics: Stability and Efficiency 
+
+To analyze how reinforcement learning interacts with su-pervised initialization, we study training trajectories under normalized steps on ID (Figure 2) and DOGR-Bench OOD sets (Figure 3). In addition to SFT and RFTs , we introduce 
+
+RFTs-Early , where RL is applied after only 300 SFT steps. 
+
+Early transition improves efficiency. On ID data, RFTs-Early achieves performance comparable to SFT despite using significantly less supervised data. In particular, it sur-passes SFT in localization while matching overall ground-ing performance ( F 1all ). This indicates that transitioning to RL early is not merely a cost-saving strategy but can lead to more efficient learning of geometric alignment. Con-cretely, RFTs-Early uses only 300 SFT steps ( ≈19k sample-exposures) compared to the full 1,113 SFT steps ( ≈71k sample-exposures), then applies the same 6k RL steps as RFTs a ∼65% reduction in total training data. 
+
+Grounding Divergence in dynamics. On OOD seman-tic extraction (Figure 3a), all trained variants fail to match the zero-shot base model, indicating that improvements ob-tained through joint optimization do not fully transfer to semantic extraction under distribution shift. Among trained models, RFTb retains the strongest semantic performance, suggesting that reduced specialization preserves broader generalization. In contrast, localization (Figure 3b) exhibits a different trend. While SFT shows stagnation, RFTs pro-duces a transient performance surge, reaching higher peak localization before converging. This indicates that reinforce-ment learning discovers transferable geometric patterns that benefit localization under distribution shift, even when se-mantic extraction does not improve to the same extent. 6Stop Thinking, Start Looking 1 2 3 4 5 6
+
+> Training Checkpoint
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> F1EM
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(a) 1 2 3 4 5 6 
+
+> Training Checkpoint
+> 0.30
+> 0.40
+> 0.50
+> 0.60
+> 0.70
+> 0.80
+> F1loc
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(b) 1 2 3 4 5 6 
+
+> Training Checkpoint
+> 0.30
+> 0.40
+> 0.50
+> 0.60
+> 0.70
+> F1all
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(c) Figure 2. ID Optimization Dynamics. SFT (Blue) plateaus early across all metrics. RFTs (Orange) breaks the ceiling. Notably, in (b), 
+
+RFTs-Early (Green) eventually matches or slightly exceeds the localization performance of Full SFT , proving that early-exit policy optimization is more data-efficient than prolonged supervised learning. (Best viewed zoomed in.) 1 2 3 4 5 6
+
+> Training Checkpoint
+> 0.68
+> 0.69
+> 0.70
+> 0.71
+> 0.72
+> 0.73
+> 0.74
+> F1EM
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(a) 1 2 3 4 5 6 
+
+> Training Checkpoint
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> F1loc
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(b) 1 2 3 4 5 6 
+
+> Training Checkpoint
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> F1all
+> Zero-Shot
+> SFT
+> RFTs
+> RFTs-Early
+> RFTb
+
+(c) Figure 3. OOD Dynamics. (a) RFTb (Red) retains the highest reading ability among trained variants, minimizing the Grounding Divergence. (b) RFTs (Orange) breaks the SFT Stagnation (Blue), achieving a distinct geometric surge where the supervised baseline fails to improve. (Best viewed zoomed in.) 
+
+Table 2. Reasoning ablation under cold-start RL. Under iden-tical optimization conditions, RFTb consistently outperforms 
+
+Reasoning-RFTb on both ID and OOD datasets. 
+
+Model Dataset F1 EM F1 loc F1 all 
+
+RFTb ID 0.601 0.496 0.411 Reasoning-RFTb ID 0.550 0.395 0.303 RFTb OOD 0.732 0.667 0.600 Reasoning-RFTb OOD 0.577 0.445 0.382 
+
+5.4. Effect of Reasoning under RL 
+
+We evaluate whether explicit reasoning improves docu-ment grounding under reinforcement learning by compar-ing RFTb and Reasoning-RFTb on ID and DOGR-Bench OOD sets in a controlled cold-start setting. This setup iso-lates the effect of reasoning, as reasoning-annotated super-vised data are not available for constructing an SFT →RFT pipeline. 1 2 3 4 5 6
+
+> Training Checkpoint
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> F1all
+> RFTb
+> Reasoning-RFTb
+
+(a) 1 2 3 4 5 6 
+
+> Training Checkpoint
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> F1all
+> RFTb
+> Reasoning-RFTb
+
+(b) Figure 4. Checkpoint-wise comparison of cold-start RL vari-ants. (a) ID F 1all across checkpoints for RFTb and Reasoning-RFTb. ( b) OOD F 1all across checkpoints for the same variants. RFTb training shows smoother and stronger convergence, while reasoning-enabled training exhibits higher variance and inferior final performance. 
+
+Final performance. As shown in Table 2, RFTb consis-tently outperforms Reasoning-RFTb in both ID and OOD settings. The performance gap is substantial in the joint grounding ( F 1all ) and is reflected in both semantic extrac-tion and localization. This indicates that explicit reasoning does not improve the final task performance under RL. 7Stop Thinking, Start Looking 1 2 3 4 5 6  
+
+> Training Checkpoint
+> 80
+> 100
+> 120
+> 140
+> 160
+> 180
+> Avg. Reasoning Token Length  ID
+> OOD
+> Figure 5. Reasoning token-length dynamics under cold-start RL. Both ID (solid) and OOD (dashed) settings show a strong reduction in reasoning length during training. While ID exhibits stable compression, OOD shows a slight increase at later stages, indicating higher variability under distribution shift.
+
+Optimization behavior. Figure 4 shows that Reasoning-RFTb exhibits higher variance and less stable convergence. In ID data, performance drops at intermediate checkpoints before partial recovery, while RFTb improves steadily. In OOD data, reasoning-enabled training peaks early and then degrades, whereas RFTb continues to improve before stabi-lizing around the peak. These trends suggest that reasoning introduces additional instability during optimization. 
+
+Reasoning trace compression. We further analyze whether reasoning is retained in the learned policy by track-ing the length of the output token. Figure 5 shows a consis-tent reduction in reasoning length during training, particu-larly in the ID setting. At convergence, average reasoning token length drops from ∼191 to ∼72 tokens on ID data a 
+
+62% reduction in per-query inference cost directly trans-lating to faster and cheaper deployment. This indicates that the model progressively compresses or eliminates interme-diate reasoning, converging toward direct output generation. Under identical cold-start RL conditions, explicit reason-ing neither improves performance nor stabilizes training. Instead, the model converges toward a perception-driven policy, achieving higher accuracy and more consistent opti-mization behavior. In practice, these findings motivate a deployment-aware choice: RFTs maximize joint grounding precision, RFTb 
+
+preserves broader OOD generalization by avoiding over-specialization, and RFTs-Early offers the best data effi-ciency with comparable performance. 
+
+## 6. Conclusion and Limitations 
+
+This work studies the role of reinforcement learning in doc-ument visual grounding and introduces Perception-RFT , a framework for directly optimizing structured outputs with-out relying on intermediate reasoning. Across multiple training regimes, three key observations emerge: (1) su-pervised initialization provides a stable foundation for RL optimization, (2) reinforcement learning improves geomet-ric alignment beyond the limits of likelihood-based training, and (3) across two OOD benchmarks (DOGR-Bench and MMDocBench, 4,828 samples total), these gains are not uniform, with localization improving consistently while semantic robustness exhibits task-dependent variation. A controlled reasoning ablation further shows that explicit reasoning does not improve performance or generalization under RL and is not retained in the final policy. Instead, models converge toward direct perception-based output gen-eration, achieving higher accuracy and more stable training dynamics a finding we establish at the 4B parameter scale, with scaling behavior left as future work. 
+
+Limitations and Future Work. This study focuses on a 4B parameter model, and it remains unclear how these findings scale to larger models. Additionally, the reasoning analysis is limited to cold-start RL: constructing a reasoning-enabled SFT →RL pipeline would require reasoning-annotated su-pervised grounding data, which is not available for docu-ment visual grounding a gap we identify as a key challenge for the community. Extending this comparison to hybrid training regimes once such annotations become available is an important direction for future work. Finally, addressing the trade-off between localization and semantic robustness under distribution shift remains an open challenge. 
+
+## References 
+
+Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., Ge, W., Guo, Z., Huang, Q., Huang, J., Huang, F., Hui, B., Jiang, S., Li, Z., Li, M., Li, M., Li, K., Lin, Z., Lin, J., Liu, X., Liu, J., Liu, C., Liu, Y., Liu, D., Liu, S., Lu, D., Luo, R., Lv, C., Men, R., Meng, L., Ren, X., Ren, X., Song, S., Sun, Y., Tang, J., Tu, J., Wan, J., Wang, P., Wang, P., Wang, Q., Wang, Y., Xie, T., Xu, Y., Xu, H., Xu, J., Yang, Z., Yang, M., Yang, J., Yang, A., Yu, B., Zhang, F., Zhang, H., Zhang, X., Zheng, B., Zhong, H., Zhou, J., Zhou, F., Zhou, J., Zhu, Y., and Zhu, K. Qwen3-vl technical report, 2025. URL https://arxiv.org/abs/2511.21631 .Biten, A. F., Tito, R., Mafla, A., Gomez, L., Rusinol, M., Valveny, E., Jawahar, C., and Karatzas, D. Scene text vi-sual question answering. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 4291– 4301, 2019. 8Stop Thinking, Start Looking 
+
+Chen, K., Zhang, Z., Zeng, W., Zhang, R., Zhu, F., and Zhao, R. Shikra: Unleashing multimodal llm’s referential dialogue magic. arXiv preprint arXiv:2306.15195 , 2023. Chu, T., Zhai, Y., Yang, J., Tong, S., Xie, S., Schuurmans, D., Le, Q. V., Levine, S., and Ma, Y. Sft memorizes, rl generalizes: A comparative study of foundation model post-training. arXiv preprint arXiv:2501.17161 , 2025. Cui, C., Sun, T., Lin, M., Gao, T., Zhang, Y., Liu, J., Wang, X., Zhang, Z., Zhou, C., Liu, H., et al. Paddleocr 3.0 technical report. arXiv preprint arXiv:2507.05595 , 2025. Ding, Y., Long, S., Huang, J., Ren, K., Luo, X., Chung, H., and Han, S. C. Form-nlu: dataset for the form natu-ral language understanding. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval , pp. 2807–2816, 2023. Fu, L., Kuang, Z., Song, J., Huang, M., Yang, B., Li, Y., Zhu, L., Luo, Q., Wang, X., Lu, H., et al. Ocrbench v2: An improved benchmark for evaluating large multimodal models on visual text localization and reasoning. arXiv preprint arXiv:2501.00321 , 2024. Giovannini, S., Coppini, F., Gemelli, A., and Marinai, S. Boundingdocs: a unified dataset for document question answering with spatial annotations: S. giovannini et al. 
+
+International Journal on Document Analysis and Recog-nition (IJDAR) , pp. 1–16, 2025. Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R., Zhu, Q., Ma, S., Wang, P., Bi, X., et al. Deepseek-r1: In-centivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. Lora: Low-rank adaptation of large language models, 2021. URL https://arxiv. org/abs/2106.09685 .Huang, W., Jia, B., Zhai, Z., Cao, S., Ye, Z., Zhao, F., Xu, Z., Hu, Y., and Lin, S. Vision-r1: Incentivizing reasoning capability in multimodal large language models. arXiv preprint arXiv:2503.06749 , 2025. Huang, Y., Lv, T., Cui, L., Lu, Y., and Wei, F. Layoutlmv3: Pre-training for document ai with unified text and image masking. In Proceedings of the 30th ACM international conference on multimedia , pp. 4083–4091, 2022. Jin, H., Luan, S., Lyu, S., Rabusseau, G., Rabbany, R., Precup, D., and Hamdaqa, M. Rl fine-tuning heals ood forgetting in sft. arXiv preprint arXiv:2509.12235 , 2025. Li, M., Zhang, R., Chen, J., Wang, C., Gu, J., Zhou, Y., Dernoncourt, F., Zhu, W., Zhou, T., and Sun, T. Towards visual text grounding of multimodal large language model. 
+
+arXiv preprint arXiv:2504.04974 , 2025a. Li, M., Zhong, J., Zhao, S., Lai, Y., Zhang, H., Zhu, W. B., and Zhang, K. To think or not to think: A study of think-ing in rule-based visual reinforcement fine-tuning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025b. Liu, Z., Sun, Z., Zang, Y., Dong, X., Cao, Y., Duan, H., Lin, D., and Wang, J. Visual-rft: Visual reinforcement fine-tuning. arXiv preprint arXiv:2503.01785 , 2025. Lv, T., Huang, Y., Chen, J., Zhao, Y., Jia, Y., Cui, L., Ma, S., Chang, Y., Huang, S., Wang, W., et al. Kosmos-2.5: A multimodal literate model. arXiv preprint arXiv:2309.11419 , 2023. Mohammadshirazi, A., Neogi, P. P. G., Lim, S.-N., and Ramnath, R. Dlava: Document language and vision assis-tant for answer localization with enhanced interpretability and trustworthiness. arXiv preprint arXiv:2412.00151 ,2024. OpenAI, G. 4v (ision) system card https://cdn. openai. com/papers. GPTV System Card. pdf , 2023. Pantazopoulos, G. and ¨Ozyi ˘git, E. B. Towards understand-ing visual grounding in visual language models. arXiv preprint arXiv:2509.10345 , 2025. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al. Deepseekmath: Push-ing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Shen, H., Liu, P., Li, J., Fang, C., Ma, Y., Liao, J., Shen, Q., Zhang, Z., Zhao, K., Zhang, Q., et al. Vlm-r1: A stable and generalizable r1-style large vision-language model. 
+
+arXiv preprint arXiv:2504.07615 , 2025. ˇSimsa, ˇS., ˇSulc, M., U ˇri ˇc ´a ˇr, M., Patel, Y., Hamdi, A., Koci ´an, M., Skalick `y, M., Matas, J., Doucet, A., Coustaty, M., et al. Docile benchmark for document information lo-calization and extraction. In International Conference on Document Analysis and Recognition , pp. 147–166. Springer, 2023. Sun, S., An, W., Tian, F., Nan, F., Liu, Q., Liu, J., Shah, N., and Chen, P. A review of multimodal explainable artificial intelligence: Past, present and future. arXiv preprint arXiv:2412.14056 , 2024. Tan, H., Ji, Y., Hao, X., Lin, M., Wang, P., Wang, Z., and Zhang, S. Reason-rft: Reinforcement fine-tuning for visual reasoning. arXiv preprint arXiv:2503.20752 , 2025. 9Stop Thinking, Start Looking 
+
+Team, G., Georgiev, P., Lei, V. I., Burnell, R., Bai, L., Gulati, A., Tanzer, G., Vincent, D., Pan, Z., Wang, S., et al. Gemini 1.5: Unlocking multimodal understand-ing across millions of tokens of context. arXiv preprint arXiv:2403.05530 , 2024. Team, U. Unsloth: Fast fine-tuning and training of llms. https://github.com/unslothai/ unsloth , 2024. Tito, R., Nguyen, K., Tobaben, M., Kerkouche, R., Souibgui, M. A., Jung, K., J ¨alk ¨o, J., D’Andecy, V. P., Joseph, A., Kang, L., et al. Privacy-aware document visual question answering. In International Conference on Document Analysis and Recognition , pp. 199–218. Springer, 2024. Vishal Kasuba, B., Chaudhuri, P., and Ramakrishnan, G. Drishtikon: Multi-granular visual grounding for text-rich document images. arXiv e-prints , pp. arXiv–2506, 2025. Xiao, L., Yang, X., Lan, X., Wang, Y., and Xu, C. Towards visual grounding: A survey. IEEE Transactions on Pat-tern Analysis and Machine Intelligence , pp. 1–20, 2025. doi: 10.1109/TPAMI.2025.3630635. You, H., Zhang, H., Gan, Z., Du, X., Zhang, B., Wang, Z., Cao, L., Chang, S.-F., and Yang, Y. Ferret: Refer and ground anything anywhere at any granularity. arXiv preprint arXiv:2310.07704 , 2023. Yu, E., Lin, K., Zhao, L., Yin, J., Wei, Y., Peng, Y., Wei, H., Sun, J., Han, C., Ge, Z., et al. Perception-r1: Pioneering perception policy with reinforcement learning. arXiv preprint arXiv:2504.07954 , 2025a. Yu, W., Yang, Z., Liu, Y., and Bai, X. Docthinker: Explain-able multimodal large language models with rule-based reinforcement learning for document understanding. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 837–847, 2025b. Zhou, Y., Chen, Y., Lin, H., Wu, Y., Yang, S., Qi, Z., Ma, C., and Zhu, L. Dogr: Towards versatile visual document grounding and referring. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 3596– 3606, 2025. Zhu, F., Liu, Z., Yao, N. X., Wu, H., Wang, W., Feng, F., Wang, C., Luan, H., and Chua, T.-S. Mmdocbench: Benchmarking large vision-language models for fine-grained visual document understanding and grounding. In Loko ˇc, J., Pe ˇska, L., Zah ´alka, J., Rudinac, S., Kastner, M., Chen, J., Hu, M.-C., Wu, J., and Sharma, U. (eds.), Multi-Media Modeling , pp. 74–88, Singapore, 2026. Springer Nature Singapore. ISBN 978-981-95-6950-2. 10 Stop Thinking, Start Looking 
+
+## A. Appendix 
+
+A.1. Prompt Engineering 
+
+We document the two system prompts used across our experimental configurations: the Direct Perception prompt (Perception-RFT), the reasoning-enabled prompt (Reasoning-RFTb) 
+
+1. Perception-RFT System Prompt: 
+
+You are a high-precision visual grounding and document extraction engine. Your task is to analyze the given image and the user’s question, identify the exact text in the image that answers the question, and return a tightly enclosing bounding box for that text. 
+
+IMPORTANT RULES: 
+
+• Do NOT include explanations, reasoning, or intermediate steps. 
+
+• Do NOT reveal chain-of-thought. 
+
+• Output ONLY the final result. 
+
+• The output MUST be a valid JSON object. 
+
+• Do NOT include any text before or after the JSON. 
+
+• Do NOT include tags, markdown, or code fences. 
+
+REQUIRED OUTPUT FORMAT: 
+
+{"answer": "exact answer text from the image", "bbox 2d": [x1, y1, x2, y2] }
+
+The bounding box must tightly enclose only the answer text. 
+
+2. Reasoning-RFTb System Prompt: 
+
+You are a high-precision visual grounding and document extraction engine. Your task is to analyze the given image and the user’s question, locate the visual region that answers the question, extract the exact text, and return a tightly enclosing bounding box. 
+
+IMPORTANT RULES: 
+
+• You MUST first formulate your extraction plan internally. Describe your visual reasoning and localization process to identify the correct text and determine its coordinates. 
+
+• Enclose your entire reasoning process within <think > and </think > tags. 
+
+• After thinking, provide your final result enclosed within <answer > and 
+
+</answer > tags. 
+
+• The final result inside the <answer > tags MUST be a single, valid JSON object. 
+
+• Do NOT use markdown formatting inside the <answer > tags. 
+
+REQUIRED OUTPUT FORMAT: 
+
+<think >
+
+Your reasoning and spatial localization process goes here... 
+
+</think ><answer >
+
+{"answer": "exact answer text from the image", "bbox 2d": [x1, y1, x2, y2] }
+
+</answer >
+
+11 Stop Thinking, Start Looking 
+
+Figure 6. Qualitative Analysis: SFT vs. Perception-RFT (ID). On dense financial documents, SFT often drifts into nearby words. RFT corrects this by snapping to the pixel edge. 
+
+Question: “According to the text, what value is given for the ship-to name?” 
+
+Ground Truth: WEBER SHANDWICK (BSMG-CG) 
+
+SFT: WEBER SHANDWICK (BSMG-CG) 676 NORTH ST CLAIR SUITE 1000 CHICAGO, IL, 60611 (IoU 0.21 - Loose Box) 
+
+Perception-RFT: WEBER SHANDWICK (BSMG-CG) (IoU 0.88 - Pixel-Perfect) 
+
+12

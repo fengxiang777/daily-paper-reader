@@ -6,85 +6,91 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-16
-- 运行时间：2026-07-16 20:34:59 UTC
+- 最新运行日期：2026-07-18
+- 运行时间：2026-07-18 21:13:30 UTC
 - 运行状态：成功
-- 本次总论文数：21
-- 精读区：10
+- 本次总论文数：23
+- 精读区：12
 - 速读区：11
 
 ### 今日简报（AI）
-今日精读21篇前沿AI论文，聚焦通用Agent评测基础设施《AgentCompass》与记忆引导的视觉语言行动模型《Harness VLA》两大突破性工作。  
-最值得关注的是智能体能力统一评估新范式，以及将冻结大模型转化为可靠机器人操作基元的技术路线。  
-建议读者关注Agent评测标准化进程，并探索记忆机制在具身智能中提升动作可靠性的落地可能。
-- 详情：[/202607/16/README](/202607/16/README)
+今日聚焦智能体强化学习与扩散语言模型，精读两篇满分论文，涵盖自我进化蒸馏与掩码感知策略梯度。  
+最值得关注：SEED 探索智能体在策略自我进化中高效蒸馏，以及扩散语言模型如何通过掩码感知梯度实现精细控制。  
+建议读者快速跟进 AgentKGV 的知识图谱事实验证框架，其两阶段训练思路或能直接迁移到你的可信 AI 应用里。
+- 详情：[/202607/18/README](/202607/18/README)
 
 ### 精读区论文标签
-1. [AgentCompass: A Unified Evaluation Infrastructure for Agent Capabilities](/202607/16/2607.13705v1-agentcompass-a-unified-evaluation-infrastructure-for-agent-capabilities)  
+1. [SEED: Self-Evolving On-Policy Distillation for Agentic Reinforcement Learning](/202607/18/2607.14777v1-seed-self-evolving-on-policy-distillation-for-agentic-reinforcement-learning)  
    标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：面向基于LLM的智能体的统一评估基础设施
-2. [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](/202607/16/2607.08448v3-harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents)  
+   evidence：提出SEED，一种自演进在线策略蒸馏方法，利用RL通过从轨迹中蒸馏事后技能来训练LLM智能体。
+2. [Mask-Aware Policy Gradients for Diffusion Language Models](/202607/18/2607.15200v1-mask-aware-policy-gradients-for-diffusion-language-models)  
+   标签：评分：10.0/10、query:rl-mm-llm-ag
+   evidence：提出针对掩码扩散语言模型的策略梯度方法以改进推理
+3. [A Stepwise Questioning Expert-Editor Multi-Agent Framework for Long-Document Summarization](/202607/18/2607.10390v1-a-stepwise-questioning-expert-editor-multi-agent-framework-for-long-document-summarization)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出记忆增强的智能体框架，引导冻结VLA模型在长周期任务中可靠操作
-3. [Track, Rank, Crack: Epistemic Working Memory Scales Multi-Hop Reasoning in Language Agents](/202607/16/2607.12267v1-track-rank-crack-epistemic-working-memory-scales-multi-hop-reasoning-in-language-agents)  
+   evidence：提出多智能体框架，专家和编辑器智能体迭代提问并优化长文档摘要。
+4. [ToolAnchor: Anchoring Counterfactual Context to Boost Agentic Tool-use Capability](/202607/18/2607.14145v1-toolanchor-anchoring-counterfactual-context-to-boost-agentic-tool-use-capability)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出SLEUTH，为语言智能体构建显式认知工作记忆以对抗上下文稀释
-4. [ReflectVLN: Training Vision-Language Navigation Agents with Reflective Reasoning](/202607/16/2607.12680v1-reflectvln-training-vision-language-navigation-agents-with-reflective-reasoning)  
+   evidence：通过反事实锚定克服LLM agent工具使用中的行为惯性
+5. [Branching Policy Optimization: Sandbox-Native Language Agent Reinforcement Learning](/202607/18/2607.14171v1-branching-policy-optimization-sandbox-native-language-agent-reinforcement-learning)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：基于反思推理的视觉语言导航智能体完成任务
-5. [Meta-Learning Preferences for Multilingual LLM Alignment](/202607/16/2607.13315v1-meta-learning-preferences-for-multilingual-llm-alignment)  
+   evidence：提出分支策略优化，一种利用沙箱快照的LLM智能体强化学习方法
+6. [Automatic Hard Example Synthesis with Multi-Level Agentic Data Curation](/202607/18/2607.14256v1-automatic-hard-example-synthesis-with-multi-level-agentic-data-curation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出针对RLHF和DPO的元学习框架，用少量多语言数据对齐LLM
-6. [GFlowRL: Scaling Distribution-Matching RL to Large Language Models](/202607/16/2607.13394v1-gflowrl-scaling-distribution-matching-rl-to-large-language-models)  
+   evidence：开发自动化多智能体框架，通过合成困难对抗样本对多模态大模型进行红队测试。
+7. [Multi-Head Latent Control: A Unified Interface for LLM Agent Decision Making](/202607/18/2607.14277v1-multi-head-latent-control-a-unified-interface-for-llm-agent-decision-making)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：将GFlowNet风格的强化学习扩展到大模型以生成多样化推理路径
-7. [Memory as a Controlled Process: Learned Adaptive Memory Management for LLM Agents](/202607/16/2607.13591v1-memory-as-a-controlled-process-learned-adaptive-memory-management-for-llm-agents)  
+   evidence：统一的潜空间控制接口用于LLM智能体决策，支持推理、延迟、工具使用等
+8. [Step-Level Preference Learning for Generative Agents in Social Simulations](/202607/18/2607.14485v1-step-level-preference-learning-for-generative-agents-in-social-simulations)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：用于LLM Agent的习得自适应记忆管理以提升任务性能
-8. [Learning Robust Execution in Robotic Manipulation with Agentic Reinforcement Learning](/202607/16/2607.13818v1-learning-robust-execution-in-robotic-manipulation-with-agentic-reinforcement-learning)  
+   evidence：利用中间决策的人类标注对LLM智能体进行逐步偏好学习
+9. [Non-vacuous Generalization Bounds for Reinforcement Learning with Verifiable Rewards](/202607/18/2607.14506v1-non-vacuous-generalization-bounds-for-reinforcement-learning-with-verifiable-rewards)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出智能体强化学习，结合执行质量评估指标增强机器人操作鲁棒性
-9. [Experience Memory Graph: One-Shot Error Correction for Agents](/202607/16/2607.13884v1-experience-memory-graph-one-shot-error-correction-for-agents)  
+   evidence：针对大模型RLVR微调的泛化界限
+10. [VTM-Nav: Hierarchical Visual-Topological Memory for Cross-Episode Object-Goal Navigation](/202607/18/2607.14514v1-vtm-nav-hierarchical-visual-topological-memory-for-cross-episode-object-goal-navigation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：通过经验记忆图匹配解决长周期任务中LLM智能体的错误恢复问题
-10. [SIVA-RL: Sensitivity-Invariance Visual Alignment for Multimodal Reinforcement Learning](/202607/16/2607.13931v1-siva-rl-sensitivity-invariance-visual-alignment-for-multimodal-reinforcement-learning)  
+   evidence：提出无训练的VLM导航智能体，采用层次化视觉拓扑记忆进行跨集对象目标导航
+11. [Seeing the End at Step Zero: Accelerating Diffusion MLLMs via MLP Sparsity-Aware Truncation](/202607/18/2607.14557v1-seeing-the-end-at-step-zero-accelerating-diffusion-mllms-via-mlp-sparsity-aware-truncation)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出多模态强化学习的视觉对齐方法，通过结果条件监督确保视觉证据基础
+   evidence：基于MLP激活稀疏性的早期截断加速扩散多模态大语言模型
+12. [Stop Thinking, Start Looking: Efficient Post-Training for Multimodal Document Question Answering via Reasoning-Free Alignment](/202607/18/2607.14682v1-stop-thinking-start-looking-efficient-post-training-for-multimodal-document-question-answering-via-reasoning-free-alignment)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：使用GRPO强化学习对多模态文档问答进行后训练，省略中间推理token
 
 ### 速读区论文标签
-1. [UNIBROWSE: A Data-to-Agent Framework for Multimodal BrowseComp](/202607/16/2607.10557v1-unibrowse-a-data-to-agent-framework-for-multimodal-browsecomp)  
+1. [AgentKGV: Agentic LLM-RAG Framework with Two-Stage Training for the Fact Verification of Knowledge Graphs](/202607/18/2607.09092v1-agentkgv-agentic-llm-rag-framework-with-two-stage-training-for-the-fact-verification-of-knowledge-graphs)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：用于训练多模态浏览智能体的统一数据流水线，涉及长时域推理
-2. [PFAdapter: Hierarchical LoRA Decomposition for Personalized Federated MLLMs](/202607/16/2607.12111v1-pfadapter-hierarchical-lora-decomposition-for-personalized-federated-mllms)  
+   evidence：用于知识图谱事实验证的智能体LLM-RAG框架
+2. [Empowering Long-form Omni-modal Understanding with Robust Audio Perception](/202607/18/2607.10299v1-empowering-long-form-omni-modal-understanding-with-robust-audio-perception)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：聚焦多模态大语言模型的个性化联邦微调
-3. [HRO: Hierarchical Room-to-Object Framework for Zero-Shot Object Goal Navigation with Large Language Models](/202607/16/2607.13072v1-hro-hierarchical-room-to-object-framework-for-zero-shot-object-goal-navigation-with-large-language-models)  
+   evidence：全模态数据集与模型，实现鲁棒的音-视-语言理解
+3. [Generalize LMMs to Versatile Visual Modalities via Fabricated Modality Synthesis](/202607/18/2607.10308v1-generalize-lmms-to-versatile-visual-modalities-via-fabricated-modality-synthesis)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：基于LLM的分层推理用于零样本物体目标导航
-4. [Generalizable VLA Finetuning via Representation Anchoring and Language-Action Alignment](/202607/16/2607.13429v1-generalizable-vla-finetuning-via-representation-anchoring-and-language-action-alignment)  
+   evidence：通过合成训练框架泛化大多模态模型至多样视觉模态
+4. [Filtering Harmful Actions Isn't Enough: Phantom Transfer in Agentic SDF](/202607/18/2607.10750v1-filtering-harmful-actions-isnt-enough-phantom-transfer-in-agentic-sdf)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：通过表征锚定和语言-动作对齐微调视觉语言模型用于机器人策略
-5. [OS-Pruner: Pruning Chains-of-Thought of Reasoning Models via Optimal Stopping](/202607/16/2607.11089v1-os-pruner-pruning-chains-of-thought-of-reasoning-models-via-optimal-stopping)  
+   evidence：在类似强化学习的合成智能体轨迹上训练，揭示有害行为的幽灵迁移
+5. [AgentCompass: A Unified Evaluation Infrastructure for Agent Capabilities](/202607/18/2607.13705v2-agentcompass-a-unified-evaluation-infrastructure-for-agent-capabilities)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：统一评估LLM智能体能力的基础设施
+6. [AspectCLIP: Optimizing CLIP Representation Space via Aspect-Guided Consistency Regularization](/202607/18/2607.13805v2-aspectclip-optimizing-clip-representation-space-via-aspect-guided-consistency-regularization)  
+   标签：评分：8.0/10、query:rl-mm-llm-ag
+   evidence：通过方面引导的一致性正则化优化CLIP表示空间
+7. [Compositional Context Fine-Tuning Vision-Language Model for Complex Assembly Action Understanding from Videos](/202607/18/2607.10797v1-compositional-context-fine-tuning-vision-language-model-for-complex-assembly-action-understanding-from-videos)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过剪枝思维链提高推理效率
-6. [Data-Efficient Adaptation of LLMs via Attention Head Reweighting](/202607/16/2607.13425v1-data-efficient-adaptation-of-llms-via-attention-head-reweighting)  
+   evidence：微调视觉语言模型用于装配动作理解
+8. [Reducing Temporal Redundancy for Efficient Vision-Language-Action Inference](/202607/18/2607.12287v1-reducing-temporal-redundancy-for-efficient-vision-language-action-inference)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：通过为每个注意力头学习一个标量实现数据高效的大语言模型适配
-7. [Joint On-and-Off Policy Learning for Vision-and-Language Navigation](/202607/16/2607.13461v1-joint-on-and-off-policy-learning-for-vision-and-language-navigation)  
+   evidence：通过增量视觉令牌更新和扩散采样压缩减少VLA模型的时间冗余
+9. [Action QFormer: Structured Representation Shaping under Action Supervision in Vision-Language-Action Models](/202607/18/2607.14635v1-action-qformer-structured-representation-shaping-under-action-supervision-in-vision-language-action-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：结合强化学习与模仿学习用于视觉语言导航Agent
-8. [Attention-Free and Lightweight Token Reduction for Efficient Vision-Language Models](/202607/16/2607.13500v1-attention-free-and-lightweight-token-reduction-for-efficient-vision-language-models)  
+   evidence：面向视觉-语言-动作模型结构化表征塑造的动作QFormer
+10. [An Intelligent-Cloud Edge Multimodal Interaction System for Robots](/202607/18/2607.14675v1-an-intelligent-cloud-edge-multimodal-interaction-system-for-robots)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出无注意力轻量级令牌削减框架，加速视觉语言模型推理
-9. [Interpretable Uncertainty for Adaptive Retrieval and Reasoning in Question Answering](/202607/16/2607.07380v1-interpretable-uncertainty-for-adaptive-retrieval-and-reasoning-in-question-answering)  
+   evidence：集成增强YOLO手势检测器与LLM和VLM智能体实现多模态人机交互
+11. [Evolution of Accuracy and Visual-Cognitive Errors in a Decade of Vision-Language AI Models](/202607/18/2607.09654v1-evolution-of-accuracy-and-visual-cognitive-errors-in-a-decade-of-vision-language-ai-models)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：利用LLM隐藏状态的不确定性感知自适应RAG框架
-10. [Enjoy Your Talk: A Human-Centered Benchmark for Multi-Turn Dialogue with Decoupled User Simulation, Target Modeling, and Judging](/202607/16/2607.10428v1-enjoy-your-talk-a-human-centered-benchmark-for-multi-turn-dialogue-with-decoupled-user-simulation-target-modeling-and-judging)  
-   标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：评估LLM对话伙伴在多轮对话中完成目标的多轮对话基准
-11. [Deep Interaction: An Efficient Human-AI Interaction Method for Large Reasoning Models](/202607/16/2607.14049v1-deep-interaction-an-efficient-human-ai-interaction-method-for-large-reasoning-models)  
-   标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：通过直接编辑回复纠正LLM推理错误的方法，可用于任务完成
+   evidence：分析十年间VLMs和MLLMs在复杂社交场景上的视觉认知错误和准确率演变
 
 
 <div class="dpr-home-promo-card">
