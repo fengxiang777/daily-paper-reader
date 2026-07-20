@@ -1,0 +1,401 @@
+Title: MGDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion
+
+URL Source: https://arxiv.org/pdf/2607.15592v1
+
+Published Time: Mon, 20 Jul 2026 00:33:42 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# M2GDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion 
+
+# Xu Hou 
+
+houx_upc@163.com Beijing University of Posts and Telecommunications Beijing, China 
+
+# Meiyu Liang 
+
+School of Computer Science, Beijing University of Posts and Telecommunications Beijing, China 
+
+# Wei Huang 
+
+Zhejiang University Hangzhou, China Beijing University of Posts and Telecommunications Beijing, China 
+
+# Yawen Li 
+
+Beijing University of Posts and Telecommunications Beijing, China 
+
+# Zhe Xue 
+
+School of Computer Science, Beijing University of Posts and Telecommunications Beijing, China 
+
+# Wu Liu 
+
+University of Science and Technology of China Hefei, China 
+
+# Guanhua Ye 
+
+School of Computer Science (National Pilot Software Engineering School), Beijing University of Posts and Telecommunications Beijing, China 
+
+# Lei Shi 
+
+Communication University of China Beijing, China 
+
+# Kangkang Lu 
+
+Beijing University of Posts and Telecommunications Beijing, China 
+
+## Abstract 
+
+Multimodal Knowledge Graph Completion (MKGC) requires in-ferring missing entities from structural, textual, and visual cues. Existing diffusion-based MKGC methods usually denoise directly on raw multimodal features. Such a design forces the denoiser to simultaneously perform relation-dependent cue selection, cross-modal semantic alignment, and structure-aware entity generation, which introduces noisy and semantically inconsistent conditions for diffusion and consequently leads to suboptimal completion per-formance. To address this limitation, we propose M2GDT : MLLM-
+
+Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts ( M2GDT ), a novel MKGC framework built on an align-then-diffuse paradigm. M 2GDT first employs a Relation-Adaptive 
+
+Semantic Routing Mixture-of-Experts ( RASR-MoE ) module to select relation-relevant multimodal semantic transformation paths and suppress irrelevant modality interference. M 2GDT then uses a frozen Multimodal Large Language Model (MLLM) as a semantic anchor to align the routed multimodal representations into a uni-fied latent space and reduce cross-modal semantic heterogeneity.  
+
+> Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> MM ’26, Rio de Janeiro, Brazil
+> ©2026 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+Finally, a Knowledge Graph Diffusion Transformer ( KGDT ) per-forms graph-conditioned denoising generation in the aligned space to produce the missing entity representation. Experiments on three benchmark datasets show that M 2GDT consistently outperforms strong baselines. 
+
+## CCS Concepts 
+
+• Computing methodologies → Reasoning about belief and knowledge .
+
+## Keywords 
+
+Multimodal Knowledge Graph, Multimodal Language Model, Diffu-sion Model, Mixture-of-Experts 
+
+## 1 Introduction 
+
+Multimodal Knowledge Graph Completion (MKGC) aims to infer missing entities or links in a knowledge graph by jointly leveraging structural relations, textual descriptions, and visual cues. Compared with conventional knowledge graph completion, MKGC is more practical for real-world scenarios, where entities are often associ-ated with rich multimodal attributes beyond symbolic triples. In this setting, the model must answer relation-conditioned queries such as (ℎ, 𝑟, ?) or (?, 𝑟, 𝑡 ) by reasoning over graph structure to-gether with heterogeneous multimodal observations. This makes MKGC substantially more challenging than unimodal completion, since the model must not only identify the correct entity but also ensure that the completed triple remains semantically meaningful and structurally consistent. arXiv:2607.15592v1 [cs.AI] 17 Jul 2026 MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil Anonymous Submission 
+
+Figure 1: Core challenges of MKGC. Structural, textual, and visual features exhibit cross-modal semantic heterogeneity and relation-dependent multimodal cue selection. Solid lines indicate intra-modal relations, while dashed lines indicate inter-modal relations. As a result, raw multimodal represen-tations do not form a reliable unified reasoning space for relation-conditioned entity completion. 
+
+Specifically, MKGC is mainly challenged by two coupled diffi-culties. The first is cross-modal semantic heterogeneity : structural, textual, and visual features are produced by different encoders and optimization objectives, causing them to reside in incompatible semantic spaces. Even when describing the same entity, different modalities often emphasize different semantic aspects, resulting in substantial cross-modal semantic gaps. As illustrated in Figure 1, this makes raw multimodal representations neither directly com-parable nor reliably composable as a unified reasoning substrate. The second difficulty is relation-dependent multimodal cues selection :different relations often rely on different semantic cues. Some cases are mainly resolved by structural context, while others depend more heavily on textual semantics or visual cues. Thus, effective MKGC requires not only cross-modal alignment, but also relation-aware use of multimodal knowledge before completion. Existing discriminative methods address these two challenges from different perspectives. Early approaches such as IKRL [ 27 ]and TransAE [ 26 ] primarily alleviate the first challenge by project-ing multimodal attributes into a structural embedding space for triple scoring. More recent methods further improve multimodal representation learning for semantically heterogeneous inputs. For example, OTKGE [ 3 ] addresses cross-modal inconsistency more explicitly by introducing optimal transport to better align mul-timodal representations, while MyGo [ 29 ] improves multimodal entity modeling through discrete codebook, yielding richer multi-modal representations for ranking. In contrast, MoMoK [ 30 ] mainly addresses the second challenge by expert-style modality selection and adaptively emphasizing different modalities under different re-lations. Although these methods have improved multimodal entity ranking, their objectives remain fundamentally discriminative: they estimate compatibility scores over candidate entities, rather than explicitly modeling a generative refinement process for missing entity completion under multimodal uncertainty. Inspired by the recent success of diffusion models in complex conditional generation [ 15 , 18 , 20 ], researchers have recently begun to explore diffusion-based formulations for multimodal knowledge graph completion. By progressively denoising a latent variable toward a target entity representation, diffusion provides a natu-ral mechanism for iterative refinement under uncertainty, making it particularly well suited to multimodal entity completion. Re-cent works such as DiffusionCom [ 8 ] and FDM [ 13 ] have demon-strated the promise of diffusion for modeling complex relational structures in knowledge graphs. However, existing diffusion-based MKGC methods typically inject raw multimodal features directly into the denoising process, implicitly assuming that the original multimodal feature space is already suitable for diffusion. This de-sign leaves the denoiser to simultaneously handle the two chal-lenges above, namely cross-modal semantic heterogeneity and relation-dependent multimodal cue selection, while also performing structure-aware entity generation. Prior diffusion-based formula-tions effectively denoise under raw multimodal conditions, thereby entangling multimodal cue selection, semantic alignment, and en-tity generation in a single process. Therefore, we argue that effective diffusion for MKGC should be built on a relation-dependent and semantically aligned latent space rather than the raw heterogeneous feature space. Figure 2 contrasts this idea with prior diffusion-based formulations. Based on this intuition, we propose MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts( M2GDT ), a new framework for MKGC built on an align-then-diffuse paradigm. As illustrated in Figure 2, M 2GDT explicitly addresses the above two challenges in a decoupled manner. First, it performs Relation-Adaptive Seman-tic Routing with a mixture-of-experts (MoE) module, which dy-namically selects modality-specific semantic transformation paths under relation conditioning and thus tackles relation-dependent multimodal cue selection. Next, the routed multimodal representa-tions are aligned into a unified semantic space under the guidance of a Multimodal Large Language Model (MLLM), which serves as a semantic anchor with strong cross-modal priors and allevi-ates semantic heterogeneity across modalities. Finally, diffusion is performed in this aligned latent space with a Knowledge Graph 
+
+Diffusion Transformer ( KGDT ), allowing the denoiser to focus on graph-conditioned entity generation rather than being jointly burdened by multimodal cue selection, alignment, and generation. Extensive experiments on three benchmark datasets demonstrate that M 2GDT consistently outperforms strong baselines, validating the effectiveness of the proposed paradigm. Our contributions are summarized as follows: 
+
+• We propose MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts( M2GDT ), a novel framework for Multimodal Knowledge Graph Completion built on an M2GDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil 
+
+Figure 2: Comparison between the proposed method and ex-isting methods. Existing methods directly denoise under raw heterogeneous multimodal conditions, which entangles se-mantic alignment with entity generation. In contrast, M 2GDT first aligns multimodal representations with an MLLM se-mantic anchor and then performs structure-aware diffusion generation with decoupled supervision. 
+
+align-then-diffuse paradigm, which performs diffusion gener-ation in a relation-dependent and semantically aligned latent space rather than directly in raw multimodal feature spaces. 
+
+• We design a Relation-Adaptive Semantic Routing Mix-ture of Experts(RASR-MoE) module that explicitly ad-dresses relation-dependent multimodal cue selection by dy-namically choosing modality-specific semantic transforma-tion paths under relation conditioning, producing cleaner multimodal representations for subsequent MLLM-anchored alignment. We further employ a lightweight auxiliary regu-larization term to encourage complementary expert behav-iors. 
+
+• We develop an MLLM-anchored alignment and diffusion gen-eration framework, in which routed multimodal representa-tions are first calibrated into a unified semantic space to alle-viate cross-modal semantic heterogeneity and then refined by the proposed Knowledge Graph Diffusion Transformer (KGDT ) for graph-conditioned denoising. Extensive experi-ments on three benchmark datasets validate the effectiveness of the proposed framework and demonstrate consistent im-provements over strong baselines. 
+
+## 2 Methodology 2.1 Problem Formulation 
+
+A Multimodal Knowledge Graph is denoted as 
+
+G = (V , R, T , M) , (1) where V, R, T , and M denote the entity set, relation set, factual triples, and multimodal attributes, respectively. Given an incom-plete query (ℎ, 𝑟, ?) or (?, 𝑟, 𝑡 ), the goal of MKGC is to infer the missing entity so that the completed triple is both semantically plausible and structurally consistent. Unlike conventional discrimi-native methods that directly rank candidate entities, diffusion-based methods formulate MKGC as a conditional generation problem in the latent space. Without loss of generality, we focus on tail pre-diction (ℎ, 𝑟, ?), while the head prediction case is symmetric. Given the observed entity ℎ, relation 𝑟 , and the associated multimodal information, the model generates the missing entity representation 
+
+ˆz0 through a denoising diffusion process, which is then matched against candidate entity embeddings for final ranking. 
+
+## 2.2 Relation-Adaptive Semantic Routing Mixture-of-Experts 
+
+A key assumption of M 2GDT is that diffusion should be conditioned on semantically calibrated multimodal representations rather than uniformly fused raw features. In multimodal knowledge graphs, different relations often depend on different semantic information. Some relations are mainly determined by structural context, while others rely more on textual or visual cues. Therefore, using a fixed multimodal encoding path for all queries may introduce unneces-sary semantic interference before alignment. To address this issue, we introduce a Relation-Adaptive Se-mantic Routing Mixture-of-Experts (RASR-MoE ) module, which performs relation-conditioned expert routing before anchor-guided alignment. Its goal is not generic multimodal fusion, but selecting relation-dependent semantic transformation paths that produce cleaner representations for subsequent MLLM-guided alignment. Given a query (ℎ, 𝑟, ?), we first retrieve the raw structural, visual, and textual features of the observed entity ℎ:
+
+x𝑠 = EntEmb (ℎ) ∈ R𝐵 ×𝑑 𝑠 , (2) 
+
+x𝑣 = ImgEmb (ℎ) ∈ R𝐵 ×𝑑 𝑣 , (3) 
+
+x𝑡 = TxtEmb (ℎ) ∈ R𝐵 ×𝑑 𝑡 , (4) where 𝐵 is the batch size, and r ∈ R𝐵 ×𝑑 𝑟 denotes the relation embedding. For each modality 𝑘 ∈ { 𝑠, 𝑣, 𝑡 }, we define a bank of 𝑀 experts 
+
+{E(1) 
+
+> 𝑘
+
+, E(2) 
+
+> 𝑘
+
+, . . . , E(𝑀 ) 
+
+> 𝑘
+
+}.
+
+A relation-conditioned router computes the expert weights: 
+
+˜g𝑘 = softmax  MLP 𝑘 ([ x𝑘 ; r]) + 𝜹 𝑘 
+
+, 𝜹 𝑘 ∼ N ( 0, Σ𝑘 ), (5) where Σ𝑘 is predicted from the current modality representation. This perturbation improves routing robustness and avoids over-confident expert selection. Each expert produces a relation-aware transformation 
+
+u(𝑚 ) 
+
+> 𝑘
+
+= E(𝑚 ) 
+
+> 𝑘
+
+(x𝑘 , r), 𝑚 = 1, . . . , 𝑀, (6) and the routed modality representation is obtained by 
+
+˜e𝑘 =
+
+> 𝑀
+
+∑︁ 
+
+> 𝑚 =1
+
+˜g(𝑚 ) 
+
+> 𝑘
+
+⊙ u(𝑚 ) 
+
+> 𝑘
+
+, 𝑘 ∈ { 𝑠, 𝑣, 𝑡 }. (7) The routed features are then fused into a multimodal entity representation. Concretely, we first project the routed modality features into a shared latent space: 
+
+e𝑘 = W𝑘 ˜e𝑘 + b𝑘 , 𝑘 ∈ { 𝑠, 𝑣, 𝑡 }, (8) MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil Anonymous Submission 
+
+Figure 3: Overview of the M 2GDT framework. RASR-MoE first performs relation-adaptive semantic routing over heterogeneous multimodal inputs. A frozen semantic anchor then aligns the routed features into calibrated condition embeddings, which are combined with timestep embeddings for diffusion denoising. Starting from a noisy latent, KGDT iteratively predicts noise and refines the latent toward the target entity representation. The right panels show the architectures of KGDT and RASR-MoE. 
+
+where W𝑘 ∈ R𝑑 𝑓 ×𝑑 𝑘 and b𝑘 ∈ R𝑑 𝑓 are learnable modality-specific projection parameters. The fused entity representation is then ob-tained by a weighted sum: 
+
+e𝑓 = e𝑠 + e𝑣 + e𝑡 , (9) In this way, RASR-MoE performs relation-aware semantic rout-ing before alignment, while the subsequent lightweight fusion ag-gregates the routed modality features into unified multimodal rep-resentations for the align-then-diffuse process. To preserve task-relevant discriminative capability in the RASR-MoE encoder, we further apply a supervision term to the structural, visual, textual, and fused branches. Following the encoder design, these branches produce prediction scores over all candidate entities: 
+
+p𝑠 , p𝑣 , p𝑡 , p𝑓 ∈ R𝐵 ×𝑁 , (10) where 𝑁 is the number of entities. The corresponding auxiliary supervision loss is defined as 
+
+Lmoe = BCE (p𝑠 , y) + BCE (p𝑣 , y) + BCE (p𝑡 , y) + BCE (p𝑓 , y),
+
+(11) where y ∈ R𝐵 ×𝑁 is the target label matrix. Here, BCE (· , ·) denotes the binary cross-entropy loss, which supervises each branch to assign higher scores to valid target entities and thus preserves task-relevant discriminative signals in the RASR-MoE encoder. To reduce redundancy among experts, we further introduce a lightweight auxiliary regularization term inspired by mutual-information-based expert disentanglement. This term encourages different experts within the same modality to capture complemen-tary relation-dependent semantic transformations rather than col-lapsing to similar mappings: 
+
+Lreg =∑︁   
+
+> 𝑘 ∈ { 𝑠,𝑣,𝑡 }
+
+L (𝑘 )
+
+> club
+
+, (12) where L (𝑘 ) 
+
+> club
+
+is a lightweight CLUB-style regularizer for modality 
+
+𝑘 [ 30 ]. Since this term only serves as an auxiliary objective, we keep its weight small in the overall training loss. 
+
+## 2.3 MLLM-Anchored Representation Alignment 
+
+2.3.1 Frozen Anchor Construction. For the same batch of entities, we concatenate the raw structural, visual, and textual inputs: 
+
+xcat = [x𝑠 ; x𝑣 ; x𝑡 ] ∈ R𝐵 × ( 𝑑 𝑠 +𝑑 𝑣 +𝑑 𝑡 ) . (13) A learnable projection maps them into the hidden dimension of the frozen Qwen3-VL language backbone: 
+
+xanchor = Proj in (xcat ) ∈ R𝐵 ×𝑑 𝑞 , (14) where 𝑑 𝑞 = 4096 in our implementation. The projected features are treated as continuous input embed-dings and fed into the frozen backbone: 
+
+hanchor = Qwen frozen (xanchor ) ∈ R𝐵 ×𝑑 𝑞 . (15) All parameters of the Qwen backbone are frozen throughout train-ing. M2GDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil 
+
+2.3.2 Modality-specific Anchor Outputs. The frozen hidden states are projected into modality-specific spaces to obtain anchor features with the same output dimensions as the MoE encoder: 
+
+a𝑠 = Proj 𝑎 𝑠 (hanchor ) ∈ R𝐵 ×𝑑 𝑠 , (16) 
+
+a𝑣 = Proj 𝑎 𝑣 (hanchor ) ∈ R𝐵 ×𝑑 𝑣 , (17) 
+
+a𝑡 = Proj 𝑎 𝑡 (hanchor ) ∈ R𝐵 ×𝑑 𝑡 , (18) 
+
+a𝑓 = Proj 𝑎 𝑓 (hanchor ) ∈ R𝐵 ×𝑑 𝑓 . (19) Therefore, the MoE encoder outputs and the anchor outputs have matched tensor shapes and can be aligned directly. 
+
+2.3.3 Feature-level Alignment. We align the MoE output features 
+
+e𝑠 , e𝑣 , e𝑡 , e𝑓 with the corresponding anchor features a𝑠 , a𝑣 , a𝑡 , a𝑓 .For the structural, visual, and textual branches, we use cosine-similarity-based alignment: 
+
+L𝑘 = 1 − 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑛 =1
+
+cos  e𝑘,𝑛 , a𝑘,𝑛 
+
+ , 𝑘 ∈ { 𝑠, 𝑣, 𝑡 }, (20) where e𝑘,𝑛 and a𝑘,𝑛 denote the 𝑛 -th sample in the batch. For the fused branch, we use a temperature-scaled KL matching loss: 
+
+p𝑓 ,𝑛 = softmax (e𝑓 ,𝑛 /𝑇 ), (21) 
+
+q𝑓 ,𝑛 = softmax (a𝑓 ,𝑛 /𝑇 ), (22) 
+
+L𝑓 = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑛 =1
+
+KL  p𝑓 ,𝑛 ∥ q𝑓 ,𝑛 
+
+ , (23) where 𝑇 is the temperature. The total alignment loss is defined as 
+
+Lalign = 𝜆 𝑘 L𝑘 + 𝜆 𝑓 L𝑓 . (24) In the current implementation, the strongest alignment weights are assigned to the structural and visual branches, which are heuris-tically set to 1.0, while the textual and fused branches are used as auxiliary regularizers. 
+
+## 2.4 Knowledge Graph Diffusion Transformer 
+
+With the multimodal condition now aligned in a unified semantic space, M 2GDT performs the diffuse stage by generating the missing entity embedding through a conditional denoising diffusion pro-cess. We instantiate the denoiser as a Knowledge Graph Diffusion 
+
+Transformer (KGDT), whose architecture is shown in Figure 3. Compared with linear denoisers, a transformer[ 24 ] backbone is better suited for modeling long-range relational dependencies and condition-dependent interactions in knowledge graphs. 
+
+2.4.1 Diffusion Condition under Joint Alignment. The anchor branch does not explicitly replace the encoder outputs with pre-aligned features. Instead, the alignment loss Lalign is optimized jointly with the diffusion objective during training, so that the encoder repre-sentations are progressively calibrated toward the frozen anchor references. Therefore, the diffusion model is always conditioned on the current encoder features, while semantic alignment is enforced as a simultaneous training constraint. 
+
+Figure 4: Illustration of the proposed anchor-guided align-ment mechanism. The encoder outputs are aligned to frozen anchor references through feature-level similarity losses, producing a semantically calibrated condition for diffusion. 
+
+Concretely, at each training step, the routed modality represen-tations produced by the RASR-MoE encoder are 
+
+e𝑠 ∈ R𝐵 ×𝑑 𝑓 , e𝑣 ∈ R𝐵 ×𝑑 𝑓 , e𝑡 ∈ R𝐵 ×𝑑 𝑓 . (25) These features are then combined by element-wise addition to form the entity-side semantic condition: 
+
+e𝑓 = e𝑠 + e𝑣 + e𝑡 ∈ R𝐵 ×𝑑 𝑓 , (26) For each diffusion step 𝑡 , a learnable time projector maps the timestep index to a time embedding: 
+
+𝝉 𝑡 = Proj time (𝑡 ), (27) which is broadcast to all samples in the batch. The final condition embedding used by the denoiser is then 
+
+c𝑡 = e𝑓 + 𝝉 𝑡 . (28) In this way, semantic alignment and diffusion conditioning are learned jointly rather than sequentially: the denoiser always re-ceives the current encoder condition, while the anchor-guided loss continuously regularizes this condition toward a semantically co-herent latent space throughout training. 
+
+2.4.2 Forward Diffusion. Let z0 denote the target embedding of the missing entity. Following DDPM [ 16 ], the forward diffusion process gradually perturbs z0 with Gaussian noise: 
+
+z𝑡 = √ ¯𝛼 𝑡 z0 + √1 − ¯𝛼 𝑡 𝝐 , 𝝐 ∼ N ( 0, I), (29) where ¯𝛼 𝑡 = Î𝑡 𝑖 =1 𝛼 𝑖 and 𝛼 𝑡 = 1 − 𝛽 𝑡 is determined by the variance schedule {𝛽 𝑡 }𝑇 𝑡 =1.
+
+2.4.3 Conditional Reverse Denoising. The reverse denoising pro-cess is parameterized by KGDT: 
+
+ˆ𝝐 = KGDT (z𝑡 , c𝑡 ; Θ), (30) where Θ denotes the learnable parameters of the transformer. As shown in Figure 3, the first KGDT block injects c𝑡 into the noisy la-tent through cross-attention, and the subsequent transformer blocks iteratively refine the latent representation through stacked atten-tion and feed-forward transformations. In this way, each denoising MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil Anonymous Submission 
+
+Table 1: MKGC performance comparison on MKG-W, MKG-Y and DB15K datasets. The best results are marked in bold, the second-best results are underlined. Methods MKG-W MKG-Y DB15K MRR H@1 H@3 H@10 MRR H@1 H@3 H@10 MRR H@1 H@3 H@10 
+
+Unimodal KG Completion 
+
+TransE 29.19 21.06 33.20 44.23 30.73 23.45 35.18 43.37 24.86 12.78 31.48 47.07 DistMult 20.99 15.93 22.28 30.86 28.71 22.26 27.80 35.95 23.03 14.78 26.28 39.59 ComplEx 24.93 19.09 26.69 36.73 25.04 19.33 32.12 40.93 27.48 18.37 31.57 45.37 RotatE 33.67 26.80 36.68 46.73 34.95 29.10 38.35 45.30 29.28 17.87 36.12 49.66 GC-OTE 33.92 26.55 35.96 46.05 32.95 26.77 36.44 44.08 31.85 22.11 36.52 51.18 TuckER 30.40 24.40 32.90 41.30 37.10 34.60 38.40 42.90 30.10 20.50 35.70 46.80 
+
+Multimodal KG Completion 
+
+IKRL 32.36 26.11 34.75 44.07 33.22 30.37 34.28 38.26 26.82 14.09 34.93 49.09 TBKGC 31.48 25.31 33.98 43.24 33.99 30.47 35.27 40.07 28.40 15.61 37.03 49.86 TransAE 30.00 21.23 34.91 44.72 28.10 25.31 29.10 33.03 28.09 21.25 31.17 41.17 MMKRL 30.10 22.16 34.90 44.69 36.81 31.66 39.79 45.31 26.81 13.85 35.07 49.39 RSME 29.23 23.36 31.97 40.43 34.44 31.78 36.07 39.09 29.76 24.15 32.12 40.29 VBKGC 30.61 24.91 33.01 40.88 37.04 33.76 38.75 42.30 30.61 19.75 37.18 49.44 OTKGE 34.36 28.85 36.25 44.88 35.51 31.97 37.18 41.38 23.86 14.85 25.89 34.83 IMF 32.58 27.77 36.06 45.44 35.79 32.95 37.10 40.60 32.25 24.20 36.06 48.19 AdaMF-MAT 34.27 27.21 37.86 47.21 38.06 33.49 40.44 45.48 32.51 21.31 39.67 51.68 VISTA 32.91 26.12 35.38 45.61 30.45 24.87 32.40 41.50 30.42 22.49 33.56 45.94 MyGo 36.10 29.78 38.54 47.75 38.44 35.01 39.84 44.19 37.72 30.08 41.26 52.21 MoMoK 35.89 30.38 37.54 46.13 37.91 35.09 39.20 43.20 39.57 32.38 43.45 54.14 MCKGC 36.88 31.32 38.92 47.43 38.06 35.49 40.57 45.21 39.79 31.92 43.80 54.66 
+
+M2GDT (Ours) 37.77 32.18 39.83 48.15 39.25 36.12 40.96 45.10 40.54 32.60 44.49 55.48 
+
+Gain vs. SOTA 2.41% ↑ 2.75% ↑ 2.34% ↑ 0.84% ↑ 3.13% ↑ 1.78% ↑ 0.96% ↑ -0.84% ↓ 1.88% ↑ 0.68% ↑ 1.58% ↑ 1.50% ↑
+
+step is guided by semantically aligned multimodal information rather than by raw heterogeneous features. Given the predicted noise, the reverse transition follows the standard DDPM update: 
+
+z𝑡 −1 = 1
+
+√𝛼 𝑡 
+
+
+
+z𝑡 − 1 − 𝛼 𝑡 
+
+√1 − ¯𝛼 𝑡 
+
+ˆ𝝐 
+
+
+
++ 𝜎 𝑡 𝜼 , 𝜼 ∼ N ( 0, I), (31) where 𝜎 𝑡 is determined by the diffusion schedule. 
+
+## 2.5 Training and Inference 
+
+2.5.1 Training Objective. The full M 2GDT framework is trained with four objectives: an auxiliary supervision term for the RASR-MoE, a lightweight auxiliary expert regularization term for the RASR-MoE, an anchor-guided semantic alignment objective, and a conditional diffusion denoising objective. First, the auxiliary supervision loss Lmoe preserves task-relevant discriminative signals in the RASR-MoE encoder, while the auxiliary regularization term Lreg encourages different experts to capture complementary relation-dependent semantic transformations. Second, the alignment loss Lalign encourages the routed multi-modal features to match the frozen anchor references in a semanti-cally coherent latent space. Third, KGDT is trained with a standard denoising objective in the aligned latent space. Given a clean target entity embedding z0,a sampled timestep 𝑡 , and Gaussian noise 𝝐 ∼ N ( 0, I), the diffusion loss is formulated as 
+
+Ldiff = Ez0,𝑡, 𝝐 
+
+∥KGDT (z𝑡 , c𝑡 ) − 𝝐 ∥22
+
+ . (32) The overall training objective is 
+
+Ltotal = 𝜆 1 Lmoe + 𝜆 2 Lreg + 𝜆 3 Lalign + 𝜆 4 Ldiff . (33) Here, 𝜆 1, 𝜆 2, 𝜆 3, and 𝜆 4 control the relative importance of auxiliary supervision, expert regularization, semantic alignment, and diffu-sion denoising, respectively. In the final model, we set 𝜆 1 = 1.0,
+
+𝜆 2 = 0.0001 , 𝜆 3 = 0.01 , and 𝜆 4 = 0.1. This setting keeps the expert regularization lightweight, while balancing semantic alignment and diffusion denoising during joint optimization. 
+
+2.5.2 Inference. During inference, M 2GDT starts from Gaussian noise z𝑇 ∼ N ( 0, I) and iteratively applies the reverse denoising pro-cess conditioned on the aligned multimodal representation. After 𝑇 
+
+steps, the model obtains the predicted entity embedding ˆz0, which is then compared with candidate entity embeddings for ranking-based completion. In this way, semantic alignment is handled before generation, while KGDT focuses on structure-aware denoising in the aligned latent space. M2GDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil 
+
+Figure 5: Sensitivity analysis of M 2GDT with respect to four hyperparameters on the MKG-W dataset: (a) diffusion steps, (b) number of Transformer blocks, (c) MLLM alignment weight, and (d) diffusion loss weight. 
+
+## 3 Experiments 3.1 Experimental Setup 
+
+Datasets. We evaluate M 2GDT on three widely used multimodal knowledge graph completion benchmarks: MKG-W, MKG-Y [ 28 ], and DB15K [ 12 ]. These datasets contain relational triples together with textual descriptions and visual attributes for entities, making them suitable for evaluating multimodal reasoning and completion. 
+
+Task and Evaluation Metrics. We follow the standard MKGC protocol, in which the task is to predict the missing head entity for (?, 𝑟, 𝑡 ) or the missing tail entity for (ℎ, 𝑟, ?). For each query, all entities in the dataset are considered as candidates and ranked according to the predicted score. We report Mean Reciprocal Rank (MRR), Hits@1, Hits@3, and Hits@10, for which higher values indicate better performance. 
+
+Baselines. We compare M 2GDT with 19 representative baselines, including 6 unimodal KGC methods and 12 multimodal KGC meth-ods. The unimodal baselines include TransE [ 2 ], DistMult [ 31 ], ComplEx [ 23 ], RotatE [ 21 ], GC-OTE [ 22 ], and TuckER [ 1]. The mul-timodal baselines include IKRL [ 27 ], TBKGC [ 14 ], TransAE [ 26 ], MMKRL [ 4 ], RSME [ 25 ], VBKGC [ 32 ], OTKGE [ 3], IMF [ 11 ], AdaMF-MAT [30], VISTA [9], MyGo [29], MoMoK [30], and MCKGC [6]. 
+
+Implementation Details. Our model is implemented in PyTorch 2.6.0 and trained on a single NVIDIA V100 GPU with 32GB memory. We use AdamW with an initial learning rate of 1×10 −4 and a weight decay of 5 × 10 −5. The batch size is set to 128 and the maximum number of training epochs is 3000. Textual features are initialized with BERT-base [ 5 ], visual features are extracted by ResNet-50 [ 7]pretrained on ImageNet [ 19 ], and structural embeddings are initial-ized from TuckER. The number of KGDT blocks is set to 3, and the number of diffusion steps is set to 100. 
+
+## 3.2 Comparison with State-of-the-art 
+
+Table 1 reports the main results on MKG-W, MKG-Y, and DB15K. Overall, M 2GDT achieves the best MRR on all three datasets and also obtains the strongest Hits@1 and Hits@3 in nearly all cases, indicating clear improvements in top-ranked prediction quality. Although M 2GDT is not the best method on MKG-Y Hits@10, it remains competitive on this metric while outperforming prior meth-ods on the more discriminative ranking measures. These results show that M 2GDT improves not only overall ranking performance, but more importantly the precision of the highest-confidence pre-dictions, which is particularly critical for entity completion. Compared with unimodal KGC baselines, M 2GDT delivers sub-stantial gains by incorporating multimodal cues into a relation-dependent and semantically aligned generative framework. For example, relative to RotatE, one of the strongest unimodal base-lines, M 2GDT improves MRR from 33.67 to 37.77 on MKG-W, from 34.95 to 39.25 on MKG-Y, and from 29.28 to 40.54 on DB15K. This consistent margin suggests that purely structural reasoning is insuf-ficient for multimodal entity completion, especially when textual and visual cues provide complementary semantics that cannot be captured by structure-only models. Compared with strong multimodal baselines, M 2GDT also shows clear and consistent advantages. On MKG-W, M 2GDT improves MRR from 36.88 to 37.77 over the strongest previous result, while also achieving the best Hits@1 and Hits@3. On MKG-Y, M 2GDT raises MRR from 38.44 to 39.25 over the best prior baseline, and fur-ther achieves the strongest Hits@1 and Hits@3. On DB15K, M 2GDT improves MRR from 39.79 to 40.54 and achieves the best perfor-mance on all reported metrics. These gains are particularly meaning-ful because the compared baselines, including MyGo, MoMoK, and MCKGC, are already strong multimodal methods with competitive fusion or representation mechanisms. More importantly, the empirical advantage of M 2GDT is con-sistent with our method design. Relative to discriminative meth-ods such as MoMoK, which mainly improve multimodal reasoning through relation-aware expert selection, M 2GDT further introduces relation-adaptive semantic routing before alignment and performs diffusion-based generation in an MLLM-calibrated latent space. This design allows the model to first select relation-dependent mul-timodal cues, then reduce cross-modal semantic inconsistency, and finally focus on structure-aware entity generation. Therefore, the gain of M 2GDT does not only come from using more multimodal signals, but also from the coordinated effect of relation-adaptive routing , semantic alignment , and aligned-space diffusion generation .
+
+## 3.3 Ablation Study 
+
+To examine the contribution of each component in M 2GDT, we conduct ablation experiments on the MKG-W dataset, as reported in Table 2. The ablated variants include removing one modality branch at a time ( w/o Text Branch , w/o Image Branch , and w/o Struc-ture Branch ), removing the semantic anchor branch ( w/o Semantic Anchor ), removing the proposed relation-adaptive semantic routing module ( w/o RASR-MoE ), replacing KGDT with a weaker denoising backbone ( w/o KGDT ), and further replacing KGDT with a simple linear denoiser ( w/o KGDT (Linear Denoiser) ). MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil Anonymous Submission 
+
+Table 2: Ablation study results on the MKG-W dataset. Variant MRR H@1 H@3 H@10 Full M 2GDT 37.77 32.18 39.83 48.15 
+
+w/o Text Branch 36.21 30.77 38.15 47.02 w/o Image Branch 36.89 31.40 38.94 47.56 w/o Structure Branch 35.12 29.44 37.28 46.33 w/o Semantic Anchor 33.45 27.89 35.67 43.98 w/o RASR-MoE 30.88 23.12 29.74 36.09 w/o KGDT 34.88 29.12 36.74 45.61 w/o KGDT (Linear De-noiser) 36.68 31.63 39.07 47.45 Overall, all ablated variants perform worse than the full M 2GDT, confirming that the effectiveness of the framework comes from the coordinated interaction among relation-adaptive semantic routing, MLLM-guided alignment, and diffusion-based generation. Remov-ing any modality branch consistently degrades performance, which shows that structural, textual, and visual signals provide comple-mentary cues for multimodal entity completion. Among them, re-moving the structure branch causes the largest drop (MRR 37.77 
+
+→ 35.12), indicating that graph structure remains the dominant source of supervision, while textual and visual modalities provide important complementary semantics. The most severe degradation is observed in w/o RASR-MoE ,where MRR drops to 30.88. This result verifies the importance of relation-dependent multimodal cue selection, since removing semantic routing substantially weakens the model’s ability to select relation-relevant cues before generation. The w/o Semantic Anchor 
+
+variant further reduces MRR to 33.45, showing that anchor-guided semantic calibration is critical for alleviating cross-modal semantic heterogeneity and building a coherent diffusion condition. The denoising backbone also matters. Replacing KGDT with a weaker denoising backbone reduces MRR to 34.88, while a simple linear denoiser yields 36.68. Although the linear variant remains competitive, both still underperform the full M 2GDT, indicating that semantically calibrated conditions alone are not sufficient and that the Transformer backbone is more effective for modeling condition-dependent interactions and complex relational dependencies during iterative denoising. 
+
+## 3.4 Hyperparameter Sensitivity Analysis 
+
+Figure 5 analyzes the sensitivity of M 2GDT to four important hyper-parameters on MKG-W. Overall, all four curves exhibit clear optima, indicating that the model is stable within a reasonable parameter range rather than being overly sensitive to a single setting. 
+
+Diffusion Steps. As shown in Figure 5(a), performance improves substantially when the number of diffusion steps increases from 10 to 100, but saturates or slightly declines beyond that point. This suggests that too few steps are insufficient for iterative refinement, whereas excessively many steps bring limited gains while increasing computational cost. So we set the number of diffusion steps to 100. 
+
+Transformer Blocks. Figure 5(b) shows that increasing the depth of KGDT improves performance up to 3 blocks, after which the gains become marginal. This indicates that a shallow Transformer 
+
+Figure 6: Evolution of cosine similarity for text, vision, struc-ture, and average cross-modal alignment during training on the MKG-W dataset. Table 3: Performance comparison using different MLLMs as semantic anchors on MKG-W dataset.                     
+
+> MLLM Variant MRR H@1 H@3 H@10 M2GDT(Qwen3-VL-7B) 37.77 32.18 39.83 48.15
+> M2GDT(CLIP-ViT-L/14) 36.85 31.25 39.02 47.63 M2GDT(BLIP-2) 36.42 31.89 38.67 47.21 MCKGC (Previous SOTA) 36.88 31.32 38.92 47.43
+
+is insufficient to capture relational dependencies, while deeper architectures provide diminishing returns. We thus use 3 KGDT blocks in the final model. 
+
+MLLM Alignment Weight. Figure 5(c) shows a clear peak at 𝜆 2 =
+
+0.01 . When the alignment weight is too small, the semantic anchor is not strong enough to effectively calibrate heterogeneous modalities; when it is too large, the alignment objective over-constrains the latent space and reduces the flexibility of diffusion generation. This result supports our view that the MLLM should serve as a semantic anchor rather than a dominant supervisor. 
+
+Diffusion Loss Weight. As shown in Figure 5(d), the best perfor-mance is achieved at 𝜆 3 = 0.1. A too-small diffusion weight weakens the generative training signal, whereas a too-large value makes denoising dominate the overall objective and suppresses alignment. This confirms that M 2GDT requires a balanced interaction between semantic alignment and conditional generation. 
+
+## 3.5 Analysis and Generalization 
+
+To evaluate the generalization and theoretical rationality of our 
+
+align-then-diffuse paradigm, we analyze its core decoupling design with quantitative similarity metrics and verify compatibility with alternative MLLMs. This paradigm’s core advantage is decoupling semantic alignment from structured generation: heterogeneous multimodal features are calibrated into a unified MLLM-guided semantic space, while the diffusion model preserves KG structural specificity, avoiding feature homogenization via moderate cross-modal alignment. M2GDT: MLLM-Guided Diffusion Transformer with Relation-Adaptive Mixture-of-Experts for Multimodal Knowledge Graph Completion MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil 
+
+Quantitative validation via cosine similarity (see Figure 6) shows that modal similarities rise steadily with minor training fluctua-tions and converge at 0.52 ∼0.58 after 1800 epochs, with text ( 0.58 )
+
+> structure ( 0.55 ) > vision ( 0.52 ) and an average of 0.55 . This rank-ing reflects intrinsic modal differences with MLLM semantics, and the moderate interval balances semantic consistency and struc-tural specificity—avoiding performance loss from over-alignment (> 0.60 ) or insufficient alignment ( < 0.50 ), which underpins our model’s generalization ability. Generalization experiments (Table 3) show replacing Qwen3-VL-7B with CLIP-ViT-L/14 [ 17 ] achieves 36.85% MRR (0.92% drop), competitive with SOTA MCKGC (36.88% MRR). This minimal degra-dation is consistent with Figure 6, where cross-modal similarity fluctuates only by ±0.01 across MLLMs, confirming stable align-ment independent of MLLM architecture. Performance gaps across MLLMs derive from their understanding ability: CLIP lacks strong language understanding compared with Qwen3-VL, while even BLIP-2 [10] maintains superiority (36.42% MRR). These results confirm the align-then-diffuse paradigm is a robust, transferable foundation for MKGC, adaptable to diverse multimodal backbones for practical deployment. Our core contribution is the decoupling design unifying semantic alignment and structural gen-eration, rather than reliance on a specific MLLM. 
+
+## 4 Conclusion 
+
+In this paper, we proposed MLLM-Guided Diffusion Trans-former with Relation-Adaptive Mixture-of-Experts , an align-then-diffuse framework for Multimodal Knowledge Graph Com-pletion . The framework addresses two key challenges in Multi-modal Knowledge Graph Completion: cross-modal semantic hetero-geneity and relation-dependent multimodal cue selection. We first introduce a Relation-Adaptive Semantic Routing Mixture-of-Experts module to perform relation-dependent semantic routing over multimodal inputs, then use a frozen Multimodal Large Language Model as a semantic anchor to align the routed repre-sentations into a unified latent space, and finally perform graph-conditioned diffusion generation with a Knowledge Graph Dif-fusion Transformer . In this way, the framework decouples mul-timodal cue selection, semantic calibration, and structure-aware generation into a coherent pipeline. Extensive experiments validate the effectiveness of the framework. 
+
+## References 
+
+[1] Ivana Balazevic, Carl Allen, and Timothy Hospedales. 2019. TuckER: Tensor Fac-torization for Knowledge Graph Completion. In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP) . Association for Computational Linguistics, 5184–5193. doi:10.18653/v1/d19-1522 [2] Antoine Bordes, Nicolas Usunier, Alberto Garcia-Durán, Jason Weston, and Ok-sana Yakhnenko. 2013. Translating embeddings for modeling multi-relational data. In Proceedings of the 27th International Conference on Neural Information Processing Systems - Volume 2 (Lake Tahoe, Nevada) (NIPS’13) . Curran Associates Inc., Red Hook, NY, USA, 2787–2795. [3] Zongsheng Cao, Qianqian Xu, Zhiyong Yang, Yuan He, Xiaochun Cao, and Qingming Huang. 2022. OTKGE: Multi-modal Knowledge Graph Embeddings via Optimal Transport. In Advances in Neural Information Processing Systems ,S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh (Eds.), Vol. 35. Curran Associates, Inc., 39090–39102. https://proceedings.neurips.cc/paper_ files/paper/2022/file/ffdb280e7c7b4c4af30e04daf5a84b98-Paper-Conference.pdf [4] Zhuo Chen, Yin Fang, Yichi Zhang, Lingbing Guo, Jiaoyan Chen, Jeff Z Pan, Hua-jun Chen, and Wen Zhang. 2025. Noise-powered multi-modal knowledge graph representation framework. In Proceedings of the 31st International Conference on Computational Linguistics . 141–155. [5] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. In 
+
+Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , Jill Burstein, Christy Doran, and Thamar Solorio (Eds.). Association for Computational Linguistics, Minneapolis, Minnesota, 4171–4186. doi:10.18653/ v1/N19-1423 [6] Yuxiao Gao, Fuwei Zhang, Zhao Zhang, Xiaoshuang Min, and Fuzhen Zhuang. 2025. Mixed-Curvature Multi-Modal Knowledge Graph Completion. In Proceed-ings of the AAAI Conference on Artificial Intelligence , Vol. 39. 11699–11707. [7] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition . 770–778. [8] Wei Huang, Meiyu Liang, Peining Li, Xu Hou, Yawen Li, Junping Du, Zhe Xue, and Zeli Guan. 2025. DiffusionCom: Structure-Aware Multimodal Diffusion Model for Multimodal Knowledge Graph Completion. arXiv preprint arXiv:2504.06543 
+
+(2025). [9] Jaejun Lee, Chanyoung Chung, Hochang Lee, Sungho Jo, and Joyce Whang. 2023. VISTA: Visual-textual knowledge graph representation learning. In Findings of the association for computational linguistics: EMNLP 2023 . 7314–7328. [10] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International conference on machine learning . PMLR, 19730–19742. [11] Xinhang Li, Xiangyu Zhao, Jiaxing Xu, Yong Zhang, and Chunxiao Xing. 2023. IMF: interactive multimodal fusion model for link prediction. In Proceedings of the ACM web conference 2023 . 2572–2580. [12] Ye Liu, Hui Li, Alberto Garcia-Duran, Mathias Niepert, Daniel Onoro-Rubio, and David S Rosenblum. 2019. MMKG: multi-modal knowledge graphs. In European Semantic Web Conference . Springer, 459–474. [13] Xiao Long, Liansheng Zhuang, Aodi Li, Houqiang Li, and Shafei Wang. 2024. Fact embedding through diffusion model for knowledge graph completion. In 
+
+Proceedings of the ACM Web Conference 2024 . 2020–2029. [14] Hatem Mousselly-Sergieh, Teresa Botschen, Iryna Gurevych, and Stefan Roth. 2018. A multimodal translation-based approach for knowledge graph repre-sentation learning. In Proceedings of the seventh joint conference on lexical and computational semantics . 225–234. [15] Alex Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever, and Mark Chen. 2021. Glide: Towards photorealistic image generation and editing with text-guided diffusion models. arXiv preprint arXiv:2112.10741 (2021). [16] Alexander Quinn Nichol and Prafulla Dhariwal. 2021. Improved denoising diffu-sion probabilistic models. In International conference on machine learning . PMLR, 8162–8171. [17] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al . 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning . PmLR, 8748–8763. [18] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .10684–10695. [19] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, Sanjeev Satheesh, Sean Ma, Zhiheng Huang, Andrej Karpathy, Aditya Khosla, Michael Bernstein, et al .2015. Imagenet large scale visual recognition challenge. International journal of computer vision 115, 3 (2015), 211–252. [20] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Lit, Jay Whang, Emily Denton, Seyed Kamyar Seyed Ghasemipour, Burcu Karagol Ayan, S. Sara Mah-davi, Raphael Gontijo-Lopes, Tim Salimans, Jonathan Ho, David J Fleet, and Mohammad Norouzi. 2022. Photorealistic text-to-image diffusion models with deep language understanding. In Proceedings of the 36th International Conference on Neural Information Processing Systems (New Orleans, LA, USA) (NIPS ’22) .Curran Associates Inc., Red Hook, NY, USA, Article 2643, 16 pages. [21] Zhiqing Sun, Zhi-Hong Deng, Jian-Yun Nie, and Jian Tang. 2019. RotatE: Knowledge Graph Embedding by Relational Rotation in Complex Space. CoRR 
+
+abs/1902.10197 (2019). arXiv:1902.10197 http://arxiv.org/abs/1902.10197 [22] Yun Tang, Jing Huang, Guangtao Wang, Xiaodong He, and Bowen Zhou. 2020. Orthogonal relation transforms with graph context modeling for knowledge graph embedding. In Proceedings of the 58th annual meeting of the association for computational linguistics . 2713–2722. [23] Théo Trouillon, Johannes Welbl, Sebastian Riedel, Éric Gaussier, and Guillaume Bouchard. 2016. Complex embeddings for simple link prediction. In International conference on machine learning . PMLR, 2071–2080. [24] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems 30 (2017). MM ’26, 10–14 November 2026, Rio de Janeiro, Brazil Anonymous Submission 
+
+[25] Meng Wang, Sen Wang, Han Yang, Zheng Zhang, Xi Chen, and Guilin Qi. 2021. Is Visual Context Really Helpful for Knowledge Graph? A Representation Learning Perspective. In Proceedings of the 29th ACM International Conference on Multime-dia (Virtual Event, China) (MM ’21) . Association for Computing Machinery, New York, NY, USA, 2735–2743. doi:10.1145/3474085.3475470 [26] Zikang Wang, Linjing Li, Qiudan Li, and Daniel Zeng. 2019. Multimodal data enhanced representation learning for knowledge graphs. In 2019 International Joint Conference on Neural Networks (IJCNN) . IEEE, 1–8. [27] Ruobing Xie, Zhiyuan Liu, Huanbo Luan, and Maosong Sun. 2017. Image-embodied knowledge representation learning. In Proceedings of the 26th Interna-tional Joint Conference on Artificial Intelligence (Melbourne, Australia) (IJCAI’17) .AAAI Press, 3140–3146. [28] Derong Xu, Tong Xu, Shiwei Wu, Jingbo Zhou, and Enhong Chen. 2022. Relation-enhanced negative sampling for multimodal knowledge graph completion. In 
+
+Proceedings of the 30th ACM international conference on multimedia . 3857–3866. [29] Yichi Zhang, Zhuo Chen, Lingbing Guo, Yajing Xu, Binbin Hu, Ziqi Liu, Wen Zhang, and Huajun Chen. 2025. Tokenization, Fusion, and Augmentation: To-wards Fine-grained Multi-modal Entity Representation. In AAAI . AAAI Press, 13322–13330. [30] Yichi Zhang, Zhuo Chen, Lei Liang, Huajun Chen, and Wen Zhang. 2024. Unleash-ing the power of imbalanced modality information for multi-modal knowledge graph completion. arXiv preprint arXiv:2402.15444 (2024). [31] Yichi Zhang and Wen Zhang. 2022. Knowledge graph completion with pre-trained multimodal transformer and twins negative sampling. arXiv preprint arXiv:2209.07084 (2022). [32] Yichi Zhang and Wen Zhang. 2022. Knowledge Graph Completion with Pre-trained Multimodal Transformer and Twins Negative Sampling. arXiv:2209.07084 [cs.AI] https://arxiv.org/abs/2209.07084

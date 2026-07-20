@@ -1,0 +1,4212 @@
+Title: Frontier Language Models Struggle to Copy: Text Can Be Better Viewed in 2D
+
+URL Source: https://arxiv.org/pdf/2607.16072v1
+
+Published Time: Mon, 20 Jul 2026 01:27:21 GMT
+
+Number of Pages: 58
+
+Markdown Content:
+# Frontier Language Models Struggle to Copy: Text Can Be Better Viewed in 2D 
+
+Haodong Wen ∗ Yiran Zhang ∗ Yingfa Chen ∗ Kaifeng Lyu 
+
+Tsinghua University 
+
+{whd25,zhangyir22,yingfa-c24}@mails.tsinghua.edu.cn klyu@mail.tsinghua.edu.cn 
+
+## Abstract 
+
+While large language models (LLMs) can solve advanced reasoning problems in seconds, we show that even frontier models fail to perform a much simpler opera-tion: exactly copying an input string that lies well within their context windows. We attribute this failure to positional encodings in Transformer architectures, whose inductive bias favors copying through a shortcut based on matching local contexts rather than carefully locating the corresponding input positions. To address this issue, we introduce 2D-RoPE, which organizes text into a 2D grid rather than a 1D sequence and assigns each token a row ID and a column ID. Under this view, copying becomes simply retrieving input tokens at a fixed column offset, which makes the task easy to learn. In synthetic copy experiments, shallow Transformers with 2D-RoPE achieve perfect copying at input lengths hundreds of times longer than those seen during training, whereas standard positional encodings fall far behind. We further show that the advantage of 2D-RoPE language models on copy tasks consistently holds in large-scale pretraining on DCLM with model sizes up to 1.4B parameters. Overall, our results suggest that viewing text in 2D can benefit language modeling, and we hope this encourages future work to further explore the potential of 2D positional encodings. Our code is available at https://github.com/hhhhhh-925/copy-2dRoPE. 
+
+## 1 Introduction 
+
+While large language models (LLMs) have achieved tremendous success on a wide range of complex reasoning problems, we show that they still struggle with a seemingly simple task: given a string as input, reproduce the exact same string as output, possibly with minor adaptations to match a required output format. We refer to this as the copy task and specifically consider the following two variants: • Binary Copy. We give the model a simple string consisting of two types of tokens (such as 0
+
+and 1) and the model is instructed to output the exact same sequence of tokens. • Python List Conversion. We generate a comma-separated list of data points from synthetic physical experiments, feed it to the LLM, and ask the LLM to convert the data into a Python list that can be used to generate plotting code for the data. Although solving these copy tasks may not require the same level of intelligence as an LLM, it is arguably a fundamental capability that any intelligent agent should possess. For example, an agent may need to copy parameters from a configuration file for function calling, or organize unstructured user input into a specific format for downstream processing. After all, if current LLMs are already intelligent enough to achieve gold-medal performance in Olympiad-level mathematics and competitive programming (OpenAI, 2025; Luong and Lockhart, 2025; Lin and Cheng, 2025), why shouldn’t we expect them to perform this very basic copying task perfectly?      
+
+> *Equal contribution Preprint. arXiv:2607.16072v1 [cs.CL] 17 Jul 2026 Copy the text below exactly as -is (keep every character):
+> 0111111111111110111111111111111111111111111111110111
+> 1111111111110111011101
+> 0111111111111110111111111111111111111111111111110111
+> 1111111111110111011101
+> </> Python
+> [-0.33, -0.33, -0.22, 2.55, 0.08, -0.33, -0.33, -0.22, 2.55, 0.08]
+
+(a) Binary Copy 
+
+> Convert this sequence of physical sensor readings into a
+> Python list:
+> -0.33, -0.33, -0.22,2.55,0.08, -0.33, -0.33, -0.22,2.55,0.08
+
+(b) Python List Conversion 27 28 29 210 211 212                
+
+> Token Number
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Binary Copy: Recursive-Flip
+> 272829210 211 212 213
+> Length
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Binary Copy: Imbalanced
+> 200 300 400 500
+> Data Point Number
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Python List Conversion
+> GPT-5.5 Claude Opus 4.7 Gemini 3.1 Pro DeepSeek V4 Pro Qwen 3.6 Plus Qwen3-8B Finetuned 2D-RoPE (Ours)
+
+Figure 1: Frontier language models struggle to perform two representative copy tasks, the binary copy and Python list conversion tasks, while our 2D-RoPE models achieve significantly better performance. See Section 3.1 for details on the benchmark construction. However, as shown in Figure 1, all the frontier LLMs we evaluate, including GPT-5.5, Gemini 3.1 Pro, and DeepSeek V4 Pro, fail on a substantial fraction of input strings that are well within their context lengths. Their copying accuracy drops further on longer inputs, often falling well below 50% .
+
+Understanding the Failure of Copying. Our experimental design is motivated by the following conjecture: LLMs may not copy a string by directly using the absolute index i to retrieve the i-th character from the input. Instead, copying may be implemented in a way closer to the induction head mechanism (Olsson et al., 2022; Chen et al., 2024b): the model searches for a previous occurrence of a similar local context and then predicts the token that appears right after this occurrence. Under this view, repeated substrings create ambiguous local matches and can therefore interfere with exact copying. Indeed, in our experiments, the tested strings are not arbitrary but are deliberately chosen to contain repeated substrings. For example, in the Python List Conversion task, part of the data is generated from periodic sine or triangular waves. Our further experiments in Figure 2 show that copying accuracy is negatively correlated with the degree of repetition in the input strings. In Section 3, we develop expressivity theory and mechanistic interpretability results to support this conjecture, and show that the copying failure is closely tied to the positional encoding used in Transformers. Although RoPE has appealing properties such as shift-invariance, it does not provide a sufficiently strong inductive bias for the model to align the source and target tokens by their relative positions. As a result, the learned attention patterns are not cleanly aligned with the corresponding source positions, but are instead easily attracted by locally similar substrings. 
+
+Our Method: 2D Positional Encoding. This analysis points to a natural design goal: a positional encoding with a stronger inductive bias towards copying from the corresponding position in the input. To this end, a key observation is that the copy task has an implicit 2D structure. When copying an input string x1, . . . , x n into an output string y1, . . . , y n, if we only view the whole context as a 1D sequence, for example: 
+
+<Input> , <:> , x 1, . . . , x n, <\n> , <Output> , <:> , y 1, . . . , y n,
+
+then, producing an output token yk requires the model to retrieve xk from an offset that depends on the input length n. This is unnatural for relative positional encodings such as RoPE, which more readily represent fixed-offset retrieval than a length-dependent retrieval. It is thus no wonder that models may fall back to an easier shortcut such as matching similar substrings. Instead, if we arrange the input and output strings into two rows, for example: 
+
+<Input> , <:> , x 1, . . . , x n, <\n> ,
+
+<Output> , <:> , y 1, . . . , y n,
+
+then, producing yk reduces to retrieving a token from the same column, or from a column shifted by a fixed constant, depending on the prompt template. 2Motivated by this key observation, we introduce 2D-RoPE. The construction is inspired by how RoPE is applied to 2D images in vision models (Jeevan and Sethi, 2022; Heo et al., 2024; Chu et al., 2024). Given any text, 2D-RoPE uses the line break token <\n> (also called the newline token) as the row separator and views the text as a 2D grid, where each token is assigned a 2D position ID pair (row ID , column ID ). RoPE attention is then applied to this 2D grid to encode relative positions along both axes. Under this representation, copying a string can be implemented by a single attention layer that retrieves each token from the corresponding position in the previous row, which is arguably a simpler structure for the model to learn. Empirically, 2D-RoPE leads to strong length generalization on the copy task. Here, length gener-alization refers to the ability to generalize from short training sequences to longer test sequences. In synthetic copy experiments, we train 2D-RoPE models on the binary copy task and show that one-layer models achieve perfect copying with up to 1000 × length generalization , while 12 -layer models maintain perfect performance up to 100 × length generalization. Theoretically, we first prove that a one-layer Transformer equipped with 2D-RoPE can represent the binary copy problem and achieve length generalization. Furthermore, we show that the global minima of a one-layer 2D-RoPE, trained on sequences of length at most L, can generalize to sequence lengths polynomial in L.Beyond this synthetic setting, we further ask whether 2D-RoPE retains its advantage when trained as a real language model rather than on the copy task alone. We therefore pretrain 2D-RoPE models ranging from 350 M to 1.4B parameters on DCLM (Li et al., 2024). After finetuning, these models exhibit both length generalization and out-of-distribution generalization on copy tasks, while keeping the performance on common-sense reasoning tasks comparable to RoPE. Finally, since the 2D structure in natural documents may not always be explicitly marked by line breaks, we introduce Auto-2D-RoPE, which learns a data-dependent transformation to automatically assign 2D coordinates to each token. Our experiments show that Auto-2D-RoPE maintains length generalization on binary copy even without line breaks, whereas the original 2D-RoPE does not. • We show that frontier LLMs fail on the copy task, and develop expressivity theory and mecha-nistic interpretability results to explain this failure (Section 3). • We introduce 2D-RoPE, a positional encoding that views text as 2D rather than 1D. Empirically, we show that training 2D-RoPE models specifically on the copy task leads to strong length generalization. We further theoretically show that this 2D-RoPE improves model expressivity and leads to a better loss landscape for learning the copy task with length generalization. More broadly, this may shed light on how positional encodings shape a model’s learning behavior beyond the specific setting studied here (Section 4). • We further conduct LLM pretraining experiments on DCLM (Li et al., 2024) dataset with model sizes ranging from 350 M to 1.4B. Our results show that 2D-RoPE can exploit the 2D structure of text and significantly improve performance on the copy tasks with comparable common sense reasoning performance (Section 5). • To reduce the explicit reliance of 2D-RoPE on line breaks, we introduce Auto-2D-RoPE, which automatically determines the 2D coordinates for each token and length-generalizes on the copy task even without line breaks (Appendix F). Overall, our results suggest that viewing text in 2D can benefit language modeling, and we hope this encourages future work to further explore the potential of 2D positional encodings. 
+
+## 2 Related Works 
+
+Positional Encoding. The attention mechanism relies on position encoding methods to model the positional information of tokens (Vaswani et al., 2017). Most state-of-the-art LLMs employ RoPE (Su et al., 2024), which has demonstrated strong language modeling performance and length generalization. Kazemnejad et al. (2023) show that attention with just a causal mask can reconstruct absolute and relative position information. More recently, Yang et al. (2026) propose a position encoding scheme based on accumulating Householder transformations and show that it can solve 
+
+N C 1-complete problems under AC 0-reductions. 3Structured and Multidimensional Positional Encodings. Prior work has explored positional encodings that assign multiple structural coordinates to each token. BiPE (He et al., 2024) decomposes the input sequence into segments, where the segment boundaries are constructed with full stops and line breaks. It then applies absolute positional embeddings within each segment and uses RoPE or ALiBi across segments, which is connected to bilevel nondeterministic finite automata (BiNFA) in theory. For coding-related tasks, HiRoPE (Zhang et al., 2024b) constructs hierarchical RoPE coordinates from the syntactic structure of source code. Although these methods introduce hierarchical positional structure, their constructions do not provide the inductive bias required for copying. For BiPE, the absolute positional encoding within one segment does not provide the relative alignment along the inner coordinate required for copying. HiRoPE, on the other hand, relies on the hierarchical structure inherent in coding data and therefore does not directly apply to copying task. In computer vision, RoPE has been applied along the height and width coordinates of pixels or image patches (Jeevan and Sethi, 2022; Heo et al., 2024; Chu et al., 2024). To the best of our knowledge, prior work has not systematically studied how positional encoding affects the copying abilities of language models. 
+
+Length Generalization. Many early studies show that transformers sometimes succeed and some-times fail at length-generalization, correlated with multiple factors such as positional encoding, data format, and other training hyperparameters (Bhattamishra et al., 2020; Anil et al., 2022; Kazemnejad et al., 2023; Awasthi and Gupta, 2023; Jelassi et al., 2023; Wang et al., 2024a; Zhou et al., 2023, 2024; Chang and Bisk, 2025; Jelassi et al., 2024). Specifically on the copy task, Transformers trained to copy short strings often do not generalize well to longer strings when the input string includes repeated substrings (Zhou et al., 2024; Morwani et al., 2024). Theoretically, Huang et al. (2024) introduce a formal framework, proving that Transformers can solve a class of problems expressible by the C-RASP formalism (Yang and Chiang, 2024). Unfortunately, the repeated copy is provably difficult in the sense of C-RASP expressiveness. 
+
+The Representation Power of Transformer. There is a long line of work studying the repre-sentation power of Transformer (Pérez et al., 2021; Yao et al., 2021; Chiang and Cholak, 2022; Sanford et al., 2023). Merrill and Sabharwal (2024); Feng et al. (2023) analyze the representation power of Transformer with Chain-of-Thought. Wen et al. (2025) compared the expressive ability of Transformer with Recurrent Neural Networks. Later, Chen et al. (2024a) showed the limitation of multi-layer Transformers’ expressive power. 
+
+Copy Capability of Transformers. Copying from context has been studied in several related set-tings. Some works use synthetic copy tasks to study Transformer length generalization (Kazemnejad et al., 2023; Huang et al., 2024; Jelassi et al., 2024), while other benchmarks include copying as part of broader LLM evaluations (Chen et al., 2025; Wang et al., 2024b; Hsieh et al., 2024; Wang et al., 2025). However, these works do not isolate exact copying of user-provided strings as a standalone failure mode of frontier LLMs, nor do they provide a positional-encoding-based remedy. In contrast, we directly evaluate modern LLMs on exact copy tasks, connect the failure to positional alignment, and propose 2D-RoPE to better align source and target tokens. 
+
+Comparison with Jelassi et al. (2024). Jelassi et al. (2024) is most closely related to our work, which studies synthetic copy tasks and gives a two-layer Transformer construction based on context matching. Our focus is different in several aspects. First, we show that frontier LLMs fail to copy user-provided strings exactly, even within their context lengths. Second, their construction and analysis focus on the uniform data distribution and do not imply perfect copying for arbitrary strings with repeated substrings or provide the length-generalization guarantee considered in our work. Finally, their construction is context-based (see Section 3.3), whereas our results suggest that repeated substrings make context matching unreliable. 
+
+Comparison with Bai et al. (2021). Segatron-XL assigns each token three hierarchical positions: its position within the sentence, the position of that sentence within the paragraph, and the position of that paragraph within the document. It encodes relative differences along these three dimensions using the relative attention mechanism of Transformer-XL (Dai et al., 2019). If the input and output strings are placed in separate segments with aligned local token positions, corresponding tokens can have a fixed relative coordinate that does not depend on the sequence length. Segatron-XL may therefore provide a positional inductive bias similar to that of 2D-RoPE for copying. However, Segatron-XL was introduced within the Transformer-XL architecture and was evaluated only for language modeling; its behavior on exact copying and length generalization was not studied. In 40.4 0.6 0.8 1.0       
+
+> Percentage of Uncorrupted Repetitions
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> GPT-5.5
+> Period 4
+> Period 6
+> Period 8
+> Period 10
+> 0.4 0.6 0.8 1.0
+> Percentage of Uncorrupted Repetitions
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Gemini 3.1 Pro
+> Period 4
+> Period 6
+> Period 8
+> Period 10
+> 0.4 0.6 0.8 1.0
+> Percentage of Uncorrupted Repetitions
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Qwen 3.6 Plus
+> Period 4
+> Period 6
+> Period 8
+> Period 10
+
+Figure 2: Repeat-structure copy test for frontier LLMs. Each input is built by repeating a short base block (period 4–10 ) until length 1000 , and then independently flipping each token with some probability. The x-axis, (1 − p)m, is the fraction of base blocks that survive uncorrupted, so a larger value means the input contains more exact repetitions; the y-axis is the exact copying accuracy. Across all three models and all four periods, accuracy decreases as repetitions are preserved more strongly, indicating that repeated substrings make exact copying harder. See Appendix A.2 for details. contrast, our work shows that even frontier language models struggle with exact copying and provides 2D-RoPE to solve it. We further introduce Auto-2D-RoPE, which learns two-dimensional position structure directly from text. 
+
+## 3 Language Models Fail to Copy 
+
+In this section, we first introduce our copy benchmarks in detail, and then present our analysis to diagnose the failure of LLMs on the copy tasks. 
+
+3.1 Our Copy Benchmarks 
+
+To test the copy capabilities of LLMs, we construct the following copy tasks. See example prompts in Figure 1 and full prompt templates used in our experiments in Appendix K. 
+
+Binary Copy Task. In binary copy, we fix a vocabulary V of size |V| = 2 , which means that the input string s only consists of two types of tokens. Given an input string s, the model is required to output an exact copy of s. For example, the input string can be s = “ 011010101010100 ”, with the vocabulary fixed to V = {0, 1}. We generate such input strings from three different distributions: • Uniform Generation: Each token is sampled independently and uniformly from V.• Imbalanced Generation: We fix a probability set p ∈ { 0.05 , 0.15 , 0.3, 0.5, 0.7, 0.85 , 0.95 }.For each string, we first sample p uniformly from this set, and then each input token is sampled as the first token in V with probability p and the second token with probability 1 − p.• Recursive-Flip Generation: We initialize s with a single token sampled uniformly from V.Then we iteratively update s ← s + c + s for several rounds, where c is a randomly sampled token from V in each round. After K rounds, we obtain a string s with length 2K+1 − 1, which contains a complicated recursive structure as well as many random flips. When we need to generate a string with an arbitrary length n, we simply truncate s to its first n tokens. 
+
+Python List Conversion Task. We generate a comma-separated list of data points from synthetic physical experiments and ask the LLM to convert the data into a Python list. This mimics the scenario where an agent needs to copy user inputs into a specific format for downstream processing with Python code, such as visualizing the data. Our evaluation includes 9 synthetic experiments in total, and each data-point list is generated randomly from one of the 9 experiments. These experiments can be further categorized into three types: smooth periodic oscillations, piecewise or reset-driven oscillations, and nonlinear or pulse-like signal responses. See Appendix A for details. 
+
+Qwen3-8B Finetuning Baseline. We also finetune Qwen3-8B (Yang et al., 2025a) on the same imbalanced binary copy data and exactly the same setups as we used for our other pretrained models in Section 5, denoted as Qwen3-8B Finetuned in Figure 1. Still, we found that the copy failure persists even after finetuning. 53.2 Evaluation of Frontier LLMs 
+
+Figure 1 shows that frontier LLMs fail to perform perfect copying on both binary copy and Python list conversion tasks. For binary copy, we test the models on Recursive-Flip and Imbalanced data. For each length interval [2 k, 2k+1 − 1) with k ∈ { 7, 8, 9, 10 , 11 }, we generate 50 samples with lengths sampled uniformly from that interval, and report the average copying accuracy within each interval. For Recursive-Flip, the vocabulary is either {“ 0”, “ 1”} or {“ 000 ”, “ 111 ”}, depending on whether the model’s tokenizer tends to merge consecutive 01 characters into a single token. For Imbalanced data, we fix the same vocabulary for all models: {“ a”, “ b”}, since all the tokenizers used in our evaluation recognize these two tokens as unique tokens. For the Python List Conversion task, we evaluate four list lengths, 200 , 300 , 400 , 500 , with 50 samples for each length. See details of the evaluation in Appendix A. There are two notable features in the results. First, as the input length increases, the accuracy of all models decreases. This suggests that the models may only have learned an ad-hoc copy rule that works for some specific input length range, rather than a rule that can be generalized to all lengths. Throughout the paper, we use the term length generalization to refer to the ability of a model to perform well on inputs with lengths beyond the training range. Second, frontier LLMs perform especially poorly on strings with many repeated substrings. To see this, we sample a short binary base string, repeat it multiple times to generate a fixed-length long string, and independently flip each token with probability 1 − p. As we increase p from 0 to 1, each repeated substring becomes less likely to be corrupted, and thus the input contains more repeated substrings. As shown in Figure 2, the copying accuracy consistently decreases as the number of repeated substrings increases in this way. Details of this experiments can be found in Appendix A.2. 
+
+3.3 Why Do LLMs Fail to Copy? 
+
+Motivated by the above observations, we now state our conjecture on why frontier LLMs fail to copy. There are two natural algorithms for solving the copy task: • Position-based algorithm : to output the k-th output token yk, derive some representation of the index k and use it to retrieve the corresponding input token xk.• Context-based algorithm : first identify the local context around the current output token yk,such as yk−3yk−2yk−1, and then find a similar local context in the input, and then copy the token associated with that matched context. The position-based algorithm sounds the most natural, but implementing it in a Transformer requires careful arithmetic over positions, since the relative position between xk and yk depends on the input length n, which may vary across input strings. Without handling this dependence properly, the model may learn to copy only for some input lengths but not others. The context-based algorithm is more flexible and can be implemented with a few attention layers, but it is NOT a correct algorithm in general: if there are many repeated substrings in the input, the context-based algorithm may not be able to locate the correct input position. It is clear from the imperfect copying accuracy that LLMs do not exactly implement either of the two algorithms above, but what do they do instead? We conjecture that LLMs instead implement a mixture of the two algorithms. In other words, LLMs exhibit an inductive bias towards a mixture of position-based and context-based copying algorithms. This conjecture is supported by the two failure modes: copying accuracy decreases as either the input length or the degree of repetition increases. 
+
+3.4 Diagnosis via Expressivity Theory and Synthetic Experiments 
+
+In this subsection, we aim to understand the failure of LLMs on copy via a joint analysis of expressivity theory and synthetic experiments, as a support of our above conjecture. To analyze the copy task more precisely, we fix a template parameterized by a positive integer pair (a, b ). Under this template, a full copy example is the sequence 
+
+(A1, · · · , Aa, s, B1, · · · , Bb, s ),
+
+where s ∈ { 0, 1}+ = S
+
+> k≥1
+
+{0, 1}k is a binary string to be copied, and LLMs are asked to autore-gressively reproduce the second occurrence of s. The tokens A1, · · · , Aa form a fixed prefix and 6B1, · · · , Bb a fixed delimiter (with B1 = <\n> ) that marks the end of the source string and the start of the copy. All of A1, · · · , Aa, B1, · · · , Bb are distinct tokens outside {0, 1}, so that they can serve as positional anchors without being confused with the binary content. In our synthetic experiments (Section 3.4.2), we take a = 2 and b = 3 .
+
+3.4.1 Evidence from Expressivity Theory 
+
+First of all, we ask: can Transformers express the position-based copying algorithm? The answer is mixed. Given the apparent simplicity of the copy task, one might expect a single Transformer layer to be expressive enough to solve it. This expectation is natural: single attention layers are closely related to associative recall (Ramsauer et al., 2021; Bricken and Pehlevan, 2021; Smart et al., 2025), and positional encodings can in principle support retrieval tokens at a fixed relative offset (Vaswani et al., 2017; Weiss et al., 2021). Perhaps surprisingly, this is not the case for binary copy. We show that even for input strings with length at most 5, one-layer Transformers cannot exactly perform copying. 
+
+Theorem 3.1. No one-layer Transformer with shift-invariant positional encoding can perform the binary copy task for all input strings with length n ≤ 5.
+
+Note that shift-invariant positional encodings cover a wide range of positional encodings, including RoPE, NoPE, ALiBi, etc. This follows from a simple proof by contradiction. Intuitively, one-layer transformer fails to copy since copy requires retrieval at a length-dependent offset rather than a fixed offset. Thus, the failure of one-layer models reflects a lack of capability for processing length-dependent tasks. The formal statement of this theorem and its proof are in Appendix H. Beyond one layer, we show that two-layer Transformers with RoPE can express binary copy. 
+
+Theorem 3.2. Let a, b ≥ 2. There exists a constant embedding dimension d such that for any norm constraint ρ > 10 4, there exist RoPE frequencies β and a parameter vector θ with ∥θ∥2 ≤ ρ such that the two-layer Transformer with embedding dimension d, RoPE frequencies β, parameters θ can perfectly perform copying for all lengths 1 ≤ L ≤ O(ρ2/ log ρ).
+
+The key intuition here is that with multiple layers, the model can construct intermediate positional features and use them to align each output position with its corresponding input position. The detailed setup and proof of this theorem is in Appendix I. Notice that in our synthetic experiment for binary copy in Section 3.4.2, we set a = 2 , b = 3 , which is within the scope of our theoretical arguments above. Putting these two theorems together, we can conclude that: (1) the inductive bias induced by standard positional encodings, including RoPE, are not strong enough to support perfect copying for one-layer Transformers; (2) Transformers with multiple layers can express the position-based copying algorithm, suggesting that training, rather than expressivity alone, biases Transformers away from position-based algorithms. 
+
+3.4.2 Synthetic Experiments Setup. We further analyze what Transformers learn through synthetic experiments by training on the binary copy task. Here we consider two settings: Transformers with 1 layer and 2 attention heads, and Transformers with 12 layers and 12 attention heads. For each setting, we consider 4 position encodings: RoPE, ALiBi (Press et al., 2021), NoPE, and RNoPE (Yang et al., 2025b). The template of the data are for a = 2 , b = 3 as defined at the beginning of Section 3.4. 
+
+Uniform Data. We first train these models on uniform data with lengths from 1 to 100 . While they perform perfectly on uniform data, they perform poorly on other data distributions, such as Imbalanced (see Figure 7). This suggests that the models may have learned a context-based algorithm. 
+
+Imbalanced Data. Instead, when we train these models on imbalanced data for sufficient iterations, they can perform almost perfectly on imbalanced data as well as the other data distributions we construct. However, all the position encodings mentioned above fail to generalize to longer inputs. See Appendix B for more details of experimental setups. 
+
+Attention Patterns. We further show that these models use a mixture of position-based and context-based algorithms when copying. To see this, we analyze the attention patterns of a trained RoPE model on binary copy under the imbalanced distribution. We consider a small model with 2 heads 70 50 100 150 200             
+
+> Query position
+> 0
+> 50
+> 100
+> 150
+> 200
+> Key position
+> Layer 0 · Head 0
+> 050 100 150 200
+> Query position
+> 0
+> 50
+> 100
+> 150
+> 200
+> Key position
+> Failed sample: Recursive-Flip Generation, length = 100
+> Layer 0 · Head 1
+> 050 100 150 200
+> Query position
+> 0
+> 50
+> 100
+> 150
+> 200
+> Key position
+> Layer 1 · Head 0
+> 120 140 160 180 200
+> Query position
+> 20
+> 40
+> 60
+> 80
+> 100
+> Key position
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Attention probability
+
+Figure 3: Attention map of a RoPE model on a failed sample with sequence length within training length. In Layer 0, attention heads exhibit both horizontal patterns (attending to special tokens before and after the input string) and diagonal patterns (semantic/induction-style behavior). In Layer 1, RoPE would attend to wrong tokens near themselves periodically. in the first layer and 1 head in the second layer, trained on sequences with lengths from 1 to 100 .Figure 3 shows the attention maps of all layers and heads on representative copy examples. We first inspect the last layer, since exact copying requires each output position to align with its corresponding input position. However, even for a failed sample with length 100 , which is within the training range, the learned attention is not a clean position-based alignment. As shown in the zoomed attention map, the final-layer head attends not only to the correct diagonal positions, but also periodically assigns large attention scores to nearby wrong tokens. This suggests that the final copy decision is affected by ambiguous local patterns. In Layer 0, we observe two types of attention patterns. First, some attention scores form horizontal stripes on the special tokens around the boundary between the input and output strings, namely the delimiters <\n> , <I:> , and <O:> . A position-based algorithm requires each token to locate itself relative to fixed anchors, and recover a position-related signal from this relative information. Since these delimiters sit at fixed locations in the prompt, attending to them is one natural way to obtain such a signal. The horizontal stripes are consistent with this mechanism: they suggest that the model uses the anchor tokens to recover a position-related signal, which is the behavior we would expect from a position-based algorithm. Second, Layer 0 also contains diagonal patterns , which attend to tokens at a fixed relative offset from the query. This is a typical signature of an induction head (Olsson et al., 2022; Singh et al., 2024; Jelassi et al., 2024): the model locates a previous occurrence of the current local context, such as yk−3yk−2yk−1, and copies whatever token follows it. Such a mechanism is context-based, and therefore becomes ambiguous precisely when the input contains repeated substrings, since the same local context may then appear at several positions. Taken together, the above analysis confirms the conjecture of Section 3 that the trained RoPE model does not implement a purely position-based copy rule. Instead, it relies on a mixture of a position-based algorithm, which anchors on the fixed delimiters <\n> , <I:> , and <O:> (the horizontal stripes), and a context-based algorithm, which performs local matching (the diagonal patterns). The first component is tied to the seen prompt lengths and does not extend reliably to longer inputs, while the second is confused by repeated local structure. This mixture therefore explains both failure modes observed in Figure 1 that copying accuracy degrades as the input grows longer, and as the degree of repetition increases. We further show that for a failure case where the test length is beyond the training length, the above attention patterns are similarly observed. (Appendix C) 
+
+## 4 2D Positional Information Encoding with 2D-RoPE 
+
+Given that current LLMs exhibit inductive bias towards a mixture of position-based and context-based algorithms when copying and can fail, a natural question is whether we can design a positional encod-ing that explicitly favors the position-based algorithm. In this section, we propose a novel architecture based on 2D-RoPE (Section 4.1). Then, we describe an adaptive variant of 2D-RoPE (Section 4.3). Then, we show the superior performance of 2D-RoPE in copying (Section 4.4). Finally, we present a theoretical analysis of 2D-RoPE (Section 4.5) in expressivity. 84.1 2D-RoPE Architecture 2D Position ID Generation. Recall the diagnosis in Section 3 that to copy perfectly, a RoPE-based model must retrieve the source token xk from an offset that grows with the input length n, while standard relative encodings such as RoPE favor fixed-offset retrieval and thus do not provide a strong enough inductive bias to learn this length-dependent retrieval reliably. The idea behind 2D-RoPE is to remove this length dependence by assigning each token a two-dimensional position ID instead of a single one. As we sketch below and make precise in the rest of this section, the right choice of coordinates turns the length-dependent retrieval into a fixed-offset one. More specifically, 2D-RoPE supports retrieval from the same column in the previous row, which is far easier for a single attention layer to express and to learn. The following paragraphs introduce the construction in detail. Specifically, the key idea of 2D-RoPE is to assign each token a pair of position IDs instead of a single position ID. We use the line break token <\n> as a row separator. Let the 2D position of token i be 
+
+(ri, c i), where ri is the row index and ci is the column index within that row. We set the first token position to (r1, c 1) = (0 , 0) . For each subsequent token i > 1,
+
+(ri, c i) = 
+
+((ri−1, c i−1 + 1) , if token i − 1 is not a line break token ,
+
+(ri−1 + 1 , 0) , if token i − 1 is a line break token .
+
+Thus, tokens on the same line share the same row index, and their column index records the offset within the line. In a copy task, this representation makes the source token xk and the target token yk
+
+share the same column index, so copying can be reduced to retrieval from the same column. This assumes that the input and output are separated by a line break. For the case where the separator is not a line break, we propose Auto-2D-RoPE to automatically identify the separator (see Appendix F). 
+
+From 1D RoPE to 2D-RoPE. Standard RoPE (Su et al., 2024) applies a positional rotation to the query and key vectors according to the 1D token position. In 2D-RoPE, we apply the same idea separately to the row and column coordinates. Concretely, we split the head dimension into two equal-sized parts: one encodes relative row positions, and the other encodes relative column positions. This gives the model direct access to both row differences and column differences. For copy, the column coordinate is especially useful, because source and target tokens that should be aligned have the same column ID, although their 1D distance depends on the input length. We now give the formal definition. Let d be the head dimension, divisible by 4. For an input 
+
+X ∈ RT ×d, a 2D-RoPE attention layer is defined as 
+
+Attn (X) = S
+
+
+
+MASK 
+
+
+
+R(XQ ) R(XK )⊤ 
+
+XV ,
+
+where S is the row-wise softmax, MASK is the causal attention mask, and Q, K, V are trainable projection matrices. It remains to define the rotation function R. For any matrix Z ∈ RT ×d, the i-th row Zi is mapped to 
+
+ZiR⊤ 
+
+> ri,c i
+
+, where 
+
+Rri,c i = diag  R1(ri), R2(ri), . . . , Rd/ 4(ri), R1(ci), R2(ci), . . . , Rd/ 4(ci).
+
+For the j-th block, the rotation is 
+
+Rj (t) = 
+
+cos( tβ j ) − sin( tβ j )sin( tβ j ) cos( tβ j )
+
+
+
+,
+
+which is the standard RoPE rotation matrix with frequency parameter βj . In our synthetic experiments in Section 3.4, we use βj = θ−4j/d where θ = 100 . In our LLM experiments in Section 5, we set θ
+
+to 1000 . For the original RoPE architecture, see Appendix G. We also discuss differences from prior vision 2D-RoPE variants in Appendix D. 
+
+4.2 How to Establish 2D Position Encodings in Text 
+
+Previous vision models have explored applying RoPE to pixels or image patches using their height and width coordinates, so that attention can encode relative spatial displacement on the image grid (Jeevan and Sethi, 2022; Heo et al., 2024; Chu et al., 2024). In language modeling, however, the input is 9typically treated as a 1D token sequence, and there is no fixed 2D grid analogous to image patches. The 2D structure must therefore be inferred from the text itself rather than read off from a layout. Fortunately, many text formats already carry such a structure implicitly. Lists use line breaks to separate items, tables use rows and columns to organize aligned entries, and code uses newlines and indentation to express block structure. These line breaks are thus not merely formatting tokens, but often signal how different parts of the text are organized. Motivated by this observation, we use the line-break token to induce a 2D structure in text: each token receives a row ID, determined by the number of preceding line breaks, and a column ID, determined by its offset within the current line. The 2D coordinates are therefore not externally given as in images, but constructed from the textual structure itself. 
+
+4.3 From Line Break to Adaptive 2D Position: Auto-2D-RoPE 
+
+However, the above construction also reveals a limitation of 2D-RoPE. When the input contains few or no line breaks, the row coordinate changes rarely, and 2D-RoPE largely reduces to a 1D positional encoding along the column direction. This motivates a more flexible variant that automatically infers 2D positional structure from the input sequence, rather than relying on a fixed separator token. We introduce Auto-2D-RoPE for this purpose. At each layer, Auto-2D-RoPE uses the hidden representation of each token to predict two update coefficients through a shared linear projection. These coefficients define a learnable affine update of the token’s 2D coordinate, and the final 2D position IDs are obtained by composing these updates along the sequence. In this way, the model can learn when to behave like moving to the next column and when to behave like resetting the column and moving to a new row. The learned coordinates are then used in the same 2D-RoPE rotation as before. Empirical results in Section 3.4.2 and Section 5.4 show that Auto-2D-RoPE outperforms standard PEs in binary copy and even remains effective when we replace the line-break token <\n> with another separator ∗, where rule-based 2D-RoPE can no longer identify row boundaries and largely loses its length-generalization advantage. We provide the full architectural details in Appendix F. 
+
+4.4 Empirical Results of 2D-RoPE Results of Binary Copy Test. In Figure 1, the 2D-RoPE model maintains near-perfect accuracy on Recursive-Flip strings, suggesting that explicitly aligning source and target positions provides a more reliable inductive bias for copying than relying on local-context matching alone. The model in the figure has 1.4B parameters and is finetuned on the imbalanced binary copy task. 
+
+Results of Python List Conversion Test. In the right subfigure in Figure 1, our fine-tuned 2D-RoPE model in Section 5 is trained only on lists with 50 to 150 data points and periods between 2 and 8.Although the training data are easy, the 2D-RoPE model maintains substantially higher accuracy than all tested LLMs. This result is consistent with the binary copy experiments: when the input contains repeated local patterns, as in periodic or oscillatory sequences, exact copying is difficult for standard position encoding while 2D-RoPE provides an explicit positional alignment between the source data points and their copied output positions. 
+
+Results of Synthetic Experiments on Binary Copy. Figure 4 shows that 2D positional structure provides a strong inductive bias for binary copy. 2D-RoPE-based methods exhibit much stronger length generalization than standard positional encoding. In the 12 -layer setting, positional encodings with 2D structure substantially improve over standard positional encodings. The advantage is even clearer in the 1-layer setting as the 2D-RoPE model maintains perfect accuracy up to more than 
+
+1000 × its training context length. 
+
+4.5 Theoretical Analysis of 2D-RoPE 
+
+The experiments above suggest that 2D-RoPE provides a much stronger inductive bias for copying than standard 1D positional encodings: the source token to be copied and the corresponding target position have fixed relative positions, even though their 1D distance depends on the input length. This complements the diagnosis in Section 3. In this subsection, we show that 2D-RoPE also has positive theoretical guarantees. We prove that a one-layer 2D-RoPE Transformer can explicitly represent the position-based copy rule with bounded parameters. Second, under the ℓ∞ regularization-path 10 1
+
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+
+Length 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+
+Uniform 
+
+> 1
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+
+Length 
+
+Imbalanced 
+
+> 1
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+
+Length 
+
+Recursive-Flip 
+
+> RoPE
+> ALiBi
+> RNoPE
+> NoPE
+> 2D-RoPE (Ours)
+> Auto-2D-RoPE (Ours)
+> Hybrid-RoPE (Ours)
+
+(a) Length generalization results for different positional encodings with 12 layers and 12 heads. 1
+
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+> 25600
+> 51200
+> 102400
+
+Length 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+
+Uniform 
+
+> 1
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+> 25600
+> 51200
+> 102400
+
+Length 
+
+Imbalanced 
+
+> 1
+> 25
+> 50
+> 100
+> 200
+> 400
+> 800
+> 1600
+> 3200
+> 6400
+> 12800
+> 25600
+> 51200
+> 102400
+
+Length 
+
+Recursive-Flip     
+
+> RoPE ALiBi NoPE 2D-RoPE (Ours) Auto-2D-RoPE (Ours)
+
+(b) Length generalization results for different positional encodings with 1 layer and 2 heads. 
+
+Figure 4: 2D-RoPE models exhibit stronger length generalization for synthetic experiments on binary copy. Models are trained only on lengths 1–100 and tested on much longer inputs. The 
+
+x-axis is the sequence length (log scale) and the y-axis is the copying accuracy; the three columns correspond to the Uniform, Imbalanced, and Recursive-Flip distributions, and each curve is a different positional encoding. (a) 12 layers and 12 heads; (b) 1 layer and 2 heads. analysis, the global minima of the one-layer 2D-RoPE in training loss provably learn a solution that generalizes far beyond the training length. 
+
+4.5.1 One-Layer 2D-RoPE Can Represent Binary Copy 
+
+We study the expressive power of one-layer 2D-RoPE. In contrast to the impossibility result for one-layer shift-invariant positional encodings, 2D-RoPE makes the correct source position geometrically simple: when predicting the i-th copied token, the query position in the output row and the source token si in the input row have the same column coordinate. Thus, a single attention layer does not need to infer the input length or compute a length-dependent 1D offset. It only needs to attend to the token in the previous row with the same column. The following theorem formalizes this intuition. The parameter norm controls the range of lengths for which the random 2D-RoPE frequencies separate the correct same-column position from all wrong positions. The length bound is polynomial in the norm, and the exponent grows with the RoPE dimension. We still consider format (A1, · · · , Aa, s, B1, · · · , Bb) with a, b ≥ 1 as in Section 3.4. 
+
+Theorem 4.1. Assume that the 2D-RoPE dimension d ≥ 100 + 4 a + 4 b is divisible by 4. For any 
+
+ρ > d 2, let the 2D-RoPE frequencies βii.i.d. 
+
+∼ Unif[0 , 2π] for all i ∈ [d/ 2] . Then, with probability at least 1 − dρ over the randomness of β, there exists a one-layer Transformer with 2D-RoPE whose ℓ2
+
+parameter norm ∥θ∥2 ≤ ρ such that correctly copies every binary string s with length |s| ≤ ρd/ 12 .
+
+The construction behind Theorem 4.1 is purely position-based and comes from one simple geometric fact: under the 2D coordinates, the source token si to be copied always sits in the previous row at a fixed relative column, no matter how long the string is. To leverage this offset, we make the query and key vectors the same for every token, so that each attention score depends only on the relative 2D coordinate of two positions, not on the tokens themselves. Attention is thus based on position alone, with no context matching. We then rotate the query to cancel the offset, so that the correct source has zero relative rotation, which gives it the highest attention score. Every wrong position differs from it in either column or row, and so has a nonzero relative rotation. By sampling the RoPE frequencies at 11 random, we ensure that with high probability, none of these rotations up to the target length happens to sum back to the maximum. This leaves a score gap that puts more than half of the attention mass on si. Finally, only 0 and 1 have nonzero value vectors, and they point in opposite directions, while all other tokens have zero value. So once most of the attention is on si, the output logits predict si
+
+correctly. The detailed theoretical setup of this subsection is in Appendix J.1. A more detailed version of Theorem 4.1 and its proof are in Appendix J.2. 
+
+4.5.2 One-Layer 2D-RoPE Provably Learns Binary Copy with Length Generalization 
+
+Beyond the expressivity results, we theoretically show that one-layer 2D-RoPE can learn binary copy with length generalization. For technical convenience, we consider the setting in which b = a + 2 and 
+
+B1 = <\n> (remind that the input is (A1, · · · , Aa, s, B1, · · · , Bb) and Transformer is asked to output string s). Under this assumption, when the model generates a token, the corresponding target token has the same column index as the current position, which simplifies the theoretical analysis. We study a global minimizer of the population loss for training length L under an ℓ∞-norm constraint: 
+
+θ∗ 
+
+> M,L
+
+∈ arg min  
+
+> θ:∥θ∥∞≤M
+
+LL(θ),
+
+where θ denotes the learnable parameter of 2D-RoPE, as expanded and explained in Appendix J.1. Previous work has analyzed how solutions evolve as the norm constraint M increases in the limit 
+
+M → ∞ under various settings. This is a perspective often referred to as the regularization path, including homogeneous neural networks (Wei et al., 2019) and simplified attention mod-els (Ataee Tarzanagh et al., 2023). In contrast, our analysis establishes that, for every sufficiently large but finite M , a global minimizer of the 2D-RoPE population loss exhibits strong length general-ization. Previous analyses of regularization paths have primarily focused on ℓ2-norm regularization (Wei et al., 2019; Ataee Tarzanagh et al., 2023). We instead consider an ℓ∞ constraint, motivated by recent results on the implicit bias of Adam and AdamW (Xie and Li, 2024; Fan et al., 2025; Zhang et al., 2024a), as all experiments in this paper use AdamW. In particular, Xie and Li (2024) showed that AdamW can converge to KKT points of an ℓ∞-constrained optimization problem, while Zhang et al. (2024a); Fan et al. (2025) showed that, for linear models on separable data, Adam converges to max-margin solutions with respect to the ℓ∞ norm. Similar ℓ∞ regularization paths have also appeared in theoretical analyses of grokking and algorithm learning (Mohamadi et al., 2024). Thus, the ℓ∞ constraint is not only technically convenient but also aligned with the implicit bias of the optimizer used in our experiments. We now state the main theorem of this subsection, which guarantees length generalization for θ∗
+
+> M,L
+
+whenever M is sufficiently large. 
+
+Theorem 4.2. Assume that the 2D-RoPE frequency βii.i.d. 
+
+∼ Unif[0 , 2π] for ∀i ∈ [d/ 2] . Under Assumptions J.3–J.5, with probability at least 1 − 3 
+
+> d
+
+over the randomness of β, there exists M0 > 0
+
+such that for all M > M 0, the one-layer 2D-RoPE Transformer with parameter θ∗ 
+
+> L,M
+
+can correctly copy all binary strings with length at most L√d/ 2.
+
+The assumptions and proof are in Appendix J.3. The theorem shows that, under a sufficiently large ℓ∞
+
+norm constraint, the resulting global minimizers do not merely fit strings within the training-length range. Instead, they learn a copying algorithm that correctly generalizes to binary strings far longer than those seen during training. 
+
+Proof Sketch. The main idea is to introduce the function 
+
+fL(Q, K, V ) := min 
+
+> s,i, |s|≤ L
+
+g+
+
+> s,i
+
+(Q, K, V ) − g−
+
+> s,i
+
+(Q, K, V ) ,
+
+which acts as a surrogate for studying the margin between the attention logits assigned to correct and incorrect tokens. We first show that a small value of fL(Q, K, V ) leads to a lower bound on the population loss. We then construct a feasible parameter configuration with a large value of 
+
+fL(Q, K, V ) and a small population loss. Comparing these two bounds shows that every constrained global minimizer must have a sufficiently large value of fL(Q, K, V ) when M is sufficiently large. 12 Table 1: Large-scale pretraining results of 2D-RoPE, H-RoPE, and RoPE. Each model is pretrained on DCLM, and then finetuned on binary copy with imbalanced distribution.                                                                                                                                                   
+
+> PT Common Copy (Imbalanced) Copy (Recursive-Flip) Model Param Data sense 1K 2K 4K 8K 1K 2K 4K 8K RoPE 350M 7B 41.4 97.2 14.8 0.0 0.0 14.4 7.8 0.0 0.0 H-RoPE (ours) 350M 7B 41.2 99.6 57.8 0.0 0.0 96.9 92.2 35.1 0.0 2D-RoPE (ours) 350M 7B 40.4 97.4 69.2 33.4 2.4 96.9 89.3 56.4 36.4
+> RoPE 730M 15B 44.0 97.0 11.0 0.0 0.0 15.5 7.8 1.1 0.0 H-RoPE (ours) 730M 15B 45.5 95.4 11.4 0.0 0.0 14.4 5.8 0.0 0.0 2D-RoPE (ours) 730M 15B 45.2 99.4 74.6 12.8 0.0 92.8 76.7 45.7 10.9
+> RoPE 1.4B 28B 45.9 99.6 26.8 0.0 0.0 21.6 8.7 0.0 0.0 H-RoPE (ours) 1.4B 28B 47.2 100.0 73.6 3.6 0.0 100.0 98.1 55.3 5.5 2D-RoPE (ours) 1.4B 28B 46.8 100.0 100.0 92.0 61.8 100.0 98.1 92.6 87.3
+> RoPE 730M 100B 46.0 99.6 29.2 0.0 0.0 24.7 8.7 1.1 1.8 H-RoPE (ours) 730M 100B 46.2 99.2 52.1 0.0 0.0 100.0 98.1 28.7 1.8 2D-RoPE (ours) 730M 100B 46.2 100.0 96.3 72.8 15.8 100.0 100.0 100.0 100.0
+
+Finally, concentration properties of the random 2D-RoPE frequencies allow us to convert this lower bound on fL(Q, K, V ) into correct copying at lengths far beyond the training range; see detailed intuitions and proof in Appendix J.3. 
+
+## 5 Experiments on LLM Pretraining 
+
+To validate the effectiveness of 2D-RoPE in empirical language modeling, we first pretrain Trans-former language models from scratch and compare 2D-RoPE against RoPE. Then, we finetune our different models on the synthetic binary copy dataset and the Python List Conversion datasets. 
+
+Model Configuration. We experiment with the Qwen3 (Yang et al., 2025a) architecture, which is one of the most widely used open-source LLMs. To ensure fair comparison, we keep everything unchanged and only replace RoPE with 2D-RoPE. We experiment with different models sizes (350M, 730M, and 1.4B parameters). See Appendix E.1 for more details. 
+
+Pretraining Configuration. The models are pretrained with the DCLM corpus (Li et al., 2024) with 2K context length using the typical optimizer, LR scheduler, and hyperparameters (see Appendix E.2 for more details). We use a data-to-parameter ratio of 20 (i.e., Chinchilla law (Hoffmann et al., 2022)). Furthermore, we experiment with an overtrained setting that is common in state-of-the-art LLMs, where a 730M model is pretrained on 100B tokens. 
+
+Finetuning Configuration. Each model is finetuned on the Imbalanced binary copy task (described in Section 3), using 200K examples and 2K context length (1K maximum input/output tokens). For each model, we sweep learning rate (LR) values of {3 × 10 −5, 5 × 10 −5, 1 × 10 −4} and arrive at 
+
+5 × 10 −5 because it has best overall performance. See Appendix E.4 for more details. 
+
+Hybrid RoPE. Prior works have achieved performance gains in various settings by combining RoPE with other position encoding methods (Vasylenko et al., 2025; Puvvada et al., 2025; Lin et al., 2025). We also explore whether 2D-RoPE can be combined with RoPE to balance the advantages of both methods. To this end, we construct a Hybrid-RoPE (H-RoPE) model between RoPE and 2D-RoPE, in which RoPE and 2D-RoPE are used alternately across Transformer blocks. 
+
+5.1 LLM Evaluation Details 
+
+We evaluate the models on the following benchmarks. 
+
+Common-Sense Reasoning (CSR). To evaluate the common-sense reasoning abilities of LLMs, we use the average accuracy in the following set of tasks: ARC-easy, ARC-challenge (Clark et al., 2018), HellaSwag (Zellers et al., 2019), WinoGrande (Sakaguchi et al., 2019), MMLU (Hendrycks et al., 2021), LAMBADA (Paperno et al., 2016), PIQA (Bisk et al., 2019), and BoolQ (Clark et al., 2019). We use LM-Evaluation-Harness (Gao et al., 2024) for evaluation. 13 0K 20K 40K 60K 80K 100K        
+
+> Step
+> 2.4
+> 2.5
+> 2.6
+> 2.7
+> 2.8
+> 2.9
+> 3.0
+> Loss
+> Pretraining Loss (Train)
+> 0K 20K 40K 60K 80K 100K
+> Step
+> 2.4
+> 2.5
+> 2.6
+> 2.7
+> 2.8
+> 2.9
+> 3.0
+> Loss
+> Pretraining Loss (Eval)
+> RoPE H-RoPE 2D-RoPE
+
+Figure 5: The training loss and evaluation loss during pretraining of the 2D-RoPE, H-RoPE, and RoPE models with 730M parameters (see Section 5). These models were trained on 100B tokens from DCLM, and evaluated on FineWeb-Edu. Table 2: The training and validation loss during pretraining of the three overtrained models in Section 5. The training data is DCLM and the validation data is FineWeb-Edu. 
+
+Model Training Loss Validation Loss RoPE 2.5080 2.3808 
+
+H-RoPE 2.5000 2.3808 
+
+2D-RoPE 2.4943 2.3876 
+
+Binary Copy. We evaluate on the Imbalanced and Recursive-Flip binary copy tasks as described in Section 3.1. The first task is an in-domain copy task (the models are finetuned on it), and the second task is an out-of-domain task that tests the transferability of our method on other copying tasks. 
+
+5.2 LLM Results 
+
+As shown in Table 1, LLMs with 2D-RoPE have superior length generalization in the binary copy tasks, in both in-domain (Imbalanced) and out-of-domain (Recursive-Flip) settings. This result shows that 2D-RoPE can exhibit its advantage in copying in practical large-scale LLM training. This advantage holds for both standard chinchilla ×20 training and the overtraining setting ( 730 M model with 100 B DCLM data). Finally, models with 2D-RoPE outperform RoPE models in CSR except for the smallest-scale model, implying that learning copying does not result in degraded general language modeling capabilities at scale. 
+
+5.3 Pretraining Loss 
+
+Here, we report the training and validation loss during pretraining (in Section 5). We compute validation loss on FineWeb-Edu, which is another widely used pretraining corpus. The results are shown in Figure 5 and Table 2. One can see that the three models have roughly the same training and validation loss, which indicates that the performance of 2D-RoPE on next token prediction is comparable to RoPE. 
+
+5.4 Additional Experiments Python List Conversion Task. To demonstrate the practical importance of the ability to copy, we finetune the 350M model on the Python List Conversion task (described in Section 3.1). As shown in the left subfigure in Figure 6, after finetuning, 2D-RoPE achieves perfect generalization to sequences up to 3 times longer than those seen during training. In comparison, H-RoPE also generalizes to about three times the training length, but underperforms 2D-RoPE. Meanwhile, RoPE shows limited length generalization. 14 50 100 150 200 300 350 400 450 500 550 600      
+
+> Data Point Number
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Python List Conversion
+> RoPE
+> H-RoPE
+> 2D-RoPE 400 1000 2000 4000 6000 8000
+> Length
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Binary Copy with Star Separator
+> RoPE
+> 2D-RoPE
+> Auto-2DRoPE
+
+Figure 6: Fine-tuning results on copy-related tasks using 350 M models pretrained on 7B tokens from DCLM. The gray region indicates the training context length range during finetuning. 
+
+Auto 2D-RoPE: Beyond the Line-Break Separator. 2D-RoPE uses line-break token <\n> to construct 2D positional coordinates, which means that it almost reduces to RoPE when the input text contains no, or very few, line breaks. To address this concern, we give an alternative called Auto 2D-RoPE as mentioned in Section 4.3. Unlike 2D-RoPE, Auto 2D-RoPE does not rely on an explicitly specified line-break token to define rows and columns. Instead, it learns to construct 2D position IDs directly from the input sequence. Concretely, Auto 2D-RoPE represents the 2D position ID of each token through the cumulative product of a learnable 2D transformation matrix along the sequence. Intuitively, this allows the model to automatically decide how positional information should evolve as it scans the input, rather than using a fixed rule such as “increase the row index after every newline and reset the column index.” Similar cumulative-product constructions have appeared in prior attention designs (Tan et al., 2025; Yang et al., 2026), and the idea of making position IDs learnable has also been explored in recent works (Li et al., 2025; Lahoti et al., 2026). We provide the full architectural details of Auto 2D-RoPE in Appendix F. Empirically, Auto 2D-RoPE achieves strong length generalization on copy tasks where we replace the newline token <\n> with another character ∗. In this setting, the original 2D-RoPE can no longer identify row boundaries and effectively degenerates to standard RoPE, showing little or no length generalization. In contrast, Auto 2D-RoPE still learns a useful 2D positional structure and generalizes to longer sequences as shown in Figure 6. 
+
+## 6 Conclusion 
+
+In this paper, we reveal a surprising fact that current LLMs still fail on copy. Motivated by this observation, we introduce 2D-RoPE to solve this problem. We further introduce Auto-2D-RoPE to reduce the reliance on explicit line breaks. Overall, our results show that the way positional information is represented can strongly affect even the most basic algorithmic behaviors of language models. We hope this work encourages further exploration of positional encodings that better capture the latent structure of text and support more reliable length generalization. Several directions remain open for future study. (i) A thorough theoretical understanding of why multi-layer RoPE-based transformers fail to copy is lacking. (ii) How to generalize and scale up Auto-2D-RoPE to a more practical LLM training regime may be of significant value. (iii) Also, a further theoretical understanding of why 2D-RoPE can learn binary copy in the training process is underexplored. 
+
+## 7 Acknowledgement 
+
+We would like to thank Zixuan Wang, Shaowen Wang, and Tingqiang Xu for their kind feedback and insightful comments. We would also like to give special thanks to Hongxun Wu for initial contributions to this project. 15 References 
+
+Cem Anil, Yuhuai Wu, Anders Andreassen, Aitor Lewkowycz, Vedant Misra, Vinay Ramasesh, Ambrose Slone, Guy Gur-Ari, Ethan Dyer, and Behnam Neyshabur. Exploring length generalization in large language models. Advances in Neural Information Processing Systems , 35:38546–38556, 2022. Davoud Ataee Tarzanagh, Yingcong Li, Xuechen Zhang, and Samet Oymak. Max-margin token selection in attention mechanism. Advances in neural information processing systems , 36:48314– 48362, 2023. Pranjal Awasthi and Anupam Gupta. Improving length-generalization in transformers via task hinting. 
+
+arXiv preprint arXiv:2310.00726 , 2023. He Bai, Peng Shi, Jimmy Lin, Yuqing Xie, Luchen Tan, Kun Xiong, Wen Gao, and Ming Li. Segatron: Segment-aware transformer for language modeling and understanding. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 35, pages 12526–12534, 2021. Satwik Bhattamishra, Kabir Ahuja, and Navin Goyal. On the ability and limitations of transformers to recognize formal languages. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 7096–7116, 2020. Yonatan Bisk, Rowan Zellers, Ronan Le Bras, Jianfeng Gao, and Yejin Choi. Piqa: Reasoning about physical commonsense in natural language, 2019. URL https://arxiv.org/abs/1911.11641 .Trenton Bricken and Cengiz Pehlevan. Attention approximates sparse distributed memory. Advances in Neural Information Processing Systems , 34:15301–15315, 2021. Yingshan Chang and Yonatan Bisk. Language models need inductive biases to count inductively. In 
+
+The Thirteenth International Conference on Learning Representations , 2025. Lijie Chen, Binghui Peng, and Hongxun Wu. Theoretical limitations of multi-layer transformer. 
+
+arXiv preprint arXiv:2412.02975 , 2024a. Siyu Chen, Heejune Sheen, Tianhao Wang, and Zhuoran Yang. Unveiling induction heads: Provable training dynamics and feature learning in transformers. In A. Globerson, L. Mackey, D. Bel-grave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, Advances in Neural Informa-tion Processing Systems , volume 37, pages 66479–66567. Curran Associates, Inc., 2024b. doi: 10.52202/079017-2127. Wentong Chen, Yankai Lin, ZhenHao Zhou, HongYun Huang, Yantao Jia, Zhao Cao, and Ji-Rong Wen. Icleval: evaluating in-context learning ability of large language models. In Proceedings of the 31st International Conference on Computational Linguistics , pages 10398–10422, 2025. David Chiang and Peter Cholak. Overcoming a theoretical limitation of self-attention. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 7654–7664, 2022. Xiangxiang Chu, Jianlin Su, Bo Zhang, and Chunhua Shen. Visionllama: A unified llama backbone for vision tasks. In European Conference on Computer Vision , pages 1–18. Springer, 2024. Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions, 2019. URL 
+
+https://arxiv.org/abs/1905.10044 .Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. 
+
+arXiv:1803.05457v1 , 2018. Zihang Dai, Zhilin Yang, Yiming Yang, Jaime G Carbonell, Quoc Le, and Ruslan Salakhutdinov. Transformer-xl: Attentive language models beyond a fixed-length context. In Proceedings of the 57th annual meeting of the association for computational linguistics , pages 2978–2988, 2019. Chen Fan, Mark Schmidt, and Christos Thrampoulidis. Implicit bias of spectral descent and muon on multiclass separable data. In High-dimensional Learning Dynamics 2025 , 2025. 16 Guhao Feng, Bohang Zhang, Yuntian Gu, Haotian Ye, Di He, and Liwei Wang. Towards revealing the mystery behind chain of thought: a theoretical perspective. Advances in Neural Information Processing Systems , 36:70757–70798, 2023. Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac’h, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. The language model evaluation harness, 07 2024. URL https://zenodo.org/records/12608602 .Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh Goyal, Anthony Hartshorn, Aobo Yang, Archi Mitra, Archie Sravankumar, Artem Korenev, Arthur Hinsvark, Arun Rao, Aston Zhang, Aurelien Rodriguez, Austen Gregerson, Ava Spataru, Baptiste Roziere, Bethany Biron, Binh Tang, Bobbie Chern, Charlotte Caucheteux, Chaya Nayak, Chloe Bi, Chris Marra, Chris McConnell, Christian Keller, Christophe Touret, Chunyang Wu, Corinne Wong, Cristian Canton Ferrer, et al. The llama 3 herd of models, 2024. URL 
+
+https://arxiv.org/abs/2407.21783 .Zhenyu He, Guhao Feng, Shengjie Luo, Kai Yang, Liwei Wang, Jingjing Xu, Zhi Zhang, Hongxia Yang, and Di He. Two stones hit one bird: Bilevel positional encoding for better length extrapolation. In Forty-first International Conference on Machine Learning , 2024. Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding, 2021. URL https://arxiv. org/abs/2009.03300 .Byeongho Heo, Song Park, Dongyoon Han, and Sangdoo Yun. Rotary position embedding for vision transformer. In European Conference on Computer Vision , pages 289–305. Springer, 2024. Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, André Cantor, et al. Training compute-optimal large language models. In Advances in Neural Information Processing Systems , volume 35, pages 30040–30053, 2022. Cheng-Ping Hsieh, Simeng Sun, Samuel Kriman, Shantanu Acharya, Dima Rekesh, Fei Jia, Yang Zhang, and Boris Ginsburg. Ruler: What’s the real context size of your long-context language models? arXiv preprint arXiv:2404.06654 , 2024. Shengding Hu, Yuge Tu, Xu Han, Ganqu Cui, Chaoqun He, Weilin Zhao, Xiang Long, Zhi Zheng, Yewei Fang, Yuxiang Huang, Xinrong Zhang, Zhen Leng Thai, Chongyi Wang, Yuan Yao, Chenyang Zhao, Jie Zhou, Jie Cai, Zhongwu Zhai, Ning Ding, Chao Jia, Guoyang Zeng, da-hai li, Zhiyuan Liu, and Maosong Sun. MiniCPM: Unveiling the potential of small language models with scalable training strategies. In First Conference on Language Modeling , 2024. URL 
+
+https://openreview.net/forum?id=3X2L2TFr0f .Xinting Huang, Andy Yang, Satwik Bhattamishra, Yash Sarrof, Andreas Krebs, Hattie Zhou, Preetum Nakkiran, and Michael Hahn. A formal framework for understanding length generalization in transformers. In The Thirteenth International Conference on Learning Representations , 2024. Pranav Jeevan and Amit Sethi. Resource-efficient hybrid x-formers for vision. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 2982–2990, 2022. Samy Jelassi, Stéphane d’Ascoli, Carles Domingo-Enrich, Yuhuai Wu, Yuanzhi Li, and François Charton. Length generalization in arithmetic transformers. arXiv preprint arXiv:2306.15400 ,2023. Samy Jelassi, David Brandfonbrener, Sham M Kakade, and Eran Malach. Repeat after me: Trans-formers are better than state space models at copying. In International Conference on Machine Learning , pages 21502–21521. PMLR, 2024. Amirhossein Kazemnejad, Inkit Padhi, Karthikeyan Natesan Ramamurthy, Payel Das, and Siva Reddy. The impact of positional encoding on length generalization in transformers. Advances in Neural Information Processing Systems , 36:24892–24928, 2023. 17 Aakash Lahoti, Kevin Li, Berlin Chen, Caitlin Wang, Aviv Bick, J Zico Kolter, Tri Dao, and Albert Gu. Mamba-3: Improved sequence modeling using state space principles. In The Fourteenth International Conference on Learning Representations , 2026. Huayang Li, Tianyu Zhao, Deng Cai, and Richard Sproat. Repo: Language models with context re-positioning. arXiv preprint arXiv:2512.14391 , 2025. Jeffrey Li, Alex Fang, Georgios Smyrnis, Maor Ivgi, Matt Jordan, Samir Gadre, Hritik Bansal, Etash Guha, Sedrick Keh, Kushal Arora, et al. Datacomp-lm: In search of the next generation of training sets for language models. Advances in Neural Information Processing Systems , 37:14200–14282, 2024. Hanzhao Maggie Lin and Heng-Tze Cheng. Gemini achieves gold-medal level at the International Collegiate Programming Contest World Finals. 2025. Zhixuan Lin, Evgenii Nikishin, Xu He, and Aaron Courville. Forgetting transformer: Softmax attention with a forget gate. In International Conference on Learning Representations , volume 2025, pages 69704–69738, 2025. Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2019. URL https://openreview.net/forum?id= Bkg6RiCqY7 .Thang Luong and Edward Lockhart. Advanced version of Gemini with Deep Think officially achieves gold-medal standard at the International Mathematical Olympiad. 2025. William Merrill and Ashish Sabharwal. The expressive power of transformers with chain of thought. In The Twelfth International Conference on Learning Representations , 2024. Mohamad Amin Mohamadi, Zhiyuan Li, Lei Wu, and Danica J Sutherland. Why do you grok? a theoretical analysis on grokking modular addition. In Proceedings of the 41st International Conference on Machine Learning , pages 35934–35967, 2024. Depen Morwani, Benjamin L Edelman, Costin-Andrei Oncescu, Rosie Zhao, and Sham M Kakade. Feature emergence via margin maximization: case studies in algebraic tasks. In The Twelfth International Conference on Learning Representations , 2024. Catherine Olsson, Nelson Elhage, Neel Nanda, Nicholas Joseph, Nova DasSarma, Tom Henighan, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, et al. In-context learning and induction heads. 
+
+arXiv preprint arXiv:2209.11895 , 2022. OpenAI. Competitive programming with large reasoning models. arXiv preprint arXiv:2502.06807 ,2025. Denis Paperno, Germán Kruszewski, Angeliki Lazaridou, Quan Ngoc Pham, Raffaella Bernardi, Sandro Pezzelle, Marco Baroni, Gemma Boleda, and Raquel Fernández. The lambada dataset: Word prediction requiring a broad discourse context, 2016. URL https://arxiv.org/abs/ 1606.06031 .Jorge Pérez, Pablo Barceló, and Javier Marinkovic. Attention is turing-complete. Journal of Machine Learning Research , 22(75):1–35, 2021. Ofir Press, Noah Smith, and Mike Lewis. Train short, test long: Attention with linear biases enables input length extrapolation. In International Conference on Learning Representations , 2021. Krishna C Puvvada, Faisal Ladhak, Santiago Akle Serrano, Cheng-Ping Hsieh, Shantanu Acharya, Somshubra Majumdar, Fei Jia, Samuel Kriman, Simeng Sun, Dima Rekesh, et al. Swan-gpt: An effi-cient and scalable approach for long-context language modeling. arXiv preprint arXiv:2504.08719 ,2025. Hubert Ramsauer, Bernhard Schäfl, Johannes Lehner, Philipp Seidl, Michael Widrich, Lukas Gruber, Markus Holzleitner, Thomas Adler, David Kreil, Michael K Kopp, et al. Hopfield networks is all you need. In International Conference on Learning Representations , 2021. 18 Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: An adversarial winograd schema challenge at scale, 2019. URL https://arxiv.org/abs/1907. 10641 .Clayton Sanford, Daniel J Hsu, and Matus Telgarsky. Representational strengths and limitations of transformers. Advances in Neural Information Processing Systems , 36:36677–36707, 2023. Aaditya K Singh, Ted Moskovitz, Felix Hill, Stephanie CY Chan, and Andrew M Saxe. What needs to go right for an induction head? a mechanistic study of in-context learning circuits and their formation. In Forty-first International Conference on Machine Learning , 2024. Matthew Smart, Alberto Bietti, and Anirvan M Sengupta. In-context denoising with one-layer transformers: Connections between attention and associative memory retrieval. Proceedings of Machine Learning Research , 267:55950–55971, 2025. Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. Shawn Tan, Songlin Yang, Aaron Courville, Rameswar Panda, and Yikang Shen. Scaling stick-breaking attention: An efficient implementation and in-depth study. In International Conference on Learning Representations , 2025. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. Pavlo Vasylenko, Hugo Pitorro, André FT Martins, and Marcos Treviso. Long-context generalization with sparse attention. arXiv preprint arXiv:2506.16640 , 2025. Jie Wang, Tao Ji, Yuanbin Wu, Hang Yan, Tao Gui, Qi Zhang, Xuan-Jing Huang, and Xiaoling Wang. Length generalization of causal transformers without position encoding. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 14024–14040, 2024a. Weiyun Wang, Shuibo Zhang, Yiming Ren, Yuchen Duan, Tiantong Li, Shuo Liu, Mengkang Hu, Zhe Chen, Kaipeng Zhang, Lewei Lu, et al. Needle in a multimodal haystack. Advances in Neural Information Processing Systems , 37:20540–20565, 2024b. Xilong Wang, Hao Fu, Jindong Wang, and Neil Gong. Stringllm: Understanding the string processing capability of large language models. In International Conference on Learning Representations ,volume 2025, pages 31535–31550, 2025. Colin Wei, Jason D Lee, Qiang Liu, and Tengyu Ma. Regularization matters: Generalization and optimization of neural nets vs their induced kernel. Advances in Neural Information Processing Systems , 32, 2019. Gail Weiss, Yoav Goldberg, and Eran Yahav. Thinking like transformers. In International Conference on Machine Learning , pages 11080–11090. PMLR, 2021. Kaiyue Wen, Xingyu Dang, and Kaifeng Lyu. Rnns are not transformers (yet): The key bottleneck on in-context retrieval. In The Thirteenth International Conference on Learning Representations ,2025. Shuo Xie and Zhiyuan Li. Implicit bias of adamw: ℓ∞-norm constrained optimization. In Interna-tional Conference on Machine Learning , pages 54488–54510. PMLR, 2024. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 ,2025a. Andy Yang and David Chiang. Counting like transformers: Compiling temporal counting logic into softmax transformers. In First Conference on Language Modeling , 2024. Bowen Yang, Bharat Venkitesh, Dwaraknath Gnaneshwar, Hangyu Lin, David Cairuz, Phil Blunsom, and Acyr Locatelli. Rope to nope and back again: A new hybrid attention strategy. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025b. 19 Songlin Yang, Yikang Shen, Kaiyue Wen, Shawn Tan, Mayank Mishra, Liliang Ren, Rameswar Panda, and Yoon Kim. PaTH attention: Position encoding via accumulating householder transformations. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. URL 
+
+https://openreview.net/forum?id=ZBlHEeSvKd .Shunyu Yao, Binghui Peng, Christos Papadimitriou, and Karthik Narasimhan. Self-attention networks can process bounded hierarchical languages. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , pages 3770–3785, 2021. Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence?, 2019. URL https://arxiv.org/abs/1905.07830 .Chenyang Zhang, Difan Zou, and Yuan Cao. The implicit bias of adam on separable data. Advances in Neural Information Processing Systems , 37:23988–24021, 2024a. Kechi Zhang, Ge Li, Huangzhao Zhang, and Zhi Jin. Hirope: Length extrapolation for code models using hierarchical position. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 13615–13627, 2024b. Hattie Zhou, Arwen Bradley, Etai Littwin, Noam Razin, Omid Saremi, Joshua M Susskind, Samy Bengio, and Preetum Nakkiran. What algorithms can transformers learn? a study in length generalization. In The Twelfth International Conference on Learning Representations , 2023. Yongchao Zhou, Uri Alon, Xinyun Chen, Xuezhi Wang, Rishabh Agarwal, and Denny Zhou. Trans-formers can achieve length generalization but not robustly. arXiv preprint arXiv:2402.09371 ,2024. 20 Contents 
+
+1 Introduction 12 Related Works 33 Language Models Fail to Copy 5
+
+3.1 Our Copy Benchmarks . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53.2 Evaluation of Frontier LLMs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63.3 Why Do LLMs Fail to Copy? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63.4 Diagnosis via Expressivity Theory and Synthetic Experiments . . . . . . . . . . . 63.4.1 Evidence from Expressivity Theory . . . . . . . . . . . . . . . . . . . . . 73.4.2 Synthetic Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+
+4 2D Positional Information Encoding with 2D-RoPE 8
+
+4.1 2D-RoPE Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 94.2 How to Establish 2D Position Encodings in Text . . . . . . . . . . . . . . . . . . . 94.3 From Line Break to Adaptive 2D Position: Auto-2D-RoPE . . . . . . . . . . . . . 10 4.4 Empirical Results of 2D-RoPE . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10 4.5 Theoretical Analysis of 2D-RoPE . . . . . . . . . . . . . . . . . . . . . . . . . . 10 4.5.1 One-Layer 2D-RoPE Can Represent Binary Copy . . . . . . . . . . . . . . 11 4.5.2 One-Layer 2D-RoPE Provably Learns Binary Copy with Length Generalization 12 
+
+5 Experiments on LLM Pretraining 13 
+
+5.1 LLM Evaluation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 5.2 LLM Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 5.3 Pretraining Loss . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 5.4 Additional Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 
+
+6 Conclusion 15 7 Acknowledgement 15 A Test Details of the LLMs in Binary Copy and Python List Conversion 23 
+
+A.1 Frontier LLMs Copying Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 A.2 Repeat-structure Copy Test for Frontier LLMs . . . . . . . . . . . . . . . . . . . . 24 
+
+B Details of Synthetic Experiments on Binary Copy 24 C Further Discussion of Multi-Layer RoPE Learns Length-Dependent Pattern 26 D Implementation Details of 2D-RoPE 27 
+
+D.1 Rotational Frequency Hyperparameter. . . . . . . . . . . . . . . . . . . . . . . . . 27 D.2 Implementation Details and Comparison with Vision 2D-RoPE . . . . . . . . . . . 27 21 E LLM Experiment Details 27 
+
+E.1 LLM Model Configuration Details . . . . . . . . . . . . . . . . . . . . . . . . . . 27 E.2 LLM Pretraining Configuration Details . . . . . . . . . . . . . . . . . . . . . . . . 27 E.3 LLM Finetuning Configuration Details . . . . . . . . . . . . . . . . . . . . . . . . 28 E.4 LR Ablation in LLM Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . 28 E.5 Common-Sense Reasoning Detailed Results . . . . . . . . . . . . . . . . . . . . . 29 
+
+F Auto 2D-RoPE Discussion 31 G Preliminary for Theoretical Results 32 H Shift Invariant Positional Encoding Cannot Solve Binary Copy 33 
+
+H.1 Shift Invariant PE Formalization . . . . . . . . . . . . . . . . . . . . . . . . . . . 33 H.2 Failure of Shift Invariant PE for Binary Copy . . . . . . . . . . . . . . . . . . . . 33 
+
+I 2-Layer RoPE Transformer can Represent Binary Copy 36 
+
+I.1 Prompt Template . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36 I.2 Transformer Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37 I.3 Proof of Theorem 3.2: Existence of a Length-Generalizing Solution . . . . . . . . 38 
+
+J One-Layer 2D-RoPE Provably Solve Binary Copy with Length Generalization 40 
+
+J.1 Theoretical Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 40 J.2 Expressive Power of One-Layer 2D-RoPE . . . . . . . . . . . . . . . . . . . . . . 42 J.3 Global Minimum under ℓ∞ Norm . . . . . . . . . . . . . . . . . . . . . . . . . . 45 J.3.1 Technical Challenges and Proof Sketch. . . . . . . . . . . . . . . . . . . . 45 J.3.2 Small Population loss Implies Large Margin . . . . . . . . . . . . . . . . . 46 J.3.3 Large Training Margin Generalizes to Longer Strings . . . . . . . . . . . . 49 J.3.4 Proof of Theorem 4.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52 J.4 Technical Lemmas . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 53 
+
+K Prompt Templates of Copy Test for Frontier LLMs 57 
+
+K.1 Recursive-Flip Binary Copy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57 K.2 Imbalanced Binary Copy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57 K.3 Python List Conversion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57 K.4 Repeat-Structure Copy Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 58 
+
+L Prompt Templates for Finetuning Data 58 
+
+22 A Test Details of the LLMs in Binary Copy and Python List Conversion 
+
+We give the details of the closed-model Copy benchmarks reported in Figure 1 and Figure 2. All prompt templates are provided in Appendix K. All closed-model API evaluations were run between June 11 and June 14, 2026. Unless stated otherwise, each sample was attempted at most three times in total, including the initial call. In the final evaluation logs used for the reported numbers, every requested sample received a valid API response within the allowed retry budget. No sample was discarded or replaced due to an API failure; hence all reported failures in the accuracy tables correspond to incorrect model outputs rather than API failures. 
+
+A.1 Frontier LLMs Copying Test 
+
+Here we give details for Figure 1. 
+
+Models and API endpoints. We evaluate five closed frontier models: gpt-5.5 ,
+
+claude-opus-4-7 , gemini-3.1-pro-preview , deepseek-v4-pro , and qwen3.6-plus . We use the OpenAI Responses API for gpt-5.5 , the Anthropic Messages API for claude-opus-4-7 ,Gemini Vertex Express for gemini-3.1-pro-preview , and OpenAI-compatible chat-completion APIs for deepseek-v4-pro and qwen3.6-plus . We do not set explicit stop sequences. We use temperature 0 where supported; for gpt-5.5 , we do not pass an explicit temperature parameter and use the provider default. For Gemini, we set the thinking level to LOW ; for DeepSeek and Qwen, we disable thinking mode. 
+
+Recursive-Flip Binary Copy. For the first binary-copy evaluation, we test the Recursive-Flip distribution defined in Section 3.1. We use 50 samples for each k ∈ { 7, 8, 9, 10 , 11 }, with global random seed 20260414 . For each k, the logical target length n satisfies 
+
+2k ≤ n ≤ 2k+1 − 1.
+
+Here, length refers to the number of logical binary units. For each sample, the length is uni-formly and randomly selected from this region. To align tokenization across models, we use model-dependent encodings: for gpt-5.5 , claude-opus-4-7 , and deepseek-v4-pro , V = {000 , 111 };for gemini-3.1-pro-preview and qwen3.6-plus , V = {0, 1}. This ensures that each binary unit is one token for the tested model. 
+
+Imbalanced Binary Copy. For the second binary-copy evaluation, we use an imbalanced distribu-tion with p fixed to be 0.95 (see the original definition of imbalanced data in Section 3.1). Here let 
+
+V = {" a" , " b" }, so that 
+
+Pr[ a] = 0 .95 , Pr[ b] = 0 .05 .
+
+Both symbols are one token in all five tested models. Thus, the model is asked to copy a space-separated symbolic sequence rather than a bare binary string. For output normalization, we extract all letters matching [abAB] , map A to a, and map B to b. Exact match compares this extracted and mapped string with the target. 
+
+Binary-copy API configuration. For Recursive-Flip binary copy, the models are evaluated con-currently with one model-level worker per model. Within each model, the maximum number of concurrent sample requests is 10 for gpt-5.5 , claude-opus-4-7 , deepseek-v4-pro , and 
+
+qwen3.6-plus , and 5 for gemini-3.1-pro-preview . The request timeout is 2000 seconds, and the sleep times before the second and third attempts are 2 and 4 seconds, respectively. For OpenAI-compatible clients, we set max_retries = 0 so that retries are controlled by our explicit retry loop. The output-token budgets for Recursive-Flip binary copy are Model gpt claude gemini deepseek qwen 
+
+Max output tokens 50000 8192 16384 8192 8192 
+
+For imbalanced symbolic copy, the maximum output-token budget is computed as 4 · target _length + 128 .
+
+Python List Conversion. We also evaluate the same five models on a Python List Conversion task. Each example is generated from a synthetic one-dimensional physical signal. We sample one scenario uniformly from nine signal families: simple harmonic motion, triangle wave motion, sawtooth scan motion, rectified AC signal, clipped sensor oscillation, relaxation oscillator, Fourier 23 periodic waveform, pulse train, and pendulum-like oscillation. For each example, we sample a period 
+
+p, generate one cycle of length p, and then obtain the length-n sequence by periodic indexing: 
+
+yk = cycle k mod p, k = 0 , . . . , n − 1.
+
+The target output is the same sequence written as a Python list, 
+
+[y0, y 1, . . . , y n−1].
+
+All values are rounded to two decimal places. In the API evaluation, we use 2 ≤ p ≤ 10 and evaluate lengths 
+
+n ∈ { 200 , 300 , 400 , 500 }.
+
+For each length, we generate 50 examples using random seed 2030 . The datasets are saved before model evaluation, and all models are evaluated on the same saved examples. The API endpoints and output-token budgets are the same as in Recursive-Flip binary copy, with a global request timeout of 
+
+6000 seconds. For evaluation, we strip Markdown code fences from both the model output and the gold output, then extract all numbers matching the regular expression -?\d+(?:\.\d+)? . Sequence exact match is true if and only if the extracted numeric sequence from the model output exactly equals that from the gold output. 
+
+A.2 Repeat-structure Copy Test for Frontier LLMs 
+
+Here we give details for Figure 2. 
+
+Models. We evaluate gpt-5.5 , gemini-3.1-pro-preview , and qwen3.6-plus . The resources are same as the previous subsection. 
+
+Data distribution. We use random seed 1320 , target length 1000 , base lengths 
+
+m ∈ { 4, 6, 8, 10 },
+
+and flip probabilities 
+
+p ∈ { 0.02 , 0.05 , 0.10 , 0.15 , 0.20 , 0.25 , 0.30 }.
+
+For each valid pair (m, p ), we generate 50 samples. A pair is included only if 
+
+(1 − p)m ≥ 0.3.
+
+We first sample a base string of length m uniformly from the alphabet {" a" , " b" }, repeat it until length 1000 , truncate the final repeat if necessary, and then independently flip each token with probability p. The x-axis reports (1 − p)m, the probability that an entire repeated block remains unflipped. 
+
+API and evaluation. GPT-5.5 uses the OpenAI Responses API with max_output_tokens = 5000 
+
+and no explicit temperature parameter. Gemini uses temperature 0.0, max_output_tokens = 10000 ,and thinking level LOW . Qwen uses temperature 0.0, max_output_tokens = 2500 , request timeout 
+
+300 seconds, request gap 1 second, enable_thinking=False , and max_retries = 0 . Final plotted data are computed from merged logs keyed by 
+
+(model , base_length , p ).
+
+Output normalization keeps only letters a and b from the raw response and maps them back to the symbolic tokens. Exact match is true only if the normalized prediction has length 1000 and agrees with the corrupted input sequence at every position. 
+
+## B Details of Synthetic Experiments on Binary Copy 
+
+We conduct training-from-scratch experiments on the synthetic binary copy dataset. For each binary string s ∈ { 0, 1}∗, the input sequence takes the form 
+
+S := ( A1, A2, s, B1 = <\n> , B2, s ),
+
+where the model is trained to predict the next token autoregressively, including the copied string after 
+
+B2 and the final <EOS> token at the end of the sequence. 24 Table 3: Training hyperparameters for each positional encoding in the length generalization experi-ments. Peak LR and Final LR denote the maximum and minimum learning rates used in the cosine decay schedule.                                                                                                     
+
+> Setting Positional Encoding Peak LR Final LR Training Steps
+> 12 layers, 12 heads
+> 12L RoPE 5×10 −51×10 −610000 12L ALiBi 5×10 −51×10 −610000 12L NoPE 5×10 −51×10 −610000 12L RNoPE 5×10 −51×10 −610000 12L 2D-RoPE 5×10 −51×10 −610000 12L Auto-2D-RoPE 5×10 −51×10 −630000 12L Hybrid RoPE 5×10 −51×10 −630000
+> 1 layer, 2 heads
+> 1L RoPE 5×10 −45×10 −560000 1L ALiBi 5×10 −45×10 −560000 1L NoPE 5×10 −45×10 −560000 1L 2D-RoPE 5×10 −41×10 −660000 1L Auto-2D-RoPE 5×10 −41×10 −410000
+
+Data Distributions. As introduced in Section 3.1, we consider three data distributions: uniform ,
+
+imbalanced , and recursive-flip . All training is conducted on imbalanced data with string lengths from 
+
+1 to 100 . For the imbalanced distribution, the probability of sampling the first binary token is chosen from 
+
+{0.05 , 0.15 , 0.3, 0.5, 0.7, 0.85 , 0.95 },
+
+and tokens are then sampled independently according to this probability. At test time, we evaluate on all three distributions. Thus, uniform and recursive-flip test strings are out-of-distribution relative to the training distribution. 
+
+Model Architectures. We train Transformers from scratch under two model sizes. The shallow model has 1 layer and 2 attention heads, where each head has dimension 512 . The deeper model has 12 layers and 12 attention heads, where each head has dimension 128 . Thus, the embedding dimensions are 1024 and 1536 , respectively. We set dropout to 0 and use bias-free linear layers. For each architecture and each positional encoding, we train 8 models with different random seeds and report the average accuracy. We average over seeds because training on the copy task shows noticeable variance across runs, especially near the boundary between interpolation and extrapolation. 
+
+Training Configuration. The two model sizes use different optimization settings. The different hyperparameters are in Table 3. For both settings, we use weight decay 0.01 , β2 = 0 .95 , and a warmup length of 100 iterations. The training batch size is 64 with gradient accumulation over 4
+
+steps. The maximum context length is set to 260000 for 1-layer model and 26000 for 12 -layer model, which is large enough for all training and evaluation sequences considered in these experiments. 
+
+Evaluation. During training, strings have length at most 100 . At evaluation time, we test models on longer strings to measure length generalization. We evaluate lengths beyond the training range up to the longest test length used in the corresponding figure, with test lengths are uniformly selected in each interval. For each run, we sample 10 strings in each interval independently. 
+
+Results. Figure 4 shows the full length-generalization results for all test distributions. The main text reports the Recursive-Flip setting because it is both out-of-distribution and especially challenging due to repeated substrings. Across the full results, standard positional encodings fail to extrapolate reliably beyond the training length range, while 2D-RoPE-based methods show substantially stronger length generalization. 
+
+Training Configuration. As discussed before, we train transformers from scratch on the binary copy task under two model sizes. The first is a shallow model with 1 layer and 2 attention heads, where each head has dimension 512 . The second is a deeper model with 12 layers and 12 attention heads, where each head has dimension 128 . For each architecture and each positional encoding, we train 8 models with different random seeds and report the average accuracy. We average over seeds 25 0 
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> 180
+> 200
+> Length
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Uniform
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> 180
+> 200
+> Length
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Imbalanced
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> 180
+> 200
+> Length
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Recursive-Flip
+> trained on imbalanced trained on uniform
+
+Figure 7: Length generalization for training-from-scratch experiments in 2 distributions. 
+
+Figure 8: Attention map of a RoPE-based model on a failed sample with sequence length beyond the training length. In Layer 0, attention heads exhibit both horizontal patterns (attending to special tokens in between the input string and the output, and the tokens before the string as a locator) and 
+
+diagonal patterns (semantic/induction-style behavior). In Layer 1, one can see that RoPE would attend to wrong tokens near themselves periodically. because training on the copy task shows noticeable variance across runs, especially near the boundary between interpolation and extrapolation. 
+
+## C Further Discussion of Multi-Layer RoPE Learns Length-Dependent Pattern 
+
+We provide a more detailed discussion of the attention patterns in Figure 3 and Figure 8. The main text shows that RoPE does not learn a clean position-based copy map even on a failed example within the training length range. Here, we further examine what happens beyond the training length. 
+
+Within the Training Length. In Figure 3, the last-layer attention should ideally align each output position with its corresponding input position. However, the zoomed attention map is not a clean diagonal alignment. The head attends not only to the correct source positions, but also periodically assigns large attention scores to nearby wrong tokens around the diagonal. This suggests that the final copy decision is affected by local-context matching: when repeated or similar substrings appear, locally similar positions can compete with the correct source position. Thus, even within the training length range, RoPE can fail because the learned copy mechanism is not purely position-based. 
+
+Beyond the Training Length. Figure 8 further shows why this learned mechanism does not length-generalize. In Layer 0, the two heads contain horizontal locator patterns that attend to special tokens around the boundary between the input string and the output string, such as the delimiters in [<\n> , <I:> , <O:> ]. These patterns provide a position-related signal and can help the model infer source-target alignment within the seen length range. However, when the sequence length goes beyond the maximum training length, the locator pattern no longer remains stable: after the copied position exceeds the training range, the horizontal attention pattern becomes discontinuous and eventually breaks. This indicates that the model’s position-based component is not a true length-invariant copy algorithm, but a locator-style shortcut tied to the training lengths. 26 At the same time, Layer 0 also contains diagonal patterns, which resemble local-context or induction-style behavior (Olsson et al., 2022; Singh et al., 2024; Jelassi et al., 2024). These patterns can attend to nearby or locally similar tokens, but they cannot uniquely identify the correct source position when repeated substrings are present. Therefore, the trained RoPE model combines two imperfect mechanisms: a locator-style positional shortcut that does not generalize in length, and a context-based matching mechanism that becomes ambiguous on repeated structures. This explains why the last-layer attention becomes noisy and why the model fails to implement the ideal position-based copy rule suggested by Theorem 3.2. 
+
+## D Implementation Details of 2D-RoPE 
+
+D.1 Rotational Frequency Hyperparameter. 
+
+In RoPE, there is a hyperparameter θ that determines the rotational frequency. For 2D-RoPE, the two dimensions can have separate rotational frequencies, θx, θ y . However, for simplicity, we keep 
+
+θx = θy . Moreover, we use the default hyperparameter from the original RoPE paper, which is θ = 10 , 000 , and we set θx = θy = 1 , 000 . Our preliminary experiments show that setting 
+
+θx = θy = 100 or θx = θy = 10 , 000 does not yield significantly different results. 
+
+D.2 Implementation Details and Comparison with Vision 2D-RoPE 
+
+RoPE-style 2D positional encodings have been explored in computer vision, where each image patch has a natural spatial coordinate. For example, prior vision models apply RoPE to patch tokens using their height and width coordinates, so that attention can encode relative spatial displacement on the image grid (Jeevan and Sethi, 2022; Heo et al., 2024; Chu et al., 2024). In this setting, the 2D coordinates are given by the image layout itself. As we mentioned in the previous section, our implementation differs in both motivation and coordinate construction. In language modeling, the input is normally treated as a 1D token sequence, and there is no fixed 2D grid analogous to image patches. We instead use line break tokens to induce a 2D structure in text. Each token receives a row ID, determined by the number of preceding line breaks, and a column ID, determined by its offset within the current line. Thus, the 2D coordinates are not externally given but are constructed from the textual structure. Further, we introduce an alternative termed Auto 2D-RoPE for 2D-RoPE to learn the 2D structure in context adaptively in Appendix F. In our implementation, 2D-RoPE follows an axial decomposition: part of the head dimension is rotated according to the row ID, and the remaining part is rotated according to the column ID. We keep the standard causal attention mask for language modeling. This is also different from most vision applications, which typically use bidirectional attention over image patches. 
+
+## E LLM Experiment Details 
+
+Unless otherwise specified, the model training in the Section 5 follows the following settings. 
+
+E.1 LLM Model Configuration Details 
+
+The hyperparameters for the models involved in LLM experiments (Section 5) are described in Table 4. These hyperparameter values are chosen to be similar to popular open-source LLMs such as Qwen3 and Llama3 (Grattafiori et al., 2024). Each model uses the Llama3 tokenizer. 
+
+E.2 LLM Pretraining Configuration Details 
+
+Here, we describe more details for the LLM pretraining (Section 5) for reproducibility. 
+
+Learning Rate Scheduler. Each model was trained using the WSD LR scheduler (Hu et al., 2024), with different LR depending on the model size. The 350M, 730M, and 1.4B models use 5e-4, 5e-4, and 2e-4 max LR, respectively. Each of the LRs warms up (from 0) for 100 steps, and decays for the last 10% steps to 1/10 of their max LR. 27 Table 4: The hyperparameters of the three model of different sizes involved in Section 5.                                                   
+
+> Hyperparameter 350M 730M 1.4B
+> Vocab size 32000 32000 32000 Layers 24 24 28 Hidden size 1024 1536 2048 MLP intermediate dim 3072 4096 5120 MLP activation function SwiGLU SwiGLU SwiGLU Attention heads 812 16 KV heads 812 16 Attention head size 128 128 128 RoPE θ10,000 10,000 10,000 2D-RoPE θx, θ y1,000 1,000 1,000
+> Training Configuration
+> Pretraining batch size 256 256 256 Finetuning batch size 64 64 64 Max length 2K 2K 2K Pretraining max LR 5e-4 5e-4 2e-4 Finetuning max LR 5e-5 5e-5 5e-5
+
+Data Batching. The batch size is always 256, and the maximum sequence length during pretraining is always 2048, so the number of tokens per batch is 512 K. Each pretraining document is concatenated with an <end_of_sequence> delimiter until they exceed maximum sequence length, and then truncated down to 2048. The part that was truncated is discarded. Each token can attend to all other tokens in other documents that was concatenated into the same sequence. 
+
+Optimizer. We use the same optimizer for both pretraining and finetuning, which is AdamW (Loshchilov and Hutter, 2019) with beta values of (0.9, 0.95), a weight decay of 0.1, and gradient clipping at 1.0. 
+
+Hardware. All LLM experiments were conducted on machines equipped with NVIDIA A800-80GB GPUs, using PyTorch and HuggingFace Transformer libraries. We used BF16 precision during both training and evaluation. 
+
+E.3 LLM Finetuning Configuration Details Learning Rate Scheduler. We use the Cosine LR scheduler for finetuning, since the cost of rerunning finetuning is much lower than pretraining. The LR warms up for 100 steps then decays down to 0. 
+
+Data Batching. For finetuning, each sequence might have different sequence length, and we use attention masking to ensure that padding tokens are not attended to. Since the training dataset is synthesized, it does not exceed 2048 tokens and there is no truncation. We always use batch size of 64 during finetuning. 
+
+Optimizer and Hardware. The optimizer for finetuning is the same as the one used for pretrain-ing, and all experiments were conducted on the same hardware, based on the same precision and implementation libraries. 
+
+Loss Mask. During finetuning, we apply a loss mask such that the loss is only computed over the output tokens, which are tokens that make up the assistant’s response in the finetuning data. 
+
+E.4 LR Ablation in LLM Experiments 
+
+In the LLM experiments (Section 5), we swept different max LR in finetuning and chose the best LR that balanced the performance across different tasks. In this section, we report the results for each value of LR ( {1 × 10 −4, 5 × 10 −5, 3 × 10 −5}), which is shown in Table 5. Overall, the results show that using a larger LR leads to better copying abilities, but the CSR performance degrades due to catastrophic forgetting. Interestingly, 2D-RoPE is generally more robust to the choice of LR, leading to less catastrophic forgetting in the case of a fairly large LR. 28 Table 5: LR ablation results in the LLM experiments. Each model was trained with 3 different LR values, and the main content reports the LR that achieves best overall performance in the two kinds of tasks (CSR, Copy with imbalanced and recursive-flip distributions), which is selected to be 5e-5 and is highlighted in orange . 
+
+PT Copy (Imbalanced) Copy (Recursive-Flip) Model Size Data LR CSR 1K 2K 4K 8K 1K 2K 4K 8K 
+
+Different Model Scales with Chinchilla law 
+
+RoPE 350M 7B 1e-4 40.9 100.0 16.8 0.0 0.0 26.8 11.7 1.1 1.8 RoPE 350M 7B 5e-5 41.4 97.2 14.8 0.0 0.0 19.6 8.7 0.0 0.0 RoPE 350M 7B 3e-5 41.6 93.2 9.6 0.0 0.0 21.6 8.7 0.0 0.0 H-RoPE 350M 7B 1e-4 41.2 100.0 98.2 18.8 0.2 100.0 99.0 72.3 27.3 H-RoPE 350M 7B 5e-5 41.2 99.6 57.8 0.0 0.0 99.0 91.3 39.4 1.8 H-RoPE 350M 7B 3e-5 41.3 84.8 33.4 0.0 0.0 100.0 98.1 55.3 5.5 2D-RoPE 350M 7B 1e-4 40.1 99.8 94.8 81.8 27.2 100.0 100.0 100.0 100.0 2D-RoPE 350M 7B 5e-5 40.4 97.4 69.2 33.4 2.4 97.9 92.2 75.5 43.6 2D-RoPE 350M 7B 3e-5 40.5 81.2 57.2 14.8 0.4 100.0 98.1 92.6 87.3 RoPE 730M 15B 1e-4 43.3 100.0 20.8 0.0 0.0 20.6 6.8 0.0 1.8 RoPE 730M 15B 5e-5 44.0 97.0 11.0 0.0 0.0 12.4 5.8 1.1 0.0 RoPE 730M 15B 3e-5 44.2 88.8 4.4 0.0 0.0 14.4 7.8 0.0 0.0 H-RoPE 730M 15B 1e-4 44.1 93.6 13.6 0.0 0.0 100.0 100.0 78.7 3.6 H-RoPE 730M 15B 5e-5 45.5 95.4 11.4 0.0 0.0 76.3 72.8 17.0 0.0 H-RoPE 730M 15B 3e-5 45.4 84.0 4.0 0.0 0.0 96.9 92.2 35.1 0.0 2D-RoPE 730M 15B 1e-4 44.3 100.0 100.0 89.6 24.2 100.0 98.1 88.3 90.9 2D-RoPE 730M 15B 5e-5 45.2 99.4 74.6 12.8 0.0 78.4 73.8 47.9 5.5 2D-RoPE 730M 15B 3e-5 45.1 92.8 41.4 3.6 0.0 96.9 89.3 56.4 36.4 RoPE 1.4B 28B 1e-4 36.8 100.0 31.0 0.0 0.0 20.6 8.7 0.0 1.8 RoPE 1.4B 28B 5e-5 45.9 99.6 26.8 0.0 0.0 15.5 4.9 0.0 0.0 RoPE 1.4B 28B 3e-5 46.0 99.8 23.2 0.0 0.0 15.5 7.8 1.1 0.0 H-RoPE 1.4B 28B 1e-4 46.8 100.0 92.4 38.8 5.2 17.5 5.8 1.1 0.0 H-RoPE 1.4B 28B 5e-5 47.2 100.0 73.6 3.6 0.0 12.4 1.9 0.0 0.0 H-RoPE 1.4B 28B 3e-5 47.2 99.8 65.8 2.8 0.0 14.4 5.8 0.0 0.0 2D-RoPE 1.4B 28B 1e-4 45.9 100.0 100.0 100.0 99.0 99.0 95.1 93.6 69.1 2D-RoPE 1.4B 28B 5e-5 46.8 100.0 100.0 92.0 61.8 66.0 54.4 26.6 1.8 2D-RoPE 1.4B 28B 3e-5 46.9 100.0 92.0 51.8 14.6 92.8 76.7 45.7 10.9 
+
+Overtrained Setting 
+
+RoPE 730M 100B 3e-5 46.9 99.5 23.3 0.0 0.0 15.5 7.8 1.1 1.8 RoPE 730M 100B 5e-5 46.0 99.6 29.2 0.0 0.0 24.7 8.7 1.1 1.8 RoPE 730M 100B 1e-4 34.3 100.0 22.6 0.0 0.0 63.9 15.5 0.0 1.8 H-RoPE 730M 100B 3e-5 46.4 100.0 41.4 0.0 0.0 92.8 86.4 6.4 0.0 H-RoPE 730M 100B 5e-5 46.2 99.2 52.1 0.0 0.0 100.0 98.1 28.7 1.8 H-RoPE 730M 100B 1e-4 43.3 100.0 74.6 1.7 0.0 100.0 100.0 50.0 1.8 2D-RoPE 730M 100B 3e-5 46.3 100.0 95.5 37.6 0.0 99.0 98.1 84.0 34.5 2D-RoPE 730M 100B 5e-5 46.2 100.0 96.3 72.8 15.8 100.0 99.0 94.7 74.5 2D-RoPE 730M 100B 1e-4 43.4 100.0 99.8 94.1 40.7 100.0 100.0 100.0 81.8 
+
+E.5 Common-Sense Reasoning Detailed Results 
+
+For completeness, we report the performance of each model on each common-sense reasoning task mentioned in Appendix E.3, in Table 6. 29 Table 6: The results of LLMs on each individual common-sense reasoning tasks. Orange rows highlight the LR value that is chosen to maximize the performance across common-sense reasoning and binary copy with two distributions. 
+
+PT Model Size Data LR MMLU LMBD HS PIQA ARC-e ARC-c WG BoolQ Avg. 
+
+Different Model Scales with Chinchilla law 
+
+RoPE 350M 7B 1e-4 23.6 27.4 34.4 64.1 42.9 24.2 51.8 58.7 40.9 RoPE 350M 7B 5e-5 23.7 28.8 35.2 64.8 43.9 24.2 51.7 59.3 41.4 RoPE 350M 7B 3e-5 23.8 28.7 35.3 64.9 44.0 24.6 51.9 59.4 41.6 
+
+H-RoPE 350M 7B 1e-4 25.8 28.7 35.2 64.3 43.7 24.1 50.3 57.4 41.2 H-RoPE 350M 7B 5e-5 24.5 28.4 35.5 65.0 43.6 24.9 50.9 56.5 41.2 H-RoPE 350M 7B 3e-5 24.4 28.1 35.6 65.4 43.9 25.3 51.1 56.5 41.3 2D-RoPE 350M 7B 1e-4 23.1 28.8 34.9 63.4 42.6 23.9 53.3 50.6 40.1 2D-RoPE 350M 7B 5e-5 23.2 27.8 35.3 64.2 43.1 23.5 52.5 53.5 40.4 2D-RoPE 350M 7B 3e-5 23.5 27.4 35.3 64.2 43.4 23.5 53.2 53.5 40.5 RoPE 730M 15B 1e-4 23.1 38.4 42.0 67.5 45.7 25.4 53.7 50.4 43.3 RoPE 730M 15B 5e-5 23.3 38.3 43.1 69.0 48.3 26.5 53.3 50.5 44.0 RoPE 730M 15B 3e-5 23.2 38.5 43.2 69.4 48.9 26.9 53.9 49.6 44.2 H-RoPE 730M 15B 1e-4 23.6 37.6 41.5 66.9 48.7 26.3 51.6 56.7 44.1 H-RoPE 730M 15B 5e-5 24.3 38.1 43.5 68.7 51.1 27.3 52.4 58.3 45.5 
+
+H-RoPE 730M 15B 3e-5 24.2 38.1 43.8 68.3 50.9 27.8 52.1 58.1 45.4 2D-RoPE 730M 15B 1e-4 26.6 38.9 42.0 67.8 47.8 26.5 52.0 53.3 44.3 2D-RoPE 730M 15B 5e-5 26.6 38.1 43.3 68.4 47.8 27.1 52.6 57.4 45.2 2D-RoPE 730M 15B 3e-5 26.7 37.9 43.4 68.7 48.0 26.5 52.3 57.7 45.1 RoPE 1.4B 28B 1e-4 23.0 18.1 31.5 51.6 31.5 24.7 52.1 61.8 36.8 RoPE 1.4B 28B 5e-5 23.4 42.7 46.7 69.5 51.9 28.8 54.0 50.7 45.9 RoPE 1.4B 28B 3e-5 24.1 42.4 46.9 70.2 52.7 29.2 52.9 49.8 46.0 H-RoPE 1.4B 28B 1e-4 24.6 42.8 45.3 68.2 50.6 27.0 53.7 61.9 46.8 H-RoPE 1.4B 28B 5e-5 25.3 44.5 47.1 69.3 51.3 28.0 53.9 57.9 47.2 
+
+H-RoPE 1.4B 28B 3e-5 25.3 44.7 47.0 69.3 52.0 27.0 54.2 58.3 47.2 
+
+2D-RoPE 1.4B 28B 1e-4 24.4 40.5 45.3 69.5 50.8 26.4 51.7 58.9 45.9 2D-RoPE 1.4B 28B 5e-5 23.7 41.5 46.8 70.4 51.8 26.7 55.2 58.6 46.8 2D-RoPE 1.4B 28B 3e-5 23.7 41.5 47.1 70.2 52.3 27.2 54.2 58.8 46.9 
+
+Overtrained Setting 
+
+RoPE 730M 100B 1e-4 22.9 18.1 30.3 51.5 29.4 23.8 49.3 49.1 34.3 RoPE 730M 100B 5e-5 23.5 43.0 46.2 68.5 48.6 26.8 51.9 59.1 46.0 RoPE 730M 100B 3e-5 24.4 44.1 47.1 69.6 50.9 28.2 52.4 58.8 46.9 
+
+H-RoPE 730M 100B 1e-4 23.3 37.8 41.7 66.4 46.2 26.6 51.9 52.2 43.3 H-RoPE 730M 100B 5e-5 24.4 43.0 46.9 69.7 52.3 28.0 52.7 52.6 46.2 H-RoPE 730M 100B 3e-5 24.3 42.3 47.6 69.9 52.5 27.6 52.8 54.2 46.4 2D-RoPE 730M 100B 1e-4 23.8 40.0 41.8 66.1 44.4 22.7 52.5 56.2 43.4 2D-RoPE 730M 100B 5e-5 23.9 42.8 46.5 68.9 49.6 26.0 54.6 57.1 46.2 2D-RoPE 730M 100B 3e-5 24.3 42.4 47.0 69.0 50.1 25.5 54.1 57.8 46.3 
+
+30 F Auto 2D-RoPE Discussion 
+
+We now describe the architecture of Auto 2D-RoPE in more detail. The goal is to keep the main advantage of 2D-RoPE, namely assigning each token a 2D position ID, while removing the hard reliance on a manually specified line-break token. In standard 2D-RoPE, the position ID of each token is updated by a fixed rule: the column index increases within a line, and the row index increases after a line break. In Auto 2D-RoPE, we instead let the model learn how the 2D position IDs should evolve along the sequence. For each token i, let its 2D position ID be 
+
+Pi =  p(1)  
+
+> i
+
+, p (2) 
+
+> i
+
+.
+
+Intuitively, p(1)  
+
+> i
+
+plays the role of a column-like coordinate, while p(2)  
+
+> i
+
+plays the role of a row-like coordinate. Unlike rule-based 2D-RoPE, these coordinates are not computed from line breaks. Instead, at each layer, we generate two update values from the hidden representation of the current token. Concretely, let h(ℓ) 
+
+> i
+
+be the hidden representation of token i at layer ℓ. We apply a learnable linear projection to obtain 
+
+(a(ℓ) 
+
+> i
+
+, b (ℓ) 
+
+> i
+
+) = W (ℓ)pos h(ℓ) 
+
+> i
+
++ b(ℓ)pos .
+
+We then pass these two scalars through a sigmoid function and a rescaling factor α:
+
+u(ℓ) 
+
+> i
+
+= α · S(a(ℓ) 
+
+> i
+
+), v(ℓ) 
+
+> i
+
+= α · S(b(ℓ) 
+
+> i
+
+),
+
+where S(·) denotes the sigmoid function. In our experiments, we set α = 1 by default. This makes the update coefficients bounded and positive. Given these updated values, the first coordinate is updated by an affine transformation 
+
+p(1)  
+
+> i+1
+
+= u(ℓ) 
+
+> i
+
+p(1)  
+
+> i
+
++ v(ℓ) 
+
+> i
+
+.
+
+Equivalently, p(1) 
+
+> i+1
+
+1
+
+
+
+=
+
+u(ℓ) 
+
+> i
+
+v(ℓ)
+
+> i
+
+0 1
+
+  p(1) 
+
+> i
+
+1
+
+
+
+.
+
+The second coordinate is updated by the complementary increment 
+
+p(2)  
+
+> i+1
+
+= p(2)  
+
+> i
+
++  1 − u(ℓ)
+
+> i
+
+.
+
+Putting the two coordinates together, we can write the update as 
+
+p(1) 
+
+> i+1
+
+p(2) 
+
+> i+1
+
+1
+
+ =
+
+u(ℓ) 
+
+> i
+
+0 v(ℓ)
+
+> i
+
+0 1 1 − u(ℓ)
+
+> i
+
+0 0 1
+
+p(1) 
+
+> i
+
+p(2) 
+
+> i
+
+1
+
+ .
+
+Thus, the position ID of token i is determined by the cumulative product of these learned affine transformations along the sequence. This update rule can be viewed as a learnable relaxation of the line-break rule used in 2D-RoPE. For example, if u(ℓ) 
+
+> i
+
+≈ 1 and v(ℓ) 
+
+> i
+
+≈ 1, then 
+
+p(1)  
+
+> i+1
+
+≈ p(1)  
+
+> i
+
++ 1 , p(2)  
+
+> i+1
+
+≈ p(2)  
+
+> i
+
+,
+
+which resembles moving to the next column within the same row. On the other hand, if u(ℓ) 
+
+> i
+
+≈ 0 and 
+
+v(ℓ) 
+
+> i
+
+≈ 0, then 
+
+p(1)  
+
+> i+1
+
+≈ 0, p(2)  
+
+> i+1
+
+≈ p(2)  
+
+> i
+
++ 1 ,
+
+which resembles resetting the column coordinate and moving to a new row. Therefore, Auto 2D-RoPE can in principle learn behavior similar to rule-based 2D-RoPE, but it is not restricted to using the newline token as the only row separator. After the 2D position IDs are computed, we apply the same 2D-RoPE rotation as in Section 4. Specifically, for each layer ℓ, the query and key vectors are rotated according to the learned coordinates 
+
+ p(1)  
+
+> i
+
+, p (2) 
+
+> i
+
+,
+
+31 where one part of the head dimension encodes relative differences in the first coordinate, and the other part encodes relative differences in the second coordinate. The attention layer is then computed in the usual causal way: 
+
+Attn (H(ℓ)) = S
+
+
+
+MASK 
+
+
+
+Rauto (H(ℓ)Q) Rauto (H(ℓ)K)⊤ 
+
+H(ℓ)V ,
+
+where Rauto denotes the 2D-RoPE rotation using the learned Auto 2D position IDs. Importantly, the quantities a(ℓ) 
+
+> i
+
+and b(ℓ) 
+
+> i
+
+are not independent learnable parameters tied to absolute positions. They are generated by a shared linear map from the hidden representation of each token. Therefore, the number of parameters does not grow with the input length, and the coordinate-generation rule can be applied to longer sequences at test time. This is the main difference between Auto 2D-RoPE and simply learning a fixed position ID table. Empirically, this learned coordinate update allows the model to recover useful 2D structure even when the input does not contain explicit newline separators. As discussed in the main text, when we replace the newline token <\n> with another character ∗, rule-based 2D-RoPE can no longer identify row boundaries and effectively loses its 2D structure. In contrast, Auto 2D-RoPE can still learn data-dependent position IDs and shows stronger length generalization on the copy task, as shown in Figure 6. 
+
+## G Preliminary for Theoretical Results 
+
+In this section, we formalize our general setting for our theory. 
+
+Theoretical Definition of Copying. First, we define our copying task used in theory. We always have a 0/1 string s with length at least 1 and a copying position 1 ≤ i ≤ | s|. We fix the positive prompt lengths (a, b ). The input of the model is a string generated by s, i , denoted by 
+
+Str (s, i ) := ( A1, · · · , Aa, s, B1, · · · , Bb, s :i),
+
+where Ai, Bj are the different tokens other than 0,1. Here s:i means the length (i − 1) prefix of s.For this input, the last token is si−1 (and when i = 1 , the last token is <O:> ). The vocabulary set is then defined as 
+
+V = {A1, A2, · · · , Aa, B1, B2, · · · , Bb, 0, 1}.
+
+We model the predictor as a function Pθ : V+ → [0 , 1] 2, parameterized by θ, which maps an input string x ∈ V + to a distribution over the next token in {0, 1}. Specifically, for any input x, the output 
+
+Pθ (x) =  [Pθ (x)] 0, [Pθ (x)] 1
+
+ satisfies 
+
+[Pθ (x)] 0 + [ Pθ (x)] 1 = 1 , and 0 ≤ [Pθ (x)] i ≤ 1 for i ∈ { 0, 1}.
+
+Thus, Pθ (x) defines a valid probability distribution over the next token. For each pair of s, i , the corresponding loss is defined as 
+
+Lθ (s, i ) = − log [ Pθ (Str (s, i ))] si .
+
+Now given a distribution D, the total loss is defined as 
+
+L(θ) = E(s,i )∼D [Lθ (s, i )] .
+
+Definition G.1 (Successful Copy) . We say a model can successfully do copying in length L if for any |s| ≤ L and 1 ≤ i ≤ | s|, we have [Pθ (Str (s, i ))] si > 12 .
+
+Formalization of RoPE. Given a dimension d, RoPE attention is defined as a function Attn :
+
+RT ×d → RT ×d for any T parameterized by K, Q, V ∈ Rd×d. For any input X, the RoPE attention is defined as 
+
+Attn  X = S
+
+
+
+MASK 
+
+
+
+R (XQ ) ( R (XK )) ⊤ 
+
+XV ⊤ ∈ RT ×d.
+
+Here, R : RT ×d → RT ×d is the RoPE function. Specifically, for an input X ∈ RT ×d, the i-th row 
+
+Xi for 1 ≤ i ≤ L is mapped to XiR⊤ 
+
+> i
+
+, where 
+
+Ri =
+
+
+
+cos( iβ 1) − sin( iβ 1)sin( iβ 1) cos( iβ 1)cos( iβ 2) − sin( iβ 2)sin( iβ 2) cos( iβ 2)
+
+. . .
+
+ ∈ Rd×d.
+
+32 Here, βj is the base frequency associated with the (2 j − 1, 2j) coordinate pair. In our setting, these βj ’s are arbitrary hyperparameters. Thus, Ri acts block-diagonally on Xi, rotating each two-dimensional subspace (Xi, 2j−1, X i, 2j ) by angle iβ j . The causal mask operator MASK( ·) enforces the autoregressive constraint: for Z ∈ RT ×T ,
+
+MASK( Z)ij =
+
+(Zij , j ≤ i, 
+
+−∞ , j > i, 
+
+so that position i cannot attend to any future position j > i . The operator S(·) applies row-wise softmax normalization: for a matrix A ∈ RT ×T ,
+
+S(A)ij = exp( Aij )
+
+PLk=1 exp( Aik ) , 1 ≤ i, j ≤ T. 
+
+## H Shift Invariant Positional Encoding Cannot Solve Binary Copy 
+
+In this section, we prove that one-layer shift-invariant positional encoding cannot do copying as stated in Theorem 3.1. Remind that our general theoretical setting is in Appendix G. 
+
+H.1 Shift Invariant PE Formalization 
+
+First, we mathematically define what shift-invariant positional encoding is. Similar to the RoPE definition in Appendix G, shift-invariant attention is also parameterized by 
+
+Q, K, V ∈ Rd. For each X ∈ RT ×d, the attention first computes the key vectors and query vectors 
+
+ki = K⊤X⊤
+
+> i, :
+
+, qi = Q⊤X⊤
+
+> i, :
+
+.
+
+Then, it computes a matrix A ∈ RT ×T such that 
+
+Ai,j =
+
+ − ∞ i < j f (i − j, qi, kj ) i ≥ j
+
+for some function f : R × Rd × Rd → R. Then, the output of the attention is 
+
+Attn (X) = S(A)XV ⊤.
+
+When we treat this attention as a model for binary copy (as defined in Appendix G), we first have a token embedding wC ∈ Rd for each C ∈ V . For any input s, i , we convert the string Str (s, i ) into the input to the attention as Xj, : = w⊤ 
+
+> Str (s,i )j
+
+(denote this matrix as X(s, i ) ∈ R(|s|+i−1+ a+b)×d, where 
+
+(|s| + i − 1 + a + b) is the length of Str (s, i )). We also add another matrix parameter WO ∈ Rd×2,and the model is defined as a map from (s, i ) to a 2-dimensional vector: 
+
+Pθ (s, i ) = softmax  (Attn (X(s, i )) WO )|s|+i−1+ a+b, :
+
+ . (1) 
+
+H.2 Failure of Shift Invariant PE for Binary Copy 
+
+In this subsection, we organize and provide proof for our arguments in Theorem 3.1. First, to make our results more organized and easy to understand, we give a more detailed statement of Theorem 3.1. 
+
+Theorem H.1 (Detailed Statement of Theorem 3.1) . For binary copy with vocabulary set V =
+
+{A1, A2, · · · , Aa, B1, B2, · · · , Bb, 0, 1, <\n> , <O:> }, no one-layer Transformer with shift-invariant positional encodings in Equation (2) can successfully copy all input strings of length n ≤ 5. The definition of successful copy is following Definition G.1. 
+
+Notations. We first recall some notations used in Appendix G and introduce some other necessary notations. We denote the input prefix string (A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s :i) as Str (s, i ). We consider the last token of Str (s, i ) and denote it by C(s, i ). For each word C ∈ V , notice that 
+
+wCV ⊤WO = ( x1, x 2)⊤ is a 2-dimensional vector, we denote ∆C := x1 − x2 as the first coordinate minus the second coordinate of it. Moreover, we define qC := wCQ⊤ ∈ R1×d, kC := wCK⊤ ∈
+
+33 R1×d. To avoid confusion, when we refer to qC and kC for C = 0 , 1, we write q(0) and q(1) , whose subscripts are not 0, 1 but (0) , (1) to indicate that the index is a token rather than a position. For any input s, i , we convert the string Str (s, i ) into the input to the attention as Xj, : = w⊤ 
+
+> Str (s,i )j
+
+.We denote this matrix as X(s, i ) ∈ R(|s|+i−1+ a+b)×d, where (|s| + i − 1 + a + b) is the length of 
+
+Str (s, i ). We also add another matrix parameter WO ∈ Rd×2, and the model is defined as a map from (s, i ) to a 2-dimensional vector: 
+
+Pθ (s, i ) = softmax  (Attn (X(s, i )) WO )(|s|+i−1+ a+b),:
+
+ . (2) Therefore, a model can successfully do binary copy at the i-th index as [Pθ (Str (s, i ))] si > 12 has an equivalent criterion as the following lemma states. 
+
+Lemma H.2. The inequality 
+
+[Pθ (Str (s, i ))] si > 12
+
+is equivalent to that: 
+
+(−1) si
+
+> |s|+i−1+ a+b
+
+X
+
+> j=1
+
+exp( A|s|+i−1+ a+b,j )∆ Str (s,i )j > 0, (3) 
+
+where A is the attention matrix for input X(s, i ) and si ∈ { 0, 1}.Proof of Lemma H.2. Let 
+
+T := |Str (s, i )| = |s| + i − 1 + a + b, x := Str (s, i ).
+
+Write the two logits at the last position as 
+
+z = ( z0, z 1) := ( Attn (X(s, i )) WO )T, :.
+
+By the definition of the model in Equation (2), 
+
+Pθ (Str (s, i )) = softmax( z).
+
+Since the output space only contains the two binary tokens 0 and 1, for any b ∈ { 0, 1} we have 
+
+[softmax( z)] b = exp( zb)exp( z0) + exp( z1) .
+
+Therefore, if si = 0 , then 
+
+[Pθ (Str (s, i ))] 0 > 12 ⇐⇒ exp( z0)exp( z0) + exp( z1) > 12
+
+⇐⇒ exp( z0) > exp( z1)
+
+⇐⇒ z0 − z1 > 0.
+
+Similarly, if si = 1 , then 
+
+[Pθ (Str (s, i ))] 1 > 12 ⇐⇒ z1 − z0 > 0 ⇐⇒ z0 − z1 < 0.
+
+Combining the two cases, and using si ∈ { 0, 1}, we obtain the equivalent condition 
+
+(−1) si (z0 − z1) > 0.
+
+It remains to rewrite z0 − z1 in terms of the attention scores. By the definition of the attention layer, 
+
+Attn (X(s, i )) T, : =
+
+> T
+
+X
+
+> j=1
+
+S(A)T,j wxj V ⊤,
+
+34 where xj = Str (s, i )j . Since the last position T can causally attend to all positions 1, . . . , T , the softmax-normalized attention weight is 
+
+S(A)T,j = exp( AT,j )
+
+PTℓ=1 exp( AT,ℓ ) .
+
+Moreover, under the shift-invariant attention model, each attention score in this last row has the form 
+
+AT,j = f (T − j, qxT , kxj ) = f (T − j, qC(s,i ), kStr (s,i )j ),
+
+where C(s, i ) = xT is the last token of Str (s, i ).Now multiplying the last hidden vector by WO , we get 
+
+z =
+
+> T
+
+X
+
+> j=1
+
+S(A)T,j wxj V ⊤WO .
+
+For each token C ∈ V , recall that 
+
+∆C =  wCV ⊤WO
+
+ 
+
+> 0
+
+−  wCV ⊤WO
+
+
+
+> 1
+
+.
+
+Thus, 
+
+z0 − z1 =
+
+> T
+
+X
+
+> j=1
+
+S(A)T,j ∆xj =
+
+PTj=1 exp( AT,j )∆ xj
+
+PTℓ=1 exp( AT,ℓ ) .
+
+The denominator is strictly positive, so it does not affect the sign. Hence 
+
+(−1) si (z0 − z1) > 0 ⇐⇒ (−1) si
+
+> T
+
+X
+
+> j=1
+
+exp( AT,j )∆ xj > 0.
+
+Substituting T = |s| + i − 1 + a + b and xj = Str (s, i )j gives exactly 
+
+(−1) si
+
+> |s|+i−1+ a+b
+
+X
+
+> j=1
+
+exp( A|s|+i−1+ a+b,j )∆ Str (s,i )j > 0.
+
+This proves the equivalence. With the above lemma, now we are ready to give the proof of Theorem H.1 by contradiction. 
+
+Proof of Theorem H.1. Now, assume that the model can successfully solve binary copy with any string of length at most 5. We prove it cannot be true by contradiction. We consider the following four specific pairs of (s, i ):• s1 = (00010) , i 1 = 2 
+
+• s2 = (01000) , i 2 = 2 
+
+• s3 = (100) , i 3 = 3 
+
+• s4 = (001) , i 4 = 3 .We first consider 
+
+u := Str (s1, i 1) = ( A1, A2, · · · , Aa, 0, 0, 0, 1, 0, B1, B2, · · · , Bb, 0) ,v := Str (s2, i 2) = ( A1, A2, · · · , Aa, 0, 1, 0, 0, 0, B1, B2, · · · , Bb, 0) .
+
+By our assumption that the model can successfully solve binary copy with any string of length at most 5 and Lemma H.2, Equation (3) holds for u and v. We further rewrite Equation (3) for these two strings as 
+
+X 
+
+> 1≤j≤6+ a+bj̸=a+2 ,a +4
+
+exp( f (6 + a + b − j, q(0) , kuj ))∆ uj + exp( f (4 + b, q(0) , k(0) ))∆ (0) 
+
++ exp( f (2 + b, q(0) , k(1) ))∆ (1) > 0,
+
+X 
+
+> 1≤j≤6+ a+bj̸=a+2 ,a +4
+
+exp( f (6 + a + b − j, q(0) , kvj ))∆ vj + exp( f (4 + b, q(0) , k(1) ))∆ (1) 
+
++ exp( f (2 + b, q(0) , k(0) ))∆ (0) < 0.
+
+35 The above inequalities use the property of our shift-invariant model that 
+
+A|s|+i−1+ a+b,j = f (|s| + i − 1 + a + b − j, q|s|+i−1+ a+b, kj ).
+
+By comparing the above two formulas, and noticing that uj = vj for j̸ = 4 , 6, we have 
+
+exp( f (4 + b, q(0) , k(0) ))∆ (0) + exp( f (2 + b, q(0) , k(1) ))∆ (1) 
+
+> exp( f (4 + b, q(0) , k(1) ))∆ (1) + exp( f (2 + b, q(0) , k(0) ))∆ (0) . (4) Now, we similarly compare Equation (3), and denote 
+
+u′ := Str (s3, i 3) = ( A1, A2, · · · , Aa, 1, 0, 0, B1, B2, · · · , Bb, 1, 0) ,v′ := Str (s4, i 4) = ( A1, A2, · · · , Aa, 0, 0, 1, B1, B2, · · · , Bb, 0, 0) .
+
+We have X 
+
+> 1≤j≤5+ a+bj̸=a+1 ,a +3
+
+exp( f (5 + a + b − j, q(0) , ku′ 
+
+> j
+
+))∆ u′ 
+
+> j
+
++ exp( f (4 + b, q(0) , k(1) ))∆ (1) 
+
++ exp( f (2 + b, q(0) , k(0) ))∆ (0) > 0,
+
+X 
+
+> 1≤j≤5+ a+bj̸=a+1 ,a +3
+
+exp( f (5 + a + b − j, q(0) , kv′ 
+
+> j
+
+))∆ v′ 
+
+> j
+
++ exp( f (4 + b, q(0) , k(0) ))∆ (0) 
+
++ exp( f (4 + b, q(0) , k(1) ))∆ (1) < 0.
+
+Therefore, 
+
+exp( f (b + 4 , q(0) , k(0) ))∆ (0) + exp( f (b + 2 , q(0) , k(1) ))∆ (1) 
+
+< exp( f (b + 4 , q(0) , k(1) ))∆ (1) + exp( f (b + 2 , q(0) , k(0) ))∆ (0) ,
+
+which contradicts to Equation (4). Thus, we proved Theorem H.1. 
+
+## I 2-Layer RoPE Transformer can Represent Binary Copy 
+
+In this section, we show the existence of a Transformer that can exactly perform binary copy for sequence lengths significantly larger than the norm constraint. 
+
+I.1 Prompt Template 
+
+We recall the binary copy task in Appendix G defined over the vocabulary set 
+
+V = {A1, A2, · · · , Aa, B1 = <\n> , B2, · · · , Bb, 0, 1}.
+
+The full copy task is specified by a binary string s ∈ { 0, 1}∗. In the next-token prediction formulation, copying s is decomposed into predicting each copied token one by one. More precisely, when we analyze the prediction of the i-th copied token, where 1 ≤ i ≤ | s|, the model has only seen the source string s and the already generated prefix of the output string. We denote this prefix by s:i, which is the length (i − 1) prefix of s. Thus, the input sequence seen by the model at this prediction step is 
+
+Str (s, i ) := ( A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s :i).
+
+The target token for this input is si. Therefore, when i = 1 , the output prefix s:i is empty and the last token in Str (s, i ) is Aa; when i > 1, the last token is the previously copied token si−1.Equivalently, for any strict prefix s′ of s, the model input has the form 
+
+(A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s ′),
+
+and the objective is to predict the next token of s after the prefix s′. In the notation above, s′ = s:i
+
+and the target output is si.36 I.2 Transformer Architecture 
+
+We consider the following simplified transformer architecture. Let the RoPE dimension d > 50 be an even number. The embeddings 
+
+w0, w1, wA1 , wA2 , wB1 , wB2 , w<O:> , w<\n> ∈ Rd are unit vectors and orthogonal to each other. The input is converted to X(0) ∈ RT ×d, where T is the total input length and d is the embedding size. Then we have one RoPE attention layer 
+
+H(1) = Attn 1
+
+ X(0)  = S
+
+
+
+MASK 
+
+
+
+R
+
+
+
+X(0) Q(0)   
+
+R
+
+
+
+X(0) K(0)  ⊤ 
+
+X(0) (V (0) )⊤,
+
+where H(1) ∈ RT ×d. Here, K(0) , Q(0) , V (0) ∈ Rd×d, and R : RT ×d → RT ×d is the RoPE function. Specifically, for an input X ∈ RT ×d, the i-th row Xi for 1 ≤ i ≤ T is mapped to XiR⊤ 
+
+> i
+
+,where 
+
+Ri =
+
+
+
+cos( iβ 1) − sin( iβ 1)sin( iβ 1) cos( iβ 1)cos( iβ 2) − sin( iβ 2)sin( iβ 2) cos( iβ 2)
+
+. . .
+
+ ∈ Rd×d.
+
+Here, βj is the base frequency associated with the (2 j − 1, 2j) coordinate pair. In our setting, these βj ’s are arbitrary hyperparameters. Thus, Ri acts block-diagonally on Xi, rotating each two-dimensional subspace (Xi, 2j−1, X i, 2j ) by angle iβ j . The causal mask operator MASK( ·) enforces the autoregressive constraint: for Z ∈ RT ×T ,
+
+MASK( Z)ij =
+
+(Zij , j ≤ i, 
+
+−∞ , j > i, 
+
+so that position i cannot attend to any future position j > i . The operator S(·) applies row-wise softmax normalization: for a matrix A ∈ RT ×T ,
+
+S(A)ij = exp( Aij )
+
+PLk=1 exp( Aik ) , 1 ≤ i, j ≤ T. 
+
+Then, the attention layer output come through a normalization layer (here we don’t consider MLP layer for simplicity), and then added to X(0) by a residual link. Formally, we have 
+
+¯H(1) = RMSNorm( H(1) )
+
+X(1) = X(0) + ¯H(1) 
+
+where 
+
+RMSNorm([ h1, . . . , hL]⊤) = 
+
+ λ h1
+
+∥h1∥2
+
+, . . . , λ hT
+
+∥hT ∥2
+
+⊤
+
+.
+
+The second attention layer doesn’t use positional encoding. Formally, 
+
+H(2) = Attn 2
+
+ X(1)  = S
+
+
+
+MASK 
+
+
+
+(X(1) (K(1) )⊤)
+
+
+
+(X(1) (Q(1) )⊤)
+
+⊤ 
+
+X(1) (V (1) )⊤ ∈ RT ×d.
+
+Finally, the hidden representation H(2) ∈ RT ×d is projected to the vocabulary space via a linear map 
+
+WO ∈ Rd×|V| :
+
+Y = H(2) WO ∈ RT ×|V| ,
+
+where Y contains the output logits. Let V+ = V ∪ V 2 ∪ V 3 ∪ · · · denote the set of all nonempty finite sequences over V. We denote the Transformer architecture as a function 
+
+F (d, β) 
+
+> θ
+
+: V+ → RL×|V| , F (d, β) 
+
+> θ
+
+(x) = Y ,
+
+37 where x ∈ V + is the input sequence, θ are the learnable parameters, d is the embedding dimension, and β denotes the hyperparameters βi, 1 ≤ i ≤ d/ 2.The prediction distribution is obtained by applying the row-wise softmax: 
+
+P (d, β) 
+
+> θ
+
+(x) = softmax 
+
+
+
+F (d, β) 
+
+> θ
+
+(x)
+
+
+
+,
+
+h
+
+P (d, β) 
+
+> θ
+
+(x)
+
+i
+
+> i,j
+
+=exp 
+
+
+
+F (d, β) 
+
+> θ
+
+(x)i,j 
+
+P|V|  
+
+> k=1
+
+exp 
+
+
+
+F (d, β) 
+
+> θ
+
+(x)i,k 
+
+ ,
+
+where x ∈ V + is the input sequence, i indexes positions, and j indexes vocabulary symbols. 
+
+I.3 Proof of Theorem 3.2: Existence of a Length-Generalizing Solution 
+
+In this section, we show the existence of a transformer architecture that can solve binary copy for length larger than some polynomial of the parameter norm as stated in Theorem 3.2. We first give a detailed statement of Theorem 3.2, and we prove it directly. 
+
+Theorem I.1 (Detailed Statement of Theorem 3.2) . Let a ≥ 2, b ≥ 2 be constant. There exists a constant embedding dimension d such that for any norm constraint ρ > 10000 , there exists RoPE freqencies β and a set of parameters θ ∈ {∥ θ∥2 ≤ ρ} such that Transformer with embedding dimension d, RoPE freq β, parameters θ can perfectly perform copying for all lengths 1 ≤ L ≤
+
+L0 := ρ2/(1000 log ρ). More precisely, for every such s and every i ∈ [|s|], we have 
+
+arg max 
+
+> j∈V
+
+h
+
+P (d, β) 
+
+> θ
+
+(A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s )
+
+i
+
+> |s|+a+b+i−1,j
+
+= si.
+
+Proof of Theorem I.1. We fix d = 10 a + 10 b + 100 . Let L0 = ρ2  
+
+> 1000 log ρ
+
+, α = ρ 
+
+> 10
+
+. We prove the existence of the parameters that can perfectly do copy for every binary string s with length 
+
+1 ≤ n := |s| ≤ L0.We choose the RoPE frequencies as follows. Let β1 = 0 and β2 = π 
+
+> 4L0
+
+. The remaining frequencies can be chosen arbitrarily. The proof below only uses β2.As there are only (a + b + 2) kinds of token, there exists K(0) , Q(0) such that: 
+
+K(0) wAa−1 = α e1, K(0) wAa = αe1 + e4, K(0) wBb−1 = 2 α e1, K(0) wBb = 2 α e1 + e4,
+
+K(0) wC = 0 for any other token C,
+
+Q(0) w0 = Q(0) w1 = Q(0) wBb = e1 + e3,
+
+Q(0) wC = 0 for any other token C.
+
+Let vAa−1 , vAa , vBb−1 , vBb be unit vectors that are orthogonal to wC for any token C. Let 
+
+V (0) wC = vC, C = Aa−1, Aa, Bb−1, Bb
+
+V (0) wC = 0 for any other token C.
+
+Since the token embeddings are orthonormal and the above linear maps are set to zero on the orthogonal complement of their span, we have 
+
+∥K(0) ∥2 
+
+> F
+
+= α2 + ( α2 + 1) + 4 α2 + (4 α2 + 1) = 10 α2 + 2 ,
+
+∥Q(0) ∥2 
+
+> F
+
+= 4 ∥e1 + e3∥22 = 8 ,
+
+∥V (0) ∥2 
+
+> F
+
+= 4 .
+
+Therefore, 
+
+∥K(0) ∥2 
+
+> F
+
++ ∥Q(0) ∥2 
+
+> F
+
++ ∥V (0) ∥2 
+
+> F
+
+= 10 α2 + 14 .
+
+38 Let s′ 
+
+> 0
+
+be Bb. In this construction, for 1 ≤ i ≤ n, we have 
+
+w⊤
+
+> Aa−1
+
+
+
+K(0) ⊤
+
+Ri+1 Q(0) wsi = α, 
+
+w⊤
+
+> Aa
+
+
+
+K(0) ⊤
+
+RiQ(0) wsi = α + sin( iβ 2),
+
+w⊤
+
+> Bb
+
+
+
+K(0) ⊤
+
+Ri+1 Q(0) ws′ 
+
+> i−1
+
+= 2 α, 
+
+w⊤
+
+> Bb−1
+
+
+
+K(0) ⊤
+
+RiQ(0) ws′ 
+
+> i−1
+
+= 2 α + sin( iβ 2).
+
+We define 
+
+hi = 1
+
+p1 + exp 2 (sin( iβ 2)) vAa−1 + exp (sin( iβ 2)) 
+
+p1 + exp 2 (sin( iβ 2)) vAa , 1 ≤ i ≤ n
+
+˜hi = 1
+
+p1 + exp 2 (sin( iβ 2)) vBb + exp (sin( iβ 2)) 
+
+p1 + exp 2 (sin( iβ 2)) vBb−1 , 1 ≤ i ≤ n. 
+
+As V (0) w0,1 = 0, we have 
+
+¯H(1)  
+
+> i+a
+
+= λhi, 1 ≤ i ≤ n. 
+
+Now we consider ¯H(1) 
+
+> n+a+b+i−1
+
+. Notice that 
+
+1
+
+λ ¯H(1)  
+
+> n+a+b+i−1
+
+= exp ( −α)
+
+p1 + exp 2 (sin( iβ 2)) + exp 2(−α) + exp 2(sin(( i + 3 + n)β2) − α)) vAa−1
+
++ exp (sin(( i + 3 + n)β2) − α)
+
+p1 + exp 2 (sin( iβ 2)) + exp 2(−α) + exp 2(sin(( i + 3 + n)β2) − α)) vAa
+
++ 1
+
+p1 + exp 2 (sin( iβ 2)) + exp 2(−α) + exp 2(sin(( i + 3 + n)β2) − α)) vBb
+
++ exp (sin( iβ 2)) 
+
+p1 + exp 2 (sin( iβ 2)) + exp 2(−α) + exp 2(sin(( i + 3 + n)β2) − α)) vBb−1 .
+
+Therefore, 
+
+∥ ¯H(1)  
+
+> n+5+ i
+
+− λ˜hi∥22 ≤ λ2 exp( −2α)(1 + e2 + 2 e2(e2 + 1) 2) ≤ 10000 λ2 exp( −2α).
+
+We need to prove the following lemma: 
+
+Lemma I.2. Let h0 = 1√2 vA1 + 1√2 vA2 , h−1 = vA1 . There exists β such that for any n < L 0 and 
+
+−1 ≤ i < j ≤ n + 1 , we have ⟨hi, hj ⟩ ≤ 1 − 172 L20
+
+.Proof. Let β2 = π 
+
+> 4L0
+
+. For 0 ≤ i ≤ n + 1 , we let ai = exp(sin( iβ )) . Therefore, for any 0 ≤ i < j ≤ n + 1 , as n < L 0,
+
+sin( jβ ) − sin( iβ ) = 
+
+Z jβ iβ 
+
+cos( x)dx ≥ β
+
+√2 (j − i) ≥ 12L0
+
+.
+
+Therefore, for any 0 ≤ i < j ≤ n + 1 ,
+
+aj − ai =
+
+Z sin( jβ )sin( iβ )
+
+exp( x)dx ≥ 1
+
+e (sin( jβ ) − sin( iβ )) ≥ 12eL 0
+
+≥ 16L0
+
+.
+
+This shows 
+
+| arctan ai − arctan aj | ≥ 16L0
+
+.
+
+As 1 
+
+> e
+
+≤ ai ≤ e, we have 
+
+⟨hi, hj ⟩ = cos(arctan ai − arctan aj ) ≤ 1 − 172 L20
+
+.
+
+39 Moreover, for each 0 ≤ i ≤ n + 1 ,
+
+⟨hi, h−1⟩ = 1
+
+p1 + a2
+
+> i
+
+≤ 1 − 172 L20
+
+.
+
+Thus, the lemma follows. Let λ = 10 √L0 log L0. In the second layer, we let 
+
+(K(1) )⊤ = 10 pL0
+
+
+
+vAa−1 v⊤ 
+
+> Bb
+
++ vAa v⊤
+
+> Bb−1
+
+
+
+, Q(1) = 10 pL0
+
+
+
+vBb v⊤ 
+
+> Bb
+
++ vBb−1 v⊤
+
+> Bb−1
+
+
+
+,
+
+so 
+
+(K(1) )⊤Q(1) = 100 L0
+
+
+
+vAa−1 v⊤ 
+
+> Bb
+
++ vAa v⊤
+
+> Bb−1
+
+
+
+.
+
+By the previous lemma, for any 1 ≤ i ≤ n + 1 and any −1 ≤ j ≤ n + 1 with j̸ = i, we have 
+
+⟨hi, hi − hj ⟩ = 1 − ⟨ hi, hj ⟩ ≥ 172 L20
+
+.
+
+Moreover, ¯H(1)  
+
+> i+a
+
+= λhi and ¯H(1)  
+
+> n+a+b−1+ i
+
+is within 100 λ exp( −α) of λ˜hi. Therefore, when ρ is large enough, the second-layer attention score of the correct source position i + a is larger than the score of any incorrect source position by at least 100 log L0:
+
+¯H(1) 
+
+> i+a
+
+(K(1) )⊤Q(1) ( ¯H(1) 
+
+> n+a+b−1+ i
+
+)⊤ ≥ ¯H(1) 
+
+> j+a
+
+(K(1) )⊤Q(1) ( ¯H(1) 
+
+> n+a+b−1+ i
+
+)⊤ + 100 log L0.
+
+Thus, in the second layer, the attention of the query position n + a + b − 1 + i to the correct source token si is larger than 1/2 for every 1 ≤ i ≤ n.We let v0, v1, v<\n> be unit vectors that are orthogonal to the vC, wC defined before. We let 
+
+V (1) wC = vC, C ∈ { 0, 1, <\n> }.
+
+At last, we let WO be 
+
+WO = v0e⊤ 
+
+> 0
+
++ v1e⊤ 
+
+> 1
+
+.
+
+Here eC denotes the one-hot vector corresponding to token C ∈ { 0, 1, <\n> }. Since the second layer puts more than half of its attention mass on the correct source token, the logit of the correct next token is strictly larger than the logit of the incorrect binary token. Therefore, the prediction is always correct. For our construction, we have 
+
+∥θ∥2 = ∥K(0) ∥22 + ∥Q(0) ∥22 + ∥V (0) ∥22 + ∥K(1) ∥22 + ∥Q(1) ∥22 + ∥V (1) ∥22 + ∥WO ∥22 + λ2
+
+≤ ρ2
+
+10 + 100 + 400 L0 + 100 L0 log L0 ≤ ρ2.
+
+Thus the construction satisfies the norm constraint, so the theorem follows. 
+
+Remark I.3 . One may argue that the above construction does not provide a solution that works for all sequence lengths. Indeed, such a solution cannot exist under bounded parameters: if all weights are uniformly bounded, then the attention assigned to any individual token is at most O(1 /L ), which vanishes as the sequence length L grows. Consequently, binary copy cannot be perfectly solved for arbitrarily long sequences. 
+
+## J One-Layer 2D-RoPE Provably Solve Binary Copy with Length Generalization 
+
+J.1 Theoretical Setup 
+
+To make this section self-contained, in this subsection, we define our setup in detail before we give further theoretical results in the following subsections. 40 Binary Copy. For binary copy task, aligned with the previous theoretical results, we still consider the vocabulary set 
+
+V = {A1, A2, · · · , Aa, B1, B2, · · · , Bb, 0, 1}.
+
+Here, to use the linebreaking in our 2D-RoPE, we assume that B1 = <\n> , and other tokens are not linebreaking tokens. For a binary string s and an index 1 ≤ i ≤ | s|, we denote by s:i the length 
+
+(i − 1) prefix of s. In the next-token prediction formulation, when the model predicts the i-th copied token, the input sequence seen by the model is 
+
+Str (s, i ) := ( A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s :i).
+
+The target token for this input is si. Notice that the length of Str (s, i ) is |Str (s, i )| = |s|+a+b−1+ i.Equivalently, the full copy sample corresponds to the sequence 
+
+(A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s ),
+
+but in the autoregressive loss, the logit at position |s| + a + b − 1 + i is used to predict si. We further denote the set of all nonempty finite sequences over V as V+ := V ∪ V 2 ∪ V 3 ∪ · · · .
+
+2D-RoPE Architecture. We now define the one-layer 2D-RoPE Transformer used in theory. Let 
+
+u = ( C1, . . . , C T ) ∈ V +
+
+be an input sequence with length T , where each Ci ∈ V . We first convert each token into its embedding and obtain an input matrix X ∈ RT ×d by setting 
+
+Xi, : = w⊤ 
+
+> Ci
+
+, 1 ≤ i ≤ T. 
+
+Here, d is the embedding dimension. We set d to be divisible by 4, so that the 2D-RoPE rotation can split the coordinates into a column part and a row part. We consider the one-hot embeddings of the tokens in V as 
+
+w0, w1, w<O:> , w<\n> , wA1 , wA2 , · · · , wAa , wB1 , wB2 , · · · , wBb ∈ Rd.
+
+Next, we assign a 2D position to each token using the line-break rule discussed in Section 4.1. That is, the column index increases within the same row, and after the line-break token <\n> , the row index increases and the column index is reset. Let the 2D position of the i-th token be (xi, y i), where 
+
+xi is the column index and yi is the row index. We now define the 2D-RoPE rotation. For any matrix Z ∈ RT ×d, the 2D-RoPE map R : RT ×d →
+
+RT ×d maps the i-th row Zi, : to 
+
+Zi, :R⊤ 
+
+> xi,y i
+
+,
+
+where 
+
+Rxi,y i = diag  R1(xi), . . . , Rd/ 4(xi), Rd/ 4+1 (yi), . . . , Rd/ 2(yi) ∈ Rd×d.
+
+Here, the first d/ 4 rotation blocks encode the column coordinate, and the last d/ 4 rotation blocks encode the row coordinate. For each 1 ≤ j ≤ d/ 2, the block Rj (·) ∈ R2×2 is the standard RoPE rotation matrix 
+
+Rj (t) := 
+
+cos( tβ j ) − sin( tβ j )sin( tβ j ) cos( tβ j )
+
+
+
+.
+
+Here, βj are the base frequencies associated with the (2 j − 1, 2j) coordinate pair. In our setting, these frequencies are arbitrary hyperparameters unless otherwise specified. Given the above embedding and 2D-RoPE rotation, we define the one-layer 2D-RoPE attention layer as 
+
+Y = Attn  X = S
+
+
+
+MASK 
+
+
+
+R (XQ ) ( R (XK )) ⊤ 
+
+XV ⊤ ∈ RT ×2. (5) Here, K, Q ∈ Rd×d and V ∈ R2×d are the learnable parameters of this attention layer. The output 
+
+Y has two coordinates at each position, corresponding to the logits for the two binary output symbols 
+
+0 and 1.Equivalently, let 
+
+A := MASK 
+
+
+
+R (XQ ) ( R (XK )) ⊤
+
+41 be the masked attention score matrix. If we denote the unrotated query and key vectors at position i
+
+by 
+
+qi = ( XQ )⊤
+
+> i, :
+
+, ki = ( XK )⊤
+
+> i, :
+
+,
+
+then the entries of A can be written as 
+
+Ai,j =
+
+ − ∞ i < j, f (( xi, y i), (xj , y j ), qi, kj ) i ≥ j, 
+
+where 
+
+f (( xi, y i), (xj , y j ), qi, kj ) = q⊤ 
+
+> i
+
+Rxj −xi,y j −yi kj .
+
+The causal mask operator MASK( ·) enforces the autoregressive constraint: for Z ∈ RT ×T ,
+
+MASK( Z)ij =
+
+(Zij , j ≤ i, 
+
+−∞ , j > i. 
+
+For any input sequence u ∈ V + with length T , we denote the above one-layer 2D-RoPE Transformer architecture as 
+
+F (d, β) 
+
+> θ
+
+(u) = Y ∈ RT ×2, (6) where θ = ( Q, K, V ) are the learnable parameters, d is the embedding dimension, and β denotes the hyperparameters βj , 1 ≤ j ≤ d/ 2.The prediction distribution is obtained by applying the row-wise softmax to these two logits: 
+
+P (d, β) 
+
+> θ
+
+(u) = softmax 
+
+
+
+F (d, β) 
+
+> θ
+
+(u)
+
+
+
+,
+
+h
+
+P (d, β) 
+
+> θ
+
+(u)
+
+i 
+
+> i,b
+
+=exp 
+
+
+
+F (d, β) 
+
+> θ
+
+(u)i,b 
+
+P 
+
+> b′∈{ 0,1}
+
+exp 
+
+
+
+F (d, β) 
+
+> θ
+
+(u)i,b ′
+
+ ,
+
+(7) where i indexes positions and b ∈ { 0, 1} indexes binary output symbols. 
+
+Population Loss Function. Given a distribution D of sequences, let P (d, β) 
+
+> θ
+
+(s) be the output distribution matrix given input (A1, A2, · · · , Aa, s, B1, B2, · · · , Bb, s ). The loss is defined as the cross-entropy loss on the target tokens: 
+
+L(θ) := Es∼D 
+
+ 1
+
+|s|
+
+> |s|
+
+X
+
+> i=1
+
+− log 
+
+h
+
+P (d, β) 
+
+> θ
+
+(s)
+
+i
+
+> a+b+|s|+i−1,s i
+
+ . (8) If the training length is at most L, we may also write the loss as LL(θ) to emphasize the training length. 
+
+J.2 Expressive Power of One-Layer 2D-RoPE 
+
+Next, we prove the detailed version of Theorem 4.1 as the following theorem states. 
+
+Theorem J.1 (Detailed Version of Theorem 4.1) . Assume that the 2D-RoPE dimension d ≥ 100 + 4a + 4 b is divisible by 4. For any ρ > d 2, let βj
+
+> i.i.d.
+
+∼ Unif[0 , 2π] for every 1 ≤ j ≤ d/ 2. Then with probability at least 
+
+
+
+1 − dρ
+
+
+
+over the randomness of β, there exists a 1-layer 2D-RoPE transformer 
+
+P (d, β) 
+
+> θ
+
+defined in Equations (5) to (7) such that: 1. ∥θ∥2 ≤ ρ;2. For any binary string s with length |s| ≤ ρd/ 12 and any 1 ≤ i ≤ | s|, the transformer correctly predicts the next copied token: 
+
+arg max 
+
+> b∈{ 0,1}
+
+h
+
+P (d, β) 
+
+> θ
+
+(Str (s, i )) 
+
+i
+
+> |s|+a+b−1+ i,b
+
+= si.
+
+42 Proof of Theorem J.1. Let M = ρd and L = M d/ 6. Since wC are one-hot embeddings, there exists 
+
+Q, K, V such that, for every C ∈ V ,
+
+qC := Q⊤wC = Ra+1 −b, −1
+
+
+
+MM
+
+...
+
+M
+
+ , kC := K⊤wC = R0,0
+
+
+
+MM
+
+...
+
+M
+
+ .
+
+Here qC and kC are all d-dimensional vectors. We also set 
+
+v(0) := V w 0 =
+
+ M
+
+−M
+
+
+
+, v(1) := V w 1 =
+
+−MM
+
+
+
+,
+
+and 
+
+vC := V w C =
+
+00
+
+
+
+for any C ∈ V\{ 0, 1}.
+
+By construction, ∥θ∥2 = p2( a + b + 3) M 2d + 4 M 2 ≤ ρ.We first need the following technical lemma. 
+
+Lemma J.2. Let θ1, . . . , θ m ∼ Unif[0 , 2π] be independent. Then for any δ ∈ (0 , 0.1) , with probability at most δm/ 2, we have 
+
+> m
+
+X
+
+> i=1
+
+cos( θi) ≥ m − δ. 
+
+Proof. First consider one θ ∼ Unif[0 , 2π]. Notice that cos θ = 1 − 2 sin 2 θ 
+
+> 2
+
+. Therefore, if cos θ ≥
+
+1 − δ, then sin 2 θ 
+
+> 2
+
+≤ δ 
+
+> 2
+
+. Since δ < 0.1, we must have 0 ≤ θ ≤ √2δ or 2π − √2δ ≤ θ ≤ 2π.Therefore, the probability of sin 2 θ 
+
+> 2
+
+≤ δ 
+
+> 2
+
+is at most √δ.Notice that Pmi=1 cos( θi) ≥ m − δ indicates that cos( θi) ≥ 1 − δ for each i. Therefore, the result follows by the independency of these θi’s. Now we consider back our construction of q, k. We define the following good event: 
+
+E := 
+
+
+
+> d/ 4
+
+X
+
+> k=1
+
+cos( rβ k) ≤ d
+
+4 − δ for every 1 ≤ | r| ≤ L + a + b + 3 
+
+∩
+
+
+
+> d/ 2
+
+X
+
+> k=d/ 4+1
+
+cos( βk) ≤ d
+
+4 − δ
+
+ .
+
+For any non-zero integer r, cos( rβ k) has the same distribution as cos( θ) for θ ∼ Unif[0 , 2π].Therefore, by Lemma J.2 and a union bound over all possible relative column offsets, we have 
+
+Pr( E) ≥ 1 − (L + a + b + 4) δd/ 8.
+
+We now work on the event E. Fix any binary string s with n := |s| ≤ L and any 1 ≤ i ≤ n. Let 
+
+Ti := |Str (s, i )| = n + a + b − 1 + i
+
+be the query position for predicting si, and let 
+
+pi := i + a
+
+be the position of the corresponding source token si in the input string. Under the 2D position assignment, the source position pi and the query position Ti have the same column, and their row difference is −1. Therefore, by construction, 
+
+ATi,p i = d · M 2.
+
+Next, we compare this score with all other positions. First consider a first-row position 1 ≤ j ≤
+
+a + L + 1 with j̸ = pi. Then j has row difference −1 from the query position, but its column is different from the column of Ti. Let rj be this non-zero column difference. Then 
+
+ATi,j = 2 M 2
+
+> d/ 4
+
+X
+
+> k=1
+
+cos( rj βk) + d
+
+2 M 2.
+
+43 Thus, on the event E,
+
+ATi,p i − ATi,j = d
+
+2 M 2 − 2M 2
+
+> d/ 4
+
+X
+
+> k=1
+
+cos( rj βk) ≥ 2M 2δ. 
+
+Now consider a second-row position a + L + 2 ≤ j ≤ Ti. In this case, we consider ATi,j . The first 
+
+d/ 2 items contributes at most d 
+
+> 2
+
+M 2, and the last d/ 2 items contributes 2M 2 Pd/ 2 
+
+> k=d/ 4+1
+
+cos( rj βk).Thus 
+
+ATi,j ≤ 2M 2
+
+> d/ 2
+
+X
+
+> k=d/ 4+1
+
+cos( βk) + d
+
+2 M 2.
+
+On the event E, this implies 
+
+ATi,p i − ATi,j ≥ 2M 2δ. 
+
+Therefore, for every j̸ = pi, we have the attention score gap 
+
+ATi,p i ≥ ATi,j + 2 M 2δ. 
+
+It follows that the softmax attention weight on the correct source position is at least 
+
+S(A)Ti,p i ≥ 11 + ( Ti − 1) exp( −2M 2δ) ≥ 11 + 3 L exp( −2M 2δ) .
+
+Thus, as long as 
+
+3L exp( −2M 2δ) ≤ 1,
+
+we have 
+
+S(A)Ti,p i > 12 .
+
+Finally, we translate this attention property into the output prediction. If si = 0 , then the value vector at the correct source position is v(0) = ( M, −M )⊤. Since all non-binary tokens have zero value vectors and the attention mass on the correct source position is larger than 1/2, the first output logit is strictly larger than the second output logit. Therefore, 
+
+arg max 
+
+> b∈{ 0,1}
+
+h
+
+P (d, β) 
+
+> θ
+
+(Str (s, i )) 
+
+i
+
+> Ti,b
+
+= 0 = si.
+
+The case si = 1 is symmetric, because v(1) = ( −M, M )⊤. Hence the model correctly predicts si
+
+for every s with |s| ≤ L and every 1 ≤ i ≤ | s|.Now let δ = M −3/2 and L = M d/ 6. Since d ≥ 100 + 4 a + 4 b, we have 
+
+(L + a + b + 4) δd/ 8 ≤ 2M d/ 6−3d/ 16 = 2 M −d/ 48 ≤ 1
+
+M .
+
+Moreover, 
+
+3L exp( −2M 2δ) = 3 M d/ 6 exp( −2M 1/2) ≤ 1
+
+when M is sufficiently large. Therefore, with probability at least 1 − 1 
+
+> M
+
+= 1 − dρ , the constructed one-layer 2D-RoPE Transformer can correctly copy every binary string with length at most 
+
+L = M d/ 6 = ( ρ/d )d/ 6 ≥ ρd/ 12 
+
+since ρ > d 2. This proves the theorem. The following assumptions will only be used in the global-minimum analysis in Appendix J.3: • For every s in the support of D, we have |s| ≤ L.• For every length 1 ≤ ℓ ≤ L, every string s ∈ { 0, 1}ℓ has positive probability under D. We denote the minimum such probability by p.44 J.3 Global Minimum under ℓ∞ Norm 
+
+In this section, we prove the positive result of 2D-RoPE for the length generalization on binary copy. We first clarify our setting. In this section, we only consider the case where b = a + 2 . Let D
+
+be the training distribution on some binary strings with length at most L. We make the following assumptions: 
+
+Assumption J.3. There exists a p > 0 such that for each binary string |s| ≤ L, Pr x∼D [x = s] ≥ L·p.
+
+Assumption J.4. The training length L and hidden dimension d satisfies L > d 4 and d > log 3 L.Also, L, d > 10000 + a + b.We also need the following assumption that the tokens other than 0/1 have zero value vectors. This is a natural assumption because intuitively, other tokens cannot give any guide to predicting the next binary token. 
+
+Assumption J.5. For every C ∈ V \ { 0, 1}, V w C = 0 .
+
+The above assumption states that the columns of V corresponding to prompt and delimiter tokens are fixed to zero, while the two binary-token columns remain trainable. So in our analysis, we actually consider the following parameter class 
+
+ΘM := {(Q, K, V ) : ∥θ∥∞ ≤ M, V w C = 0 for all C /∈ { 0, 1}} .
+
+And we further analyze the constrained global minimizer 
+
+θ∗ 
+
+> M,L
+
+∈ arg min 
+
+> θ∈ΘM
+
+LL(θ),
+
+where LL is the cross-entropy loss with sequence length up to L defined in Equation (8). Also, when it is clear from the context, we ignore the subscript L. Before entering to the detailed proof, we first give a proof sketch in the following. 
+
+J.3.1 Technical Challenges and Proof Sketch. 
+
+The proof is technically challenging for two reasons: (1) the RoPE rotation matrices make the population loss difficult to express and analyze directly; and (2) we characterize the global minimizers for finite M , rather than only in the asymptotic regime M → ∞ .In the following, we give the proof sketch of this theorem. First, we characterize the loss separately for every string and output position. Specifically, consider a pair (s, i ), where s is a binary string satisfying |s| ≤ L and i is a position at which the loss is evaluated, with 1 ≤ i ≤ | s|. We define 
+
+g+
+
+> s,i
+
+(Q, K, V ) as the maximum attention logit assigned to any position whose token value equals 
+
+si ∈ { 0, 1} when predicting the i-th token for copying s. Similarly, let g−
+
+> s,i
+
+(Q, K, V ) be the maximum attention logit assigned to any position whose token value doesn’t equal si ∈ { 0, 1} when predicting the i-th token for copying s. We then introduce a key intermediate quantity fL(Q, K, V )
+
+to characterize the global minimum θ∗ 
+
+> L,M
+
+, which is defined as 
+
+fL(Q, K, V ) := min 
+
+> s,i, |s|≤ L
+
+g+
+
+> s,i
+
+(Q, K, V ) − g−
+
+> s,i
+
+(Q, K, V ) .
+
+Here fL(Q, K, V ) measures the worst-case separation (over all pairs (s, i )) between the largest attention logit associated with the correct token and the largest attention logit associated with the incorrect token. A large value of fL(Q, K, V ) therefore indicates that the model consistently prefers positions containing the correct token. This construction is related to previous results showing that global minimizers approach max-margin solutions as the norm constraint M → ∞ (Wei et al., 2019; Zhang et al., 2024a; Fan et al., 2025). However, our setting introduces an additional difficulty that none of Q, K, or V is fixed, so the relevant notion of margin depends jointly on all three parameter matrices. Therefore, our proof relates the margin-like quantity fL(Q, K, V ) to the constrained global minimizer θ∗
+
+> M,L
+
+, but it is not exactly defined as a margin. Also, rather than considering only the asymptotic limit M → ∞ , we establish a guarantee for every sufficiently large but finite M . Consequently, the discrepancy caused by finite M
+
+must be controlled explicitly. Our proof proceeds in three steps. The first two steps together imply that, once M is sufficiently large, any constrained global minimizer θ∗ 
+
+> M,L
+
+must attain a sufficiently large value of fL(Q, K, V );45 otherwise, its population loss would be larger than that of the constructed feasible solution. The third step then converts this lower bound on fL(Q, K, V ) into the desired length-generalization guarantee. 1. We derive a lower bound on the population loss whenever fL(Q, K, V ) is not sufficiently large. Intuitively, fL measures the separation between the attention logits assigned to correct and incorrect tokens. Therefore, achieving a small population loss requires a sufficiently large value of fL.2. We construct a feasible parameter configuration that attains a sufficiently large value of 
+
+fL(Q, K, V ) and, consequently, a small population loss. The construction relies on a concen-tration property of the 2D-RoPE frequencies. 3. We show that, with high probability over the random RoPE frequencies, any parameter configu-ration with sufficiently large fL(Q, K, V ) correctly copies binary strings at lengths far beyond the training range. This result also relies on concentration properties of the RoPE frequencies, together with a careful analysis of the attention patterns at long sequence lengths. Combining these three steps establishes the desired length-generalization guarantee for any con-strained global minimizer θ∗ 
+
+> M,L
+
+when M is sufficiently large. We then formulate our proof. 
+
+J.3.2 Small Population loss Implies Large Margin 
+
+For each C ∈ V , write 
+
+qC = Q⊤wC, kC = K⊤wC.
+
+Since wC is one-hot embedding, ∥qC∥∞, ∥kC∥∞ correspond to rows in K, Q. Thus the requirements on Q and K asks that: 
+
+∥qC∥∞, ∥kC∥∞ ≤ M. 
+
+Notice that V is a 2 × d matrix. For the column corresponding to the one-hot embedding wC, we denote it by (VC,0, , V C,1)⊤. Therefore, the ℓ∞ constraint requires |VC,0|, |VC,1| ≤ M .Since other rows of Q, K and other columns of V don’t affect the loss, we can always assume that they are 0. Thus, ∥θ∥∞ ≤ M is equivalent to: 
+
+∥qC∥∞, ∥kC∥∞, |VC,0|, |VC,1| ≤ M. (9) Now we need to consider the different parts of the loss term. For each string s and each index i ≤ | s|,we consider the attention distribution of the last token under the input 
+
+Str (s, i ) = ( A1, . . . , Aa, s, B1, . . . , Bb, s :i),
+
+where s:i = ( s1, . . . , s i−1) is the length (i − 1) prefix of s. For this input, the last token is si−1 (and when i = 1 , the last token is <O:> ). For each C ∈ V , let AC(s, i ) denote the total attention weight from the last token assigned to all tokens equal to C. Then the logits for predicting si is 
+
+Y|s|+a+b−1+ i = X
+
+> C∈V
+
+AC(s, i )VC,0, X
+
+> C∈V
+
+AC(s, i )VC,1
+
+!
+
+.
+
+Therefore, the loss for predicting si is: 
+
+L(s, i ) : = − log 
+
+h
+
+P (d, β) 
+
+> θ
+
+(A1, · · · , Aa, s, B1, · · · , Bb, s :−1)
+
+i
+
+> |s|+a+b+i−1,s i
+
+= − log exp  Y|s|+a+b+i−1,s i
+
+
+
+exp  Y|s|+a+b+i−1,0
+
+ + exp  Y|s|+a+b+i−1,1
+
+
+
+= log 1 + exp X
+
+> C∈V
+
+AC(s, i ) ( VC,1−si − VC,s i )
+
+!! 
+
+.
+
+Without loss of generality, we can always assume that VC,0 + VC,1 = 0 . Since we have assumed that 
+
+VC,0 = VC,1 = 0 for any C ∈ V\{ 0, 1}, we denote V0 := V0,0 and V1 := V1,1. Therefore, 
+
+L(s, i ) = log (1 + exp ( −2Asi (s, i )Vsi + 2 A1−si (s, i )V1−si )) .
+
+46 By definition, 
+
+L(θ) = Es∼D 
+
+
+
+> |s|
+
+X
+
+> i=1
+
+1
+
+|s| L(s, i )
+
+ .
+
+Therefore, the contribution of each L(s, i ) to L(θ) is at least p · L (s, i ).We consider the global minimum under the ℓ∞ constraint: 
+
+∥θ∥∞ ≤ M. 
+
+We denote the global minimum as θ∗
+
+> M,L
+
+. In the following proof, we just write it as θ∗ 
+
+> M
+
+since L is always fixed. We rewrite our main result here: 
+
+Theorem J.6. Assume that each βi is independently sampled from Unif[0 , 2π]. Under the Assump-tions J.3,J.4,J.5, with probability at least 1 − 3 
+
+> d
+
+, there exists M0 > 0 such that for all M > M 0, the transformer with parameter θ∗ 
+
+> M
+
+can correctly copy all binary strings with length at most L√d/ 2.
+
+In the remaining part of this subsection, we prove this theorem. We put some technical lemmas in Appendix J.4. For every training pair (s, i ) and 1 ≤ j ≤ | s| + a + b + i − 1, we use S(s, i, j ) to denote the jth token in sequence (A1, · · · , Aa, s, B1, · · · , Bb, s :i), and we use D(s, i, j ) to denote the 2-D relative position between S(s, i, j ) and si−1.We define a function to characterize the global minimum. For each s, i , we define 
+
+g+
+
+> s,i
+
+(Q, K, V ) := max 
+
+> S(s,i,j )= si
+
+n
+
+q⊤ 
+
+> si−1
+
+RD(s,i,j )ksi
+
+o
+
+;
+
+g−
+
+> s,i
+
+(Q, K, V ) := max 
+
+> S(s,i,j )̸=si
+
+n
+
+q⊤ 
+
+> si−1
+
+RD(s,i,j )kS(s,i,j )
+
+o
+
+.
+
+Notice that it is well defined, because the existence of such j is promised by S(s, i, i ) = si and 
+
+S(s, i, |s| + a + 1) ̸ = si. Then, we define 
+
+fL(Q, K, V ) := min 
+
+> s,i, |s|≤ L
+
+g+
+
+> s,i
+
+(Q, K, V ) − g−
+
+> s,i
+
+(Q, K, V ) .
+
+The following lemma shows that if we have a big fL, then the global minimum is small: 
+
+Lemma J.7. For each tuple (Q, K, V ), let S := fL(Q, K, V ). Assume that S > M , then when 
+
+M is large enough there exists V ′ such that ∥V ′∥∞ ≤ M and 
+
+L ≤ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · 4M (L + a + b) exp( −S)+ 32 exp( −2M )1 + exp( −2M ) · M 2(L + a + b)2 exp( −2S).
+
+when we replace V by V ′.Proof. We consider V0 = V1 = M (recall that V0 := V0,0 and V1 := V1,1). To prove this lemma, we just need to prove the desired upper bound for any L(s, i ) such that 
+
+1 ≤ i ≤ | s| ≤ L. Without loss of generality, we assume that si = 0 (since token 0 and 1 are symmetric). Thus 
+
+L(s, i ) = log (1 + exp ( −2Asi (s, i )Vsi + 2 A1−si (s, i )V1−si )) = log (1 + exp ( −2A0(s, i )V0 + 2 A1(s, i )V1)) .
+
+Recall that V0 = V0,0 and V1 = V1,1.Notice that g+
+
+> s,i
+
+(Q, K, V ) is the maximum attention score from si−1 to some token 0, and 
+
+g−
+
+> s,i
+
+(Q, K, V ) is the maximum attention score to other tokens. Thus, since fL(Q, K, V ) = S,for each token other than 0, the different between the attention score to it and the largest attention 47 score for some 0 is at least S. Thus the corresponding attention is at most exp( −S). Therefore, 
+
+A1(s, i ) ≤ 2( L + a + b) exp( −S), and A0(s, i ) ≥ 1 − 2( L + a + b) exp( −S). Therefore, 
+
+L(s, i )= log (1 + exp ( −2Asi (s, i )Vsi + 2 A1−si (s, i )V1−si )) 
+
+≤ log(1 + exp( −2M + 4( L + a + b) · exp( −S) · M )) 
+
+≤ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · 4M (L + a + b) exp( −S)+ 32 exp( −2M )1 + exp( −2M ) · M 2(L + a + b)2 exp( −2S).
+
+Thus, the result follows. The following gives a lower bound of the maximum possible fL.
+
+Lemma J.8. With probability at least 1 − 1 
+
+> L
+
+over the random frequencies, there exists Q, K, V such that fL(Q, K, V ) ≥ M 2d/ 2 − 2M 2pd log( L + a).Proof. For each C, we define 
+
+kC =
+
+
+
+M
+
+...
+
+MM
+
+...
+
+M
+
+
+
+, qC =
+
+
+
+M
+
+...
+
+M
+
+−M
+
+...
+
+−M
+
+
+
+.
+
+Here, for each qC, there are d/ 2 M ’s and d/ 2 ( −M )’s. Notice that for any i, s , D(s, i, i + a) = (0 , 1) .Also, for any j̸ = i + a, there exists −L ≤ t ≤ L + a such that D(s, i, j ) = ( t, 0)( t̸ = 0) or (t, 1) .If D(s, i, j ) = ( t, 0) ,
+
+q⊤ 
+
+> si−1
+
+RD(s,i,i +1) kS(s,i,i +1) − q⊤ 
+
+> si−1
+
+RD(s,i,j )kS(s,i,j )
+
+=M 2 · d
+
+2 − 2M 2
+
+> d/ 4
+
+X
+
+> i=1
+
+cos( tβ i)
+
+If D(s, i, j ) = ( t, 1) ,
+
+q⊤ 
+
+> si−1
+
+RD(s,i,i +1) kS(s,i,i +1) − q⊤ 
+
+> si−1
+
+RD(s,i,j )kS(s,i,j )
+
+=M 2 · d
+
+2 − 2M 2
+
+> d/ 4
+
+X
+
+> i=1
+
+cos( tβ i) − 2M 2
+
+> d/ 2
+
+X
+
+> i=d/ 4+1
+
+cos( βi) + M 2 · d
+
+2 .
+
+Thus 
+
+q⊤ 
+
+> si−1
+
+RD(s,i,i +1) kS(s,i,i +1) − q⊤ 
+
+> si−1
+
+RD(s,i,j )kS(s,i,j )
+
+≥M 2d/ 2 − 2M 2 max 
+
+ max 
+
+> −L≤t≤L+a,t ̸=0
+
+
+
+> d/ 4
+
+X
+
+> i=1
+
+cos( tβ i)
+
+ ,
+
+> d/ 2
+
+X
+
+> i=d/ 4+1
+
+cos( βi)
+
+ .
+
+Therefore, with probability at least 1 − 1 
+
+> L
+
+, we have 
+
+q⊤ 
+
+> si−1
+
+RD(s,i,i +1) kS(s,i,i +1) − q⊤ 
+
+> si−1
+
+RD(s,i,j )kS(s,i,j ) ≥ M 2d/ 2 − 2M 2pd log( L + a).
+
+Here, the last inequality comes from Lemma J.13 where we let l = 2 L + a + 2 , m = d/ 4 and c = 2 .48 The following lemma shows that if V0 ≤ M − 1 or V1 ≤ M − 1, then the loss is big. 
+
+Lemma J.9. If V0 ≤ M − 1 or V1 ≤ M − 1, then 
+
+L ≥ (1 − p) log(1 + exp( −2M )) + p · log(1 + exp( −2M + 2)) .
+
+Proof. Without loss of generality, let V0 ≤ M − 1, we consider the string s only containing 0, we know that the loss 
+
+L(s, i ) = log(1 + exp( −2A0(s, i )V0)) ≥ log(1 + exp( −2M + 2)) 
+
+since there is no token 1 in the sequence. Notice that for any other s′, i ′, L(s′, i ′) ≥ log(1 + exp( −2M )) . Since the probability of sampling (s, i ) is at least p, we have 
+
+L ≥ (1 − p) log(1 + exp( −2M )) + p · log(1 + exp( −2M + 2)) .
+
+The result is similar for V1 ≤ M − 1. Therefore, the lemma follows. The following lemma shows that small loss requires a big fL(Q, K, V ).
+
+Lemma J.10. For any S > M , if fL(Q, K, V ) ≤ S, then we have 
+
+L ≥ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · M exp( −S)2L + a + b · p. 
+
+Proof. First, if V0 ≤ M − 1 or V1 ≤ M − 1, by Lemma J.9 and Lemma J.12, 
+
+L ≥ (1 − p) log(1 + exp( −2M )) + p · log(1 + exp( −2M + 2)) 
+
+≥ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · M exp( −S)2L + a + b · p. 
+
+In the following, we only consider the case such that V0, V 1 > M − 1.By definition, there exists a pair of (s, i ) such that 
+
+g+
+
+> s,i
+
+(Q, K, V ) − g−
+
+> s,i
+
+(Q, K, V ) ≤ S. 
+
+Without loss of generality, we also assume that si = 0 . The above inequality means that there exists a token C̸ = 0 in s such that the attention score from si to it is at least the attention score to any other minus S. As there are at most 2L + a + b tokens in the input, the attention to token C is at least 
+
+exp( −S)/(2 L + a + b). Therefore, 
+
+L(s, i ) = log (1 + exp ( −2Asi (s, i )Vsi + 2 A1−si (s, i )V1−si )) 
+
+≥ log 
+
+
+
+1 + exp 
+
+
+
+−2M + M · exp( −S)2L + a + b
+
+ 
+
+≥ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · M · exp( −S)2L + a + b .
+
+The last inequality is by Lemma J.12. Notice that for any other (s′, i ′), we also have 
+
+L(s′, i ′) ≥ log(1 + exp( −2M )) .
+
+Thus the result follows. 
+
+J.3.3 Large Training Margin Generalizes to Longer Strings 
+
+We next show that, if fL(Q, K, V ) is sufficiently large, then for inputs far longer than those seen during training, most of the attention is assigned to positions containing the correct token value, which nearly guarantees correct prediction. 49 Lemma J.11. Assume that M > L 2. Then, with probability at least 1 − 2 
+
+> d
+
+, for any parameter 
+
+θ = ( Q, K, V ) such that 
+
+fL(Q, K, V ) ≥ M 2d/ 2 − 3M 2pd log L, 
+
+and any pair (s, i ) with |s| ≤ L√d/ 2, the total attention to token si over token 1 − si satisfies 
+
+Asi (s, i )
+
+A1−si (s, i ) ≥ exp( M 2).
+
+Proof. We consider an arbitrary pair (s, i ) with |s| ≤ L√d/ 2. Without loss of generality, we assume that si = 0 . When i = 1 , we replace qsi−1 below by the query vector of the last prompt token q<O:> .Fix a position attaining g+
+
+> s,i
+
+(Q, K, V ). We denote the contributions of the x-axis and the y-axis to this attention score by g+xs,i (Q, K, V ) and g+ys,i (Q, K, V ), respectively. Thus, 
+
+g+
+
+> s,i
+
+(Q, K, V ) = g+xs,i (Q, K, V ) + g+ys,i (Q, K, V ).
+
+Now consider an arbitrary position j∗ such that 
+
+S(s, i, j ∗) = 1 .
+
+We denote this token by s∗. We want to show that the attention score to s∗ is much smaller than 
+
+g+
+
+> s,i
+
+(Q, K, V ).We construct a training pair (s′, i ′) as follows. If i = 1 , we let 
+
+|s′| = L, i′ = 1 ,
+
+and set 
+
+s′ 
+
+> 1
+
+= si, s′ 
+
+> 2
+
+= · · · = s′ 
+
+> L
+
+= 1 − si.
+
+If i > 1, we let 
+
+|s′| = L, i′ = L, 
+
+and set 
+
+(s′
+
+> L−1
+
+, s ′
+
+> L
+
+) = ( si−1, s i), s′ 
+
+> 1
+
+= · · · = s′ 
+
+> L−2
+
+= 1 − si.
+
+For this construction, every position containing token si in Str (s′, i ′) has the same relative position as a position containing token si in Str (s, i ). Therefore, 
+
+g+ 
+
+> s′,i ′
+
+(Q, K, V ) ≤ g+
+
+> s,i
+
+(Q, K, V ).
+
+We first consider the case where the relative column position between s∗ and the query token is zero. In this case, s∗ can only be the query position itself, and hence i > 1 and si−1 = 1 − si. The same token with the same relative position (0 , 0) also appears in Str (s′, i ′). Therefore, by the definition of 
+
+fL,
+
+g+
+
+> s,i
+
+(Q, K, V ) − q⊤ 
+
+> si−1
+
+R(0 ,0) k1 ≥ fL(Q, K, V ) ≥ M 2d/ 2 − 3M 2pd log L. 
+
+Thus, the desired score gap already holds in this case. In the following, we consider the case where the relative column position of s∗ is nonzero. In the constructed pair (s′, i ′), there are at least L − 2 tokens equal to 1 in the same row as s∗. For every such position j, we have 
+
+g− 
+
+> s′,i ′
+
+(Q, K, V ) ≥ q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1.
+
+Together with 
+
+g+
+
+> s,i
+
+(Q, K, V ) ≥ g+ 
+
+> s′,i ′
+
+(Q, K, V ),
+
+this gives 
+
+g+
+
+> s,i
+
+(Q, K, V ) − q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1 ≥ M 2d/ 2 − 3M 2pd log L. (10) Notice that 
+
+q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1
+
+50 consists of two parts corresponding to the x-axis and the y-axis. We denote them by 
+
+
+
+q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1
+
+
+
+> x
+
+and 
+
+
+
+q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1
+
+
+
+> y
+
+.
+
+Let 
+
+B := 
+
+
+
+q⊤ 
+
+> si−1
+
+R(0 ,1) k1
+
+
+
+> y
+
+, s∗ is in the first row ,
+
+
+
+q⊤ 
+
+> si−1
+
+R(0 ,0) k1
+
+
+
+> y
+
+, s∗ is in the second row .
+
+Thus, B is the contribution of the y-axis to the attention score of s∗. Moreover, all the L − 2 positions considered above have the same y-axis contribution B.By Lemma J.15, taking δ = 3 /d 2 and applying a union bound over the d/ 4 RoPE blocks correspond-ing to the x-axis, with probability at least 1 − 1 
+
+> d
+
+, the absolute value of every relevant interval sum of sines and cosines is at most d2 as for any 1 ≤ j ≤ d/ 4,
+
+> L−1
+
+X
+
+> k=2
+
+cos( kθ j ) ,
+
+> L−1
+
+X
+
+> k=2
+
+sin( kθ j ) ,
+
+> L−2
+
+X
+
+> k=1
+
+cos( kθ j ) ,
+
+> L−2
+
+X
+
+> k=1
+
+sin( kθ j ) ≤ d2.
+
+Since every coordinate of q and k is bounded by M , this gives 
+
+1
+
+L − 2
+
+X
+
+> j
+
+
+
+q⊤ 
+
+> si−1
+
+RD(s′,i ′,j )k1
+
+
+
+> x
+
+≤ M 2d3
+
+L − 2 ,
+
+where the sum is over the L − 2 positions considered above. Taking the average of Equation (10) over these positions, we obtain 
+
+g+xs,i (Q, K, V ) + g+ys,i (Q, K, V ) − B ≥ M 2d/ 2 − 3M 2pd log L − M 2d3
+
+L − 2 .
+
+We next bound the x-axis contribution to the attention score of s∗. For every nonzero relative column position t, the random variables tβ j mod 2 π are independently distributed as Unif[0 , 2π]. Therefore, by Lemma J.14, for each such t, with probability at least 1 − L−√d,
+
+
+
+q⊤ 
+
+> si−1
+
+RD(s,i,j ∗)k1
+
+ 
+
+> x
+
+≤ M 2
+
+√2
+
+π d + 2 d3/4plog L
+
+!
+
+.
+
+Applying a union bound over all possible relative column positions for strings of length at most 
+
+L√d/ 2, with probability at least 1 − 1 
+
+> d
+
+, this inequality holds simultaneously for every such position. Combining the above inequalities, the attention score gap between the maximal position containing token 0 and the position j∗ is at least 
+
+g+
+
+> s,i
+
+(Q, K, V ) − q⊤ 
+
+> si−1
+
+RD(s,i,j ∗)k1
+
+≥ M 2d/ 2 − 3M 2pd log L − M 2d3
+
+L − 2 − M 2
+
+√2
+
+π d + 2 d3/4plog L
+
+!
+
+≥ 0.01 M 2d. 
+
+The last inequality follows from assumption J.4, after increasing the universal lower bound on d and 
+
+L in that assumption if necessary. Since j∗ is arbitrary, the attention score to the maximal position containing token 0 is larger than the attention score to every position containing token 1 by at least 0.01 M 2d. The total number of tokens in the input is at most 
+
+2|s| + a + b ≤ 3L
+
+> √d/ 2
+
+.
+
+Therefore, Asi (s, i )
+
+A1−si (s, i ) ≥ 13L√d/ 2 exp(0 .01 M 2d) ≥ exp( M 2),
+
+where the last inequality follows from M > L 2 and d > 10000 .Combining the two high-probability events above, the result holds with probability at least 1 − 2 
+
+> d
+
+.51 J.3.4 Proof of Theorem 4.2 
+
+Proof. Let 
+
+S0 = M 2d/ 2 − 2M 2pd log( L + a)
+
+and 
+
+S = M 2d/ 2 − 3M 2pd log L. 
+
+By Lemma J.7 and Lemma J.8, with probability at least 1 − 1 
+
+> L
+
+, there exists a feasible parameter set such that 
+
+L ≤ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · 6M L exp( −S0)+ 72 exp( −2M )1 + exp( −2M ) · M 2L2 exp( −2S0). (11) Notice that 
+
+S0 − S = M 2 
+
+3pd log L − 2pd log( L + a)
+
+
+
+> 0
+
+when L is sufficiently large. Therefore, when M is sufficiently large, 
+
+exp( −2M )1 + exp( −2M ) · M exp( −S)2L + a + b · p> exp( −2M )1 + exp( −2M ) · 6M L exp( −S0)+ 72 exp( −2M )1 + exp( −2M ) · M 2L2 exp( −2S0). (12) Let 
+
+θ∗ 
+
+> M
+
+= ( Q∗, K∗, V ∗)
+
+be a global minimizer under the constraint ∥θ∥∞ ≤ M . Suppose that 
+
+fL(Q∗, K∗, V ∗) ≤ S. 
+
+Then, by Lemma J.10 and Equation (12), 
+
+L(θ∗ 
+
+> M
+
+) ≥ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · M exp( −S)2L + a + b · p
+
+is strictly larger than the upper bound in Equation (11). This contradicts the global optimality of θ∗ 
+
+> M
+
+.Therefore, 
+
+fL(Q∗, K∗, V ∗) > M 2d/ 2 − 3M 2pd log L. 
+
+We next show that 
+
+V0, V 1 > M − 1.
+
+Suppose otherwise. Then, by Lemma J.9, 
+
+L(θ∗ 
+
+> M
+
+) ≥ (1 − p) log(1 + exp( −2M )) + p log(1 + exp( −2M + 2)) .
+
+Moreover, by Lemma J.12, 
+
+(1 − p) log(1 + exp( −2M )) + p log(1 + exp( −2M + 2)) 
+
+≥ log(1 + exp( −2M )) + 2p exp( −2M )1 + exp( −2M ) .
+
+When M is sufficiently large, we have 
+
+2p exp( −2M )1 + exp( −2M ) > exp( −2M )1 + exp( −2M ) · 6M L exp( −S0)+ 72 exp( −2M )1 + exp( −2M ) · M 2L2 exp( −2S0).
+
+52 Thus, L(θ∗ 
+
+> M
+
+) would again be strictly larger than the loss of the feasible parameter set in Equation (11), which contradicts the global optimality of θ∗ 
+
+> M
+
+. Therefore, 
+
+V0, V 1 > M − 1.
+
+Applying Lemma J.11, with probability at least 1 − 2 
+
+> d
+
+, for every pair (s, i ) satisfying |s| ≤ L√d/ 2,
+
+Asi (s, i )
+
+A1−si (s, i ) ≥ exp( M 2) ≥ 2.
+
+Since 
+
+vC = 0 for every C ∈ V\{ 0, 1},
+
+the Transformer correctly predicts si if 
+
+Asi (s, i )Vsi − A1−si (s, i )V1−si > 0.
+
+Using 
+
+Vsi > M − 1, V1−si ≤ M, 
+
+we have 
+
+Asi (s, i )Vsi − A1−si (s, i )V1−si > 2A1−si (s, i )( M − 1) − A1−si (s, i )M
+
+= A1−si (s, i )( M − 2) 
+
+> 0
+
+for M > 3. Therefore, the Transformer correctly copies every binary string with length at most 
+
+L√d/ 2.Finally, since L > d 4, we have 1 
+
+> L
+
+≤ 1 
+
+> d
+
+. Combining the probability 1 − 1 
+
+> L
+
+from Lemma J.8 with the probability 1 − 2 
+
+> d
+
+from Lemma J.11, the result holds with probability at least 
+
+1 − 1
+
+L − 2
+
+d ≥ 1 − 3
+
+d ,
+
+which completes the proof. 
+
+J.4 Technical Lemmas 
+
+In this subsection, we provide technical lemmas used in the previous subsection. 
+
+Lemma J.12. Consider the function g(x) = log(1 + exp( −2M + x)) . Then for any x > 0,
+
+g(x) ≥ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · x. 
+
+Moreover, when 0 ≤ x ≤ 0.1, we have 
+
+g(x) ≤ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · x + 2 exp( −2M )1 + exp( −2M ) · x2
+
+Proof. Direct calculation shows that 
+
+dg (x)
+
+dx = exp( −2M + x)1 + exp( −2M + x) ,
+
+which increases with x.Therefore, 
+
+g(x) ≥ log(1 + exp( −2M )) + dg (x)
+
+dx x=0 
+
+· x = log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · x. 
+
+53 On the other hand, notice that when x ≤ 0.1, exp( x) ≤ 1 + x + x2. Therefore, 
+
+g(x) ≤ log(1 + exp( −2M )) + x · exp( −2M + x)1 + exp( −2M + x)
+
+≤ log(1 + exp( −2M )) + x · exp( −2M )(1 + x + x2)1 + exp( −2M )(1 + x + x2)
+
+≤ log(1 + exp( −2M )) + x · exp( −2M )1 + exp( −2M ) (1 + x + x2)
+
+≤ log(1 + exp( −2M )) + exp( −2M )1 + exp( −2M ) · x + 2 exp( −2M )1 + exp( −2M ) · x2.
+
+Thus the result follows. 
+
+Lemma J.13. Let θ1, . . . , θ m ∼ Unif[0 , 2π] be independent. Then for any δ ∈ (0 , 1) , with probability at least 1 − δ, mX
+
+> i=1
+
+cos( θi) ≤
+
+r
+
+2m log 2
+
+δ .
+
+In particular, for any constant c, l > 0, with probability at least 1 − l−c,
+
+> m
+
+X
+
+> i=1
+
+cos( θi) ≤ p2m(c log l + log 2) .
+
+Proof. Let Xi = cos( θi). Then X1, . . . , X m are independent, E[Xi] = 0 , and Xi ∈ [−1, 1] for all i.By Hoeffding’s inequality, for any t > 0,
+
+Pr 
+
+" mX
+
+> i=1
+
+Xi ≥ t
+
+#
+
+≤ exp 
+
+
+
+− 2t2
+
+Pmi=1 (1 − (−1)) 2
+
+
+
+= exp 
+
+
+
+− t2
+
+2m
+
+
+
+.
+
+Applying the same inequality to −Xi gives 
+
+Pr 
+
+" mX
+
+> i=1
+
+Xi ≤ − t
+
+#
+
+≤ exp 
+
+
+
+− t2
+
+2m
+
+
+
+.
+
+Therefore, by a union bound, 
+
+Pr 
+
+" mX
+
+> i=1
+
+cos( θi) ≥ t
+
+#
+
+≤ 2 exp 
+
+
+
+− t2
+
+2m
+
+
+
+.
+
+Taking 
+
+t =
+
+r
+
+2m log 2
+
+δ
+
+proves the first claim. Finally, setting δ = l−c gives 
+
+> m
+
+X
+
+> i=1
+
+cos( θi) ≤ p2m log(2 lc) = p2m(c log l + log 2) 
+
+with probability at least 1 − l−c.
+
+Lemma J.14. Let θ1, . . . , θ m ∼ Unif[0 , 2π] be independent, and define 
+
+h(θ) = max {| cos θ|, | sin θ|} .
+
+Then for any δ ∈ (0 , 1) , with probability at least 1 − δ,
+
+> m
+
+X
+
+> i=1
+
+h(θi) ≤ 2√2
+
+π m +
+
+r m
+
+2 log 1
+
+δ .
+
+54 Proof. Let 
+
+Xi := h(θi) = max {| cos θi|, | sin θi|} .
+
+Then X1, . . . , X m are independent and satisfy 0 ≤ Xi ≤ 1.We first compute the mean of Xi. By symmetry, 
+
+E[Xi] = 42π
+
+Z π/ 20
+
+max {cos θ, sin θ} dθ. 
+
+On [0 , π/ 4] , we have cos θ ≥ sin θ, while on [π/ 4, π/ 2] , we have sin θ ≥ cos θ. Hence 
+
+E[Xi] = 2
+
+π
+
+Z π/ 40
+
+cos θ dθ +
+
+Z π/ 2
+
+> π/ 4
+
+sin θ dθ 
+
+!
+
+.
+
+Evaluating the integrals gives 
+
+Z π/ 40
+
+cos θ dθ = sin( π/ 4) − sin(0) = 
+
+√22 ,
+
+and Z π/ 2
+
+> π/ 4
+
+sin θ dθ = − cos( π/ 2) + cos( π/ 4) = 
+
+√22 .
+
+Therefore, 
+
+E[Xi] = 2
+
+π · √2 = 2√2
+
+π .
+
+Now apply Hoeffding’s inequality to the independent random variables X1, . . . , X m ∈ [0 , 1] . For any t > 0,
+
+Pr 
+
+> m
+
+X
+
+> i=1
+
+Xi − E
+
+" mX
+
+> i=1
+
+Xi
+
+#
+
+≥ t
+
+!
+
+≤ exp 
+
+
+
+− 2t2
+
+m
+
+
+
+.
+
+Set 
+
+t =
+
+r m
+
+2 log 1
+
+δ .
+
+Then 
+
+Pr 
+
+> m
+
+X
+
+> i=1
+
+Xi ≥ 2√2
+
+π m +
+
+r m
+
+2 log 1
+
+δ
+
+!
+
+≤ δ. 
+
+Equivalently, with probability at least 1 − δ,
+
+> m
+
+X
+
+> i=1
+
+h(θi) = 
+
+> m
+
+X
+
+> i=1
+
+Xi ≤ 2√2
+
+π m +
+
+r m
+
+2 log 1
+
+δ .
+
+This proves the lemma. 
+
+Lemma J.15. Let θ ∼ Unif[0 , 2π], then for any δ < 0.1, with probability at least 1 − δ, for any positive integer s < t , tX
+
+> k=s
+
+cos( kθ ) ,
+
+> t
+
+X
+
+> k=s
+
+sin( kθ ) ≤ 3
+
+δ .
+
+Proof. For each m, we have 
+
+> t
+
+X
+
+> k=s
+
+cos( kθ ) =
+
+Ptk=s
+
+ sin   2k+1 2 θ − sin   2k−12 θ 
+
+2 sin( θ/ 2) 
+
+= sin   2t+1 2 θ − sin   2s−12 θ
+
+2 sin( θ/ 2) 
+
+≤ 1
+
+| sin( θ/ 2) | .
+
+55 Similarly, 
+
+> t
+
+X
+
+> k=s
+
+sin( kθ ) =
+
+Ptk=s
+
+ cos   2k−12 θ − cos   2k+1 2 θ 
+
+2 sin( θ/ 2) 
+
+= cos   2s−12 θ − cos   2t+1 2 θ
+
+2 sin( θ/ 2) 
+
+≤ 1
+
+| sin( θ/ 2) | .
+
+As θ is uniformly sampled, with probability at least 1 − δ, we have | sin( θ/ 2) | ≤ δ/ 3. Therefore, 
+
+> t
+
+X
+
+> k=s
+
+cos( kθ ) ,
+
+> t
+
+X
+
+> k=s
+
+sin( kθ ) ≤ 3
+
+δ ,
+
+and the result follows. 56 K Prompt Templates of Copy Test for Frontier LLMs 
+
+This section lists the prompt templates used for evaluating frontier LLMs on the copy tests. For all tasks, the model is instructed to output only the copied sequence, with no explanation or additional formatting. 
+
+K.1 Recursive-Flip Binary Copy 
+
+For recursive-flip binary copying task, the prompt template consists both system prompt and user prompt as shown below. The following is the system prompt: 
+
+"You are taking a copying test.\nYour task is to copy the binary sequence exactly.\nOutput only the copied binary sequence.\nDo not add any explanation, quotes, punctuation, or formatting.\nDo not add spaces or newlines inside the sequence.\n" 
+
+> ,→
+> ,→
+
+The following is the user prompt: 
+
+"Copy the following binary sequence exactly:\n\n{s}" 
+
+where {s} is the binary string to be copied. 
+
+K.2 Imbalanced Binary Copy 
+
+For the imbalanced binary copy task, the prompt template consists both system prompt and user prompt as shown below. The following is the system prompt: 
+
+"You are taking a copying test.\nYour task is to copy the binary sequence exactly.\nOutput only the copied binary sequence.\nDo not add any explanation, quotes, punctuation, or formatting.\nDo not add spaces or newlines inside the sequence.\n" 
+
+> ,→
+> ,→
+
+The following is the user prompt: 
+
+"Copy the following sequence exactly:\n\n{s}" 
+
+where {s} is an imbalanced sequence over a and b. The target output is exactly {s} .
+
+K.3 Python List Conversion 
+
+For the Python list conversion task, each input consists of a comma-separated sequence of sensor values. The model is asked to output the same sequence formatted as a single-line Python list. During evaluation, we uniformly sample one prompt from the following list: 
+
+["Copy the following sensor sequence exactly. Output only one single-line Python list, with no line breaks, no spaces, and no extra text:", "Rewrite the following sensor measurements as exactly one single-line Python list. Do not add any line breaks, spaces, explanation, or extra characters:", "Return the following numbers as one single-line Python list only. Keep the values and order exactly the same. No line breaks, no spaces, no extra text:", "Convert the following sensor readings into a Python list on a single line. Output only the list, with no spaces, no line breaks, and no other text:", "Repeat the following sequence exactly as a one-line Python list. Do not change any number. Do not insert line breaks, spaces, or commentary:", "Write the following measurements as exactly one Python list in a single line. Output only the list itself, with no spaces, no newlines, and no explanation:", "Copy the following numeric sequence exactly into a single-line Python list. Preserve every value and its order. No line breaks, no spaces, no extra text:", "Output exactly one single-line Python list containing the following numbers in the same order. Do not add spaces, newlines, or any surrounding text:", "Turn the following sensor values into a Python list written on one line only. Keep the sequence exactly unchanged. No spaces, no line breaks, no extra text:", 
+
+57 "Produce exactly the following sequence as a single-line Python list. Output only the list, with no spaces, no line breaks, and no additional content:", ]
+
+Then, we use such input: 
+
+"{prompt}:\n{s}" 
+
+Here prompt is the sampled prompt and {s} is the comma-separated input sequence. If {s} is 
+
+1.55,1.71,... , then the gold output is [1.55,1.71,...,] .
+
+K.4 Repeat-Structure Copy Test 
+
+For the repeat-structure copy test, we use the following prompt: 
+
+"Copy the following sequence exactly.\nOutput only the copied sequence and nothing else.\nDo not add explanations, quotation marks, or newlines.\n\nSequence:{s}" ,→
+
+where {s} is the corrupted repeat-structure sequence. The gold output is exactly {s} .
+
+## L Prompt Templates for Finetuning Data 
+
+Following is the chat template used for finetuning experiments in Section 5: 
+
+### user: {input} ### assistant: {output} 
+
+where {input} is the user prompt, and {output} is the language model response. The response is always the sequence that that needs to be copied, and nothing else. The user prompt is constructed with a set of prompt templates that resembles natural language instructions that a user would send to an AI assistant when the users want the assistant to copy a sequence. This set of prompt templates are listed below as a Python list. They are uniformly and randomly sampled from when generating finetuning data. The {s} indicates the portion that is to be replaced with the binary string to be copied. 
+
+[# With newline "Please echo the next sequence verbatim (no extra text). Here it is:\n{s}", "Copy the text below exactly as-is (keep every character):\n{s}", "Task: return the string shown below. Do not add or remove anything.\n{s}", "Print the following content exactly, unchanged. Output only the content:\n{s}", "Write the following string exactly as it is:\n{s}", "I want you to say the following string and nothing else:\n{s}", "Say the following string exactly as it is:\n{s}", "Here is a string:\n{s}\n\nPlease print the string exactly as it is.", "I will give you a string. You need to repeat it exactly as it is. Here it is:\n{s}", "{s}\n\nPlease print the above string exactly as it is.", "{s}\n\nCan you write out the above string and nothing else.", "Can you copy a string of characters? Here is the string I want you to copy:\n{s}", "Repeat this string and say nothing else:\n{s}", # Without newline "Repeat the following string after me (output only the string): {s}", "Echo this sequence exactly (no extra characters): {s}", "Return the exact same string and nothing else -> {s}", "Copy-paste the following payload exactly as written: {s}", "Output EXACTLY the string below, unchanged: {s}", "Just say \"{s}\" and nothing else.", "Say '{s} ' and say nothing else.", ]
+
+58

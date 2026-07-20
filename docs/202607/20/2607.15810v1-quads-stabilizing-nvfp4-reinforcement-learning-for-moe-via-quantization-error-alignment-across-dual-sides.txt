@@ -1,0 +1,686 @@
+Title: QUADS: Stabilizing NVFP4 Reinforcement Learning for MoE via QUantization-error Alignment across Dual Sides
+
+URL Source: https://arxiv.org/pdf/2607.15810v1
+
+Published Time: Mon, 20 Jul 2026 00:46:18 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+2026-07-20 
+
+# QUADS: Stabilizing NVFP4 Reinforcement Learning for MoE via QUantization-error Alignment across Dual Sides 
+
+Zhengyang Zhuge ∗ Hao Yu ∗ Xin Wang ∗ Zheng Li Yizhong Cao Dayiheng Liu Jianwei Zhang †
+
+Qwen Team, Alibaba Inc. 
+
+## Abstract 
+
+Rollout generation is a major bottleneck in Reinforcement Learning (RL) for Mixture-of-Experts (MoE) Large Language Models, motivating low-precision rollout acceleration such as FP8. As an emerging low-precision format, NVFP4 combines fine-grained scaling for accuracy preservation with native W4A4 FP4 GEMMs for higher throughput than FP8. However, we find that directly applying NVFP4 to MoE RL rollout is impractical. NVFP4 rollout with BF16 training collapses after roughly 150 steps, accompanied by rapidly growing rollout–trainer log-probability gaps. Through training–inference error analysis and controlled ablations, we identify activation error, rather than weight error, as the dominant source of FP4 RL instability: weights can be synchronized and aligned by a shared quantization–dequantization path, whereas activations are recomputed online and error is amplified by the coarse E2M1 grid. Therefore, to stabilize NVFP4 RL for MoE, we propose QU antization-error Alignment across Dual Sides ( QUADS ). On the trainer side, we introduce Asymmetric Quantization-Aware Training fake-quantizing weights while keeping activations unquantized for better alignment. On the rollout side, Residual Activation Compensation corrects high-error activation channels while preserving native W4A4 GEMMs. In our MoE RL experiments on several benchmarks, QUADS achieves BF16-level accuracy, improves average pass@1 by 21.49 points over naive NVFP4 RL, and delivers ∼16% higher rollout throughput than FP8. 
+
+## 1 Introduction 
+
+Reinforcement learning (RL) has become a central paradigm for scaling the reasoning capabilities of Large Language Models (LLMs) (Shao et al., 2024). Modern pipelines decouple autoregressive rollout on an inference engine from gradient computation on a separate trainer, yet rollout generation still dominates end-to-end wall-clock time—often exceeding 70% of each training step (Li et al., 2026; Xi et al., 2026; Qiu et al., 2026). As models generate longer chain-of-thought traces, this imbalance intensifies, making rollout acceleration a first-order systems priority for policy-gradient methods such as GRPO (Shao et al., 2024). The challenge is that rollout precision is not merely a serving detail: token-level log-probabilities produced by the rollout engine determine importance ratios in the trainer, so numerical bias can directly corrupt the policy gradient. A common acceleration strategy is to run rollout inference at reduced precision. At the FP8 tier, recent RL systems have shown that the resulting training–inference precision mismatch can often be controlled with truncated importance sampling (TIS) (Yao et al., 2025), adaptive clipping, or unified FP8 precision flows (Li et al., 2026; Xi et al., 2026; Qiu et al., 2026; Zhou et al., 2026). This makes FP8 a strong practical baseline: it accelerates rollout while keeping the log-probability gap small enough for stable optimization. Recently, NVIDIA Blackwell introduces a more aggressive target. NVFP4 enables native W4A4 general matrix multiplications (GEMMs) on FP4 Tensor Cores, with peak GEMM throughput up to ∼2× higher than FP8 and ∼4× over BF16 (Alvarez et al., 2025; Jarmusch and Chandrasekaran, 2025; NVIDIA, 2025). However, NVFP4 is qualitatively less forgiving than FP8: its E2M1 core has only eight positive representable levels per sign, compared with 256 for FP8 E4M3, and true W4A4 execution quantizes activations on every rollout forward pass. As shown in Figure 1, directly combining NVFP4 W4A4 rollout with BF16 training collapses within roughly 150 steps: reward and held-out score both fall while the per-token log-probability gap grows monotonically, pushing importance ratios outside the trust region. To identify the source of this failure, we conduct a motivating ablation (Section 3.1) that independently quantizes weights and activations during rollout. Comparing W4A16 (FP4 weights, BF16 activations) 
+
+> ∗Equal contribution.
+> †Corresponding author.
+
+1arXiv:2607.15810v1 [cs.LG] 17 Jul 2026 0 50 100 150 200 250 
+
+> Training Step
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> Rewards
+> BF16 RL
+> Naive NVFP4 RL
+
+(a) Training Reward 0 50 100 150 200 250  
+
+> Training Step
+> 0.675
+> 0.700
+> 0.725
+> 0.750
+> 0.775
+> 0.800
+> 0.825
+> Pass@1
+> BF16 RL
+> Naive NVFP4 RL
+
+(b) Test Score 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> Inference Probability
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Training Probability
+> r = 0.99242
+
+(c) Log-Prob Diff 
+
+Figure 1: Naive NVFP4 collapse in RL. (a) Mean training reward: naive NVFP4 W4A4 rollout with BF16 training (blue) peaks near step 150 and then collapses, whereas the BF16 RL baseline (red) continues to improve steadily. (b) Held-out test score shows the same pattern, confirming that the failure is not limited to the training reward signal. (c) Log-probability difference between the NVFP4 rollout engine and the BF16 trainer diverges extremely, indicating a severe training–inference mismatch that importance sampling cannot correct. with W16A4 (BF16 weights, FP4 activations) reveals a strong operand asymmetry: activation quantization ,not weight quantization, is the dominant driver of log-probability divergence and reward collapse. W16A4 closely tracks the failure mode of full W4A4, whereas W4A16 remains much closer to stable behavior; the two error sources are approximately additive. This reframes NVFP4 RL as a quantization error alignment problem. Existing approaches do not resolve this setting. Weight-only NVFP4 methods such as QeRL (Huang et al., 2025) keep activations in BF16 and execute FP16 GEMMs instead of native W4A4 FP4 Tensor Core operations, while FP8 and INT8 based RL frameworks (Li et al., 2026; Gu et al., 2026; Xi et al., 2026; Qiu et al., 2026; Zhou et al., 2026) operate on finer numerical grids where rollout–trainer mismatch is more tractable. Stable full-parameter MoE GRPO with true W4A4 rollout on Blackwell therefore still requires alignment strategies that directly target the activation-dominated mismatch identified above. We address this gap with QUantization-error Alignment across Dual Sides (QUADS) for NVFP4 RL. On the training side, asymmetric W4A16 quantization-aware training aligns the weight quantization– dequantization path while keeping learner activations in BF16 (Section 3.2). This design exploits the fact that weights are synchronized across engines and can therefore share a matched QDQ path, while activations are recomputed online and cannot be reliably aligned by symmetric W4A4 fake quantization. On the rollout side, residual activation compensation reduces the remaining rollout-time activation error through a second-pass quantization of high-residual channels, implemented with fused kernels to preserve most of the W4A4 throughput advantage (Section 3.3). Together, these components recover BF16-level accuracy in full-parameter MoE GRPO: our QUADS pipeline reaches 72.86% average pass@1 across four held-out benchmarks, matching the 73.15% BF16 baseline and avoiding the severe degradation of naive NVFP4 training (51.37%). At the same time, it improves rollout throughput by 16% over FP8. Our main contributions are: • NVFP4 RL failure diagnosis. Through ablations, we show that activation quantization is essential in NVFP4 RL stability and explains the collapse of naive W4A4 RL. • Asymmetric Quantization-Aware-Training. On the trainer-side, we propose the asymmetric QAT scheme that fake-quantizes weights to NVFP4 but leaves activations unquantized, reducing weight mismatch without amplifying cross-engine activation drift. • Residual Activation Compensation. On the rollout-side, we further reduce activation error through second-pass quantization of high-residual channels, preserving native W4A4 GEMMs while closing the remaining log-probability gap. • NVFP4 RL empirical validation for MoE. On NVFP4 RL training of MoE model, our proposed QUADS pipeline matches BF16-level benchmark accuracy and retains a throughput advantage over FP8 rollout. 22 Preliminaries 
+
+2.1 Reinforcement Learning for LLMs 
+
+Modern LLM post-training increasingly relies on Reinforcement Learning with Verifiable Rewards (RLVR). A typical pipeline decouples rollout —autoregressive response generation on a throughput-oriented inference engine, from training —gradient computation on a separate backend such as FSDP or Megatron. Policy-gradient algorithms update an autoregressive policy πθ using samples drawn from a reference policy πref . Throughout this work we adopt GRPO (Shao et al., 2024) as the representative algorithm and analyze how numerical precision in rollout affects its stability. 
+
+GRPO Group Relative Policy Optimization (GRPO) (Shao et al., 2024) extends PPO (Schulman et al., 2017) by eliminating the value model: for each prompt, it samples a group of G responses {oi}Gi=1 from the old policy πθold and normalizes their scalar rewards within the group to obtain advantages ˆAi,t. The clipped surrogate objective is 
+
+JGRPO (θ) = E
+
+"
+
+1
+
+G
+
+> G
+
+# ∑
+
+> i=1
+
+1
+
+|oi| 
+
+> |oi|
+
+# ∑
+
+> t=1
+
+min 
+
+
+
+ri,t(θ) ˆAi,t, clip  ri,t(θ), 1 − ϵ, 1 + ϵ ˆAi,t
+
+
+
+− β DKL (πθ ∥ πref )
+
+#
+
+, (1) where ri,t(θ) is the per-token importance ratio (Eq. (2) ), ϵ bounds the trust region, and β controls the KL penalty against πref . Both the clipped surrogate and the KL term depend on token-level log-probabilities; biased estimates therefore directly corrupt the policy gradient. 
+
+Training–Inference Mismatch When rollout and training share the same engine and numerical path, GRPO reduces to standard on-policy optimization. In practice, however, responses are sampled by an inference policy πsampler (e.g., vLLM or SGLang) while gradients are computed with a training policy 
+
+πlearner (e.g., FSDP) (Yao et al., 2025). Importance sampling (IS) corrects this off-policy gap: for each token 
+
+at given context st, the per-token ratio is 
+
+rt(θ) = πθ (at | st)
+
+πθold (at | st) = exp  log πθ (at | st) − log πθold (at | st). (2) We denote the log-probability difference δt ≜ log πθ (at | st) − log πθold (at | st). When πθold and πθ are evaluated at different precisions or through different kernel paths, δt̸ = 0 even for identical parameters— this is the training–inference mismatch (Qi et al., 2025; Gu et al., 2026; Qiu et al., 2026). Low-precision rollout amplifies the problem. In FP8 settings the resulting gaps are comparatively modest and can often be controlled with truncated importance sampling (TIS) (Yao et al., 2025), adaptive clipping (Li et al., 2026; Zhou et al., 2026), or unified FP8 precision flows (Xi et al., 2026; Qiu et al., 2026). Under NVFP4 W4A4 rollout with BF16 training, by contrast, |δt| grows rapidly over optimization steps, importance ratios leave [1 − ϵ, 1 + ϵ], and reward curves collapse (Figure 1). We analyze mismatch through the decomposition 
+
+δt ≈ δweight  
+
+> t
+
++ δact  
+
+> t
+
++ δnum  
+
+> t
+
+, (3) where δweight  
+
+> t
+
+arises from weight quantization, δact  
+
+> t
+
+from activation quantization, and δnum  
+
+> t
+
+from residual numerical-path differences between engines (Qi et al., 2025; Yao et al., 2025). This decomposition guides our dual-side alignment strategy in Section 3. 
+
+2.2 Low-Precision Inference 
+
+Because rollout dominates RL wall-clock time, a standard acceleration strategy is to execute linear-layer GEMMs at reduced precision while keeping gradient computation in BF16 or FP32. Quantization maps a high-precision tensor X to a low-precision surrogate ˆX via a scale factor and a discrete rounding operator. Following the unified formulation in (Li et al., 2026), a b-bit quantized value can be written as 
+
+Q(X; b, e, α) = α · (−1)sign · 2d ·
+
+
+
+1 +
+
+> b−1−e
+
+# ∑
+
+> i=1
+
+mi
+
+2i
+
+
+
+, (4) where sign ∈ { 0, 1 }, the exponent d uses e bits, each mantissa bit mi ∈ { 0, 1 }, and the scaling factor α
+
+is determined by the dynamic range of a quantization group (per-tensor, per-channel, or per-block). In 3practice, inference stacks apply Eq. (4) independently to weights and activations before GEMM; we denote a b-bit weight–activation configuration as W bAb′ when both operands use b and b′ bits, respectively. Floating-point quantization keeps a non-zero exponent field ( e > 0 in Eq. (4) ), yielding a non-uniform grid that concentrates representable levels near zero and preserves wider dynamic range at the cost of irregular spacing between levels. 
+
+FP8. The E4M3 format used in LLM inference sets b = 8, e = 4, and three mantissa bits, providing 256 positive representable levels per sign and a maximum representable magnitude of ∆max = 448. FP8 W8A8 GEMMs are natively supported on Hopper and Blackwell FP8 Tensor Cores and underpin FP8 rollout in recent RL systems (Xi et al., 2026; Qiu et al., 2026; Li et al., 2026). DeepGEMM (Zhao et al., 2025) implements high-throughput FP8 GEMMs with fine-grained block scaling: rather than a single scale per tensor, each tile of values carries its own α in Eq. (4) , matching the block-wise layouts of large MoE models more closely than per-tensor schemes. The library JIT-compiles kernels at runtime ( fp8 gemm nt ,
+
+m grouped fp8 gemm * ) and is widely used for FP8 inference prefilling, making FP8 rollout a mature acceleration path for RL. 
+
+FP4. Where FP8 E4M3 already trades a 256-level grid for roughly 2 × GEMM throughput over BF16, FP4 pushes the same trade-off one step further: halving bit width again targets roughly 4 × throughput, but shrinks the representable set to only eight positive magnitudes per sign under a typical E2M1 core (b = 4, e = 2, one mantissa bit)—32 × coarser than E4M3. The resulting quantization error is larger and less uniformly distributed, so FP4 rollout amplifies the training–inference mismatch of Section 2.1 beyond what FP8 IS corrections typically absorb. NVFP4 is NVIDIA’s block-scaled instantiation of this precision tier, native to Blackwell FP4 Tensor Cores (Alvarez et al., 2025; NVIDIA, 2025; Jarmusch and Chandrasekaran, 2025). In Eq. (4) , the NVFP4 core uses E2M1 encoding and yields {0, 0.5, 1, 1.5, 2, 3, 4, 6 }
+
+per sign; sixteen consecutive elements share an E4M3 block scale that sets their common α, and an optional per-tensor FP32 scale provides a second level of dynamic-range control (Alvarez et al., 2025). 
+
+## 3 Methods 
+
+Naive NVFP4 W4A4 rollout with BF16 training fails because low-precision inference induces a large training–inference mismatch that destabilizes optimization. This section develops a dual-side alignment strategy. Section 3.1 first models the training–inference forward error and shows experimentally that activation FP4 quantization is the dominant and harder-to-align source of the log-probability gap between rollout and learner. Section 3.2 then derives asymmetric W4A16 QAT: for trainer-side, we fake-quantize weights to FP4, but deliberately keep training activations in BF16. Section 3.3 finally reduces the remaining rollout-side activation error through targeted residual compensation. Table 1: Training-side QDQ has opposite effects on weight and activation mismatch. Weight QDQ aligns W4A16 rollout with the learner, whereas activation QDQ does not shrink W16A4 mismatch because the two engines quantize already-different activations. Rollout Learner Targeted term Observed effect W4A16 BF16 ∆Wq Large training–inference log-probability gap W4A16 W4A16 QAT ∆Wq Gap is significantly reduced W16A4 BF16 η + ∆Xq Large training–inference log-probability gap W16A4 W16A4 QAT η + ∆Xq Gap remains large 
+
+3.1 FP4 RL Mismatch Error Analysis 
+
+Figure 1 shows the symptom: W4A4 rollout with a BF16 learner collapses within roughly 150 optimization steps, while BF16 rollout remains stable. For a fixed checkpoint and token sequence, let πθold be the rollout policy evaluated by the inference engine and πθ be the learner policy evaluated by the training engine. We write the per-token gap δt at a coarse level as 
+
+δt ≈ δweight  
+
+> t
+
++ δact  
+
+> t
+
++ δnum  
+
+> t
+
+, (5) where the three terms correspond to weight quantization, activation quantization, and numerical differ-ences between decoupled engines (Qi et al., 2025; Yao et al., 2025). The key question is which term can be reduced by standard quantization–dequantization (QDQ) alignment, and which term remains exposed in true W4A4 rollout. 4Train : W16 A16 QAT; Infer : W4A16 Train : W4 A16 QAT; Infer : W4A16 
+
+> W4A16 Weight QDQ
+
+(a) Weight QDQ Alignment Train : W16 A16 QAT; Infer : W16A4 Train : W16 A4 QAT; Infer : W16A4  
+
+> W16A4 Activation QDQ
+
+(b) Activation QDQ Alignment 
+
+Figure 2: Per-token log-probability gap under the motivating ablation. W16A4 is much closer to W4A4 than to W4A16, identifying activation quantization as the dominant source of mismatch. Weight QDQ reduces the W4A16 gap while activation QDQ does not reduce the W16A4 gap. 
+
+Layer-wise source of the mismatch. Consider one linear or MoE projection and let the BF16 training output be 
+
+Ytrain = Wtrain Xtrain . (6) The inference engine receives synchronized weights but recomputes activations through a different numerical path before applying NVFP4 quantization. We denote the weight quantization error by 
+
+∆Wq = QW (Winfer ) − Winfer , (7) where QW is the hardware-aligned NVFP4 weight QDQ operator. For activations, the inference-side BF16 activation differs from the learner activation even before FP4 quantization: 
+
+η = Xinfer − Xtrain . (8) After activation quantization, 
+
+∆Xq = QA(Xinfer ) − Xinfer , (9) where QA is the NVFP4 activation QDQ operator. The inference output can therefore be written as 
+
+Yinfer = ( Wtrain + ∆Wq)( Xtrain + η + ∆Xq). (10) Subtracting Eq. (6) and taking the Frobenius norm defines the layer-wise forward mismatch 
+
+∆Y ≜ ∥Yinfer − Ytrain ∥2 = Wtrain ⋆ (η + ∆Xq)
+
+| {z }
+
+> activation error
+
++ ∆Wq
+
+| {z } 
+
+> weight error
+
+⋆Xtrain + ∆Wq(η + ∆Xq)
+
+| {z } 
+
+> second order 2
+
+. (11) Equation (11) is the central distinction. The weight error is solely a quantization error, while the activation error contains not only the FP4 quantization error ∆Xq, but also the engine mismatch η; Since the inference side weights are replicated from the training side, ensuring Winfer = Wtrain , applying the same quantization function to the weights on the training side is sufficient to eliminate the weight error, i.e., 
+
+∥∆Wq∥2 = 0. However, activation error is hard to align. In Figure 2, we conduct two experiments, namely Weight QDQ Alignment and Activation QDQ Alignment, which illustrate QDQ alignment only works for weights, but not for activations. 
+
+3.2 Asymmetric Quantization-Aware Training for Training-side 
+
+Based on the above experimental observations, in the setting of FP4 W4A4 RL, although rollout uses W4A4, we propose an asymmetric QAT on the training-side, that is, perform FP4 QAT on the weights on the trainer, and maintain BF16 for the activations. 
+
+Forward and backward of Asymmetric QAT. For each linear or MoE projection, let QDQ W (·) denote the FP4 weight fake-quantization operator whose scale layout and rounding match the rollout kernel. The asymmetric QAT forward pass is 
+
+cW = QDQ W (W), Yqat = cWX BF16 train , (12) with no activation fake quantization on the learner. The backward pass uses the straight-through estimator (STE) for the QDQ node: 
+
+∂L
+
+∂W ≈ ∂L
+
+∂cW , ∂L
+
+∂Xtrain 
+
+= cW⊤ ∂L
+
+∂Yqat 
+
+. (13) 5Thus the optimizer still updates BF16 master weights, but every learner forward pass sees the same discretized weight values used by rollout. To demonstrate why trainer-side W4A16 QAT is superior, we conduct the following analysis. To make the contrast explicit, let ∆Ypre and ∆Ypost denote the layer-wise mismatch norm before and after inserting the corresponding QDQ node into the learner forward pass. 
+
+Why weights should be quantized on the learner. We use the weight-only quantization setting to demonstrate the effect of weight error. In this setting, activations remain BF16 and only the weight term in Eq. (11) is active, then the mismatch is 
+
+∆Ypre = Wtrain ⋆ η + ∆Wq ⋆ Xtrain + ∆Wqη 2 . (14) After utilizing weight fake-quantization on the learner, both sides multiply by the same quantized weight. This is because the rollout engines load a bit-exact copy of the trainer parameters at each step: 
+
+Winfer = Wtrain . (15) If the training-side quantization Q′ 
+
+> W
+
+matches the rollout-side, then the weight quantization error vanishes: 
+
+∆Wq 2 = QW (Winfer ) − Q′ 
+
+> W
+
+(Wtrain ) 2 = 0. (16) So the train–inference mismatch becomes ∆Ypost = ∥Wtrain ⋆ η∥2. Since ∆WqXtrain is generally nonzero, then weight QDQ is guaranteed to shrink the mismatch: 
+
+∆Ypost < ∆Ypre . (17) 0 50 100 150 200 250 
+
+> Training Step
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> Rewards
+> BF16 RL
+> W4A16 QAT RL
+
+(a) Training Reward 0 50 100 150 200 250  
+
+> Training Step
+> 0.70
+> 0.72
+> 0.74
+> 0.76
+> 0.78
+> 0.80
+> 0.82
+> 0.84
+> Pass@1
+> BF16 RL
+> W4A16 QAT RL
+
+(b) AIME24 Test Score 
+
+Figure 3: W4A16 QAT improves over naive W4A4 but does not match BF16 RL stability. (a) Mean training reward: W4A16 QAT with W4A4 inference (red) avoids collapse yet grows more slowly than the BF16 rollout baseline (blue). (b) AIME24 test score shows the same gap: red remains below blue during almost all the training. 
+
+Why activation should remain unquantized on the learner. We use the activation-only quantization setting to demonstrate the effect of activation error. In this setting, weights remain BF16 and only the activation term in Eq. (11) is active, then the mismatch is 
+
+∆Ypre = Wtrain (η + ∆Xq) 2 . (18) After inserting activation QDQ on the learner, the comparison becomes 
+
+∆Ypost = Wtrain 
+
+QA(Xtrain + η) − QA(Xtrain ) 
+
+> 2
+
+, (19) because the two engines now apply QA to already-different activations. Unlike the weight case, applying activation QDQ does not guarantee to reduce and can even widen the training–inference gap. This situation is verified in Figure 7, the activation QDQ does not reduce the training–inference gap, and even increases it. 
+
+3.3 Activation Error Compensation for Rollout-side 
+
+Although W4A16 QAT on the training-side can reduce some train-inference mismatch to avoid the catastrophic collapse of naive FP4 RL, it is still not enough to match the BF16 baseline. As shown in 6Figure 3, W4A16 QAT with W4A4 rollout avoids the catastrophic collapse, but its reward grows more slowly and its evaluation score remains below the BF16 rollout baseline. The remaining bottleneck is the activation part of Eq. (11) . Only considering the training side cannot reduce the activation error within it. To minimize the activation error, we continue from the inference side and consider the activation quantization error ∆Xq of it. For a BF16 activation X, the definition of the activation quantization error is as follows: 
+
+∆Xq = QA(X) − X, (20) which measures the error introduced by FP4 activation quantization. This quantization error is not uniform across hidden dimensions. Because block scales are determined by local dynamic range, some high-magnitude channels create large quantization errors, while other channels have much smaller quantization errors. Figure 4 shows this per-channel structure: high-residual channels appear as persistent vertical bands. This motivates allocating additional computation only to channels with large ∥∆Xq∥.
+
+Targeted residual compensation. Rather than using QA(X) directly, we correct the quantization error on a selected channel set S: ˜X = QA(X) − MS ⊙ QA(∆Xq), (21) where MS is a binary channel mask and ⊙ denotes element-wise multiplication. Channels outside S
+
+follow the standard W4A4 path. Channels inside S receive a second FP4 correction term, reducing the distance to the BF16 reference: 
+
+˜X − Xtrain 2 < QA(X) − Xtrain 2, (22) thereby shrinking the activation contribution to the log-probability gap from the inference side. The correction is residual-based rather than full BF16 fallback, so the main GEMM remains on the W4A4 FP4 Tensor Core path. 
+
+Online per-channel selection. RL changes the policy every update, so activation statistics are non-stationary. We therefore choose S online for each forward pass. For channel j, define the residual score 
+
+sj = ∆Xq[:, j] 2 , (23) aggregated over the current token batch, and keep the largest k% channels: 
+
+S = TopK k%
+
+
+
+{sj}dj=1
+
+
+
+. (24) In our implementation we set k = 50 for the profiled W13 activation site, which captures the large residual channels while adding only about ∼10% additional FLOPs relative to plain W4A4 rollout. With W4A16 QAT plus this rollout-side compensation, the resulting training curve closely matches BF16 rollout and training. Figure 4(b) confirms this at the tensor level: the per-layer MoE output mismatch under W4A16 QAT with residual compensation (orange) approaches the BF16 baseline (blue), whereas W4A16 QAT alone (purple) or no QAT (green) leaves a substantially larger gap. 
+
+Efficient implementation. A naive implementation of Eqs. (20) – (21) launches separate kernels for activation quantization, residual extraction, channel selection, residual quantization, masking, and reconstruction, which would erase much of the W4A4 speed benefit. We fuse the dominant stages into a Triton kernel, reducing launch overhead and keeping the end-to-end cost near the ∼10% FLOP increase from the selected residual channels. Together, asymmetric W4A16 QAT and inference-side residual compensation form the intended dual-side alignment: the learner removes weight quantization mismatch, while the rollout engine directly reduces the activation quantization error that cannot be fixed by training-side QDQ alone. 
+
+## 4 Experiments 
+
+We evaluate the proposed dual-side alignment framework on full-parameter GRPO training of a large-scale MoE model under NVFP4 W4A4 rollout. We first describe the experimental setup (Section 4.1), followed by the main RL training results (Section 4.2), ablation studies (Section 4.3), efficiency analysis (Section 4.4), and activation mismatch visualization (Section 4.5). 70 250 500 750 1000 1250 1500 1750 2000 
+
+> Hidden Dim
+> 0
+> 100
+> 200
+> 300
+> 400
+> Seq Position
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+
+(a) NVFP4 activation quantization residual mo-tivates top-k% channel selection. 15 20 25                      
+
+> Layer Index
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> 16
+> Absolute  L2 Distance  ‖OW16 A16
+> train −OW4A4
+> infer ‖2
+> ‖OW4A16
+> train −OW4A4
+> infer ‖2
+> ‖OW4A16
+> train −OW4A4 + Res infer ‖2
+> ‖OW16 A16
+> train −OW16 A16
+> infer ‖2
+
+(b) Layer-wise MoE-output mismatch under four training–inference configurations. Figure 4: (a) Absolute NVFP4 activation quantization residual |∆Xq| = |QA(X) − X| on a representative MoE activation (color scale clipped at the 99.5th percentile for visibility). Residual magnitude varies sharply across hidden dimensions: most channels remain near zero, while a small set of outlier channels form persistent vertical bands across sequence positions, motivating top-k% channel selection for targeted compensation. (b) Layer-wise MoE output L2 distance under four training–inference configurations. Without QAT (green, W16A16 train / W4A4 infer), the output mismatch is largest. W4A16 QAT (purple) reduces the gap by aligning weights to the quantized grid. Adding residual compensation (orange, W4A4+Res infer) further closes the distance toward the BF16 baseline (blue), confirming that both weight-side QAT and activation-side compensation contribute to reducing the training–inference mismatch progressively across all layers. 
+
+4.1 Experimental Setup Model Configuration. We conduct experiments on MoE 25B-A2.8B model. Training and rollout are performed on a cluster of NVIDIA Blackwell GPUs. We adopt a disaggregated architecture that decou-ples training and inference onto separate node pools. The training backend uses Megatron-LM with tensor-model parallelism TP =2, expert-model parallelism EP =16, context parallelism CP =1, pipeline parallelism PP =1, and sequence parallelism SP =1, yielding a data-parallel degree of DP =1. The rollout engine is SGLang with trtllm mha attention backend, TP =2, and DP =1. Weights are synchronized from the trainer to the rollout engine at each checkpoint refresh. 
+
+RL Configuration. We train with Group Relative Policy Optimization (GRPO) (Shao et al., 2024) as follows: Each prompt is sampled with N=16 responses; the global batch size is 256 and the mini-batch size is 128. We use a single PPO epoch per update with a learning rate of 1 e−6 and AdamW optimizer (β1=0.9, β2=0.95, ϵ=1 e−15). The maximum prompt length is 3,072 tokens and the maximum generation length is 32,768 tokens. We adopt asymmetric clipping with positive clip ratio 0.27 and negative clip ratio 0.2, a dynamic PG loss strategy with cumulative clip range of 90, and sample-averaged loss. Gradient checkpointing is enabled with MoE-layer recomputation. Optimizer states and main weights are offloaded to CPU memory to fit the model within the GPU memory budget. All experiments run for 260 training steps and evaluation every 10 steps. 
+
+Datasets and evaluation. Training data consists of a mixture of mathematical reasoning and code generation prompts: (i) a curated math dataset combining O4-Mini, verified prover data, and DeepMath with Chinese-language entries filtered out; (ii) a filtered code dataset spanning diverse programming tasks. We evaluate on two held-out benchmarks: (i) AIME 2024/25 + HMMT 2025 , a suite of competition-level mathematics problems; (ii) LiveCodeBench (LCB), a continuously updated code generation benchmark with Python-only submissions evaluated via a unified evaluation service. All evaluation results are reported as pass@1 accuracy averaged over multiple copies. 
+
+4.2 Main Experiment 
+
+We compare the following configurations, for each configuration, we train for 260 steps and report pass@1 accuracy on four held-out benchmarks: AIME 2024, AIME 2025, HMMT 2025, and LiveCodeBench. • BF16 RL : BF16 rollout and BF16 training. This is the standard full-precision baseline with no quantiza-tion on either side. • FP8 RL : FP8 rollout and FP8 training. Both weights and activations are quantized to FP8 at inference time and the trainer applies FP8 training. 8Table 2: Pass@1 accuracy (%) on four benchmarks. BF16 RL is the full-precision baseline; FP8 RL applies FP8 quantization on both sides; NVFP4 + BF16 Train uses NVFP4 rollout with BF16 training and no alignment; QUADS is our proposed dual-side alignment pipeline in NVFP4 RL. Our method achieves accuracy on par with BF16 across all benchmarks, while the naive NVFP4 RL suffers severe degradation. For each benchmark, the best result is shown in bold and the second-best result is underlined. 
+
+Configuration LiveCodeBench HMMT 2025 AIME 2024 AIME 2025 Average 
+
+BF16 RL 63.05 66.04 83.54 80.00 73.15 FP8 RL 65.27 63.54 82.91 79.79 72.88 Naive NVFP4 RL 24.25 48.33 66.67 66.25 51.37 QUADS (ours) 64.79 62.92 83.33 80.42 72.86 • Naive NVFP4 RL : NVFP4 W4A4 rollout and BF16 training. Both weights and activations are quantized to E2M1 at inference time while the trainer operates in BF16. • QUADS (ours): The dual-side alignment pipeline combining Asymmetric QAT (Section 3.2) with inference-side residual activation compensation (Section 3.3). 0 50 100 150 200 250 
+
+> Training Step
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Pass@1
+> BF16 RL
+> FP8 RL
+> Naive NVFP4 RL
+> QUADS
+
+(a) LiveCodeBench 0 50 100 150 200 250  
+
+> Training Step
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> Pass@1
+> BF16 RL
+> FP8 RL
+> Naive NVFP4 RL
+> QUADS
+
+(b) HMMT 2025 0 50 100 150 200 250 
+
+> Training Step
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> Pass@1
+> BF16 RL
+> FP8 RL
+> Naive NVFP4 RL
+> QUADS
+
+(c) AIME 2024 0 50 100 150 200 250  
+
+> Training Step
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> Pass@1
+> BF16 RL
+> FP8 RL
+> Naive NVFP4 RL
+> QUADS
+
+(d) AIME 2025 
+
+Figure 5: Pass@1 score curves on four held-out benchmarks. BF16 (blue) and FP8 RL (red) provide strong baselines. QUADS (green, ours) tracks both baselines closely on every benchmark. NVFP4 + BF16 Train 
+
+(orange, naive W4A4) has lower initial point and collapses after roughly 150 steps. 
+
+Key observations. As illustrated in Figure 5 and Table 2, we summarize the following: • BF16 serves as the upper-bound reference, exhibiting steady score growth across all four benchmarks. • FP8 RL is the standard low-precision baseline; with FP8 training and FP8 rollout, its learning curve closely tracks BF16 RL. • NVFP4 + BF16 Train (no alignment) collapses after roughly 150 steps on every benchmark due to unmitigated training–inference mismatch (Figure 5, orange curves), confirming that a naive NVFP4 setup is incompatible with stable RL training. • QUADS (ours) recovers accuracy to within the variance of the BF16 baseline across all four benchmarks, demonstrating that training-side weight alignment combined with inference-side residual activation compensation is both necessary and sufficient for stable NVFP4 RL. A central failure mode of naive NVFP4 RL is the growing discrepancy between rollout and trainer log-probabilities, which directly biases importance ratios in GRPO. We therefore track the maximum per-step log-probability difference ∥ log πinfer 
+
+θ − log πtrain 
+
+θ ∥max across three configurations: Naive NVFP4 RL (no alignment), QUADS (dual-side alignment), and BF16 RL (full-precision reference). Figure 6 9reports this metric over 260 training steps. Naive NVFP4 RL maintains the largest gap ( ∼1.3) throughout training, explaining the policy-gradient instability observed in Figure 5. QUADS consistently lowers the gap to ∼0.86, substantially closing the train–inference discrepancy. The BF16 baseline ( ∼0.74) represents the irreducible engine-drift floor between Megatron-LM and SGLang, confirming that our dual-side alignment approaches this lower bound. 
+
+4.3 Ablation Studies 4.3.1 W4A4 QAT vs. W4A16 QAT 0 50 100 150 200 250 
+
+> Training Step
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+> 1.8
+> Log-prob Gap
+> Naive NVFP4 RL
+> QUADS
+> BF16 RL
+
+Figure 6: Maximum log-probability gap 
+
+∥ log πinfer  
+
+> θ
+
+− log πtrain  
+
+> θ
+
+∥max over training steps. 
+
+Naive NVFP4 RL (red) sustains the largest gap; 
+
+QUADS (green, ours) substantially reduces it toward the BF16 RL (purple) engine-drift floor. 15 20 25         
+
+> Layer Index
+> 30
+> 35
+> 40
+> 45
+> 50
+> 55
+> Absolute  L2 Distance  ‖IBF 16
+> train −IFP 4
+> infer ‖2
+> ‖IFP 4
+> train −IFP 4
+> infer ‖2
+
+Figure 7: Layer-wise MoE-input mismatch un-der two QAT configurations on matched requests. 
+
+Green : Asymmetric W4A16 QAT. Red : Symmetric W4A4 QAT. Symmetric W4A4 QAT shows larger mismatch. We ablate symmetric W4A4 QAT, which fake-quantizes both weights and activations during training, against asymmetric W4A16 QAT, which fake-quantizes weights only, on matched requests. Figure 7 reports layer-wise MoE-input mismatch under two training–inference configurations: • Asymmetric W4A16 QAT (green): ∥IBF16 train − IFP4 infer ∥2, with weight-aligned training and W4A4 inference. • Symmetric W4A4 QAT (red): ∥IFP4 train − IFP4 infer ∥2, with both operands fake-quantized during training and W4A4 inference. Symmetric W4A4 QAT (red) exhibits the largest layer-wise gap, confirming the analysis in Section 3.2: coarse E2M1 activation fake-quantization amplifies engine drift rather than reducing it. By contrast, asymmetric W4A16 QAT (green) reduces the activation error on each layer, verifying our asymmetric training design. 
+
+4.3.2 Effect of Dual-side Alignment 
+
+In this section, we evaluate the effect of our dual-side alignment method by comparing three configura-tions: • Naive NVFP4 : NVFP4 rollout and BF16 training, without alignment on either side. • W4A16 QAT Only : NVFP4 rollout and W4A16 QAT, only with training-side alignment. • QUADS training-side weight alignment and inference-side residual compensation, with both compo-nents. As shown in Figure 8, each alignment component contributes an independent gain. Figure 8(a) shows that naive NVFP4 + BF16 Train without any alignment suffers severe accuracy degradation across all benchmarks, confirming the failure mode analyzed in Section 3.1. W4A16 QAT alone stabilizes training and recovers most of the accuracy, yet still leaves a noticeable gap to the BF16 baseline. Adding inference-side residual compensation on top of W4A16 QAT further closes this gap: the corrected activation tensors more closely approximate the BF16 reference, reducing δact  
+
+> t
+
+and improving every benchmark score. Figure 8(b) corroborates this at the trajectory level on AIME24—W4A16 QAT only lags BF16 throughout training, while the full pipeline restores evaluation growth to near-baseline levels. These results confirm that both components contribute independently and complementarily to the final accuracy. 10 LiveCodeBench HMMT25 AIME24 AIME25 Avg.      
+
+> Benchmark
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Test Score (%)
+> 24.2
+> 48.3
+> 66.7 66.2
+> 51.4
+> 63.5 60.4
+> 81.7 78.8
+> 71.1
+> 64.8 62.9
+> 83.3 80.4
+> 72.9
+> Naive NVFP4 RL
+> W4A16 QAT only
+> QUADS
+
+(a) Benchmark Scores 0 50 100 150 200 250  
+
+> Training Step
+> 0.700
+> 0.725
+> 0.750
+> 0.775
+> 0.800
+> 0.825
+> 0.850
+> 0.875
+> Pass@1
+> BF16
+> W4A16 QAT only
+> QUADS
+
+(b) AIME24 Test Score 
+
+Figure 8: Ablation of training-side W4A16 QAT and inference-side residual compensation. (a) Final pass@1 scores across held-out benchmarks: naive NVFP4 RL without alignment degrades severely (51.4% average), W4A16 QAT alone recovers most of the gap (71.1%), and adding residual compensation yields further consistent gains on every benchmark (72.9%). (b) AIME24 score over training steps: W4A16 QAT only (red) grows more slowly and remains below the BF16 baseline (blue), whereas W4A16 QAT + Residual (green) tracks BF16 closely throughout training. 
+
+4.3.3 Channel Selection Ratio 
+
+The residual compensation module selects the top-k% of channels by residual magnitude for correction (Section 3.3). We study the sensitivity to k by varying the selection ratio and measuring the maximum post-correction log-probability difference ∥ log πinfer  
+
+> θ
+
+− log πtrain  
+
+> θ
+
+∥max between the training and inference engines. Table 3: Maximum log-probability difference between training and inference engines under different residual channel selection ratios. 
+
+Residual Channel Ratio Naive NVFP4 RL 12.5% 25% 50% 75% 100% 
+
+∥ log πinfer  
+
+> θ
+
+− log πtrain  
+
+> θ
+
+∥max 1.273 0.923 0.901 0.854 0.812 0.759 Table 3 reports the maximum log-probability difference across training steps for each selection ratio. As the residual channel ratio increases from 12.5% to 75%, the logprob gap decreases, indicating that correcting more channels further aligns the inference engine with the training engine. However, larger ratios also incur proportionally higher compute overhead, so the optimal k balances accuracy recovery against throughput cost. 
+
+4.4 Efficiency Analysis 4.4.1 Residual Compensation FLOPs Cost 
+
+The residual compensation module introduces additional computation on top of the standard NVFP4 W4A4 forward pass. For each transformer layer, the correction involves: (i) extracting the top-k% residual channels from the activation tensor, (ii) re-quantizing the residual to E2M1, and (iii) adding the corrected residual back to the quantized output. The additional FLOPs are dominated by the element-wise operations on the selected channels, which scale as O(k · d · s) per layer, where d is the hidden dimension and s is the sequence length. With k=50%, the residual module adds less than 10% FLOPs overhead relative to the base W4A4 GEMM, making it computationally lightweight. 
+
+4.4.2 Rollout Throughput Comparison 
+
+We measure decode throughput (tokens/s) on the SGLang engine for three rollout configurations: • FP8 W8A8 : FP8 rollout as the current production baseline. • NVFP4 W4A4 : Plain NVFP4 rollout without residual compensation. • NVFP4 W4A4 + Residual (ours): NVFP4 rollout with inference-side activation error compensation. Figure 9a reports throughput at several steps during RL training. Plain NVFP4 W4A4 rollout delivers roughly 1.3 × the FP8 throughput, reflecting the benefit of FP4 Tensor Core kernels under our production 11 2 3 4 5 6 7 8
+
+> Training Step
+> 75,000
+> 80,000
+> 85,000
+> 90,000
+> 95,000
+> Decode Throughput  Naive NVFP4
+> QUADS
+> FP8
+
+(a) Decode throughput on SGLang across RL training steps. Naive NVFP4 W4A4 (red) consistently achieves the highest throughput. QUADS (blue, ours) incurs a modest ∼5–9% slowdown relative to plain W4A4 but remains substantially faster than FP8 (green). 0 250 500 750 1000 1250 1500 1750 2000 
+
+> Hidden Dim
+> 0
+> 100
+> 200
+> 300
+> 400
+> Seq Position
+> 0.0000
+> 0.0005
+> 0.0010
+> 0.0015
+> 0.0020
+> 0.0025
+> 0.0030
+> 0.0035
+> 0.0040
+
+(b) Element-wise activation mismatch |ABF16 train − ABF16 infer |
+
+at Layer 1. Even without any quantization, structured non-zero residuals are clearly visible, revealing that kernel-level implementation differences introduce an irreducible engine drift .
+
+Figure 9: (a) Rollout throughput comparison across training steps. (b) BF16 Train–infer activation mismatch heatmap at Layer 27, showing irreducible engine drift between Megatron-LM and SGLang even in BF16. workload. Adding residual compensation reduces throughput by only ∼5–9% compared with plain W4A4, owing to fused Triton kernels that combine quantization, residual extraction, and masked recon-struction with minimal launch overhead. The full pipeline therefore retains a clear speed advantage over FP8 throughput by ∼16%, indicating that the accuracy gains from residual compensation come at an acceptable throughput cost. 
+
+4.5 Visualization 4.5.1 Training–Inference Activation Mismatch 
+
+To understand the fundamental source of train-infer mismatch, we visualize the element-wise activation differences between the BF16 training engine (Megatron-LM) and the BF16 inference engine (SGLang) on identical input batches. Figure 9b plots |ABF16 train − ABF16 infer | as a heatmap at Layer 1, where each pixel corresponds to a single element indexed by sequence position and hidden dimension. Even without any quantization, the two engines produce non-identical activations due to differences in kernel imple-mentations, accumulation order, and numerical rounding. The heatmap reveals that the mismatch is not uniformly distributed: certain channels exhibit consistently larger residuals, suggesting that specific hidden dimensions are more sensitive to implementation-level numerical discrepancies. This irreducible 
+
+engine drift constitutes the lower bound of training–inference mismatch: any quantization scheme can at best match this gap, but never eliminate it. Our dual-side alignment framework is designed to approach this lower bound by minimizing the additional mismatch introduced by quantization on both sides. 
+
+## 5 Related Work 
+
+5.1 Reinforcement Learning for Large Language Models 
+
+Reinforcement learning from human feedback (RLHF) and its verifiable-reward variant (RLVR) have become standard post-training stages for aligning large language models (Schulman et al., 2017; Shao et al., 2024). PPO (Schulman et al., 2017) introduced the clipped surrogate objective that bounds policy updates within a trust region, while GRPO (Shao et al., 2024) removes the value model and normalizes advantages within a sampled response group, substantially simplifying the training pipeline for reasoning tasks. As chain-of-thought traces grow longer, autoregressive rollout on a separate inference engine dominates end-to-end wall-clock time, motivating a line of work on accelerating the RL loop through system-level optimizations (Yao et al., 2025; Li et al., 2026; Xi et al., 2026). 
+
+5.2 Low-Precision Inference and RL Rollout 
+
+Low-precision inference has matured from INT8 (Li et al., 2026) through FP8 (Zhao et al., 2025; Xi et al., 2026; Qiu et al., 2026) to the emerging FP4 tier. FP8 E4M3, natively supported on Hopper and Blackwell Tensor Cores, provides 256 representable levels per sign and has become the default precision for high-12 throughput LLM serving. NVFP4 (Alvarez et al., 2025; NVIDIA, 2025) further halves the bit width to E2M1 with block-scaled E4M3 scaling, targeting ∼4× GEMM throughput over BF16 on Blackwell FP4 Tensor Cores (Jarmusch and Chandrasekaran, 2025). When such quantized inference is used for RL rollout, quantization-aware training (QAT) can reduce rollout–trainer mismatch by inserting fake quantization–dequantization nodes into the learner (Gu et al., 2026). For weight-only quantization, QAT is relatively straightforward: both engines multiply by the same QDQ-aligned weight, and the straight-through estimator propagates gradients through the rounding operator. QeRL (Huang et al., 2025) applies NVFP4 weight-only quantization to RL but keeps activations in BF16, executing FP16 GEMMs rather than FP4 Tensor Core operations—thus sidestepping activation quantization entirely. Symmetric W4A4 QAT, which fake-quantizes both weights and activations, appears to offer full alignment but in practice amplifies the engine drift η through the coarse E2M1 decision boundaries (Section 3.2). Our work identifies this operand asymmetry and proposes asymmetric W4A16 QAT combined with inference-side residual compensation, enabling the stable full-parameter MoE RL with native W4A4 FP4 GEMM on Blackwell hardware. 
+
+5.3 Training–Inference Mismatch in RL 
+
+When rollout and training run on separate engines at different precisions, the per-token log-probability gap δt corrupts importance ratios and destabilizes policy-gradient updates (Qi et al., 2025; Yao et al., 2025). A series of recent works address this mismatch at the FP8 and INT8 precision tiers. QuRL (Li et al., 2026) quantizes the actor for generation while keeping full-precision gradient updates, using adaptive clipping to control importance ratios. Jet-RL (Xi et al., 2026) enforces a unified FP8 precision flow across training and rollout, eliminating the precision gap at the cost of quantizing the learner. FP8-RL (Qiu et al., 2026) provides a practical low-precision stack with truncated importance sampling, while QaRL (Gu et al., 2026) aligns rollout and training through rollout-aware quantization-aware training. AIS (Zhou et al., 2026) introduces adaptive importance sampling that dynamically adjusts clipping thresholds based on observed ratio distributions. All of these methods operate on the comparatively fine FP8 or INT8 grid, where |δt| remains tractable; none targets native W4A4 FP4 Tensor Core inference, where the E2M1 grid is 32 × coarser than E4M3 and importance-sampling corrections alone prove insufficient. 
+
+## 6 Conclusion 
+
+We study NVFP4 rollout for Mixture-of-Experts (MoE) Reinforcement Learning on NVIDIA Blackwell. Although native W4A4 FP4 GEMMs offer higher rollout throughput than FP8, directly combining NVFP4 rollout with BF16 training causes unstable GRPO training. Through training–inference error analysis and controlled ablations, we identify activation quantization, rather than weight quantization, as the dominant source of FP4 RL instability. Based on this finding, we propose dual-side alignment: asymmetric W4A16 quantization-aware training aligns the trainer-side weight path, while residual activation compensation reduces rollout-side activation error without leaving native W4A4 GEMMs. On full-parameter GRPO for the MoE model, the proposed NVFP4 pipeline reaches BF16-level accuracy, improves average pass@1 by 21.49 percentage points over naive NVFP4 RL, and retains a 16% rollout throughput advantage over FP8. Future work includes more adaptive residual-channel selection and extending this alignment principle to other RL algorithms and model architectures. 
+
+## References 
+
+Eduardo Alvarez, Omri Almog, Eric Chung, Simon Layton, Dusan Stosic, Ronny Krashin-sky, and Kyle Aubrey. Introducing NVFP4 for efficient and accurate low-precision in-ference. NVIDIA Technical Blog, 2025. URL https://developer.nvidia.com/blog/ introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/ .Hao Gu, Hao Wang, Jiacheng Liu, Lujun Li, Qiyuan Zhu, Bei Liu, Binxing Xu, Lei Wang, Xintong Yang, Sida Lin, Sirui Han, and Yike Guo. QaRL: Rollout-aligned quantization-aware RL for fast and stable training under training–inference mismatch. arXiv preprint arXiv:2604.07853 , 2026. Wei Huang, Yi Ge, Shuai Yang, Yicheng Xiao, Huizi Mao, Yujun Lin, Hanrong Ye, Sifei Liu, Ka Chun Cheung, Hongxu Yin, Yao Lu, Xiaojuan Qi, Song Han, and Yukang Chen. QeRL: Beyond efficiency– quantization-enhanced reinforcement learning for LLMs. arXiv preprint arXiv:2510.11696 , 2025. Aaron Jarmusch and Sunita Chandrasekaran. Microbenchmarking NVIDIA’s blackwell architecture: An in-depth architectural analysis. arXiv preprint arXiv:2512.02189 , 2025. 13 Yuhang Li, Reena Elangovan, Xin Dong, Priyadarshini Panda, and Brucek Khailany. QuRL: Efficient reinforcement learning with quantized rollout. arXiv preprint arXiv:2602.13953 , 2026. NVIDIA. Pretraining large language models with NVFP4. arXiv preprint arXiv:2509.25149 , 2025. Penghui Qi, Zichen Liu, Xiangxin Zhou, Tianyu Pang, Chao Du, Wee Sun Lee, and Min Lin. Defeating the training-inference mismatch via FP16. arXiv preprint arXiv:2510.26788 , 2025. Zhaopeng Qiu, Shuang Yu, Jingqi Zhang, Shuai Zhang, Xue Huang, Jingyi Yang, and Junjie Lai. FP8-RL: A practical and stable low-precision stack for LLM reinforcement learning. arXiv preprint arXiv:2601.18150 ,2026. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. In arXiv preprint arXiv:1707.06347 , 2017. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Y. K. Ming, Y. Wu Zhang, Daya Guo, et al. DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Haocheng Xi, Charlie Ruan, Peiyuan Liao, Yujun Lin, Han Cai, Yilong Zhao, Shuo Yang, Kurt Keutzer, Song Han, and Ligeng Zhu. Jet-RL: Enabling on-policy FP8 reinforcement learning with unified training and rollout precision flow. arXiv preprint arXiv:2601.14243 , 2026. Feng Yao, Liyuan Liu, Dinghuai Zhang, Chengyu Dong, Jingbo Shang, and Jianfeng Gao. Your efficient RL framework secretly brings you off-policy RL training. Notion Blog, 2025. URL https://fengyao. notion.site/off-policy-rl .Chenggang Zhao, Zhean Xu, Liang Zhao, Jiashi Li, Chenhao Xu, Anyi Xu, Shengyu Liu, Kexing Zhou, and Kuai Yu. DeepGEMM: Clean and efficient FP8 GEMM kernels with fine-grained scaling. GitHub, 2025. URL https://github.com/deepseek-ai/DeepGEMM .Jiajun Zhou, Wei Shao, Lingchao Zheng, Yuwei Fan, and Ngai Wong. AIS: Adaptive importance sampling for quantized RL. arXiv preprint arXiv:2605.13907 , 2026. 14
