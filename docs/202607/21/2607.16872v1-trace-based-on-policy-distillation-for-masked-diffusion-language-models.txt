@@ -1,0 +1,1063 @@
+Title: Trace-Based On-Policy Distillation for Masked Diffusion Language Models
+
+URL Source: https://arxiv.org/pdf/2607.16872v1
+
+Published Time: Tue, 21 Jul 2026 00:49:51 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Trace-Based On-Policy Distillation for Masked Diffusion Language Models 
+
+Haolin Ren *, Ziyang Huang ∗, Chenhao Yuan, Jun Zhao, Kang Liu 
+
+Institute of Automation, Chinese Academy of Sciences, Beijing, China University of Chinese Academy of Sciences, Beijing, China 
+
+renhaolin2026@ia.ac.cn 
+
+Abstract 
+
+Diffusion large language models (dLLMs) are a promising alternative to autoregressive gen-eration. However, reasoning-oriented post-training for dLLMs remains challenging. Su-pervised fine-tuning (SFT) for dLLMs re-quires dense but often off-policy masked states, while reinforcement learning (RL) re-lies on sparse rewards or value modeling. This paper proposes trace-based on-policy distil-lation (TOPD) , a teacher-supervised frame-work that transfers reasoning ability to a tar-get dLLM without reward estimation. The key idea is to supervise a dLLM on its own denoising trajectory, focusing on the trace-aligned token decisions that form the final response. Specifically, TOPD samples on-policy diffusion trajectories from the target dLLM, obtains teacher token distributions from a teacher model on the corresponding par-tially denoised states, and updates the target dLLM with a token-level Reverse Kullback-Leibler (Reverse-KL) objective. This de-sign preserves dense teacher supervision while aligning training with the model’s own de-noising states. On mathematical reasoning benchmarks, TOPD enables SDAR-4B-Chat to match the MATH500 accuracy of its RL-trained counterpart TraDo-4B-Instruct, with gains of +5.7 under static evaluation and +4.5 under dynamic evaluation. Compared with the RL-trained counterpart, TOPD achieves this with 4 × fewer rollout rounds, correspond-ing to an estimated 96.0 × to-accuracy model-compute speedup. 
+
+1 Introduction 
+
+Post-training has driven large gains in autoregres-sive large language models (LLMs) on reasoning tasks. (Ouyang et al., 2022; Shao et al., 2024; Guo et al., 2025; Chu et al., 2025). Diffusion large language models (dLLMs) offer a competi-tive non-autoregressive alternative based on itera- 
+
+> *Equal contribution.
+
+Figure 1: Conceptual comparison between trace-based on-policy distillation (TOPD) and random-mask rein-forcement learning for dLLMs. 
+
+tive denoising (Li et al., 2022; Sahoo et al., 2024; Nie et al., 2025; Cheng et al., 2025; Arriola et al., 2025; Gong et al., 2025; Ye et al., 2025). How-ever, reasoning-oriented post-training for dLLMs remains less well studied, particularly for distill-ing reasoning ability from stronger dLLMs into weaker student dLLMs. This paper studies how to efficiently adapt student dLLMs for reasoning un-der iterative denoising generation, using stronger dLLMs as supervision. Current dLLM post-training pipelines mainly follow two routes: supervised fine-tuning (SFT) and reinforcement learning (RL) (Zhao et al., 2025b; Wang et al., 2025; Zhu et al., 2025; He et al., 2025; Ou et al., 2026; Wang et al., 2026; Zhao et al., 2025a; Zhong et al., 2026). SFT trains the student on fixed targets from external sources, such as human annotations and pre-generated sam-ples, making the supervision inherently off-policy. In this way, the student is optimized on static targets or idealized teacher states rather than the states induced by its own generation policy, lead-ing to exposure bias and weaker generalization arXiv:2607.16872v1 [cs.CL] 18 Jul 2026 Question                       
+
+> A ticket costs $80. It is discounted by 25%, then taxed by 10%. What is the final price?
+> Full answer
+> 80 ×(1 −25%) = 60 60 ×(1 + 10%) = 66
+> Final answer: $66
+> On-policy state
+> 80 ×(1 −25%) = __×(1 + 10%) = _Final answer: $_
+> Preserves causal direction: subtotals are filled from preceding computations
+> Random-mask state
+> _×(1 −25%) = _
+> 60 ×(1 + _%) = 66
+> Final answer: $_
+> Breaks causal reasoning: 60 is supervised from later evidence
+
+Figure 2: A synthetic question-answering example il-lustrating trajectory mismatch. Random masking can expose later results while hiding earlier reasoning vari-ables, forcing backward reconstruction rather than for-ward computation. 
+
+(Agarwal et al., 2024; Chu et al., 2025). RL, on the other hand, often relies on sparse, delayed, and high-variance rewards, which makes long-horizon credit assignment difficult and optimization costly. These limitations motivate on-policy distillation (OPD) (Agarwal et al., 2024; Lu and Lab, 2025), where the student samples from its own policy while a teacher provides dense feedback on those student-generated outputs. However, adapting OPD to dLLMs is not a di-rect transplant from autoregressive models. In au-toregressive LLMs, each action is a committed next-token decision, so teacher feedback naturally attaches to the generated prefix. In dLLMs, the model iteratively updates a partially masked se-quence, making trajectory alignment central. Akey obstacle is the random-mask mismatch in many recent dLLM RL pipelines: training states are often built by randomly corrupting subsets of model-generated responses (Zhao et al., 2025b; Zhu et al., 2025; Ou et al., 2026; Wang et al., 2026; Zhong et al., 2026). As illustrated in Fig-ure 2, such states can expose downstream answers while hiding upstream reasoning variables, creat-ing backward reconstruction contexts that differ from the student’s forward denoising trajectory. Reveal order and inference schedules materially affect masked-diffusion behavior (He et al., 2025; Wang et al., 2025). Teacher supervision on ran-dom or trajectory-agnostic states therefore weak-ens alignment with the decisions that form the fi-nal response. To this end, this paper proposes trace-based on-policy distillation (TOPD) , a teacher-supervised post-training framework for dLLMs. TOPD sam-ples the student’s own inference-time denoising trajectories and converts them into dense distilla-tion targets by identifying the token predictions that directly determine the final response. This trace-based formulation avoids supervising arbi-trary random-mask configurations, which may ex-pose later answer tokens while hiding earlier rea-soning tokens and thus create conditional depen-dencies inconsistent with inference-time denois-ing. TOPD then uses a frozen teacher to pro-vide token distributions on the student’s on-policy partially denoised states and optimizes the stu-dent with step-wise token-distribution supervision. In this process, a token-level Reverse Kullback-Leibler (Reverse-KL) is exploited. As a result, TOPD preserves trajectory-aligned state coverage while replacing sparse-reward credit assignment and value-model overhead with dense teacher feedback. Figure 1 provides a conceptual compar-ison between TOPD and random-mask RL. Experiments on mathematical reasoning bench-marks show that TOPD can effectively trans-fer reasoning ability from a dLLM teacher to a smaller student with substantially lower training cost. Specifically, using TraDo-8B-Instruct (Wang et al., 2025) as the teacher, TOPD brings the base SDAR-4B-Chat (Cheng et al., 2025) student to the same MATH500 (Hendrycks et al., 2021) ac-curacy as TraDo-4B-Instruct, an RL-trained ver-sion of SDAR-4B-Chat, with gains of +5.7 un-der static evaluation and +4.5 under dynamic evaluation. Moreover, compared with TraceRL (Wang et al., 2025), TOPD achieves this with 4× fewer rollout rounds, yielding an estimated 96.0 × to-accuracy model-compute speedup under our parameter-scaled accounting. Our contributions are summarized as follows: • We formulate teacher-supervised dLLM post-training as a trace-based on-policy distillation problem, showing that random-mask super-vision can induce conditional dependencies misaligned with the student’s inference-time denoising trajectory. • This paper proposes TOPD, an efficient post-training paradigm for dLLMs, which samples on-policy diffusion trajectories from the stu-dent and identifies the trace-aligned denois-ing decisions that directly determine the fi-nal response, replacing reward-based updates with step-wise teacher token-distribution su-pervision. 
+
+2 Background 
+
+2.1 Masked Diffusion Language Models 
+
+Masked diffusion language models (MDLMs) gen-erate text by iteratively denoising masked token sequences rather than by committing tokens from left to right (Sahoo et al., 2024; Nie et al., 2025). Given a clean sequence x ∈ V n, training corrupts tokens into [MASK] at noise level t and learns a denoiser πθ(· | z) for the masked positions, usu-ally with a schedule-weighted masked reconstruc-tion objective (Sahoo et al., 2024; Shi et al., 2024). Full-attention dLLMs allow response tokens to attend bidirectionally to the whole corrupted re-sponse, while block-attention dLLMs partition the response into blocks and use a block-causal mask, e.g., a token in block k attends only to blocks ≤ k
+
+(Arriola et al., 2025; Cheng et al., 2025). At in-ference time, however, the model follows its own denoising trajectory τ = ( s0, a 0, . . . , s T ) from a fully masked response, and the resulting reveal or-der can affect generation behavior (He et al., 2025; Wang et al., 2025). Since intermediate decisions may later be revised or removed, we use trace to denote the subset of decisions in τ that survives into sT .
+
+2.2 Post-Training Signals for dLLMs 
+
+Post-training for dLLMs typically relies on SFT or RL (Zhao et al., 2025b; Wang et al., 2025; Zhu et al., 2025; He et al., 2025; Ou et al., 2026; Wang et al., 2026; Zhao et al., 2025a; Zhong et al., 2026). In SFT, a target response is partially corrupted into ˜y and the model is trained to reconstruct the masked positions: 
+
+LSFT (θ) = Eq,y, ˜y
+
+ ∑
+
+> i∈M (˜ y)
+
+− log πθ(yi | q, ˜y)
+
+ ,
+
+(1) where M(˜ y) is the masked-position set and the ex-pectation over ˜y denotes the random masking pro-cess applied to y. RL instead samples from the current student and maximizes 
+
+JRL (θ) = Eq, τ ∼Pθ (·| q)
+
+[R(q, s T )]. (2) Here Pθ(τ | q) denotes the trajectory distribution induced by the student’s iterative denoising pol-icy, and R(q, s T ) is the scalar reward assigned to the final response. SFT provides dense supervi-sion but trains on fixed target responses rather than states induced by the current student. RL uses stu-dent samples, but its sparse and delayed rewards must be assigned across many non-autoregressive denoising decisions, making credit assignment costly and high variance. Teacher supervision of-fers a middle ground: dense token distributions on student-visited states without delayed reward esti-mation. 
+
+2.3 Challenges in Adapting OPD to dLLMs 
+
+OPD trains a student on states sampled from its current policy while a teacher supplies dense tar-get distributions on those same states (Agarwal et al., 2024; Lu and Lab, 2025). Adapting this idea to dLLMs is non-trivial because a diffusion step operates on a partially masked sequence and may propose multiple token decisions in parallel. Unlike autoregressive OPD, where each generated prefix defines a single committed next-token con-text, dLLM distillation must decide which par-tially denoised states and token positions should receive teacher feedback along a multi-step re-veal process. Random-mask supervision provides dense masked-token targets, but these artificial states may not match the states or reveal order en-countered by the current student during generation (He et al., 2025; Wang et al., 2025). The core challenge is therefore to make OPD both on-policy and trajectory-aware. The student should be supervised on states sampled from its own denoising process, and the teacher signal should be organized according to the trace con-struction induced by that process rather than by in-dependently sampled masks. TOPD addresses this by sampling on-policy diffusion trajectories and distilling teacher distributions on trace-aligned de-noising decisions, which we formalize next. 
+
+3 Method 
+
+We introduce TOPD , a trace-based on-policy dis-tillation framework for post-training masked dif-fusion language models. Given a prompt, TOPD samples a student denoising trajectory, keeps the token decisions that survive into the final response, and distills a frozen teacher distribution on those student-visited states. Figure 3: Overview of TOPD. The student samples an on-policy denoising trajectory, the teacher provides step-wise token-distribution supervision, and updates are applied only to trace-aligned decisions ˜at retained in the final output. 
+
+Figure 3 summarizes the TOPD pipeline. Sec-tion 3.1 defines the on-policy diffusion trajectory that supplies training states. Section 3.2 describes how TOPD extracts trace-aligned decisions from that trajectory. Section 3.3 constructs the teacher– student distribution pairs on the retained state-position pairs. Section 3.4 gives the Reverse-KL objective and its sampled-token estimator. 
+
+3.1 On-Policy Diffusion Trajectories 
+
+The first challenge is to supervise states that match the student’s diffusion-time behavior. TOPD there-fore samples trajectories from the current student rather than constructing states by randomly mask-ing completed answers. Let πθ denote the student dLLM and let q be a prompt. Generation starts from a fully masked response state s0 and pro-ceeds for T diffusion steps; at step t, the student predicts tokens for selected masked positions and updates the response to st+1 . We record the rollout as 
+
+τ = ( s0, a 0, s 1, a 1, . . . , s T −1, a T −1, s T ), (3) where sT is the final response and at = {(j, x j )}
+
+is the set of token decisions proposed and accepted at step t.Sampling τ from the current student makes TOPD on-policy for dLLMs. Unlike random masks, which can expose later answer tokens while hiding earlier reasoning tokens, τ follows the student’s own reveal order and supplies the states encountered during inference. 
+
+3.2 Trace-Aligned Decision Selection 
+
+A second challenge is that not every token pro-posal in a diffusion rollout is a final decision. Because later denoising may revise or overwrite provisional proposals, TOPD adopts the trace-construction principle of TraceRL (Wang et al., 2025), where the trace keeps only token decisions that appear in the final response: 
+
+˜at = {(j, x j ) ∈ at : xj = sT,j }. (4) Here j indexes a response position, and ˜at is the trace-aligned subset at diffusion step t.Trace alignment turns a non-autoregressive roll-out into supervised state-position pairs. Each re-tained pair (st, j ) marks the context in which the student committed final token xj , so teacher feed-back is attached to output-forming decisions rather than arbitrary masked positions in a completed an-swer. 
+
+3.3 Step-Wise Teacher Distribution Matching 
+
+Teacher feedback must use the same conditional context in which the student made each retained decision. TOPD therefore evaluates teacher and student distributions on the same trace-aligned state-position pairs. Let πtea be a frozen teacher dLLM. For each (j, x j ) ∈ ˜at, the teacher distribu-tion is 
+
+ptea  
+
+> t,j
+
+(·) = πtea (· | q, s t, j ). (5) The corresponding student distribution is evalu-ated at the same prompt, state, and position: 
+
+pθt,j (·) = πθ(· | q, s t, j ). (6) For block-wise implementations, st denotes the schedule-consistent model input at that step. This paired evaluation makes supervision state-matched rather than answer-matched. The teacher signal is dense at the token level, on-policy at the state level, and aligned with the student’s diffusion trace. 3.4 Reverse-KL Training Objective 
+
+The final challenge is to turn trace-aligned teacher distributions into stable token-level up-dates. TOPD matches each retained student distri-bution to the frozen teacher with Reverse-KL. For 
+
+B prompts and G sampled trajectories per prompt, the loss is 
+
+LTOPD (θ) = 1
+
+BG 
+
+> BG
+
+∑
+
+> i=1
+
+∑ 
+
+> t:|˜at,i |>0
+
+1
+
+|˜at,i |
+
+∑ 
+
+> (j,x j)∈˜at,i
+
+DKL 
+
+(
+
+pθt,j (·)
+
+∥∥∥ ptea  
+
+> t,j
+
+(·)
+
+)
+
+.
+
+(7) The normalization averages over sampled trajecto-ries and then over retained positions within each diffusion step, preventing steps with many re-vealed tokens from dominating the update. Reverse-KL concentrates the student on teacher-preferred modes at the same state. This is useful in noisy partially denoised contexts, where many al-ternatives are possible but only a few continue the student’s reasoning path. The divergence ablation in Section 4.4 supports this choice. In implementation, TOPD uses a sampled-token score-function estimator for the negative Reverse-KL objective. For each retained token xj , define 
+
+rt,j = sg 
+
+(
+
+log ptea  
+
+> t,j
+
+(xj ) − log pθt,j (xj )
+
+)
+
+, (8) where sg( ·) denotes stop-gradient, so the log-probability gap is treated as a scalar coefficient. The corresponding ascent estimator is 
+
+∇θJTOPD (θ) ≈ 1
+
+BG 
+
+> BG
+
+∑
+
+> i=1
+
+∑ 
+
+> t:|˜at,i |>0
+
+1
+
+|˜at,i |
+
+∑ 
+
+> (j,x j)∈˜at,i
+
+∇θ log pθt,j (xj ) rt,j .
+
+(9) A retained token receives a positive update when the teacher assigns it higher probability than the student and a negative update otherwise. When full vocabularies are materialized, the same ob-jective can be evaluated by summing over tokens. The sampled form avoids reward models, value heads, old-policy ratios, and sequence-level credit assignment. 
+
+4 Experiments 
+
+We evaluate TOPD along three axes: effective-ness, mechanism, and practical value. First, we 
+
+> Figure 4: Learning curves of TOPD vs. TraceRL on MATH500 under static (solid) and dynamic (dashed) masking. TOPD reaches strong performance by rollout step 30, while TraceRL requires 120 rollout steps for comparable performance.
+
+test whether TOPD can match RL-based post-training on mathematical reasoning benchmarks under both static and dynamic decoding settings. Second, we isolate whether on-policy states, trace-aligned token selection, and Reverse-KL matching each contribute to the gain. Third, we measure whether dense teacher supervision reduces train-ing cost without introducing training instability. 
+
+4.1 Experimental Setup 
+
+Unless otherwise noted, experiments use SDAR-4B-Chat (Cheng et al., 2025) as the student and TraDo-8B-Instruct (Wang et al., 2025) as the teacher. For mathematical post-training, we use the MATH training set (Hendrycks et al., 2021), retaining level 3–5 problems following Hu et al. (2026), yielding 8K tasks. We use block-wise dif-fusion with 4-token blocks, 4 denoising steps per block, and 64 prompts per rollout round. A rollout step denotes one rollout round plus its associated training update, not a single optimizer step. Training rollouts use dynamic decoding. TOPD samples one response per prompt, whereas Trac-eRL samples 16 for reward normalization and value-based credit assignment. SFT uses TraDo-8B-Instruct-generated responses from the same data source with the semi-autoregressive objec-tive for block-attention dLLMs (Arriola et al., 2025). We evaluate every 5 rollout steps and report avg@3 for MATH500 (Hendrycks et al., 2021) and GSM8K (Cobbe et al., 2021), and avg@20 for AIME2024 (Mathematical Association of Amer-ica, American Mathematics Competitions, 2024), under both static and dynamic decoding. Table 1: Main results on MATH500, AIME2024, and GSM8K. “Avg.” is the arithmetic mean over the three benchmarks for each decoding strategy. For TOPD, scores are reported from the best evaluation checkpoint. Method prefixes denote post-training applied to the base model; TraceRL-trained SDAR models correspond to TraDo checkpoints. “Per-Round Speedup” reports rollout-round model-compute speedup from Section 4.5 and Appendix F, with ESPO and TraceRL as the LLaDA and SDAR references (1 ×). “To-Accuracy Speedup” further accounts for rollout rounds to the comparable MATH500 comparison point.                                                                                                                                        
+
+> Model MATH500 AIME2024 GSM8K Avg. Per-Round To-Accuracy Static Dynamic Static Dynamic Static Dynamic Static Dynamic Speedup Speedup
+> Full Attention Model
+> LLaDA-8B-Instruct 37.3 38.3 0.5 1.7 82.5 82.5 40.1 40.8 ––+ ESPO 38.9 +1 .639.1 +0 .81.0 +0 .50.8 −0.984.0 +1 .583.9 +1 .441.3 +1 .241.3 +0 .51×1×
+> + TOPD 39.2 +1 .938.6 +0 .30.8 +0 .31.2 −0.583.3 +0 .883.5 +1 .041.1 +1 .041.1 +0 .310.9 ×511.6 ×
+> Block Attention Model
+> TraDo-8B-Instruct 78.5 75.5 13.3 11.0 92.3 91.2 61.4 59.2 ––SDAR-4B-Chat 70.2 67.4 5.0 8.2 90.2 88.9 55.1 54.8 ––+ SFT 74.3 +4 .168.0 +0 .69.0 +4 .07.3 −0.991.4 +1 .289.7 +0 .858.2 +3 .155.0 +0 .2––+ TraceRL 75.6 +5 .471.8 +4 .48.3 +3 .310.3 +2 .191.2 +1 .090.3 +1 .458.4 +3 .357.5 +2 .71×1×
+> + TOPD 75.9 +5 .771.9 +4 .59.3 +4 .38.7 +0 .592.2 +2 .089.3 +0 .459.2 +4 .156.6 +1 .824.0 ×96.0 ×
+
+4.2 Main Results 
+
+TOPD matches the strongest SDAR-4B-Chat Trac-eRL gains on MATH500 while using far fewer rollouts. Table 1 shows that TOPD improves SDAR-4B-Chat by +5.7 under static decoding and +4.5 under dynamic decoding, slightly exceeding TraceRL on MATH500 in both settings. SFT also improves the base model, but its gains are smaller than TOPD, especially under dynamic de-coding. The improvements from TOPD extend to AIME2024 and GSM8K, showing that the trans-ferred reasoning ability is not limited to the pri-mary benchmark. TOPD reaches strong performance substantially earlier than reward-based post-training. Fig-ure 4 shows that TOPD reaches TraceRL-level MATH500 accuracy in roughly 4 × fewer rollout rounds, supporting the claim that dense teacher su-pervision reduces the amount of sampled interac-tion needed for post-training. 
+
+4.3 Generalization to Full-Attention Models 
+
+TOPD also transfers beyond the block-attention setting where it is primarily evaluated. In this ex-periment, the student is the original LLaDA-8B-Instruct (Nie et al., 2025), a full-attention masked diffusion language model, and the teacher is the ESPO-trained LLaDA-8B-Instruct checkpoint (Ou et al., 2026). As shown in Table 1, TOPD improves LLaDA-8B-Instruct on MATH500 and GSM8K, and its average gains are comparable to ESPO. The absolute gains are smaller than in the SDAR setting, likely because the LLaDA teacher is the student’s RL-trained same-size coun-terpart rather than a larger model, but the positive trend suggests that trace-aligned teacher supervi-sion is not specific to block-attention generation. Under the same teacher accounting, ESPO’s re-ported policy-update budget and rollout grouping imply an estimated 10.9 × per-round and 511.6 ×
+
+to-accuracy model-compute speedup for TOPD at a comparable MATH500 point (Appendix F). 
+
+4.4 Ablation Studies 
+
+The ablation studies test whether each TOPD de-sign choice is responsible for the observed gains. They follow the default SDAR setup in Section 4.1 and evaluate each variant on MATH500 under both static and dynamic decoding. We vary only the source of supervised states, the token decisions that receive gradients, or the divergence objective. For multi-run ablation summaries, we report 
+
+peak mean accuracy . At each evaluated training rollout step, we compute the mean accuracy and standard deviation across runs. We then choose the training rollout step whose across-run mean is highest and report that step’s mean ± standard de-viation. This statistic is therefore the peak of the mean learning curve. 
+
+On-policy vs. off-policy supervision. Student-sampled states are more useful than fixed or purely supervised states. This ablation isolates the source of supervised states along an off-policy-to-on-policy spectrum. Semi-AR SFT uses fixed teacher-generated responses with a semi-autoregressive objective, off-policy distillation uses the same teacher-generated data as fixed trajectories, and TOPD samples trajectories from the current stu-dent. Thus, semi-AR SFT serves as the fixed-target supervised reference point, while off-policy Figure 5: On-policy, off-policy, and semi-AR SFT su-pervision on MATH500. Curves report mean accuracy over 3 runs with ±1 standard deviation shaded. Table 2: On-policy, off-policy, and semi-AR SFT super-vision on MATH500. Values are peak mean accuracy           
+
+> ±1 standard deviation over 3 runs, as defined above; training rollout steps are shown in parentheses. On-policy and off-policy variants use the same Reverse-KL objective; semi-AR SFT follows the supervised setting in Section 4.1.
+> Method Static Dynamic
+> Semi-AR SFT 73.5 ±0.1 (20) 69.6 ±0.4 (20) Off-policy 74.5 ±0.6 (30) 71.0 ±1.3 (40) On-policy (TOPD) 75.2 ±0.8 (30) 71.7 ±0.7 (55)
+
+distillation shares the Reverse-KL objective with TOPD but not its student-sampled states. Figure 5 shows the full across-run mean curves, and Table 2 shows an on-policy > off-policy > semi-AR SFT ranking under both decoding strategies. 
+
+Trace-based updates vs. random-mask supervi-sion. Trace-aligned token selection makes dense teacher feedback more targeted than random cor-ruption. This ablation keeps the on-policy state distribution fixed and varies which denoising deci-sions receive teacher supervision. Random-mask supervision applies the teacher signal to randomly corrupted positions, whereas trace-aligned super-vision restricts updates to token decisions that sur-vive into the final response. Table 3 shows that trace alignment improves peak mean accuracy un-der both decoding strategies, indicating that where the dense supervision is attached matters in addi-tion to which states are sampled. 
+
+Divergence objectives: Reverse-KL, Forward Kullback–Leibler (Forward-KL), and Jensen– Shannon divergence (JSD). Reverse-KL is the most reliable divergence objective for trace-based distillation. This ablation keeps the on-policy, trace-aligned setting fixed and varies only the token-distribution matching objective. Table 4 shows that JSD is competitive, especially early            
+
+> Figure 6: Trace-based supervision vs. random-mask su-pervision on MATH500. Curves report mean accuracy over 3 runs with ±1standard deviation shaded. Table 3: Trace-based versus random-mask supervision on MATH500. Values are peak mean accuracy ±1standard deviation over 3 runs, as defined above; train-ing rollout steps are shown in parentheses.
+> Method Static Dynamic
+> Random-mask 74.3 ±1.0 (50) 71.3 ±1.0 (60) Trace-aligned (TOPD) 75.2 ±0.8 (30) 71.7 ±0.7 (55)
+
+in training, but Reverse-KL achieves the strongest peak overall. Forward-KL substantially underper-forms, consistent with the analysis in Section 3.4: covering the teacher’s full support in noisy states is less effective than concentrating on teacher-preferred modes. Together, the ablations support the three core TOPD design choices. On-policy states improve over fixed targets, trace-aligned decisions improve over random masks, and Reverse-KL improves over Forward-KL and slightly over JSD at peak. These results explain why TOPD differs from SFT, fixed-trajectory distillation, and generic masked-token supervision. 
+
+4.5 Efficiency and Stability 
+
+TOPD is more compute-efficient than RL because it removes group-rollout reward optimization. TraceRL samples 16 responses per prompt and requires old-logprob and value passes, whereas TOPD samples one response and performs afrozen-teacher forward plus one student update. Under our parameter-scaled accounting in Ap-pendix F, this yields a 24.0 × per-round model-compute reduction for the SDAR-4B-Chat setting with value model. This per-round saving compounds with faster convergence. TOPD reaches comparable MATH500 accuracy in 4 × fewer rollout rounds, yielding an estimated to-accuracy speedup of 96.0 × over TraceRL+V. For LLaDA, explicit rollout-round accounting gives a 10.9 × per-round Table 4: Divergence objectives on MATH500. Single-run accuracy at key checkpoints. Step 30 and Step 60 are evaluated checkpoints, and ∆base is the peak im-provement over SDAR-4B-Chat base accuracy (70.2 static, 67.4 dynamic). All variants use the same on-policy trace-based setting.                                
+
+> Objective Peak Step 30 Step 60 ∆base ↑
+> Static decoding
+> Forward-KL 72.7 (55) 72.5 71.6 +2.5 JSD ( β= 0 .5)75.3 (35) 74.5 73.6 +5.1 Reverse-KL (TOPD) 75.9 (30) 75.9 73.8 +5.7
+> Dynamic decoding
+> Forward-KL 68.9 (55) 67.5 67.9 +1.5 JSD ( β= 0 .5)71.7 (60) 69.5 71.7 +4.3 Reverse-KL (TOPD) 72.6 (80) 71.9 70.8 +5.2
+
+reduction; ESPO’s 3K policy-update budget cor-responds to 375 rollout steps, yielding a 511.6 ×
+
+speedup to the selected comparison checkpoint. We did not observe training collapse; the main late-training behavior is mild static overfitting after the peak checkpoint. 
+
+5 Related Work 
+
+Diffusion language models. Diffusion models generate by iterative denoising and have been adapted from continuous data to discrete lan-guage through categorical or masked corruption processes (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021; Austin et al., 2021; Shi et al., 2024). Recent masked and block diffusion language models scale this paradigm to instruc-tion following and reasoning with partially paral-lel generation (Nie et al., 2025; Cheng et al., 2025; Arriola et al., 2025; Gong et al., 2025; Labs et al., 2025; Ye et al., 2025; Bie et al., 2025). Because diffusion decoding produces provisional token de-cisions that may be revised before the final answer, trajectory structure matters (Wang et al., 2025; He et al., 2025). TOPD therefore trains on the stu-dent’s actual denoising trajectories rather than syn-thetic masked states. 
+
+Reinforcement learning for dLLM post-training. Reinforcement learning improves LLM reasoning through proximal policy optimiza-tion (PPO), reinforcement learning from human feedback (RLHF), preference optimization, and group-relative policy optimization (Schulman et al., 2015, 2017; Ouyang et al., 2022; Rafailov et al., 2023; Shao et al., 2024; Guo et al., 2025; Yu et al., 2025). Recent work extends these ideas to dLLMs with masked SFT, trajectory-aware value modeling and sequence-level policy optimization (Zhao et al., 2025b; Wang et al., 2025; Zhong et al., 2026; Ou et al., 2026; Zhu et al., 2025; He et al., 2025; Wang et al., 2026; Zhao et al., 2025a). These methods show the value of on-policy roll-outs and trace-aware trajectory construction, but sparse final rewards must be converted into useful step-level signals through likelihood ratios, value models, trajectory estimators, or stabilization heuristics. TOPD keeps on-policy trajectory coverage while replacing reward-based credit assignment with dense teacher supervision on the student’s visited denoising states. 
+
+On-policy distillation. Knowledge distillation transfers behavior from a stronger teacher to a stu-dent by matching predictions or softened distribu-tions (Hinton et al., 2015; Sanh et al., 2020; Gu et al., 2024; Xu et al., 2024). Standard offline distillation trains on fixed teacher data and may not cover states caused by student errors, a clas-sic exposure-bias issue in imitation learning (Ross et al., 2011). On-policy distillation instead sam-ples states from the current student and queries teacher distributions on those states, combining on-policy coverage with dense low-variance super-vision (Agarwal et al., 2024; Lu and Lab, 2025; Xu et al., 2025; Song and Zheng, 2026). TOPD extends this idea to diffusion generation, where supervision must be aligned with the final denois-ing trace rather than committed autoregressive pre-fixes. 
+
+6 Conclusion 
+
+We introduced TOPD, a trace-based on-policy dis-tillation framework for post-training masked dif-fusion language models. TOPD samples the stu-dent’s own denoising trajectories, queries a frozen teacher on the corresponding partially denoised states, and applies Reverse-KL updates to the trace-aligned token decisions that form the final re-sponse. This preserves dense teacher supervision while avoiding sparse reward assignment, value modeling, and likelihood-ratio machinery. On mathematical reasoning, TOPD recovers TraceRL-level MATH500 gains for SDAR-4B-Chat with 4× fewer rollout rounds and an estimated 96.0 ×
+
+to-accuracy model-compute speedup; additional results on AIME2024, GSM8K, full-attention LLaDA, and ablations support the roles of on-policy states, trace alignment, and Reverse-KL matching. Limitations 
+
+Although TOPD provides an efficient way to trans-fer reasoning ability from a stronger dLLM to a weaker student through dense on-policy teacher supervision, it still has several limitations. First, our experiments use an 8B dLLM as the teacher and a 4B dLLM as the student, because stronger and larger publicly available dLLM teachers are currently limited. For the full-attention experi-ments, the lack of model families with multiple parameter scales further requires using an RL-trained same-size model as the teacher. There-fore, it remains unclear whether the observed ef-ficiency gains generalize when substantially larger or more capable teacher models become available. Second, the evaluation is limited to mathemati-cal reasoning benchmarks, including MATH500, AIME2024, and GSM8K, and does not cover broader reasoning tasks such as code generation, tool use, or open-ended instruction following. Third, TOPD relies on a frozen teacher for token-level distributional supervision, making its effec-tiveness dependent on the teacher’s capability and alignment with the target domain. 
+
+Acknowledgments 
+
+The authors used AI assistants, including Chat-GPT, for language polishing, wording suggestions, and coding assistance. All research ideas, experi-mental design, analyses, and final manuscript con-tent were reviewed and verified by the authors. 
+
+References 
+
+Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Pi-otr Stanczyk, Sabela Ramos Garea, Matthieu Geist, and Olivier Bachem. 2024. On-policy distillation of language models: Learning from self-generated mis-takes. In The Twelfth International Conference on Learning Representations .Marianne Arriola, Aaron Gokaslan, Justin T Chiu, Zhi-han Yang, Zhixuan Qi, Jiaqi Han, Subham Sekhar Sahoo, and Volodymyr Kuleshov. 2025. Block dif-fusion: Interpolating between autoregressive and dif-fusion language models. In The Thirteenth Interna-tional Conference on Learning Representations .Jacob Austin, Daniel D. Johnson, Jonathan Ho, Daniel Tarlow, and Rianne van den Berg. 2021. Structured denoising diffusion models in discrete state-spaces. In Advances in Neural Information Processing Sys-tems .Tiwei Bie, Maosong Cao, Kun Chen, Lun Du, Min-gliang Gong, Zhuochen Gong, Yanmei Gu, Jiaqi Hu, Zenan Huang, Zhenzhong Lan, Chengxi Li, Chongx-uan Li, Jianguo Li, Zehuan Li, Huabin Liu, Lin Liu, Guoshan Lu, Xiaocheng Lu, Yuxin Ma, and 12 oth-ers. 2025. Llada2.0: Scaling up diffusion language models to 100b. Preprint , arXiv:2512.15745. Shuang Cheng, Yihan Bian, Dawei Liu, Linfeng Zhang, Qian Yao, Zhongbo Tian, Wenhai Wang, Qipeng Guo, Kai Chen, Biqing Qi, and Bowen Zhou. 2025. Sdar: A synergistic diffusion-autoregression paradigm for scalable sequence gen-eration. Preprint , arXiv:2510.06303. Tianzhe Chu, Yuexiang Zhai, Jihan Yang, Shengbang Tong, Saining Xie, Dale Schuurmans, Quoc V Le, Sergey Levine, and Yi Ma. 2025. SFT memorizes, RL generalizes: A comparative study of foundation model post-training. In Forty-second International Conference on Machine Learning .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 2021. Training verifiers to solve math word prob-lems. Preprint , arXiv:2110.14168. Shansan Gong, Shivam Agarwal, Yizhe Zhang, Ji-acheng Ye, Lin Zheng, Mukai Li, Chenxin An, Peilin Zhao, Wei Bi, Jiawei Han, Hao Peng, and Lingpeng Kong. 2025. Scaling diffusion language models via adaptation from autoregressive mod-els. In The Thirteenth International Conference on Learning Representations .Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang. 2024. MiniLLM: Knowledge distillation of large language models. In The Twelfth International Con-ference on Learning Representations .Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhu-oshu Li, Ziyi Gao, Aixin Liu, and 175 others. 2025. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature , 645(8081):633638. Haoyu He, Katrin Renz, Yong Cao, and Andreas Geiger. 2025. MDPO: Overcoming the training-inference divide of masked diffusion language mod-els. arXiv preprint arXiv:2508.13148 .Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021. Measuring mathematical problem solving with the MATH dataset. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2) .Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015. Distilling the knowledge in a neural network. 
+
+Preprint , arXiv:1503.02531. Jonathan Ho, Ajay Jain, and Pieter Abbeel. 2020. De-noising diffusion probabilistic models. In Advances in Neural Information Processing Systems 33: An-nual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual .Jingcheng Hu, Yinmin Zhang, Qi Han, Daxin Jiang, Xi-angyu Zhang, and Heung-Yeung Shum. 2026. Open-reasoner-zero: An open source approach to scaling up reinforcement learning on the base model. In The Thirty-ninth Annual Conference on Neural Informa-tion Processing Systems .Inception Labs, Samar Khanna, Siddhant Kharbanda, Shufan Li, Harshit Varma, Eric Wang, Sawyer Birn-baum, Ziyang Luo, Yanis Miraoui, Akash Palrecha, Stefano Ermon, Aditya Grover, and Volodymyr Kuleshov. 2025. Mercury: Ultra-fast language mod-els based on diffusion. Preprint , arXiv:2506.17298. Xiang Lisa Li, John Thickstun, Ishaan Gulrajani, Percy Liang, and Tatsunori Hashimoto. 2022. Diffusion-LM improves controllable text generation. In Ad-vances in Neural Information Processing Systems .Kevin Lu and Thinking Machines Lab. 2025. On-policy distillation. Thinking Machines Lab: Con-nectionism . Https://thinkingmachines.ai/blog/on-policy-distillation. Mathematical Association of America, Amer-ican Mathematics Competitions. 2024. American invitational mathematics exami-nation (aime) 2024: Aime i and aime ii. 
+
+https://artofproblemsolving.com/wiki/ index.php/AIME_Problems_and_Solutions .Competition problems used as an evaluation dataset; original problems by MAA AMC. Shen Nie, Fengqi Zhu, Zebin You, Xiaolu Zhang, Jingyang Ou, Jun Hu, Jun Zhou, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. 2025. Large language diffusion models. Preprint ,arXiv:2502.09992. Jingyang Ou, Jiaqi Han, Minkai Xu, Shaoxuan Xu, Jianwen Xie, Stefano Ermon, Yi Wu, and Chongx-uan Li. 2026. Principled RL for diffusion LLMs emerges from a sequence-level perspective. In The Fourteenth International Conference on Learning Representations .Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Gray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan Lowe. 2022. Training language models to follow instructions with human feedback. In Advances in Neural Infor-mation Processing Systems .Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-pher D Manning, Stefano Ermon, and Chelsea Finn. 2023. Direct preference optimization: Your lan-guage model is secretly a reward model. In Thirty-seventh Conference on Neural Information Process-ing Systems .Stephane Ross, Geoffrey J. Gordon, and J. Andrew Bagnell. 2011. A reduction of imitation learning and structured prediction to no-regret online learn-ing. Preprint , arXiv:1011.0686. Subham Sekhar Sahoo, Marianne Arriola, Aaron Gokaslan, Edgar Mariano Marroquin, Alexander M Rush, Yair Schiff, Justin T Chiu, and Volodymyr Kuleshov. 2024. Simple and effective masked diffu-sion language models. In The Thirty-eighth Annual Conference on Neural Information Processing Sys-tems .Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2020. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. Preprint ,arXiv:1910.01108. John Schulman, Sergey Levine, Philipp Moritz, Michael I. Jordan, and Pieter Abbeel. 2015. Trust region policy optimization. arXiv preprint arXiv:1502.05477 .John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Prox-imal policy optimization algorithms. Preprint ,arXiv:1707.06347. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024. Deepseekmath: Pushing the limits of mathemati-cal reasoning in open language models. Preprint ,arXiv:2402.03300. Jiaxin Shi, Kehang Han, Zhe Wang, Arnaud Doucet, and Michalis Titsias. 2024. Simplified and gener-alized masked diffusion for discrete data. In The Thirty-eighth Annual Conference on Neural Informa-tion Processing Systems .Jascha Sohl-Dickstein, Eric Weiss, Niru Mah-eswaranathan, and Surya Ganguli. 2015. Deep unsupervised learning using nonequilibrium thermo-dynamics. In Proceedings of the 32nd International Conference on Machine Learning , volume 37 of 
+
+Proceedings of Machine Learning Research , pages 2256–2265, Lille, France. PMLR. Mingyang Song and Mao Zheng. 2026. A survey of on-policy distillation for large language models. 
+
+Preprint , arXiv:2604.00626. Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. 2021. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations .Chenyu Wang, Paria Rashidinejad, DiJia Su, Song Jiang, Sid Wang, Siyan Zhao, Cai Zhou, Shan-non Zejiang Shen, Feiyu Chen, Tommi Jaakkola, Yuandong Tian, and Bo Liu. 2026. SPG: Sand-wiched policy gradient for masked diffusion lan-guage models. In The Fourteenth International Con-ference on Learning Representations .Yinjie Wang, Ling Yang, Bowen Li, Ye Tian, Ke Shen, and Mengdi Wang. 2025. Revolutionizing reinforce-ment learning framework for diffusion large lan-guage models. arXiv preprint arXiv:2509.06949 .Chengyue Wu, Hao Zhang, Shuchen Xue, Zhijian Liu, Shizhe Diao, Ligeng Zhu, Ping Luo, Song Han, and Enze Xie. 2026. Fast-dLLM: Training-free acceler-ation of diffusion LLM by enabling KV cache and parallel decoding. In The Fourteenth International Conference on Learning Representations .Wenda Xu, Rujun Han, Zifeng Wang, Long Le, Dhruv Madeka, Lei Li, William Yang Wang, Rishabh Agar-wal, Chen-Yu Lee, and Tomas Pfister. 2025. Spec-ulative knowledge distillation: Bridging the teacher-student gap through interleaved sampling. In The Thirteenth International Conference on Learning Representations .Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen, Reynold Cheng, Jinyang Li, Can Xu, Dacheng Tao, and Tianyi Zhou. 2024. A survey on knowledge distillation of large language models. Preprint ,arXiv:2402.13116. Jiacheng Ye, Zhihui Xie, Lin Zheng, Jiahui Gao, Zirui Wu, Xin Jiang, Zhenguo Li, and Lingpeng Kong. 2025. Dream 7b: Diffusion large language models. 
+
+Preprint , arXiv:2508.15487. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Wang Zhang, and 16 others. 2025. Dapo: An open-source llm re-inforcement learning system at scale. Preprint ,arXiv:2503.14476. Hanyang Zhao, Dawen Liang, Wenpin Tang, David D. Yao, and Nathan Kallus. 2025a. Diffpo: Train-ing diffusion llms to reason fast and furious via reinforcement learning. arXiv preprint arXiv:2510.02212 .Siyan Zhao, Devaansh Gupta, Qinqing Zheng, and Aditya Grover. 2025b. d1: Scaling reasoning in diffusion large language models via reinforcement learning. arXiv preprint arXiv:2504.12216 .Jianyuan Zhong, Kaibo Wang, Ding Ding, Zijin Feng, Haoli Bai, Yang Xiang, Jiacheng Sun, and Qiang Xu. 2026. Stabilizing reinforcement learn-ing for diffusion language models. arXiv preprint arXiv:2603.06743 .Fengqi Zhu, Rongzhen Wang, Shen Nie, Xiaolu Zhang, Chunwei Wu, Jun Hu, Jun Zhou, Jianfei Chen, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. 2025. LLaDA 1.5: Variance-reduced preference optimiza-tion for large language diffusion models. arXiv preprint arXiv:2505.19223 .
+
+A Additional Method Details 
+
+This section formalizes the auxiliary definitions used by the method and ablation studies. We first define the attention patterns for full-attention and block-attention dLLMs, then specify the super-vised, decoding, random-mask, and distribution-matching objectives referenced in the main text. 
+
+A.1 Attention Patterns 
+
+Let a response have length L and let B denote the block size. We write b(i) = ⌈i/B ⌉ for the response block containing position i. Prompt to-kens are visible to all response positions in both model families, so the distinction below concerns response-to-response attention. Following prior masked diffusion language models and block dif-fusion models (Sahoo et al., 2024; Nie et al., 2025; Arriola et al., 2025; Cheng et al., 2025), a full-attention dLLM uses a bidirectional response mask 
+
+Afull  
+
+> ij
+
+= 1 , 1 ≤ i, j ≤ L, (10) which allows every response position to condition on every other response position in the corrupted sequence. A block-attention dLLM uses a block-causal response mask 
+
+Ablock  
+
+> ij
+
+= 1[b(j) ≤ b(i)] , 1 ≤ i, j ≤ L, 
+
+(11) so a token in block b(i) can attend to tokens in the same block and earlier blocks, but not to future blocks. This is the architectural difference behind the “full attention” and “block attention” group-ings in Table 1. In the SDAR setting, B = 4 .
+
+A.2 Masked and Semi-Autoregressive SFT 
+
+For a prompt-response pair (q, y ), where y =(y1, . . . , y L), the full-response masked SFT objec-tive samples a corrupted response ˜y from y and predicts the masked positions. For compactness, write hfull  
+
+> j
+
+= ( q, ˜y, j ):
+
+Lfull -SFT (θ) = Eq,y, ˜y
+
+1
+
+|M (˜ y)|
+
+[∑
+
+> j∈M (˜ y)
+
+− log πθ(yj | hfull  
+
+> j
+
+)
+
+]
+
+.
+
+(12) where M(˜ y) = {j : ˜ yj = [MASK] } is the masked-position set. This objective is appropriate for full-attention masked diffusion models because all re-sponse positions share one bidirectional corrupted context. For block-attention dLLMs, the SFT baseline in Section 4.1 uses a semi-autoregressive objective following block diffusion training (Arriola et al., 2025). Let 
+
+Ck = {(k − 1) B + 1 , . . . , min( kB, L )} (13) be the k-th response block, and let ˜yCk be a cor-rupted copy of the current block. The clean prefix 
+
+y<C k is provided as context, while the loss is ap-plied only inside the current block. Let hsemi  
+
+> k,j
+
+=(q, y <C k , ˜yCk , j ):
+
+Lsemi -AR (θ) = Eq,y 
+
+> ⌈L/B ⌉
+
+∑
+
+> k=1
+
+E˜yCk
+
+1
+
+|M (˜ yCk )|
+
+[∑ 
+
+> j∈M (˜ yCk)
+
+− log πθ
+
+(yj | hsemi 
+
+> k,j
+
+)]
+
+.
+
+(14) Equation 14 is the supervised baseline denoted “Semi-AR SFT” in the ablations. It differs from TOPD in two ways: the target responses are fixed teacher-generated samples, and the super-vised states are produced by an SFT masking pro-cess rather than by the current student’s rollout tra-jectory. 
+
+A.3 Decoding Schedules 
+
+At diffusion step t, let Mt = {j : st,j = [MASK] }
+
+be the currently masked response positions, and let 
+
+ct,j = max  
+
+> v∈V
+
+πθ(v | q, s t, j ) (15) be the model confidence at position j. We use confidence-based remasking schedules fol-lowing recent dLLM decoding and trajectory-optimization work (He et al., 2025; Wang et al., 2025). Static decoding reveals a fixed number of positions per step, usually the highest-confidence positions needed to satisfy the block schedule: 
+
+U static  
+
+> t
+
+= TopK j∈Mt (ct,j ; mt), (16) where mt is determined by the block size and re-maining denoising steps. Dynamic decoding in-stead reveals positions whose confidence exceeds a threshold τ :
+
+U dynamic  
+
+> t
+
+= {j ∈ Mt : ct,j ≥ τ }, (17) with a fallback to at least one revealed position when the set is empty. Both schedules then sam-ple or select token values for j ∈ Ut and keep the remaining positions masked. These definitions correspond to the static and dynamic evaluation columns in Section 4.1. 
+
+A.4 Random-Mask Supervision 
+
+The random-mask ablation uses the same sampled final response sT as TOPD but changes where teacher supervision is attached. We estimate this objective with M independently sampled random masks. For each sample r ∈ { 1, . . . , M }, a ran-dom mask set R(r) ⊆ { 1, . . . , L } is drawn and a corrupted response ¯s(r) is formed by replac-ing positions in R(r) with [MASK] . In contrast to Semi-AR SFT, which applies one random mask-ing instance to each fixed teacher response dur-ing a training pass, random-mask distillation ex-pands each sampled response with enough inde-pendently drawn masks to match the number of trace rows used by TOPD. This keeps the amount of distillation supervision comparable to TOPD while removing trace-aligned position selection. Let ¯h(r) 
+
+> j
+
+= ( q, ¯s(r), j ), pθr,j = πθ(· | ¯h(r) 
+
+> j
+
+), and 
+
+ptea  
+
+> r,j
+
+= πtea (· | ¯h(r) 
+
+> j
+
+). The teacher and student are then matched on those random positions: 
+
+LRandom -Mask (θ) = 1
+
+M
+
+> M
+
+∑
+
+> r=1
+
+1
+
+|R(r)|
+
+∑
+
+> j∈R(r)
+
+D
+
+(
+
+pθr,j 
+
+∥∥∥ ptea 
+
+> r,j
+
+)
+
+.
+
+(18) Here D is the chosen distribution-matching objec-tive. Unlike TOPD, this objective does not use the trace-aligned retained set ˜at and therefore may su-pervise positions unrelated to the student’s actual reveal decisions. 
+
+A.5 Distribution-Matching Objectives 
+
+For a retained or masked state-position pair, let 
+
+p = pθt,j denote the student distribution and q =
+
+ptea  
+
+> t,j
+
+denote the teacher distribution. Distribution matching is the standard signal in knowledge dis-tillation and on-policy distillation (Hinton et al., 2015; Agarwal et al., 2024; Lu and Lab, 2025). The three objectives in Section 4.4 are 
+
+DRKL (p, q ) = DKL (p∥q)= ∑
+
+> v∈V
+
+p(v) log p(v)
+
+q(v) , (19) 
+
+DFKL (p, q ) = DKL (q∥p)= ∑
+
+> v∈V
+
+q(v) log q(v)
+
+p(v) , (20) and a β-weighted Jensen–Shannon objective. For 
+
+0 < β < 1, let mβ = (1 − β)p + βq and define 
+
+DJSD ,β (p, q ) = (1 − β)DKL (p∥mβ )+ βD KL (q∥mβ ). (21) The ablation with β = 0 .5 uses the symmetric JSD. The implementation also permits endpoint settings by dispatching β = 0 to Forward-KL and β = 1 to Reverse-KL. In the main exper-iments, SDAR TOPD uses full-vocabulary KL, while LLaDA TOPD uses top-k=10 token KL for the teacher–student distribution match; Table 6 re-ports this LLaDA-specific truncation. 
+
+B Algorithm Details 
+
+Algorithm 1 instantiates the TOPD loop from Sec-tion 3. TOPD adopts the trace-construction prin-ciple of TraceRL (Wang et al., 2025): after a dif-fusion rollout is completed, only token decisions that survive into the final response are retained as trace decisions. Each TOPD rollout round has three stages: sample a minibatch of prompts and responses from the current student, convert the re-sulting trajectories into trace-aligned distillation rows, and optimize on minibatches of those rows with frozen-teacher supervision. TOPD does not ask the teacher to supervise ar-bitrary corruptions of a completed answer; it su-pervises only the predictions that survive into sT .Consequently, teacher feedback is attached to deci-sions that actually form the sampled response. The state ˆst is reconstructed with the same schedule constraints as the student’s denoising step: posi-tions beyond the current progress point are reset to 
+
+[MASK] , so teacher and student are evaluated under the same conditional context. In practice, we implement Reverse-KL via a sampled-token score-function estimator: 
+
+∇θLt,j ≈ −∇ θ log pθt,j (xj ) · sg 
+
+(
+
+log ptea     
+
+> t,j (xj)
+> pθt,j (xj)
+
+)
+
+.
+
+(22) The estimator updates only the realized token xj
+
+and uses the teacher–student log-probability gap as a stopped scalar coefficient. If the teacher assigns higher probability to the retained token than the student, the update increases the student’s probability of that token; if the teacher assigns lower probability, the update suppresses it. In im-plementation, teacher logits are computed once for each reconstructed trace state and reused for all re-tained positions at that step. 
+
+Algorithm 1 TOPD: Trace-Based On-Policy Dis-tillation 
+
+Require: Student πθ, frozen teacher πtea , prompt set Q, rollout prompt batch size N , responses per prompt G, update minibatch size m, block size B, denoising steps per block K, maxi-mum response length Lmax  
+
+> 1:
+
+for each rollout round do  
+
+> 2:
+
+Sample a prompt minibatch B = {qi}Ni=1 ∼Q 
+
+> 3:
+
+Initialize trace-row dataset DTOPD ← ∅ 
+
+> 4:
+
+Sample student rollouts  
+
+> 5:
+
+for each prompt qi ∈ B do  
+
+> 6:
+
+for g = 1 to G do  
+
+> 7:
+
+si,g  
+
+> 0
+
+← fully masked response of length Lmax  
+
+> 8:
+
+τi,g ← (si,g  
+
+> 0
+
+) 
+
+> 9:
+
+for t = 0 to T − 1 do  
+
+> 10:
+
+ai,g t ∼ πθ(· | qi, s i,g t ) 
+
+> 11:
+
+si,g t+1 ← unmask (si,g t , a i,g t ) 
+
+> 12:
+
+Append (ai,g t , s i,g t+1 ) to τi,g  
+
+> 13:
+
+end for  
+
+> 14:
+
+end for  
+
+> 15:
+
+end for  
+
+> 16:
+
+Build trace-aligned training rows  
+
+> 17:
+
+for each trajectory τi,g = ( s0, a 0, . . . , s T )
+
+do  
+
+> 18:
+
+for t = 0 to T − 1 do  
+
+> 19:
+
+˜ai,g t ← { (j, x j ) ∈ at : xj = sT,j } 
+
+> 20:
+
+for each (j, x j ) ∈ ˜ai,g t do  
+
+> 21:
+
+Add row (qi, ˆsi,g t , j, x j ) to DTOPD  
+
+> 22:
+
+end for  
+
+> 23:
+
+end for  
+
+> 24:
+
+end for  
+
+> 25:
+
+Teacher-supervised minibatch updates  
+
+> 26:
+
+for each update minibatch M ⊂ D TOPD 
+
+with |M| = m do  
+
+> 27:
+
+for each row (q, ˆs, j, x j ) ∈ M do  
+
+> 28:
+
+ptea  
+
+> q, ˆs,j
+
+← πtea (· | q, ˆs, j ) 
+
+> 29:
+
+pθq, ˆs,j ← πθ(· | q, ˆs, j ) 
+
+> 30:
+
+ℓ(q, ˆs, j ) ← DKL 
+
+(
+
+pθq, ˆs,j ∥ ptea 
+
+> q, ˆs,j
+
+) 
+
+> 31:
+
+end for  
+
+> 32:
+
+LM ← 1
+
+> |M|
+
+∑  
+
+> (q, ˆs,j,x j)∈M
+
+ℓ(q, ˆs, j ) 
+
+> 33:
+
+θ ← θ − η∇θLM 
+
+> 34:
+
+end for  
+
+> 35:
+
+end for Table 5: Training hyperparameters for TOPD on SDAR-4B-Chat.                                 
+
+> Category Value
+> Model & Initialization
+> Student model SDAR-4B-Chat Teacher model TraDo-8B-Instruct Precision bfloat16, TF32 enabled Gradient checkpointing Enabled (whole layer)
+> Rollout (On-Policy Sampling)
+> Prompts per round 64 Responses per prompt 1Sampling temperature 1.0 Max generation tokens 2000 Block size / Denoising steps per block 4 / 4 Remasking strategy Low-confidence dynamic ( τ=0 .9)Top-p1.0
+> Training & Optimization
+> Optimizer AdamW Learning rate 2×10 −7(constant) Weight decay 0.0 Effective batch size 16 (4/GPU ×4 GPUs ×1 accum.) Gradient clipping (max norm) 1.0 Training epochs per rollout 1
+> TOPD-Specific
+> Loss type Full-vocab Reverse-KL Teacher status Frozen Trace retention Trace-aligned decisions only Stop-gradient on log-prob gap Enabled
+> Data
+> Training dataset A subset of MATH (8,523 problems) Max prompt length 784 tokens
+
+C Experimental Details 
+
+This section collects the experimental choices and supplementary ablation evidence needed to repro-duce and interpret the main TOPD runs. We sep-arate default SDAR settings, prompt construction, the full-attention LLaDA variant, ablation settings, baseline settings, evaluation rules, and extended run-level analyses. 
+
+C.1 Training Configuration 
+
+Table 5 gives the default SDAR-4B-Chat TOPD configuration. Unless an ablation explicitly changes a component, the experiments in Sec-tion 4.4 inherit these model, rollout, optimization, and data settings. 
+
+Training infrastructure. All SDAR TOPD ex-periments use 4 NVIDIA A100-80G or A800 GPUs. We train with DeepSpeed ZeRO-2, param-eter CPU offload, bfloat16 mixed precision, and TF32 enabled. A rollout round consists of student sampling followed by one training pass over the re-sulting traces; for SDAR-4B, one round takes ap-proximately 8–12 minutes on 4 A100-80G GPUs, and the 30-step run used for the main comparison finishes in about 5 hours. For rollout and evalua-tion inference, we use an extended Fast-dLLM im-plementation (Wu et al., 2026; Wang et al., 2025) for LLaDA and JetEngine (Cheng et al., 2025) for SDAR. 
+
+C.2 Prompt Template and Rollout Records 
+
+TOPD uses the same prompt surface for student rollouts, teacher supervision, and evaluation. The student first generates an on-policy denoising trace from the model-specific prompt below; the teacher is then queried on the reconstructed partially de-noised states from that same trace. The teacher receives the original problem and the student’s cur-rent state. Math prompt templates 
+
+SDAR 
+
+<|im_start|>user {{problem}} Please reason step by step, and put your final answer within \boxed{}.<|im_end|> <|im_start|>assistant 
+
+LLaDA 
+
+<|startoftext|><|start_header_id|>user<|e nd_header_id|> You need to put your final answer in \boxed{}. This is the problem: {{problem}} <|eot_id|><|startoftext|><|sta rt_header_id|>assistant<|end_header_id|> 
+
+Training uses the same problem statement and sampled response format as rollout generation for each model family. This keeps the training-time prompt identical to the rollout-time prompt and avoids introducing a separate reference-answer formatting path. Evaluation on MATH500, AIME2024, and GSM8K uses the corresponding model-specific template, with the benchmark prob-lem substituted for {{problem}} . For MATH500 and AIME2024, the final \boxed{} expression is used for answer extraction; for GSM8K, we also parse the final numeric answer to match the stan-dard GSM8K evaluation convention. 
+
+C.3 Full-Attention TOPD Configuration 
+
+Table 6 specifies the full-attention LLaDA run used in Section 4.3. This experiment keeps the TOPD data flow fixed but changes the model fam-ily, generation budget, block size, and objective variant to match the LLaDA recipe and its ESPO comparison point. 
+
+C.4 Baseline Configurations TraceRL. We implement TraceRL (Wang et al., 2025) with the official training recipe. Each roll-out round samples G=16 responses per prompt, scores completed responses with the reward model, recomputes old token log-probabilities, and applies a PPO-style update with clipping 
+
+ϵ=0 .2 and KL penalty β=0 .01 . In the SDAR-4B comparison, TraceRL also uses a value model, Table 6: Training hyperparameters for TOPD on LLaDA-8B-Instruct.                    
+
+> Category Value
+> Student model LLaDA-8B-Instruct Teacher model LLaDA-8B-Instruct-ESPO Training dataset MATH training subset Prompts / responses per rollout round 32 / 1 Training rollout rounds / selected checkpoint 30 / 8 Evaluation cadence Every 2 rollout rounds Rollout temperature 0.8 Max generation length / diffusion steps 512 / 512 Block size / further horizon 32 / 128 Remasking strategy Low-confidence static Batch size / gradient accumulation 4 / 2 Learning rate 2×10 −7(constant) Loss type Reverse-KL with top-k=10 token KL Evaluation decoding Static and dynamic, temperature 0.1
+
+which adds value inference and value optimization to each training cycle. The learning rate is 1×10 −6
+
+with cosine decay, and the effective batch size is matched to TOPD at 16. 
+
+Semi-AR SFT. The supervised SDAR base-line fine-tunes SDAR-4B-Chat on the 8,523-problem MATH training subset using fixed teacher-generated responses. Following block dif-fusion training (Arriola et al., 2025), it uses semi-autoregressive masking with block size B=4 , a mask rate uniformly sampled from [0 .1, 0.9] , and cross-entropy on masked response tokens only. Training runs for one epoch with AdamW, learn-ing rate 1 × 10 −5, effective batch size 16, and gra-dient clipping at 1.0. 
+
+ESPO. We evaluate ESPO (Ou et al., 2026) on LLaDA-8B-Instruct with LoRA adaptation on attention and MLP projection matrices ( r=128 ,
+
+α=64 , dropout 0.05). Following the ESPO MATH setting, the policy update uses group size G=16 ,policy-update value μ=8 , M =2 Monte Carlo sam-ples, bfloat16 precision, learning rate 1 × 10 −6,weight decay 0.1, and gradient clipping at 0.2. Generation uses random masking with 256 diffu-sion steps, maximum prompt length 400, maxi-mum completion length 256, and temperature 1.0. TOPD-LLaDA uses the same prompt set and a 512-step decoding budget. 
+
+C.5 Evaluation Protocol 
+
+We evaluate SDAR checkpoints under both static and dynamic decoding. Dynamic decoding uses a confidence threshold of τ = 0 .9 and top -k = 0 ,i.e., all tokens are retained. Static decoding fol-lows Cheng et al. (Cheng et al., 2025) and uses 
+
+top -k = 1 ; both use block size 4 and 4 denois-ing steps per block. We sample with temperature 1.0 and top-p 1.0, reporting avg@3 for MATH500 and GSM8K and avg@20 for AIME2024, where 
+
+Table 7: MATH500 checkpoint summary for the main SDAR comparison. Static and dynamic columns report avg@3 accuracy. “Selection” describes how the check-point is used in the main comparison.                
+
+> Method Selection Static Dynamic
+> SDAR-4B-Chat Base checkpoint 70.2 67.4 Semi-AR SFT Best single supervised checkpoint 74.3 68.0 TraceRL+V Rollout step 120 comparison point 75.5 71.9 TOPD Rollout step 30 comparison point 75.9 71.9
+
+avg@ k is the average accuracy over k sampled responses per problem. MATH500 contains 500 problems, AIME2024 contains 30 problems, and GSM8K uses the 1,319-example test split. For MATH500 and AIME2024, we extract the final 
+
+\boxed{} answer and compare it with SymPy-based normalization; for GSM8K, we extract the final numeric answer following the standard proto-col. 
+
+Checkpoint selection. SDAR learning curves and ablations are evaluated every 5 rollout steps. Main-table accuracies are taken from the best sin-gle run for each method, using the checkpoint se-lected on MATH500 under the corresponding de-coding setting and then evaluated on the remaining benchmarks. Multi-run ablation summaries report peak mean accuracy: at each evaluated step, we compute the across-run mean and standard devia-tion, then select the step with the highest across-run mean. Parenthesized step numbers in ablation tables denote the selected rollout step. Table 7 reports the MATH500 checkpoint choices for the main SDAR comparison and, for TOPD and Trac-eRL, the rollout-step contrast used in the compute-to-accuracy calculation. 
+
+C.6 Response Length Analysis 
+
+We additionally track generated response length for the SDAR-4B-Chat + TOPD runs to check whether TOPD’s accuracy gains are accompanied by a large change in output budget. Figure 7 plots the MATH500 average response length over the three SDAR TOPD runs used in the on-policy ab-lation, with shaded regions showing ±1 standard deviation across runs. Response length rises dur-ing the first few rollout rounds and then stays in a narrow range under both static and dynamic decod-ing, suggesting that the main MATH500 improve-ments are not driven by an uncontrolled expansion of generated answers. Table 8 reports the average response length for the SDAR TOPD checkpoint used in Table 1. Figure 7: Average response length on MATH500 for SDAR-4B-Chat + TOPD across three runs. Curves re-port the across-run mean, and shaded regions show ±1
+
+standard deviation. Table 8: Average response length of SDAR-4B-Chat + TOPD corresponding to Table 1.                 
+
+> Benchmark Static Acc. Static Len. Dynamic Acc. Dynamic Len.
+> MATH500 75.9 628.8 71.9 620.2 AIME2024 9.3 1151.5 8.7 1060.7 GSM8K 92.2 313.8 89.3 309.9
+
+C.7 Additional Ablation Diagnostics 
+
+This subsection provides an additional diagnostic view of the state-source ablation in Section 4.4. All experiments use SDAR-4B-Chat as the stu-dent, TraDo-8B-Instruct as the frozen teacher, MATH500 as the benchmark, and the same train-ing budget as the main SDAR setting. 
+
+Derived diagnostics for the state-source abla-tion. Figure 8 analyzes the same on-policy, off-policy, and Semi-AR SFT runs using two derived quantities rather than another copy of the learning curves. First, the static–dynamic gap shows that TOPD keeps the two evaluation schedules closer than Semi-AR SFT for most of training, indicat-ing that trace-aligned on-policy supervision im-proves the sampled states. Second, the accuracy– length scatter shows that TOPD reaches the best operating region without moving to systematically longer responses: its high-accuracy static points cluster around the same response lengths as off-policy distillation, while Semi-AR SFT often pro-duces longer responses without matching TOPD’s dynamic accuracy. These diagnostics support the interpretation that TOPD’s gains come from better state-matched supervision, not from a larger gen-eration budget or a decoding-specific artifact. 
+
+D Case Study 
+
+We include three representative MATH500 gener-ations from the SDAR-4B-Chat TOPD checkpoint at step 30 under static decoding. The first two are correct solutions that illustrate the model’s ability to sustain multi-step, calculation-grounded reason-ing over long trajectories. The third is a character-istic failure showing how a coherent-looking solu-tion can go wrong through an early algebraic slip. 
+
+Case 1: Coin Redistribution (MATH500 #50) 
+
+Problem. You have seven bags of gold coins. Each bag has the same number of gold coins. One day, you find a bag of 53 coins. You decide to redistribute the number of coins you have so that all eight bags you hold have the same number of coins. You suc-cessfully manage to redistribute all the coins, and you also note that you have more than 200 coins. What is the smallest number of coins you could have had before finding the bag of 53 coins? 
+
+TOPD output (correct, 203). 
+
+Let the number of coins in each of the original seven bags be x, so the total is 7x. After finding the bag of 53 coins, the total becomes 7x + 53 . After redistri-bution into eight equal bags, let each bag contain y
+
+coins: 
+
+8y = 7 x + 53 
+
+We also know the total exceeds 200: 8y > 200 , so 
+
+y > 25 . Since y is integer, y ≥ 26 .Substituting y = 26 : 208 = 7 x + 53 ⇒ 155 = 7x ⇒ x = 155 /7̸ ∈ Z.Continuing the search: 
+
+y = 27 : 8 ·27 = 7 x+53 = ⇒ 163 /7 /∈ Z
+
+y = 28 : 8 ·28 = 7 x+53 = ⇒ 171 /7 /∈ Z
+
+y = 29 : 8 ·29 = 7 x+53 = ⇒ 179 /7 /∈ Z
+
+y = 30 : 8 ·30 = 7 x+53 = ⇒ 187 /7 /∈ Z
+
+y = 31 : 8 ·31 = 7 x+53 = ⇒ 195 /7 /∈ Z
+
+y = 32 : 8 ·32 = 7 x+53 = ⇒ 203 /7 = 29 ∈ Z.
+
+The first integer solution is x = 29 , giving the origi-nal total 7x = 203 . Hence 203 .
+
+Case 2: Unfair Die Probability (MATH500 #475) 
+
+Problem. When rolling a certain unfair six-sided die with faces numbered 1, 2, 3, 4, 5, and 6, the proba-bility of obtaining face F is greater than 1/6, the probability of obtaining the face opposite face F is less than 1/6, the probability of obtaining each of the other faces is 1/6, and the sum of the numbers on each pair of opposite faces is 7. When two such dice are rolled, the probability of obtaining a sum of 7 is 47 288 . Given that the probability of obtaining face F is m/n , where m and n are relatively prime positive integers, find m + n.
+
+TOPD output (correct, 29). Figure 8: Derived diagnostics for the MATH500 state-source ablation. Left: the static–dynamic accuracy gap over training, where smaller gaps indicate less sensitivity to the evaluation remasking schedule. Right: accuracy–length operating points for all evaluation steps with response-length logs; filled markers denote static decoding and open markers denote dynamic decoding. 
+
+Let p = P (F ) and q = P (face opposite F ).The four remaining faces each have probability 1/6.Since total probability sums to 1: 
+
+p + q + 4 · 16 = 1 = ⇒ p + q = 13 .
+
+The opposite-face pairs are (1 , 6) , (2 , 5) , (3 , 4) .Without loss of generality assume F = 1, so 
+
+P (1) = p and P (6) = q, while P (2) = P (3) = 
+
+P (4) = P (5) = 1 /6.The probability of rolling sum 7 with two dice comes from six ordered pairs: 
+
+(1 , 6) , (6 , 1) , (2 , 5) , (5 , 2) , (3 , 4) , (4 , 3) . Therefore: 
+
+P (sum = 7) = 2 pq + 236 + 236 = 2 (pq + 118 
+
+).
+
+Given P (sum = 7) = 47 /288 :
+
+2(pq + 118 
+
+) = 47 288 
+
+⇒ pq + 118 = 47 576 
+
+⇒ pq = 47 576 − 32 576 = 15 576 = 5192 .
+
+We now have the system p + q = 1 /3 and pq =5/192 . Solving the quadratic t2 − 13 t + 5192 = 0 :
+
+192 t2 − 64 t + 5 = 0 
+
+t = 64 ± √64 2 − 4 · 192 · 52 · 192 = 64 ± 16 384 = 524 or 18 .
+
+Since p > 1/6, we have p = 5 /24 and q = 1 /8.Thus m = 5 , n = 24 , and m + n = 29 . Hence 
+
+29 .
+
+Case 3 (Failure): Parallelogram Area (MATH500 #239) 
+
+Problem. The parallelogram bounded by y = ax +
+
+c, y = ax + d, y = bx + c, y = bx + d has area 18. The parallelogram bounded by y = ax + c, y =
+
+ax − d, y = bx + c, y = bx − d has area 72. Given that a, b, c, d are positive integers, find the smallest possible value of a + b + c + d.
+
+TOPD output (incorrect; predicts 20, ground truth is 16 ). 
+
+To solve the problem, we start by analyzing the given parallelograms and their areas. The first parallelo-gram is bounded by the lines y = ax +c, y = ax +d,
+
+y = bx + c, and y = bx + d. The second parallelo-gram is bounded by the lines y = ax +c, y = ax −d,
+
+y = bx + c, and y = bx − d.
+
+Step 1: Determine the vertices. For the first parallelogram: • ax + c = bx + c ⇒ x = 0 , giving (0 , c ).• ax + d = bx + d ⇒ x = 0 , giving (0 , d ).• ax + c = bx + d ⇒ x = d−ca−b , yielding 
+
+( d−ca−b , ad −bc a−b
+
+).• ax + d = bx + c ⇒ x = c−da−b , yielding 
+
+( c−da−b , bc −ad a−b
+
+).For the second parallelogram: • ax + c = ax − d ⇒ x = −d/c , giving 
+
+(−d/c, c − d).• bx + c = bx − d ⇒ x = −d/c , giving 
+
+(−d/c, c − d).• ax + c = bx − d ⇒ x = c+da−b , yielding 
+
+( c+da−b , ac −bd a−b
+
+).• ax − d = bx + c ⇒ x = c+da−b , yielding 
+
+( c+da−b , bc −ad a−b
+
+).Step 2: Calculate the areas. For the first parallelogram, the distance between y = ax + c and                                              
+
+> y=ax +dis |d−c|, and between y=bx +cand
+> y=bx +dis also |d−c|. The area is
+> |d−c|√1 + a2·|d−c|√1 + b2=(d−c)2
+> √(1 + a2)(1 + b2) = 18 .
+> For the second parallelogram, each distance is 2d,giving
+> 2d
+> √1 + a2·2d
+> √1 + b2=4d2
+> √(1 + a2)(1 + b2) = 72 .
+
+Step 3: Solve. Divide the second equation by the first:                                                                             
+
+> 4d2
+> (d−c)2= 4 = ⇒d2= ( d−c)2
+> =⇒d=d−cor d=−(d−c).
+> Since dand care positive, d=d−cis impossible, so d=−(d−c)⇒2d=c⇒c= 2 d.Substituting c= 2 dback:
+> d2
+> √(1 + a2)(1 + b2) = 18 .
+> Squaring both sides:
+> d4= 324 (1 + a2)(1 + b2).
+> Testing small values: d= 3 gives (1+ a2)(1+ b2) = 1/4, impossible. For d= 6 :64= 1296 , so (1 +
+> a2)(1 + b2) = 4 , satisfied by (a, b ) = (1 ,1) . With
+> c= 2 d= 12 , we take a=b= 1 and compute
+> a+b+c+d= 1 + 1 + 12 + 6 = 20 .Hence 20 .
+
+The failure case above (Case 3) illustrates the dominant error pattern we observed when inspect-ing incorrect TOPD generations: the model fol-lows the requested step-by-step style, produces a boxed final answer, and the solution appears struc-turally sound—yet an early algebraic or arithmetic slip propagates unchecked through the derivation. Across the broader set of incorrect solutions, the most common failures are not formatting failures but local reasoning slips inside otherwise coherent solutions : carrying an algebraic sign incorrectly, simplifying a fraction or exponent expression too early, mishandling a geometric constraint, or se-lecting a plausible intermediate result as the final answer before verifying it against the problem’s exact requested quantity. These failure modes are consistent with the ag-gregate results: TOPD improves the student’s rea-soning trajectory distribution, but it does not add an external verifier or symbolic correction mech-anism. This observation motivates a natural ex-tension: because TOPD already supplies dense teacher feedback on trace-aligned decisions, it could be combined with answer verification or process-level consistency checks—the teacher dis-tribution would shape local denoising decisions, while a verifier would reject globally inconsistent solutions. We leave this combination to future work. 
+
+E Trace Mechanism: Progressive Denoising Visualization 
+
+The following examples make trace-aligned super-vision concrete. Each trajectory is drawn from MATH training data and decoded with block dif-fusion using block size B=4 and K=4 denois-ing steps per block. Within a block, positions are progressively revealed; positions that have not yet been produced are displayed as [M] . TOPD reconstructs these same partially denoised states for teacher evaluation, so the teacher supervises the student’s actual reveal order rather than a ran-domly corrupted final answer. 
+
+E.1 Trace 1: Quadratic Equation (567 tokens, 48 blocks, 189 steps)                                                                        
+
+> Trace 1: Within-Block Diffusion (Quadratic Equation)
+> Problem. Let pand qbe the two distinct solutions to (x−5)(2 x+ 9) = x2−13 x+ 40 .What is
+> (p+ 3)( q+ 3) ?Block 1 produces “ To solve the ” over steps 1–4. Blocks 2–4 are shown below with one column per block position; [M] marks a position that remains masked at that denoising substep.
+> Block 2 (steps 5–8):
+> D1: given [M] [M] [M] D2: given [M] $( [M] D3: given equation $( [M] D4: given equation $( x-5)(
+> Block 3 (steps 9–12):
+> D1: 2x+9 [M] [M] [M] D2: 2x+9 ) = x[M] [M] D3: 2x+9 ) = x2-1 [M] D4: 2x+9 ) = x2-1 3
+> Block 4 (steps 13–16):
+> D1: x+40 [M] [M] [M] D2: x+40 $, [M] [M] D3: x+40 $, we [M] D4: x+40 $, we first
+
+E.2 Trace 2: Diophantine Equation (880 tokens, 104 blocks, 413 steps)                                                                                
+
+> Trace 2: Within-Block Diffusion (Diophantine Equation)
+> Problem. Find the number of ordered triples
+> (x, y, z )of real numbers such that x4+y4+z4−
+> 4xyz =−1.Block 1 produces “ To solve the equation ” over steps 1–4. Blocks 2–4 use the same 4-column for-mat, showing that even within a short prefix the re-veal order can differ across positions.
+> Block 2 (steps 5–8):
+> D1:$[M] [M] [M] D2:$x4+[M] [M] D3:$x4+y4+[M] D4:$x4+y4+z4−
+> Block 3 (steps 9–12):
+> D1: 4xyz= [M] [M] [M] D2: 4xyz= −1[M] [M] D3: 4xyz= −1$[M] D4: 4xyz= −1$for
+> Block 4 (steps 13–16):
+> D1:[M] [M] of [M] D2:[M] number of [M] D3:the number of ordered D4:the number of ordered triples $(x,
+
+F Training Compute Accounting 
+
+This appendix gives the update-normalized model-compute accounting used in Section 4.5. The goal is not to predict wall-clock runtime, but to com-pare the dominant neural-model forward and back-ward work required by TOPD and the RL base-lines under the same rollout-round abstraction. We assume matched batch size, matched prompt bud-get, and the same effective trace-row length across methods, so common multiplicative factors are omitted. 
+
+FLOPs proxy. For a student model with Ns pa-rameters and effective trace-row length D, we use 
+
+Cfwd = 2 NsD, Cbwd = 4 NsD. (23) Thus one trainable forward–backward update costs 6NsD. Let Fs = 2 NsD denote one student forward-equivalent unit. A trainable student up-date costs 3Fs, and a frozen teacher forward costs 
+
+αF s, where α = Nt/N s. For the SDAR-4B exper-iments with an 8B teacher, α ≈ 2; for same-size teacher accounting, α = 1 .We use a full-model forward/backward proxy for all methods, including LoRA-based baselines. This keeps the comparison at the level of dominant model evaluations rather than trainable-parameter count or implementation-specific optimizer sav-ings. 
+
+Update-normalized costs. In the update-normalized proxy, response generation is counted as one student forward-equivalent unit per sam-pled response. This abstracts away the identical denoising schedule details and isolates the al-gorithmic difference in the number of sampled responses and update-side model passes. TOPD samples one response per prompt, queries the frozen teacher once, and performs one student update: 
+
+CTOPD = Fs + αF s + 3 Fs = (4 + α)Fs. (24) TraceRL samples G = 16 responses per prompt. Without a value model, each response requires re-sponse generation, old-log-probability recomputa-tion, and one policy update: 
+
+CRL -noV = G(Fs + Fs + 3 Fs) = 80 Fs. (25) Since the original TraceRL recipe uses a value model, we use the value-model setting as the main comparison. The no-value path is reported only as an auxiliary compute reference. With a value model trained every k rollout rounds, TraceRL ad-ditionally uses value inference and an amortized value update: 
+
+CRL -V(k) = G
+
+(
+
+Fs + Fs + Fs + 3 Fs + 3Fs
+
+k
+
+)
+
+= 16 
+
+(
+
+6 + 3
+
+k
+
+)
+
+Fs.
+
+(26) For the SDAR-4B comparison, the value model is trained every round ( k = 1 ), giving 
+
+CRL -V(1) = 144 Fs. (27) Therefore the per-round update-normalized re-ductions are 
+
+Sround ,noV (α) = 80 4 + α , (28) 
+
+Sround ,V(α, k ) = 16(6 + 3 /k )4 + α . (29) For the SDAR-4B comparison with α = 2 and 
+
+k = 1 , this gives 
+
+Sround ,V(2 , 1) = 144 6 = 24 .0 × . (30) With same-size teacher accounting, it gives 28 .8×.Table 9: Update-normalized per-round model-compute accounting for TraceRL versus TOPD. α = 1 counts the teacher as one same-size frozen forward; α = 2 
+
+charges the 8B teacher as twice the 4B student forward cost.                   
+
+> TraceRL setting TraceRL cost α= 1 α= 2
+> No value model 80 Fs16 .0×13 .3×
+> Value model, k= 2 120 Fs24 .0×20 .0×
+> Value model, k= 1 144 Fs28 .8×24 .0×
+
+Table 10: Estimated training speedups to reach com-parable MATH500 accuracy under parameter-scaled teacher accounting for the SDAR-4B comparison ( α =2, k = 1 ).       
+
+> Comparison point Step ratio Speedup
+> Static, TOPD step 30 vs. TraceRL step 120 4.0×96 .0×
+> Dynamic, TOPD step 30 vs. TraceRL step 120 4.0×96 .0×
+
+Compute to reach comparable MATH500 ac-curacy. The learning-curve comparison com-pounds the per-round reduction with the num-ber of rollout rounds needed to reach comparable MATH500 accuracy. TOPD reaches the compari-son point at step 30, while TraceRL reaches it at step 120, giving a 4.0× step ratio. For the value-model setting used in the SDAR-4B comparison, 
+
+24 .0 × 4.0 = 96 .0 × . (31) Under same-size teacher accounting, the corre-sponding estimate is 115 .2×; against the no-value TraceRL path, it is 53 .3×.
+
+ESPO versus TOPD on LLaDA. For the LLaDA comparison, we use a stricter rollout-round accounting so that ESPO and TOPD are compared under the same data-collection unit. ESPO reports a coupled-sampling FLOPs proxy in which one sampled response costs 
+
+(KESPO + 6 μM )Fs, (32) where KESPO is the number of diffusion sampling steps, μ is the number of policy updates per data-collection round, and M is the number of Monte Carlo ELBO samples. For the ESPO MATH set-ting, G = 16 , KESPO = 256 , μ = 8 , and M = 2 ,giving 
+
+CESPO = G(KESPO + 6 μM )Fs
+
+= 16(256 + 6 × 8 × 2) Fs = 5632 Fs.
+
+(33) TOPD-LLaDA samples one response per prompt with KTOPD = 512 diffusion steps, queries a 
+
+Table 11: Rollout-round model-compute accounting for LLaDA ESPO and TOPD. ESPO uses G = 16 ,
+
+KESPO = 256 , μ = 8 , and M = 2 ; TOPD-LLaDA uses KTOPD = 512 and a same-size frozen teacher.         
+
+> Method Dominant terms Cost
+> ESPO-LLaDA G(KESPO + 6 μM )Fs5632 Fs
+> TOPD-LLaDA rollout + teacher forward + student update 516 Fs
+
+same-size frozen teacher, and performs one stu-dent update: 
+
+CTOPD = ( KTOPD + α + 3) Fs
+
+= (512 + 1 + 3) Fs = 516 Fs. (34) The resulting rollout-round model-compute speedup is 
+
+Sround ,ESPO /TOPD = 5632 516 = 10 .9 × . (35) For the LLaDA comparison, ESPO is trained for 3K policy-update steps under its official recipe. Since ESPO uses μ = 8 policy updates per data-collection round, this corresponds to 3000 /8 = 375 rollout rounds. TOPD-LLaDA selects the step-8 checkpoint from a 30-round training run, giving a rollout-step ratio of 375 /8 = 46 .875 .Combining this with the unrounded per-round ra-tio gives 
+
+5632 516 × 46 .875 = 511 .6 × . (36) We therefore report 10 .9× per-round and 511 .6×
+
+to-accuracy model-compute speedups for the LLaDA comparison. This same-size teacher ac-counting differs from the SDAR setting, where the teacher is larger than the student; for LLaDA, the teacher is the student’s ESPO-trained counterpart. 
+
+Interpretation. These estimates are theoretical model-compute comparisons, not measured wall-clock speedups. They intentionally abstract away implementation details such as cached generation, synchronization, model placement, rollout filter-ing, and dataloader overhead. The measured GPU-hour results in Section F therefore provide a com-plementary end-to-end runtime view. 
+
+Measured GPU-hour comparison and gap anal-ysis. Table 12 reports empirical GPU-hour mea-surements from the SDAR-4B comparison on 4×A100-80G GPUs. TraceRL with a value model (G=16 , k=1 ) consumes approximately 1.9–2.0 Table 12: Measured GPU-hour comparison between TOPD and TraceRL+V on SDAR-4B using 4 ×A100-80G GPUs. “To comparable acc.” denotes GPU-hours to reach the accuracy points in Section 4.5.             
+
+> Metric TraceRL+V TOPD
+> GPU-hours per rollout round 1.9–2.0 0.53–0.80 GPU-hours per 10 rounds 19–20 5.3–8.0 Wall clock per round (4 GPUs) ∼29 min ∼8–12 min GPU-hours to comparable static acc. (75.5–75.9%) 228–240 16–24 GPU-hours to comparable dynamic acc. (71.9%) 228–240 16–24
+
+GPU-hours per rollout round, while TOPD con-sumes 0.53–0.80 GPU-hours per round. Com-bined with the faster convergence of TOPD, 30 versus 120 rollout rounds to reach comparable MATH500 accuracy, this yields a measured end-to-end speedup of 10 –15 ×.The measured speedup is lower than the theoretical to-accuracy estimate of 96 .0× be-cause the model-compute proxy abstracts away implementation-dependent costs. In practice, cached denoising forwards, full-sequence training forwards, model placement, synchronization, and pipeline overhead have different runtime profiles. TraceRL also updates only on prompt groups that contain both correct and incorrect responses, so not every sampled prompt contributes a policy-gradient update. These factors reduce the real-ized per-round ratio, but the measured GPU-hour results still show that TOPD reaches comparable MATH500 accuracy with substantially less end-to-end training compute.
