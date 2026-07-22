@@ -1,0 +1,423 @@
+Title: Retain or Consolidate? Budget-Dependent Operator Selection for Language Agent Memory
+
+URL Source: https://arxiv.org/pdf/2607.17545v2
+
+Published Time: Wed, 22 Jul 2026 00:24:03 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Retain or Consolidate? Budget-Dependent Operator Selection for Language Agent Memory 
+
+Qingcan Kang 1∗, Mingyang Liu 2∗, Shixiong Kai 1, Kaichao Liang 1,Zhentao Tang 1, Yuqi Cui 1, Tao Zhong 1, Mingxuan Yuan 1†
+
+> 1
+
+Huawei Noah’s Ark Lab 
+
+> 2
+
+Department of Computer Science, City University of Hong Kong 
+
+{kangqingcan, kaishixiong, liangkaichao, tangzhentao1}@huawei.com {cuiyuqi1, zhongtao5, Yuan.Mingxuan}@huawei.com mingyaliu8-c@my.cityu.edu.hk 
+
+> ∗
+
+Equal contribution. †Corresponding author. 
+
+Abstract 
+
+Memory allows language agents to draw on information from past interactions to support future reasoning and action. How-ever, the finite context windows and inference costs of large language models (LLMs) limit how much stored information can be used. Existing agent systems primarily address this challenge through two memory-management strategies: re-tention and consolidation. Retention preserves exact details in raw records but may exclude relevant evidence under tight budgets; consolidation improves evidence coverage through compression but risks losing query-critical details. Neither strategy is universally preferable. This raises two coupled questions: when should consolidation replace retention, and 
+
+which operator— Merge , Abstract , or Rewrite —should be used? We formalize the joint decision by decomposing each consolidation operator’s value into a coverage effect on evi-dence omitted by retention and a signed replacement effect from replacing raw evidence that already fits. This balance explains why the preferred action changes with relative bud-get pressure. We operationalize the mechanism with Offline Abstraction-Safety (OAS), a lightweight learner that estimates action utilities from pre-generation features and uses held-out harm calibration to limit harmful replacements. Experiments on the public LongMemEval and LoCoMo benchmarks reveal a consistent budget-dependent pattern. On LongMemEval, consolidation improves accuracy by up to 48 percentage points under tight budgets, whereas retention is preferable under loose budgets, when most relevant raw evidence can be re-tained in full. LoCoMo reproduces this crossover at a smaller absolute budget, consistent with its shorter evidence. These results suggest that the choice between retention and consol-idation depends on evidence length relative to the available budget, rather than on a fixed token threshold. Across both benchmarks, cross-note Abstract and Merge generally out-perform local Rewrite when compression is necessary. 
+
+## Introduction 
+
+Language agents built on large language models (LLMs) often operate beyond a single prompt. They accumulate ob-servations, dialogue, and retrieved facts to support later deci-sions, but this history cannot grow without consequence. An LLM has a finite context window, and longer inputs also in-crease inference cost and latency before that limit is reached; relevant evidence can also be used unreliably within long contexts (Liu et al. 2024). A token budget is therefore a practical deployment constraint. The memory system must fit useful evidence into that budget without unnecessarily degrading the answer. Existing systems commonly manage this constraint through two strategies: memory retention and memory con-solidation . Retention selects raw records and leaves their contents unchanged. It preserves exact wording, provenance, timestamps, and corrections, but uses tokens inefficiently when evidence is redundant or distributed; under a tight budget, a relevant record may not fit. Prior systems mix raw-record storage with hierarchy, forgetting, summarization, or reflection (Packer et al. 2023; Zhong et al. 2024; Park et al. 2023). Kang et al. (2026) further formulate long-horizon retention as constrained stochastic optimization and learn which raw notes to preserve under delayed miss, reacquisi-tion, and staleness costs. Consolidation instead generates a compact replacement for one or more records. Summariz-ing, merging, or rewriting can remove redundancy and in-crease evidence coverage per token, but generation may omit a decisive detail, blur temporal order, discard a correction, or introduce unsupported content. Mem0 and A-MEM gen-erate structured memories, while RecMem and TrustMem study recurrence-triggered consolidation and reliable transi-tions (Chhikara et al. 2025; Xu et al. 2025; Dai et al. 2026; Yang et al. 2026). These research lines establish both strategies, but they do not resolve their joint decision. Retention research asks which original records to keep, whereas consolidation re-search largely asks how to construct compact memories. It remains unclear when generated compression should replace raw evidence and which consolidation operator should be used. The answer depends on budget pressure. If relevant raw evidence does not fit, consolidation may recover otherwise omitted information. If that evidence already fits, replacing it may sacrifice exact details without adding useful coverage. This tradeoff motivates our central questions: when should an agent consolidate, and which operator— Merge , Abstract ,or Rewrite —should it choose? We isolate this comparison by holding the query, candidate evidence, retriever, answer model, and answer-time budget fixed while changing only the memory representation. arXiv:2607.17545v2 [cs.AI] 21 Jul 2026 We formulate retention and the three consolidation oper-ators as a finite, budget-dependent action set. Each action has a well-defined conditional expected answer utility. The optimal action would be obtained by comparing these four utilities, but the utilities of unexecuted actions are counter-factual and hence unavailable at deployment; the obstacle is missing utility information, not a difficult combinatorial solver. To explain how the preferred action changes, we intro-duce an idealized mechanism model that decomposes each operator’s value into two terms: a coverage effect on evidence omitted by retention and a signed replacement effect on raw evidence that already fits. Their balance changes with relative budget pressure and determines both when consolidation is beneficial and which operator provides the greatest expected utility. We operationalize this formulation with Offline Abstraction-Safety (OAS), a lightweight multi-action utility learner. OAS estimates the unavailable action utilities from features observed before generation, including budget scale, evidence-fit pressure, cluster geometry, and query type, and then applies a plug-in maximizer. A held-out safety thresh-old limits harmful replacements. Linear regression is the primary estimator because the available supervision favors a low-capacity model. A multilayer perceptron (MLP) serves as a nonlinear capacity control, testing whether ridge regres-sion underfits the action-utility relationship. This design uses learning where it is needed: to estimate counterfactual utili-ties rather than to obscure a simple finite-action optimization. Experiments on the public LongMemEval and LoCoMo benchmarks support this account. On LongMemEval, con-solidation improves absolute accuracy over retention by as much as 48% under tight budgets, whereas retention leads every consolidation operator by 8% –11% once the raw ev-idence largely fits. A second answer model reproduces this reversal. LoCoMo exhibits the same pattern, but its crossover occurs at a smaller absolute budget because its evidence is shorter. This result supports relative budget pressure rather than a universal token threshold. Operator comparisons ad-dress the which question: cross-note Abstract and Merge 
+
+are generally more effective than local Rewrite under com-pression, although neither cross-note operator dominates in every setting. OAS improves the controlled when–which de-cision under budget-stressed conditions. Its separately eval-uated full-history variant does not surpass the strongest fixed policy, which bounds our claim: the experiments validate the budget-dependent mechanism more strongly than general-purpose instance-level routing. Our contributions are as follows. 
+
+• A unified when–which formulation. We place reten-tion and three generative consolidation operators in the same decision space with signed, budget-dependent util-ity, making the decision of whether and how to consoli-date explicit in the problem formulation. 
+
+• A testable budget-dependent mechanism. An idealized surrogate decomposes consolidation value into a signed coverage effect and a replacement effect. Experiments on public benchmarks identify the predicted reversal and show that operator choice depends on budget pressure 
+
+Figure 1: OAS workflow for deciding when to consolidate and which operator to use. From pre-generation features, OAS estimates retention and three consolidation utilities. It consolidates when the best predicted gain exceeds a margin— zero for Direct OAS and calibrated on held-out questions for Calibrated OAS—and otherwise retains ( when ); it then applies the highest-utility generative operator ( which ). and evidence structure in the mechanism analysis and experiments. 
+
+• A lightweight learner that operationalizes the for-mulation. OAS learns multi-action utility from pre-generation features and uses held-out harm calibration. Controlled and independent evaluations distinguish suc-cessful budget-aware selection from the present boundary of transferable routing as detailed in the methodology and supplementary material. 
+
+## Related Work 
+
+Agent memory systems and consolidation. Surveys of agent memory review representations, evaluation, and oper-ations such as consolidation, forgetting, retrieval, and com-pression (Zhang et al. 2024; Du et al. 2025). Existing systems combine storage and retrieval with hierarchy, reflection, sum-marization, or structured updates (Packer et al. 2023; Zhong et al. 2024; Park et al. 2023). More recent work studies con-solidation, linked notes, recurrence-based triggers, or transi-tion verification (Chhikara et al. 2025; Xu et al. 2025; Dai et al. 2026; Yang et al. 2026). These systems design pipelines or individual operators. We instead hold the query, evidence, and answer-time budget fixed to isolate when transformation is beneficial and which operator should perform it. 
+
+Retrieved-context and prompt compression. RECOMP learns extractive and abstractive compressors, while LLM-Lingua controls prompt length through token-level compres-sion (Xu, Shi, and Choi 2024; Jiang et al. 2023). Our inter-vention instead replaces episodic evidence with a generated memory and compares retention with multiple semantic op-erators on matched instances. The objective is answer utility, not compression rate: it determines when to transform mem-ory and which transformation to select. 
+
+Conversational-memory benchmarks. LongMemEval tests five memory abilities, including temporal reasoning and knowledge updates; LoCoMo evaluates long-session ques-tion answering, event summarization, and multimodal dia-logue generation (Wu et al. 2025; Maharana et al. 2024). Exact details matter for some questions, whereas distributed evidence creates compression pressure, making both bench-marks natural tests of our when–which mechanism. 
+
+Selectional versus generative memory. Kang et al. (2026) formulate long-horizon retention as constrained sequential optimization and learn which unaltered notes to keep. Our complementary decision asks whether identified evidence should remain raw or be replaced by a generated record. Classical budgeted selection has approximation guarantees under fixed coverage or submodular objectives (Nemhauser, Wolsey, and Fisher 1978; Khuller, Moss, and Naor 1999), but generation can either improve coverage or reduce fidelity. We model this signed tradeoff with operator-specific utili-ties and learn the resulting finite-action decision, following the broader learning-assisted-algorithms principle (Mitzen-macher and Vassilvitskii 2021). 
+
+## Methodology 
+
+We formalize memory consolidation as a one-step query-time decision under a token budget imposed by context ca-pacity or deployment cost. The objective is to use the avail-able context efficiently while maintaining answer utility. We formalize why consolidation can either improve or reduce answer utility, and then learn a lightweight utility router that decides when to consolidate and which operator to apply from features available before generation. The presentation has three steps: we first define the four-action decision, then derive an idealized mechanism for its budget dependence, and finally describe how OAS learns the decision from of-fline outcomes without observing generated records at test time. 
+
+Problem Formulation 
+
+Memory, budget, and retrieval. Let M = {mi}Ni=1 be an agent memory whose notes contain text, metadata, and embeddings ei. A retriever RB maps a query q and a mem-ory state to an ordered subset S = RB (q, M ) whose token cost obeys the context budget B; that is, the total cost of the selected notes does not exceed the budget. The budget may reflect the model’s context-window limit or a smaller oper-ating limit chosen to control inference cost and latency. An answer model then produces a response from (q, S ), which a fixed judge grades against the reference answer to obtain the binary utility u(q, S ) ∈ { 0, 1}. Within each paired com-parison, retriever, answerer, grader, and budget are fixed, so only the memory representation changes. 
+
+Generative consolidation operators. For a candidate ev-idence cluster C ⊆ M , the agent may apply a generative op-erator that emits a budget-targeted representation ˜mo,B (C)
+
+not present among the raw records. The generative family is Ogen = {Merge , Abstract , Rewrite }. Merge consol-idates several notes into one compact factual record, Ab-stract synthesizes a higher-level note across its inputs, and 
+
+Rewrite reformulates each note independently before pack-ing the rewritten notes under the same budget. For nota-tion, the packed Rewrite output is treated as one representa-tion ˜mo,B (C) while preserving its internal note boundaries. These are distinct from selectional operators that retain, dis-card, or re-index existing raw content. Each generative opera-tor in our study replaces the packed constituents in the answer context (freeing budget), yielding a post-consolidation state versus the retain-as-is state M .All three operators can change both coverage and fidelity, so each requires a selection decision. We write TC,o,B (M )
+
+for replacing cluster C with the representation generated by operator o ∈ O gen . The controlled experiment studies a 
+
+query-time packing decision: after a query identifies a can-didate evidence cluster but before a compact record is gener-ated, the policy chooses retention or one generative operator. This scope makes query type observable and does not claim to solve query-agnostic background consolidation. We ana-lyze one query–cluster decision at a time; interactions among repeated memory updates are outside the present guarantee. 
+
+Definition 1 (Consolidation gain) . For a memory state M ,candidate cluster C, query q, budget B, and operator o, the realized paired consolidation gain is 
+
+∆o(z) = uo(z) − uret (z),uo(z) = u(q, R B (q, T C,o,B (M ))) . (1) 
+
+the change in graded answer utility from consolidating C
+
+rather than retaining it, under the same retriever, budget, answerer, and grader. This is a paired run-level quantity and therefore takes values minus one, zero, or one. Generation, answering, and grading randomness are averaged when we define expected action utilities below. 
+
+The decision problem. A packing policy π maps an observable instance z = (M, C, q, B ) to an action in 
+
+A = {ret } ∪ O gen . Let uret (z) = u(q, R B (q, M )) and 
+
+uo(z) = u(q, R B (q, T C,o,B (M ))) for a generative action 
+
+o. The value of a policy is simply the expected utility of its selected action, where the expectation covers instances, generation, answering, and grading: 
+
+V (π) = Euπ(z)(z). (2) Let πret denote the fixed policy that always retains the raw records. 
+
+Well-definedness and scope. For each instance, the candi-date cluster C is supplied by an upstream retriever or evidence selector and is treated as fixed by the packing decision. Ev-ery action produces a context whose token cost is at most B:retention packs complete raw records, while each generated representation is capped at the same budget. The realized action utilities are bounded binary random variables, so ev-ery conditional mean μa(z) below exists. Because the action set is finite, at least one utility-maximizing action always exists; ties are resolved toward retention. The formulation therefore defines a valid one-step decision for any supplied 
+
+(M, C, q, B ). It deliberately does not optimize candidate dis-covery or repeated memory updates, which are upstream and sequential extensions, respectively. 
+
+The joint “when” and “which” decision. Let μa(z) = 
+
+E[ua(z) | z] denote the conditional utility of action a ∈ A ,and define the best generative advantage 
+
+Γ( z) = max 
+
+> o∈O gen
+
+μo(z) − μret (z),o⋆(z) ∈ arg max 
+
+> o∈O gen
+
+μo(z). (3) The two questions are therefore one decision: when means consolidating when Γ( z) is positive (or exceeds a safety mar-gin), and which means applying o⋆(z) when consolidation is selected. This formulation does not assume that an opera-tor has a fixed global rank: both comparisons depend on the query, candidate cluster, and budget contained in z. OAS below estimates these action utilities from pre-generation features. Equivalently, with ties resolved toward retention, the optimal action is 
+
+a⋆(z) = 
+
+ret , if Γ( z) ≤ 0,o⋆(z), if Γ( z) > 0. (4) 
+
+Why learning is required. If all four conditional utili-ties {μa(z) : a ∈ A} were known, the problem would be solved exactly by comparing four numbers; no general-purpose solver would be required. The deployment difficulty is statistical rather than combinatorial. Before a decision, the generated records do not yet exist, and their answer utilities are counterfactual and unknown; reference-based correct-ness is also unavailable in normal deployment. Generating and scoring every alternative would defeat low-cost rout-ing, and a numerical solver cannot recover missing objective values. We therefore evaluate all actions offline, learn their utilities from pre-generation features, and use the estimates in the same four-action maximization at deployment. OAS approximates the unknown objective, not a computationally difficult argmax. 
+
+An Idealized Mechanism for Budget Dependence 
+
+We use a deliberately simplified proxy utility to isolate two effects of replacing raw memories with a generated record. Here, surrogate means an analyzable mechanism model: it is designed to explain the direction of the observed accuracy change, but is not assumed to equal the LLM-judged accu-racy u in Definition 1. The construction applies separately to every generative operator; we omit the operator subscript temporarily for readability. This model describes the average budget effect over a query population. The instance-level de-cision remains the conditional-utility problem in Eq. (3) and is learned by OAS below. Let Q denote the set of possible queries and let q ∼ F
+
+denote a query drawn from the evaluation distribution. The query is the only random variable in this surrogate; the mem-ory set, budget, retriever, and generated record are held fixed. The distribution F represents how frequently queries occur; 
+
+Pr F and EF denote probability and expectation under F . We do not fit a parametric density: in our benchmark analysis, 
+
+F is the uniform empirical distribution over evaluation ques-tions, so probabilities are question fractions and expectations are question averages. For any note m and query it supports, the signed fidelity φm(q) ∈ [−1, 1] represents whether the note provides accurate evidence or misleading evidence: pos-itive values denote correct support, negative values denote misleading support, and zero denotes no contribution. In this deliberately simplified model, sB (q, M ) is the signed fidelity contributed by the highest-ranked applicable note retrieved from memory state M under budget B; it is zero if no re-trieved note supports the query. We define the proxy utility as the expected contribution 
+
+UB (M ) = EF [sB (q, M )] . (5) This expectation is well defined because sB is bounded be-tween minus one and one. On a finite benchmark, it is simply the average contribution across queries. For the fixed budget under analysis, let HB ⊆ Q be the queries supported by the generated record ˜mB , and assume that HB has positive probability under F . Let GB ⊆ Q 
+
+be the raw-grounded region: the queries for which retention retrieves an applicable constituent of C. Define XB = HB \
+
+GB as the queries supported by the generated record but missed by retention. Under nested raw packing, increasing the budget can only enlarge GB ; the generated coverage HB
+
+may also vary with the target budget. 
+
+Assumption 1 (Localized retrieval change) . Replacing C
+
+by ˜mB leaves the retrieved contribution unchanged outside 
+
+HB ; on XB retention contributes zero and consolidation retrieves ˜mB . Within HB ∩ GB , let JB be the replacement region on which retrieval changes from an incumbent raw note mraw (q) to ˜mB .
+
+This assumption localizes the intervention: replacing C
+
+may change evidence only for queries supported by the gen-erated record. It is used solely to obtain the exact two-term decomposition in Proposition 1; OAS and the empirical com-parisons do not require it. The assumption is restrictive be-cause it excludes retrieval or packing spillovers outside HB .Without it, the utility change contains an additional residual spillover term. 
+
+Proposition 1 (Operator-indexed budget decomposition) .
+
+For each o ∈ O gen , let HB,o be the queries supported by 
+
+˜mo,B , let XB,o = HB,o \ GB , and let JB,o ⊆ HB,o ∩ GB
+
+be its replacement region. Under Assumption 1, the opera-tor’s surrogate-utility change ∆UB,o = UB (TC,o,B (M )) −UB (M ) is 
+
+∆UB,o = CB,o + RB,o ,CB,o = Pr  
+
+> F
+
+(q ∈ XB,o ) EF [φ ˜mo,B (q) | q ∈ XB,o ],RB,o = Pr  
+
+> F
+
+(q ∈ JB,o ) EF [φ ˜mo,B (q)
+
+− φmraw (q)(q) | q ∈ JB,o ].
+
+(6) 
+
+Here CB,o and RB,o are the coverage and replacement ef-fects, respectively. Each term is defined as zero when its conditioning event has probability zero. The coverage effect is positive when XB,o has positive probability and the gener-ated record has positive mean fidelity there. The replacement effect is nonpositive if the generated record has no greater fidelity than the incumbent raw record throughout JB,o .
+
+The proof partitions queries into XB,o , JB,o , and the un-changed remainder and then takes expectations; full details are in the supplementary material. Proposition 1 gives the value of each generative action separately. The next result converts these operator-indexed gains into the joint when –which decision. 
+
+Proposition 2 (Joint rule for when and which) . Let ∆UB,o 
+
+be the operator-specific value from Proposition 1. For a fixed cluster, budget, and query distribution, assign retention gain zero and let o⋆ ∈ arg max o∈O gen ∆UB,o . The optimal sur-rogate action is retention when ∆UB,o ⋆ ≤ 0, and o⋆ other-wise. Therefore, when asks whether the best consolidation operator improves over retention, whereas which selects the operator with the largest positive gain. A zero-gain tie is re-solved toward retention; ties among positive-gain operators may be resolved arbitrarily. 
+
+The result follows by comparing the three operator gains with retention’s zero gain; a formal proof is provided in the supplementary material. 
+
+Interpretation and falsifiable implications. Equation (6) does not guarantee a crossover. As B decreases, GB shrinks; consolidation helps only when its coverage effect outweighs any negative replacement effect. It also predicts that harm should concentrate where compression reduces fidelity, such as timestamps, corrections, and entity bindings. The experi-ments test these directional implications but do not identify the latent fidelity functions or equate the surrogate with LLM answer accuracy. Which named operator has the largest gain remains an empirical question. 
+
+Offline Abstraction-Safety Learning 
+
+The mechanism indicates that the optimal decision de-pends on unobservable quantities (the true fidelity of a not-yet-generated compact record). Offline Abstraction-Safety (OAS) makes the decision learnable by recovering supervi-sion in hindsight and fitting a lightweight router that acts on features available before generation. 
+
+Labeling. For each training instance z = ( M, C, q, B ),we evaluate retention and every generative action under the same retriever, budget, answer model, and grader. This pro-duces action utilities ua(z), paired gains from Eq. (1), and a harm event when a generated action has lower utility than re-tention. These outcomes are not semantic ground truth; they are system-specific supervision aligned with the downstream answer metric. They are observed only offline and are never used as test-time features. 
+
+Observability separation. The query and candidate ev-idence are observed, but the decision is made before the compact record is generated and its answer utility is known. OAS fits a utility router on pre-generation features and super-vises it with outcomes recovered offline. This is query-time adaptive packing, not query-agnostic memory maintenance. 
+
+Online-observable feature map. Each observed instance 
+
+z is represented by an 11-dimensional feature vector ψ(z) ∈
+
+R11 . Seven entries are scalar features: normalized bud-get B/ 512 , constituent count, token pressure (candidate-evidence cost divided by B), the budget-fit fraction fB (the share of candidate evidence packed by retention), the number of represented sessions, an inconsistency proxy measured by the mean squared distance of note embeddings from their cluster mean, and mean pairwise cosine similarity. The re-maining four entries form a one-hot encoding of the bench-mark query type. The constant 512 is used only to place the budget feature on a convenient numerical scale. In the controlled oracle-evidence protocol these are available be-fore generation; candidate-evidence cost and benchmark type would need to be estimated by a retriever and type classifier in an end-to-end deployment. 
+
+Direct utility router and hypothesis class. Rather than decompose the decision into a binary when-head and a sep-arately fitted operator heuristic, OAS directly predicts the utility of every action. For each a ∈ A , it fits a regularized linear response with parameter vector θa ∈ R11 and intercept 
+
+ba ∈ R:
+
+bμa(z) = ba + ⟨θa, ψ (z)⟩, (7) and deploys bπ(z) = arg max a∈A bμa(z). Thus “when” is the comparison with predicted retention utility and “which” is the largest predicted generated-action utility; both are learned from the same low-capacity model. 
+
+Utility regression. Offline paired evaluation supplies 
+
+ua,i ∈ [0 , 1] for action a on training instance i. We fit the four responses by ridge regression, 
+
+(bba, bθa) = arg min 
+
+> b,θ
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ ua,i − b − ⟨ θ, ψ (zi)⟩2
+
++ λ∥θ∥22.
+
+(8) Here, n is the number of training instances and λ ≥ 0 is the regularization strength; the intercept is not penalized. The value of λ is selected by inner grouped cross-validation using training questions only, after which the utility functions are frozen. This direct objective respects effect magnitude and avoids treating abundant zero-gain ties as positive or negative classification examples. Accurate action-utility estimates are sufficient for accu-rate selection: if every predicted utility is within ϵ of its conditional target, plug-in maximization loses at most 2ϵ
+
+in conditional utility (see the supplementary material). This standard comparison does not require ridge regression to be correctly specified. We use the linear form as a regu-larized, data-efficient inductive bias, not as an assumption that the true decision boundary is linear. A one-hidden-layer MLP is evaluated under the same grouped protocol to test whether additional nonlinear capacity improves utility esti-mation. The experiments and supplementary material report that it does not improve reliably over ridge. 
+
+Risk-controlled operating threshold. Let o+(z) =arg max o∈O gen bμo(z) be the generated action with the high-est predicted utility, and define its predicted advantage 
+
+s(z) = bμo+(z)(z)− bμret (z). Given the frozen utility router, a separate operating threshold τsafe ,B is chosen for each budget on a held-out validation split. Candidate thresholds are the observed validation advantages, together with an abstain-all option. Calibration first restricts attention to thresholds whose empirical frequency of harmful generated selections satisfies a specified harm constraint, and then selects the threshold with the highest validation accuracy. We require zero observed harmful selections on the calibration split. The abstain-all option guarantees feasibility. The unconstrained router selects the action with the largest predicted utility; the calibrated variant selects o+(z) only when its predicted advantage reaches the budget-specific threshold. Otherwise, it retains the raw notes. Because the candidate thresholds form a nested acceptance family, calibration requires only a sweep over validation scores. Ties in validation accuracy are resolved toward the more conservative threshold. This is a conservative operating rule, not a population safety certifi-cate; the experiments therefore report realized help and harm on disjoint questions. 
+
+## Experiments 
+
+We evaluate every operator across all budgets on Long-MemEval and on a fixed, outcome-blind, evidence-length-stratified LoCoMo sample. The two datasets have different evidence-length distributions, allowing us to test whether the consolidation boundary follows observable budget pressure rather than a fixed token value. Our experiments answer three questions. (Q1) Does the value of consolidation reverse sign with the mem-ory budget? (Q2) Does the best generative operator (Merge /Abstract /Rewrite ) depend on the budget? (Q3) 
+
+Can a shared lightweight scorer learn the joint decision of 
+
+when to consolidate and which operator from pre-generation features alone? Q1 tests the budget-dependent sign predicted by Proposition 1; Q2 tests its operator-indexed comparison; a fit-stratified diagnostic probes the coverage and replace-ment effects; and Q3 evaluates the learned approximation to Eq. (3). 
+
+Setup. LongMemEval (Wu et al. 2025) is the primary benchmark. Its pool is split into fit, development, and test roles before modeling, and routing further separates utility fitting, threshold calibration, and testing by question. In the controlled evaluation, every action receives the same gold ev-idence and differs only in its budgeted representation. Reten-tion packs complete raw items, whereas Abstract , Merge ,and Rewrite produce the representations defined in the prob-lem formulation. This pairing isolates the when–which deci-sion from evidence discovery. LongMemEval uses budgets of 32, 64, 128, and 256 to-kens. A single evidence turn has a median cost of 59 tokens, while retention fully fits all required evidence for 1.3% , 9.3% ,
+
+52 .0% , and 85 .3% of the test questions at these budgets. We define budget regimes by this full-fit rate rather than by the absolute token value: 32 and 64 tokens are severely tight and tight, 128 tokens is the transition regime, and 256 tokens is loose. LoCoMo (Maharana et al. 2024) provides an outcome-blind, evidence-length-stratified replication with shorter evi-dence and correspondingly smaller budgets of 16, 32, 64, and 128 tokens. Every generated representation is deterministi-cally capped at its target budget. Full evidence distributions and implementation details are in the supplementary mate-rial. Answers are generated and graded with DeepSeek-V3.2 under a common prompt, with three paired realizations 
+
+Figure 2: The budget crossover across consolidation op-erators. Mean accuracy of retention, Abstract , Merge ,and Rewrite on the LongMemEval test partition with three label realizations. At 32 tokens, Abstract reaches 52 .0% 
+
+accuracy versus 4.0% for its paired retention baseline, an absolute gain of 48 .0% . Every consolidation operator leads retention in the tight regimes, and the advantage narrows in the 128-token transition regime. At the loose 256-token budget, retention exceeds every consolidation operator. Thus consolidation is favored when raw evidence does not fit, whereas retention is favored when most evidence already fits. Question-level paired uncertainty is reported in the sup-plementary material. The plotted retention curve averages all paired retention realizations; operator effects and confidence intervals use each operator’s within-run retention counter-part. on LongMemEval. Statistical comparisons average repeats within question and use question-level paired bootstrap in-tervals and randomization tests. A GLM-5.2 replication tests answer-model sensitivity. An additional full-history evalua-tion supplies both methods with the same candidates from BM25, a sparse lexical retriever that scores term matches with adjustments for term rarity and turn length (Robertson and Zaragoza 2009). These robustness protocols are detailed in the supplementary material. 
+
+The Budget Crossover (Q1) 
+
+Figure 2 reports the budget sweep. Retention accuracy de-creases from 74 .5% at the loose budget to 3.9% at the severely tight budget as fewer raw evidence turns fit. Every consol-idation operator has a higher accuracy point estimate than retention in the tight and transition regimes, whereas re-tention has the highest accuracy at the loose budget. For the representative Abstract comparison, the tight-budget absolute accuracy gain is 48 .0% , with a bootstrap interval from 37 .3% to 58 .2% ; its loose-budget difference is −8.0% ,with an interval from −16 .9% to 0.5% . The corresponding loose-budget interval for Merge excludes zero in the nega-tive direction (supplementary paired inference). The reversal therefore supports the directional prediction of Proposition 1: reducing the budget contracts the region grounded by raw re-tention and increases the potential coverage effect. The sweep does not identify the latent terms separately; that implication is tested by the fit-stratified diagnostic below. Operator B Retention fit Gain (help/harm; n)                                    
+
+> Abstract
+> 128 Incomplete +.343 (.38/.04; 36) 128 Complete −.043 (.06/.10; 39) 256 Incomplete −.061 (.21/.27; 11) 256 Complete −.083 (.07/.16; 64)
+> Merge
+> 128 Incomplete +.324 (.41/.08; 36) 128 Complete −.145 (.06/.21; 39) 256 Incomplete +.152 (.27/.12; 11) 256 Complete −.151 (.04/.19; 64)
+> Rewrite
+> 128 Incomplete +.306 (.39/.08; 36) 128 Complete −.094 (.08/.17; 39) 256 Incomplete −.061 (.18/.24; 11) 256 Complete −.089 (.07/.16; 64)
+
+Table 1: Fit-stratified mechanism diagnostic. Paired gain according to whether retention packs all candidate evidence; parentheses report helped and harmed rates and stratum size. The table uses the transition and loose budgets, where both fit strata are sufficiently populated for comparison. At 32 and 64 tokens, complete fit occurs for only one and seven questions, respectively; their aggregate tight-budget results appear in Figure 2. 
+
+Cross-model replication. The complete retain-versus-abstract sweep with GLM-5.2 reproduces the same answer to when : abstraction improves accuracy in the severely tight regime and is worse than retention in the loose regime. Full results are reported in the supplementary material. 
+
+Full-history retrieval evaluation. With identical lexically retrieved candidates, abstraction again improves over reten-tion in the tight regimes, while its advantage disappears as the budget loosens. This auxiliary result shows that the bud-get interaction survives retrieval noise; it does not establish superiority over optimized end-to-end memory systems. Full results and paired uncertainty are in the supplementary ma-terial. 
+
+Which Operator? Budget-Dependent Tradeoffs (Q2) 
+
+The operator leader changes with budget. In both tight regimes, Abstract ranks first, followed by Merge , Rewrite ,and retention; under the loose budget, retention ranks first and every generated operator has a negative paired gain. The two cross-note operators outperform local Rewrite under com-pression, but their direct difference is not significant. Thus 
+
+which is not a universal named operator: cross-note fusion is preferred for fragmented evidence, while the choice between abstraction and merging remains instance dependent. Full pairwise tests and per-type results are in the supplementary material. 
+
+Mechanism Diagnostic: Coverage and Replacement 
+
+We test the surrogate’s observable implication by strati-fying outcomes on the retention fit fraction fB . Table 1 shows that every operator gains when some evidence does not fit but loses when all evidence fits in the transition                                     
+
+> Policy BAccuracy Gain [95% CI] Harm Direct OAS 32 .545 +.507 [.404,.607] 364 .618 +.357 [.227,.483] 12 128 .640 +.119 [.015,.224] 14 256 .745 .000 [−.061 ,.064] 10 Calibrated OAS 32 .487 +.449 [.345,.551] 164 .403 +.142 [.056,.234] 3128 .613 +.092 [.034,.160] 2256 .742 −.003 [−.009 ,.000] 1
+
+Table 2: Joint when–which routing. Direct OAS selects the action with the largest predicted utility. Calibrated OAS applies a budget-specific harm threshold fitted on disjoint questions and otherwise retains the raw evidence. Gain is relative to retention; Harm counts lower-utility generated se-lections. All results use grouped five-fold cross-fitting. regime; the full-fit loss persists under the loose budget. This coverage–replacement interaction supports Proposi-tion 1 without claiming to identify its latent fidelity terms. 
+
+A Unified Gate for When and Which (Q3) 
+
+OAS is evaluated by grouped five-fold cross-fitting: utility fit-ting, threshold calibration, and testing use disjoint questions, and all budgets of a question remain in one fold. Table 2 shows significant gains over retention in the three stressed regimes and no difference under the loose budget. Selected actions shift from cross-note operators toward retention as evidence fit grows, thereby realizing both when and which . Calibra-tion reduces harmful replacements at some utility cost; its empirical constraint is not a population safety certificate. 
+
+Cross-Dataset Replication on LoCoMo 
+
+LoCoMo replicates both conclusions. In its severely tight regime, Abstract and Merge attain 48 .0% accuracy, com-pared with 12 .9% for retention and 26 .7% for Rewrite ; their paired gains remain significant in both tight regimes. The advantage disappears once 64 tokens accommodate the ev-idence for approximately three quarters of the sample. Be-cause LoCoMo evidence is shorter, this earlier crossover supports relative fit pressure, as predicted by Proposition 1, rather than an absolute token threshold. It also replicates the 
+
+which result: cross-note synthesis is preferred under com-pression, without establishing universal dominance between 
+
+Abstract and Merge . Complete operator results, paired in-ference, router controls, and the MLP comparison are in the supplementary material. 
+
+## Conclusion 
+
+We formulate memory management as a joint, budget-dependent when–which decision. Its coverage and replace-ment effects explain the consistent pattern across Long-MemEval and LoCoMo: consolidation is preferred while relevant raw evidence does not fit, retention becomes prefer-able after it fits, and cross-note synthesis is more effective than local rewriting under compression. OAS operational-izes this mechanism through lightweight multi-action utility learning. The results establish relative budget pressure, rather than a universal operator or token threshold, as the central determinant of consolidation. 
+
+Limitations and future work. The controlled study iso-lates representation from retrieval; future work can jointly learn retrieval, consolidation, and packing in persistent mem-ory. 
+
+## References 
+
+Chhikara, P.; Khant, D.; Aryan, S.; Singh, T.; and Ya-dav, D. 2025. Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory. arXiv preprint arXiv:2504.19413 .Dai, Z.; Deng, S.; Guan, S.; Tian, Y.; Yao, X.; Yan, X.; and Cheng, J. 2026. RecMem: Recurrence-Based Memory Con-solidation for Efficient and Effective Long-Running LLM Agents. arXiv preprint arXiv:2605.16045 .Du, Y.; Huang, W.; Zheng, D.; Wang, Z.; Montella, S.; La-pata, M.; Wong, K.-F.; and Pan, J. Z. 2025. Rethinking Memory in AI: Taxonomy, Operations, Topics, and Future Directions. arXiv preprint arXiv:2505.00675 .Jiang, H.; Wu, Q.; Lin, C.-Y.; Yang, Y.; and Qiu, L. 2023. LLMLingua: Compressing Prompts for Accelerated Infer-ence of Large Language Models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Pro-cessing , 13358–13376. Kang, Q.; Liu, M.; Kai, S.; Liang, K.; Zhong, T.; and Yuan, M. 2026. Learning What to Remember: Observability-Safe Memory Retention via Constrained Optimization for Long-Horizon Language Agents. arXiv:2606.10616. Khuller, S.; Moss, A.; and Naor, J. S. 1999. The Budgeted Maximum Coverage Problem. Information Processing Let-ters , 70(1): 39–45. Liu, N. F.; Lin, K.; Hewitt, J.; Paranjape, A.; Bevilacqua, M.; Petroni, F.; and Liang, P. 2024. Lost in the Middle: How Language Models Use Long Contexts. Transactions of the Association for Computational Linguistics , 12: 157–173. Maharana, A.; Lee, D.-H.; Tulyakov, S.; Bansal, M.; Barbieri, F.; and Fang, Y. 2024. Evaluating Very Long-Term Conver-sational Memory of LLM Agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 13851–13870. Mitzenmacher, M.; and Vassilvitskii, S. 2021. Algorithms with Predictions. In Roughgarden, T., ed., Beyond the Worst-Case Analysis of Algorithms , 646–662. Cambridge Univer-sity Press. Nemhauser, G. L.; Wolsey, L. A.; and Fisher, M. L. 1978. An Analysis of Approximations for Maximizing Submodular Set Functions—I. Mathematical Programming , 14(1): 265–294. Packer, C.; Wooders, S.; Lin, K.; Fang, V.; Patil, S. G.; Stoica, I.; and Gonzalez, J. E. 2023. MemGPT: Towards LLMs as Operating Systems. arXiv preprint arXiv:2310.08560 .Park, J. S.; O’Brien, J. C.; Cai, C. J.; Morris, M. R.; Liang, P.; and Bernstein, M. S. 2023. Generative Agents: Interactive Simulacra of Human Behavior. In Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology (UIST) , 1–22. Robertson, S.; and Zaragoza, H. 2009. The Probabilistic Relevance Framework: BM25 and Beyond. Foundations and Trends in Information Retrieval , 3(4): 333–389. Wu, D.; Wang, H.; Yu, W.; Zhang, Y.; Chang, K.-W.; and Yu, D. 2025. LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory. In International Conference on Learning Representations .Xu, F.; Shi, W.; and Choi, E. 2024. RECOMP: Improving Retrieval-Augmented LMs with Compression and Selective Augmentation. In International Conference on Learning Representations .Xu, W.; Liang, Z.; Mei, K.; Gao, H.; Tan, J.; and Zhang, Y. 2025. A-MEM: Agentic Memory for LLM Agents. In 
+
+Advances in Neural Information Processing Systems , vol-ume 38. Yang, T.; Paul, S.; Srinivasan, V.; Kulkarni, V.; and Chappidi, S. 2026. TrustMem: Learning Trustworthy Memory Consol-idation for LLM Agents with Long-Term Memory. arXiv preprint arXiv:2606.25161 .Zhang, Z.; Bo, X.; Ma, C.; Li, R.; Xu, C.; Dai, Q.; Zhu, J.; Dong, Z.; and Wen, J.-R. 2024. A Survey on the Memory Mechanism of Large Language Model Based Agents. arXiv preprint arXiv:2404.13501 .Zhong, W.; Guo, L.; Gao, Q.; Ye, H.; and Wang, Y. 2024. MemoryBank: Enhancing Large Language Models with Long-Term Memory. In Proceedings of the AAAI Confer-ence on Artificial Intelligence , volume 38, 19724–19731. Supplementary Material 
+
+## Scope of the When–Which Formalization 
+
+The decomposition in Proposition 1 is exact only for the sur-rogate UB under Assumption 1. It is intentionally not stated as an identity for binary LLM-judge accuracy. This distinc-tion makes the mechanism falsifiable: the budget sweep can agree or disagree with its directional prediction without be-ing used to define the latent fidelity functions. Proposition 2 then formalizes the joint action implied by those operator-specific values. It does not impose a universal semantic rank-ing among Merge , Abstract , and Rewrite ; the comparison across operators and budgets therefore determines the rank-ing empirically. 
+
+Proof of Proposition 1. Fix an operator o and write do(q) = 
+
+sB (q, T C,o,B (M )) − sB (q, M ). By Assumption 1, do(q) is zero outside HB,o and on the unchanged part of HB,o ∩ GB .On XB,o , retention contributes zero and consolidation con-tributes φ ˜mo,B (q). On JB,o , the contribution changes from 
+
+φmraw (q)(q) to φ ˜mo,B (q). Therefore, 
+
+do(q) = 1{q ∈ XB,o }φ ˜mo,B (q) (9) 
+
++ 1{q ∈ JB,o } φ ˜mo,B (q) − φmraw (q)(q). (10) Taking expectation under F gives CB,o +RB,o by conditional expectation. The stated sign conditions follow directly from the two terms. 
+
+Proof of Proposition 2. Retention has surrogate gain zero. Let δ⋆ = max o∈O gen ∆UB,o . If δ⋆ ≤ 0, no generative action improves on retention, so the stated tie rule selects retention. If δ⋆ > 0, any operator attaining δ⋆ has greater surrogate utility than retention and no smaller utility than any other generative action. Selecting such an operator is therefore optimal. 
+
+Plug-in Utility Bound 
+
+The following standard bound explains why action-utility regression is aligned with the finite when–which decision. It is conditional on estimation accuracy and does not assert that OAS attains a particular error; that question is evaluated by held-out experiments. 
+
+Proposition 3 (Utility estimation controls decision regret) .
+
+For an instance z, suppose every predicted action utility satisfies |bμa(z) − μa(z)| ≤ ϵ(z). Let a⋆(z) maximize the true conditional utility and let bπ(z) maximize the predicted utility. Then the conditional utility lost by the learned when– which decision is at most 2ϵ(z):
+
+μa⋆(z)(z) − μbπ(z)(z) ≤ 2ϵ(z). (11) 
+
+Proof. The true utility of a⋆(z) is at most its predicted utility plus ϵ(z). Predicted maximization makes this no greater than the predicted utility of bπ(z) plus ϵ(z), which is at most the true utility of bπ(z) plus 2ϵ(z).
+
+## Reproducibility and Experimental Detail 
+
+This section first reports the paired inference underlying the main operator comparisons, then collects auxiliary robust-ness analyses, and finally documents the shared evaluation protocol and router-capacity checks. All tables use the same action definitions and budget caps as Sections and . 
+
+Primary Paired Inference 
+
+Tables 3 and 4 report the question-level paired inference underlying the main when–which conclusions on Long-MemEval and LoCoMo. The first tests each operator against retention across budgets; the second verifies the correspond-ing budget-dependent pattern on the shorter-evidence bench-mark.                                                          
+
+> Operator Budget Paired gain [95% CI] one-sided p
+> Abstract 32 +0 .480 [+0 .373 ,+0 .582] below .001
+> Abstract 64 +0 .333 [+0 .204 ,+0 .458] below .001
+> Abstract 128 +0 .142 [+0 .044 ,+0 .244] 0.005
+> Abstract 256 −0.080 [ −0.169 ,+0 .005] 0.969
+> Merge 32 +0 .458 [+0 .347 ,+0 .569] below .001
+> Merge 64 +0 .316 [+0 .191 ,+0 .436] below .001
+> Merge 128 +0 .080 [ −0.036 ,+0 .196] 0.108
+> Merge 256 −0.107 [ −0.204 ,−0.013] 0.989
+> Rewrite 32 +0 .196 [+0 .116 ,+0 .280] below .001
+> Rewrite 64 +0 .187 [+0 .067 ,+0 .307] 0.002
+> Rewrite 128 +0 .098 [ −0.018 ,+0 .218] 0.061
+> Rewrite 256 −0.084 [ −0.178 ,+0 .009] 0.967
+
+Table 3: Question-level inference for operator perfor-mance across budgets. Each interval is a 10,000-replicate paired bootstrap over question IDs after averaging the three label realizations within question. The reported p tests the one-sided beneficial alternative; for negative effects at 256 tokens, values near one reject benefit rather than directly re-porting the reverse one-sided test. The 32-token Merge cell is the strict rerun with both a 32-token API ceiling and a lexical hard cap. 
+
+Auxiliary Robustness Tables 
+
+The following analyses test whether the main when–which conclusions depend on the answer model, controlled evi-dence supply, question type, or router class. They are reported separately because they support robustness rather than define the primary mechanism evidence. 
+
+Shared Protocol and Statistical Units 
+
+Fixed configuration. Primary operator and router runs use DeepSeek-V3.2 (temperature 0) behind an OpenAI-compatible endpoint and text-embedding-3-small for the geometry features. Retriever packing, answer prompt, and grader prompt are held fixed across every policy, budget, and operator; only the memory state varies. The cross-model table reruns the complete retain-versus-abstract comparison Budget Operator Paired gain 95% bootstrap interval Helped/Harmed 16 Abstract +0 .360 [+0 .227 , +0 .480] 30/3 16 Merge +0 .347 [+0 .227 , +0 .467] 29/3 16 Rewrite +0 .133 [+0 .013 , +0 .253] 16/6 32 Abstract +0 .173 [+0 .040 , +0 .307] 20/7 32 Merge +0 .253 [+0 .120 , +0 .387] 24/5 32 Rewrite +0 .133 [+0 .000 , +0 .267] 19/9 64 Abstract +0 .000 [−0.107 , +0 .107] 8/8 64 Merge −0.013 [−0.107 , +0 .080] 6/7 64 Rewrite −0.027 [−0.120 , +0 .067] 6/8 128 Abstract −0.027 [−0.093 , +0 .053] 3/5 128 Merge −0.040 [−0.120 , +0 .040] 3/6 128 Rewrite +0 .000 [−0.093 , +0 .093] 6/6 
+
+Table 4: Question-level inference for LoCoMo operator performance across budgets. The evaluation sample is drawn before outcome generation with fixed seed 20260716, stratified proportionally over four gold-evidence-cost strata. Each row uses the operator-paired retention realization and 10,000 paired bootstrap samples over question IDs. Helped and Harmed count questions on which the generated action is better or worse than retention.                                        
+
+> Model Budget Retention Abstract Paired gain [95% CI] Helped/Harmed DeepSeek-V3.2 32 0.040 0.520 +0.480 [+0.373,+0.582] 49/2 64 0.253 0.587 +0.333 [+0.204,+0.458] 37/10 128 0.502 0.644 +0.142 [+0.044,+0.244] 22/11 256 0.751 0.671 -0.080 [-0.169,+0.005] 8/18 GLM-5.2 32 0.027 0.507 +0.480 [+0.360,+0.600] 37/1 64 0.267 0.627 +0.360 [+0.227,+0.493] 32/5 128 0.453 0.707 +0.253 [+0.120,+0.387] 24/5 256 0.707 0.560 -0.147 [-0.267,-0.027] 7/18
+
+Table 5: Cross-model budget crossover on the same Long-MemEval questions. DeepSeek-V3.2 averages three paired realizations per question; GLM-5.2 uses one complete real-ization scored by the fixed DeepSeek-V3.2 judge. Intervals are 10,000 question-level paired bootstrap replicates; Helped and Harmed denote questions improved or worsened after av-eraging available reruns. with GLM-5.2, the same prompts, one paired realization per question, and the fixed primary DeepSeek-V3.2 judge. We partition the 500 -item LongMemEval_S into disjoint train (350 ), dev ( 75 ), and test ( 75 ) splits before the reported op-erator comparisons. The budget and operator sweeps cover the entire test partition; no question is filtered by outcome, evidence length, or operator success. Question-level paired bootstrap and sign-flip inference are computed from the cached outcomes. The utility-router table is a grouped five-fold cross-fitted estimate on the controlled evaluation matrix: for each rotation, three folds train, one disjoint fold calibrates thresholds, and the last fold tests; all budgets of a question remain in one fold. 
+
+Independent units and claim precision. The four budgets and three label realizations are repeated measurements, not additional independent samples. We first average realizations within question and then perform inference across the held-out question IDs. Consequently, the paper uses the evaluation to support effects whose question-bootstrap intervals exclude zero, such as the tight-budget gain and the advantage of cross-note fusion over local Rewrite . It reports the point-estimate ordering of Abstract and Merge but does not                              
+
+> Budget Retention Abstract Paired gain [95% CI] Helped/Harmed Binary oracle 32 tokens 0.040 0.400 +0 .360 [+0 .240 ,+0 .480] 28/1 0.413 64 tokens 0.240 0.413 +0 .173 [+0 .040 ,+0 .307] 20/7 0.507 128 tokens 0.427 0.453 +0 .027 [ −0.107 ,+0 .160] 13/11 0.600 256 tokens 0.480 0.453 −0.027 [ −0.147 ,+0 .093] 9/11 0.600
+
+Table 6: Full-history lexical-retrieval evaluation on the complete LongMemEval test split (one complete realiza-tion). Both methods see the identical retrieved candidate set (top 20, capped at 2,048 tokens); retention packs candidates in rank order, while Abstract compresses the candidate set into the target budget. Intervals use 10,000 paired question bootstrap samples; Helped and Harmed count improved and worsened questions. The binary oracle is descriptive hind-sight, not a trained router.                                        
+
+> Paired gain over retention (helped/harmed, mean per run) Question type nAbstract Merge Rewrite
+> Single-session 9+0 .037 (0.7/0.3) −0.037 (0.0/0.3) −0.037 (1.0/1.3) Multi-session 13 +0 .051 (2.7/2.0) +0 .179 (2.3/0.0) −0.077 (0.7/1.7) Temporal 13 −0.154 (1.7/3.7) −0.051 (2.0/2.7) +0 .051 (2.3/1.7)
+> Knowledge-update 40 −0.125 (2.0/7.0) −0.233 (1.0/10.3) −0.142 (2.3/8.0)
+> All 75 −0.080 (7.0/13.0) −0.107 (5.3/13.3) −0.084 (6.3/12.7)
+
+Table 7: Operator performance by question type at the loose budget (256 tokens, mean over three label realiza-tions). Each cell is the paired gain over retention with helped and harmed counts per realization. Harm concentrates in knowledge-update and temporal questions, while multi-session questions provide the main exception. These esti-mates are descriptive complements to the aggregate when– which comparisons. claim dominance because their paired intervals include zero. The multilayer perceptron (MLP) capacity check follows the same rule. This explicit hierarchy avoids pseudoreplication while retaining every available test question. 
+
+Budgets, operators, and label realizations. For Long-MemEval, we evaluate budgets of 32, 64, 128, and 256 to-kens. Abstract emits a higher-level summary, Merge emits a compact factual union, and Rewrite reformulates notes separately before packing them cheapest-first. Every result-ing representation is capped at the target budget. Because the answerer and grader are stochastic across reruns, the budget crossover and the comparison of operators across budgets relabel the test split three times, and the breakdown by ques-tion type and operator uses the same three realizations, all re-ported with across-run means. Operator gains use each file’s within-run retention pair. For the unified action comparison, each action’s utility is its three-run mean and retention is the mean over all nine paired reruns, avoiding the invalid com-bination of one operator file with another file’s stochastic retention label. 
+
+Unified router. The low-capacity router fits one ridge util-ity response per action and selects the action with the highest predicted utility. Ridge regularization is selected by three-fold grouped CV entirely inside each outer training partition. The resulting generated-action selector and its predicted ad-vantage over retention are then frozen; only a per-budget threshold is selected on the disjoint calibration fold. No Policy 32 tokens 64 tokens 128 tokens 256 tokens Retention 0.039 (0) 0.261 (0) 0.521 (0) 0.745 (0) Training-selected fixed operator 0.493 (5) 0.569 (13) 0.631 (14) 0.631 (26) Evidence-fit rule 0.493 (5) 0.563 (12) 0.681 (3) 0.729 (4)             
+
+> k-NN utility router 0.487 (4) 0.556 (14) 0.618 (13) 0.747 (6) Direct utility (ours) 0.545 (3) 0.618 (12) 0.640 (14) 0.745 (10) Calibrated-safe (ours) 0.487 (1) 0.403 (3) 0.613 (2) 0.742 (1)
+
+Table 8: Routing baselines under the same grouped cross-fitting protocol. Cells report accuracy with the number of harmful generated choices in parentheses. All learned hyper-parameters use only outer-training questions; only the frozen safe router’s threshold uses the calibration fold.                          
+
+> BMean fit Full (%) Zero (%) Partial (%) Regime 32 .065 1.3 78.7 20.0 Severely tight 64 .424 9.3 10.7 80.0 Tight 128 .718 52.0 1.3 46.7 Transition 256 .911 85.3 0.0 14.7 Loose
+
+Table 9: Budget pressure on the controlled LongMemEval test split. Fit fraction is the share of gold evidence turns packed by cheapest-first retention. “Full,” “zero,” and “par-tial” report the percentage of questions for which all, none, or some of the gold turns fit. Raw-turn cost uses the same alphanumeric-token count as dataset construction. test question informs the utility model, hyperparameter, or threshold. This estimates within-benchmark generalization; it is not a population safety certificate. 
+
+Nonlinear Router Capacity Check 
+
+We test whether the linear utility heads merely underfit a non-linear action boundary. The comparison uses a one-hidden-layer ReLU MLP with four sigmoid utility outputs as a mini-mal nonlinear control. Hidden widths of 4, 8, and 16, weight-decay values of 0.001, 0.01, and 0.1, and the early-stopping epoch are selected by three-fold question-grouped CV wholly inside each outer-training partition. It is then refit on those training questions and evaluated on the untouched outer test fold; the outer calibration fold is unused. Thus the 300 budget rows are never treated as 300 independently split samples.                    
+
+> Budget Ridge accuracy MLP accuracy Difference from ridge [95% CI] 32 0.545 0.529 −0.016 [ −0.049 ,+0 .007]
+> 64 0.618 0.604 −0.013 [ −0.040 ,+0 .004]
+> 128 0.640 0.644 +0 .004 [ −0.027 ,+0 .036]
+> 256 0.745 0.708 −0.037 [ −0.102 ,+0 .024]
+
+Table 11: Nonlinear capacity check. Out-of-fold action ac-curacy under the same five-fold question-grouped protocol. Intervals are paired question-bootstrap intervals for the dif-ference between MLP and ridge. None excludes zero, and the two-sided sign-flip tests do not identify a significant dif-ference at any budget. The MLP has absolute accuracy 1.6% and 1.3% lower than ridge at 32 and 64 tokens, 0.4% higher at 128 tokens, and 3.7% lower at 256 tokens; no difference is statistically distinguishable. We therefore retain ridge as the primary                                              
+
+> BMerge −Abstract Abstract −Rewrite Merge −Rewrite 32 −.013 [−.093 ,+.067 ]+.298 [+.196 ,+.396 ]+.284 [+.173 ,+.396 ]64 −.009 [−.080 ,+.058 ]+.133 [+.027 ,+.240 ]+.124 [+.018 ,+.227 ]128 −.022 [−.093 ,+.049 ]+.027 [−.062 ,+.120 ]+.004 [−.089 ,+.098 ]256 −.031 [−.111 ,+.049 ]+.018 [−.062 ,+.098 ]−.013 [−.107 ,+.080 ]
+
+Table 10: Direct operator-to-operator comparisons. En-tries are paired differences in answer accuracy after averag-ing the three realizations within question, with 95% question-bootstrap intervals. Positive values favor the row’s first named operator. These comparisons reuse cached outcomes and re-quire no additional model calls beyond the strict 32-token Merge rerun. lightweight learner. This choice is empirical and variance-aware, not an attempt to avoid neural methods. The purpose is to test whether basic nonlinearity changes the result, rather than to conduct a separate architecture search. Under the common grouped protocol, added nonlinear capacity does not provide reliable additional utility and is less attractive for harm calibration. 
+
+Full-History Retrieval Stress Test 
+
+Controlled setting. Throughout, “retention,” each opera-tor, and the oracle gate receive the same gold evidence per question; the study measures the consolidation decision in isolation. The separate retrieval diagnostic starts from ev-ery test question’s full chronological memory pool. It uses a local, deterministic implementation of the lexical retriever defined in the main setup, with a term-frequency satura-tion parameter of 1.2 and a length-normalization parameter of 0.75, retrieves the 20 highest-ranked dialogue turns, and greedily applies a common 2,048-token candidate cap. From this same capped ranked list, retention packs complete turns into B, while abstraction generates one record capped to B;answer and judge prompts are shared. The complete split contains 9 single-session, 13 multi-session, 13 temporal, and 40 knowledge-update questions. We report one realization at the four budgets of 32, 64, 128, and 256 tokens and bootstrap paired question differences 10,000 times. This is a retrieval stress test, not a tuned retriever or full-system leaderboard comparison. 
+
+Independently Split Full-History Four-Action Evaluation 
+
+This stricter transfer test uses a type-stratified split of previ-ously unused LongMemEval training questions into disjoint fit, calibration, and gate partitions. The lexical retriever sup-plies the same top 20 turns to retention, Abstract , Merge ,and Rewrite under a common 2,048-token candidate cap. Generation, answering, and fixed judging use DeepSeek-V3.2 at temperature zero. Router features exclude gold-evidence indicators, and all model choices and calibration thresholds are frozen before the gate outcomes are aggre-gated. This transfer test uses its own prespecified harm cap, so its safe threshold is distinct from the zero-observed-harm calibration used in the controlled cross-fitting experiment. Table 12 reports one complete realization. Fixed Merge ,tied with the per-budget policy selected on fit data, obtains the highest macro accuracy of 45 .7% . Direct ridge reaches 
+
+44 .7% , while the frozen safe router reaches 39 .3% and re-duces harmful generated choices from nine to six relative to fixed Merge . The hindsight action oracle reaches 50 .3% , so heterogeneous action value exists, but the safe pre-generation router does not rank it reliably on the independent full-history split. This result is the basis for the paper’s restricted routing claim: the controlled evaluation supports learnable when– which structure, whereas transferable end-to-end routing is not established.                                              
+
+> Policy 32 tokens 64 tokens 128 tokens 256 tokens Macro Retention .173 (0) .267 (0) .387 (0) .480 (0) .327 Fixed abstract .373 (2) .400 (4) .480 (1) .453 (6) .427 Fixed merge .387 (2) .453 (2) .467 (2) .520 (3) .457
+> Fixed rewrite .320 (2) .440 (1) .440 (2) .480 (3) .420 Per-budget policy selected on fit data .387 (2) .453 (2) .467 (2) .520 (3) .457
+> Direct ridge .347 (2) .440 (2) .480 (1) .520 (2) .447 Frozen safe router .347 (2) .307 (2) .440 (0) .480 (2) .393 Action oracle .440 (0) .520 (0) .493 (0) .560 (0) .503
+
+Table 12: Independent full-history four-action evaluation 
+
+(one label realization). Cells are accuracy with harmful gen-erated choices in parentheses. Macro averages the four bud-get accuracies. All fit choices and calibration thresholds are frozen before gate aggregation; the action oracle is descrip-tive hindsight.

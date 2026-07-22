@@ -1,0 +1,541 @@
+Title: Adopting Reinforcement Learning with Verifiable Rewards for Molecular Generation
+
+URL Source: https://arxiv.org/pdf/2607.19044v1
+
+Published Time: Wed, 22 Jul 2026 00:57:59 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> 1
+
+# Adopting Reinforcement Learning with Verifiable Rewards for Molecular Generation 
+
+Mingxuan Ouyang, Hao Lan, Wanyu Lin 
+
+Abstract —Leveraging large language models (LLMs) for molecular generation has shown remarkable potential in chemical and drug design. Current methods primarily rely on supervised training or fine-tuning with limited datasets, which are insuf-ficient to capture complex molecular design objectives. While some approaches attempt to guide generation toward specific goals, they often lack direct optimization mechanisms, making it difficult to align generated molecules with desired properties. To tackle these challenges, we propose LLMol, a principled reinforcement learning framework that directly incorporates verifiable rewards for targeted molecule generation. The key insight is to formulate molecular design as a goal-conditioned sequence prediction task, where verifiable rewards serve as explicit supervision to drive generation toward desired objec-tives. LLMol follows a two-stage training paradigm combining supervised learning and reinforcement learning. In the first stage, large language models are supervised fine-tuned to capture chemical syntax and molecular distributions. In the second stage, we introduce Reinforcement Learning with Verifiable Rewards (RLVR), which directly integrates property-based reward signals to guide molecular generation toward task-specific objectives. To address the high variance and instability common in discrete sequence optimization, we adopt Group Relative Policy Opti-mization (GRPO), a stable on-policy algorithm that smooths reward signals and improves training robustness. This framework enables LLMol to effectively handle a range of molecular design tasks, including single-property targeting (e.g., penalized logP, QED) and structure-constrained optimization. Experimental re-sults demonstrate that LLMol consistently outperforms existing methods, achieving higher success rates and improved efficiency across diverse molecular benchmarks. 
+
+I. I NTRODUCTION 
+
+Molecular generation aims to automatically find novel chemical structures that satisfy a desired molecular profile, being increasingly important in various applications such as drug discovery and material [1]–[5]. This task is challenging due to the vast and discrete nature of molecular space, es-timated to be as large as 10 33 , making exhaustive searches impractical [6]. Exhaustive exploration of such a vast space is computationally impractical, motivating the development of generative models that can efficiently navigate and exploit the underlying chemical landscape. Traditional approaches often rely on high-throughput virtual screening [7], discrete local search methods [8] or similar interpolation techniques. These processes are not only time-consuming and labor-intensive but also require substantial financial resources. In recent years, deep learning has emerged as a promising approach for molecular design [1], [2], [9], [10]. There has been an increasing focus on developing deep learning algo-rithms capable of automatically generating chemically valid molecular structures while simultaneously optimizing their properties. Several deep generative models have been explored to identify promising drug candidates [11]–[19]. These mod-els, often trained on extensive molecular datasets, are adept at learning general chemical distributions and generating valid molecular structures. Many approaches seek to optimize these models toward specific properties by incorporating additional property predictors or relying on expert-defined scoring func-tions [12], [13], [20]. However, aligning molecule genera-tion with complex chemical objectives remains a significant challenge, especially when optimizing multiple properties or substructures simultaneously. Moreover, these approaches typ-ically operate in a fixed-dimensional latent space, which may limit their capacity to capture the full diversity of chemical structures [21]. Recent advancements in large language models (LLMs) have demonstrated remarkable capabilities in learning from vast corpora and generating coherent, contextually relevant sequences across a wide range of tasks [22]. By treating molecular strings as a ”chemical language,” LLMs have been successfully applied to achieve high-throughput and accurate molecular generation [23]. For example, string-based represen-tations like SMILES [24] have gained significant attention in molecular language models due to their simplicity and adapt-ability [25], [26]. By learning from molecular string datasets, LLMs can capture complex chemical rules and syntactic patterns, enabling them to generate valid and diverse molecular structures [23], [27]. Recent studies have demonstrated the potential of LLMs in string-based molecular generation [28], [29]. Despite recent progress, existing LLM-based methods for molecular generation primarily rely on supervised fine-tuning (SFT) or in-context learning to mimic distributions observed in training data [21]. These approaches often fall short in exploring the vast chemical space or in generating molecules with specific, desirable properties. To address this, reinforce-ment learning (RL) has been introduced to steer generation toward task-specific objectives [18], [19], [30], [31]. While effective in principle, many RL-based methods either lack direct optimization mechanisms for aligning generation with desired molecular properties, or suffer from high variance in reward signals and unstable training dynamics—issues that are particularly pronounced in discrete sequence generation [32]. To address these challenges, we propose a novel molecular design framework based on Reinforcement Learning with Verifiable Rewards (RLVR) [33]. Following the standard two-stage paradigm commonly adopted in LLM training [34], we first apply supervised fine-tuning with LoRA [35] on a pre-trained language model to capture chemical syntax arXiv:2607.19044v1 [cs.LG] 21 Jul 2026 2
+
+and the underlying molecular distribution. Building on this foundation, we perform reinforcement learning using property-based rewards computed via RDKit [36], ensuring that reward signals are objective, reproducible, and aligned with the target molecular properties. Unlike supervised learning or preference optimization approaches that require labeled datasets, LLMol generates synthetic training data online by sampling from the evolving policy during optimization. To further address the high variance typically observed in reinforcement learning over discrete sequences, we adopt Group Relative Policy Optimization (GRPO) [37], a stable on-policy algorithm that smooths reward signals and mitigates the bias introduced by off-policy methods. Our approach effectively bridges the gap between chemical language modeling and goal-directed molecular optimization, providing a robust and scalable solu-tion for generating molecules with target-specific properties. We demonstrate the effectiveness of our framework by evaluating it across various molecular design tasks, including: (i) generating molecules with specified target properties (e.g., logP) within desired numerical ranges; (ii) exploring molecular spaces to maximize key properties such as QED and penalized logP; and (iii) optimizing target properties under the constraint of a given reference structure. Experimental results demon-strate that our method outperforms state-of-the-art baselines across all the aforementioned molecular generation tasks. Our major contributions are summarized as follows: 1) We propose a novel two-stage training framework that combines supervised fine-tuning and reinforcement learning with verifiable rewards. The model is first adapted to the molecular domain by learning general chemical syntax and distribution through SFT, and then further optimized for task-specific property objectives using deterministic reward signals. Leveraging LoRA, the framework enables efficient and modular adaptation across diverse molecular generation tasks. 2) To address the high variance in RL training, we intro-duce Group Relative Policy Optimization, an on-policy optimization method that smooths reward signals and enables more stable and efficient exploration of the chemical space. 3) We comprehensively validate our framework across di-verse molecular design tasks, demonstrating its capabil-ity in producing chemically valid molecules, navigating chemical spaces efficiently, and achieving notable opti-mization. II. R ELATED WORK 
+
+A. Molecule generation models. 
+
+De novo molecular design aims to generate novel chemical structures with desired properties, rather than merely searching within existing molecular databases [12], [38]. In recent years, deep generative models have emerged as powerful tools, offering optimization pipelines for exploring focused sets of molecules with improved performance [39]. One popular direction involves learning continuous latent representations of molecules through models such as variational autoen-coders [13], [14], [40], [41]. These methods encode discrete molecular inputs into continuous spaces where gradients can be used to optimize properties, often in combination with Bayesian optimization [12], [41]. However, these approaches are sensitive to the quality and geometry of the latent space, and mapping optimized latent vectors back to valid molecules remains a non-trivial challenge [13]. Generative adversarial networks have been shown to generate diverse libraries of real-istic molecules with specific properties [42]–[44]. Some graph-based approaches directly train a translation model to map input molecules to high-quality output molecules [45]. While conceptually straightforward, these methods depend heavily on large volumes of high-quality labeled data, which limits their applicability in data-scarce settings. The evolutionary algorithms and genetic algorithms [46], [47] apply biologically inspired search strategies to iteratively improve molecular candidates through mutation and crossover operations. While flexible and domain-agnostic, such methods often rely on handcrafted rules and require extensive expert knowledge to design effective mutation strategies. Recent developments in advanced natural language pro-cessing, especially through the adoption of transformer-based architectures, have been leveraged in molecular design or molecular optimization [23], [27], [29], [30], [48], [49]. These models have proven effective in generating simpli-fied molecular-input line-entry system (SMILES) represen-tations [24], facilitating the systematic exploration of novel chemical compounds. By leveraging large-scale pretraining, multitask learning, and retrieval-augmented generation, these models can be adapted for conditional or property-guided molecule generation. Their compatibility with string-based representations and modular fine-tuning pipelines makes them highly scalable and easy to integrate into existing workflows. However, most existing language model based approaches rely heavily on supervised learning from limited molecular datasets. As a result, they primarily model known distributions of existing molecules, which significantly constrains their ability to generate novel compounds with rare or optimized properties. 
+
+B. Reinforcement learning-based molecule generation 
+
+Reinforcement learning has emerged as a critical paradigm for post-training generative models to better align with task-specific objectives [34], [50]. In natural language tasks, RL from human feedback (RLHF) has been widely used to im-prove model helpfulness and safety [34], [51], but it often relies on learned reward models, which may be susceptible to overoptimization and misalignment [52]. In contrast, recent systems such as DeepSeek-R1 [37], [53] and T¨ ulu 3 [33] adopt reinforcement learning with verifiable rewards (RLVR), leveraging rule-based or programmatic reward functions that provide deterministic and objective feedback. This framework has demonstrated strong performance in domains such as math, code, and reasoning. In molecular generation, RLVR is particularly suitable due to the availability of domain-specific toolkits (e.g., RDKit) that can evaluate molecular va-lidity, property thresholds, and structural similarity. Compared to RLHF, RLVR eliminates the reliance on learned reward 3
+
+models, offering more consistent and objective feedback for molecular design. However, RL-based molecular generation model [19], [31], [54] still faces challenges such as high variance and unstable optimization, especially in discrete sequence settings [32]. Proximal Policy Optimization (PPO) [55] is a commonly used algorithm that mitigates variance via a learned value function (critic). While effective, PPO introduces substantial memory and computational burden, as the critic model is often com-parable in size to the policy. Moreover, the rewards in LLM-based molecular generation tasks are typically sparse and de-layed, as they are only available after the complete molecular sequence has been generated. For many chemical properties, (e.g., QED), it is extremely challenging to decompose the final reward into meaningful token-level contributions. As a result, learning a stable and accurate value function that operates at each decoding step becomes particularly difficult. Group Relative Policy Optimization (GRPO) [37], [56] addresses these limitations by removing the critic model and instead using group-based Monte Carlo rollouts to estimate relative advantages. Rewards are standardized through whitening, im-proving training stability and facilitating better exploration. GRPO complements RLVR by naturally supporting verifiable, deterministic rewards without requiring additional learned components. III. P RELIMINARIES 
+
+A. Molecule representation 
+
+String-based representations are widely adopted for molec-ular generation tasks due to their compatibility with language models. Among these, SMILES (Simplified Molecular Input Line Entry System) [24] and SELFIES (Self-Referencing Em-bedded Strings) [57] are the most commonly used. SMILES possesses the advantage of conciseness but struggles with generating both syntactically and semantically valid strings. In contrast, SELFIES is a fully robust molecular language that ensures both syntactic and semantic validity by design. However, the use of square brackets in SELFIES leads to longer token sequences when processed by language models, often increasing vocabulary complexity and introducing tok-enization inefficiencies. To mitigate this, we adopt a simplified SELFIES representation that removes square brackets and inserts spaces between semantic units. This transformation brings the representation closer to natural language syntax and reduces token length, thus improving the efficiency of LLM-based molecular modeling. Table I presents an example of each representation and compares their average tokenization lengths on the ZINC250K dataset [58]. 
+
+B. Task description 
+
+In molecular design for drug discovery, various generative tasks are employed to navigate the vast chemical space and construct candidate molecules that meet specific optimization goals, such as bioactivity, drug-likeness, or synthetic accessi-bility. In this work, we consider three representative molecule generation scenarios following LIMO [14]: 
+
+logP targeting: This task involves generating molecules whose logP (octanol-water partition coefficient) falls within a specified numerical range. The logP value reflects a molecule’s hydrophilicity or lipophilicity and is a critical determinant of absorption, distribution, and permeability—key aspects of pharmacokinetics. By constraining logP to a narrow interval, this task simulates early-stage filtering for drug-likeness based on physiochemical criteria, and evaluates a model’s ability to precisely control continuous-valued molecular properties. 
+
+QED and penalized logP maximization: This task focuses on generating molecules with high scores in penalized logP (P-logP) or the quantitative estimate of drug-likeness (QED). The P-logP metric is derived from the estimated octanol-water partition coefficient (logP), penalized by the synthetic accessibility (SA) score and the number of cycles with more than six atoms [13]. QED quantifies drug-likeness based on a combination of physicochemical properties [59]. These properties are important considerations in drug discovery, and this task evaluates the model’s ability to optimize salient molecular attributes, even if the maximization of these metrics in isolation may be of limited utility [60]. 
+
+Similarity-constrained target property maximization: 
+
+Given a set of starting molecules, this task focuses on generat-ing novel molecules that achieve higher P-logP or QED scores while maintaining structural similarity to the original com-pounds. Similarity is quantified using the Tanimoto coefficient computed over Morgan fingerprints [61]. This setting reflects a common scenario in drug discovery, where the objective is to optimize molecular properties without straying too far from a known active compound, thus increasing the likelihood of preserving biological activity. 
+
+C. Prompt design 
+
+To train models that can be used for above tasks, we use task-specific prompts. The input to the model is an instruction prompt followed by the simplified SELFIES. The prompt of each task comprises three components: a task description, illustrative examples, and a generation instruction. The inclusion of examples serves to enhance the model’s stability on molecular tasks and to reduce hallucinations during generation. Moreover, to emphasize key information and help the model distinguish between the instruction and the target molecule, we enclose relevant strings with closed tags such as <value></value> and <SELFIES></SELFIES> . To improve robustness, we construct multiple semantically equiv-alent prompt templates per task. These variants are randomly sampled during training to prevent overfitting to prompt phras-ing. Due to space constraints, the full prompt formatting table is provided in the appendix VI-B. 
+
+D. Problem definition 
+
+Our objective is to fine-tune LLMs to generate molecular strings that align with desired properties and structural con-straints. LLMs perform next-token prediction over sequences, modeled as a categorical distribution p(wt+1 |w0: t), where 
+
+w0 : t represents the input token sequence (the prompt), and wt+1 is the predicted next token. To generate a target 4         
+
+> TABLE I COMPARISON OF AVERAGE TOKENIZATION LENGTHS FOR DIFFERENT MOLECULAR REPRESENTATIONS ON ZINC250K.
+> Representation Example Avg. Length
+> SMILES [NH3+][C@@]1(O)CCc2ccccc21 30.46 SELFIES [NH3+1][C@@][Branch1][C][O][C][C][C][=C][C][=C][C][=C][Ring1][=Branch1][Ring1][#Branch2] 99.36 Simplified SELFIES NH3+1 C@@ Branch1 C O C C C =C C =C C =C Ring1 =Branch1 Ring1 #Branch2 61.93
+
+molecule m, the desired properties yi and constraints si are encoded into a conditional instruction prompt c. We aim to fine-tune a pre-trained large language model LLM pre to capture the conditional distribution p(m|c), ensuring that the generated molecule satisfies both the desired properties yi and constraints 
+
+si described in the prompt. The generated molecule m ∈ S is represented as a simplified SELFIES string over vocabulary V,and the model operates autoregressively, generating one token at a time until an end-of-sequence token is produced. IV. M ETHOD 
+
+We present LLMol, a two-stage molecular generation frame-work that includes supervised fine-tuning and reinforcement learning with verifiable rewards. As illustrated in Fig. 1, Stage 1 performs supervised fine-tuning with LoRA to adapt a pretrained language model for valid molecular generation; Stage 2 applies reinforcement learning with verifiable rewards, where the policy is optimized using Group Relative Policy Op-timization to satisfy property-driven design goals. The LLMol framework supports multiple molecular design tasks, including logP targeting, QED and penalized logP maximization, and similarity-constrained optimization. Each task is defined by a distinct reward function and is instantiated via prompt conditioning and task-specific LoRA adapters. In the following sections, we detail each training stage and the reward design strategies in turn. 
+
+A. Supervised finetuning 
+
+We adopt a decoder-only causal language model as the base generator, leveraging its strong autoregressive modeling capabilities and architectural flexibility. Molecular generation is framed as a conditional sequence modeling task, where the model generates a token sequence representing a molecule, conditioned on a prompt c that encodes desired properties or structural constraints. To adapt the base model to molecule generation, we per-form supervised fine-tuning (SFT) using cross-entropy loss. As illustrated in Stage 1 of Fig. 1, the input consists of a concatenated prompt–molecule pair, but the loss is only applied over the molecule tokens. Let m∗ = {t∗
+
+> 1
+
+, . . . , t ∗ 
+
+> l
+
+}
+
+denote the ground-truth molecule sequence. The objective minimizes the negative log-likelihood of the molecule tokens given the prompt: 
+
+LCE = −
+
+> l
+
+X
+
+> j=1
+
+log pθ (t∗ 
+
+> j
+
+| c, t ∗
+
+> 1
+
+, . . . , t ∗
+
+> j−1
+
+). (1) Here, pθ denotes the token-level predictive distribution of the model parameterized by θ, and t∗ 
+
+> j
+
+is the j-th token in the ground-truth molecule. The model is trained to generate molecules autoregressively by maximizing the likelihood of each token conditioned on the prompt c and its preceding tokens. To support efficient training and parameter reuse, we apply Low-Rank Adaptation (LoRA) [35] across both supervised fine-tuning and reinforcement learning stages. LoRA injects trainable low-rank matrices into attention and feed-forward layers while keeping the original backbone weights frozen. This enables memory-efficient training and simplifies deploy-ment in distributed settings. All parameter updates are confined to LoRA modules, ensuring architectural consistency across learning stages and enabling task-specific specialization with minimal overhead. 
+
+B. Reinforcement learning with verifiable rewards 
+
+Reinforcement learning has been widely adopted to enhance the reasoning capabilities of large language models (LLMs) following the supervised finetuning stage [34]. In this work, we extend Reinforcement Learning with Verifiable Rewards (RLVR) to the domain of molecular generation, where the correctness and utility of generated molecules can be explicitly verified via rule-based functions provided by cheminformatics toolkits such as RDKit [36]. RLVR offers a simplified alternative to prior methods for bootstrapping LLM reasoning [62], [63] and to RL frameworks that rely on execution feedback [64]. Rather than using a learned reward model, RLVR leverages deterministic and binary verification signals—such as matching a correct answer or satisfying a structural or property-based constraint—as direct supervision. This makes RLVR particularly well-suited for molecular design tasks, where many objectives admit ver-ifiable formulations. For example, molecule validity, property thresholds (e.g., QED ≥ 0.9), and similarity constraints (e.g., Tanimoto similarity ≥ 0.6) can all be checked deterministi-cally. Building on the RLHF framework [34], RLVR simplifies the reward mechanism by replacing the reward model with a verifiable reward function v(c, m ), which returns a scalar value if the generated molecule m satisfies task-specific criteria given prompt c, and 0 otherwise. The training objective is thus defined as: 
+
+max 
+
+> πθ
+
+Em∼πθ (c) [RRLVR (c, m )] = v(c, m ) − βD KL [πθ (m|c) ∥ πref (m|c)] . (2) 5Stage 1: Supervised finetuning Stage 2: Reinforcement learning with verifiable rewards 
+
+Training data SFT prompt 
+
+LoRA 
+
+m1m1
+
+m2m2
+
+mGmG
+
+# …
+
+Supervised Finetuned Model 
+
+Reward 
+
+Function 
+
+Group 
+
+Computation 
+
+Task prompt r1r1
+
+r2r2
+
+rGrG
+
+# …
+
+A1A1
+
+A2A2
+
+AGAG
+
+# …
+
+KL 
+
+Initialize 
+
+Backbone 
+
+Model 
+
+Policy 
+
+Model 
+
+Reference 
+
+Model 
+
+Frozen    
+
+> Fig. 1. An illustration of the proposed LLMol framework for one molecular generation task. Stage 1 performs supervised fine-tuning on a pretrained backbone language model using LoRA to obtain a chemically-aware generator. The Policy Model in Stage 2 is initialized from the supervised finetuned model. Given a task prompt, the model generates candidate molecules, which are scored by a deterministic reward function and optimized via Group Relative Policy Optimization using group-level statistics. A KL divergence penalty with respect to the frozen reference model stabilizes training. The framework supports multi-objective optimization across diverse molecular design tasks via task-specific LoRA adapters and flexible prompt conditioning. Modules marked with a
+> Flame symbol contain trainable parameters, while those marked with a Snowflake symbol are frozen.
+
+C. Group relative policy optimization 
+
+To optimize the RLVR objective efficiently in the high-dimensional molecular generation space, we adopt the Group Relative Policy Optimization (GRPO) algorithm [37]. GRPO is a lightweight and scalable variant of Proximal Policy Optimization (PPO) [55] that removes the need for a separate value (critic) model. Instead, it estimates the learning baseline from the average reward of a group of sampled outputs, which aligns well with the binary reward signals commonly used in molecular verification. As illustrated in Stage 2 of Fig. 1, for each input prompt corresponding to a specific task, GRPO samples a group of candidate molecules from the old policy, evaluates them using a verifiable reward function, and computes the relative advantages by subtracting the group’s mean reward as a baseline for policy optimization. As shown in Eq. 3, the GRPO objective optimizes the policy by propagating a molecule-level scalar reward to token-level updates. This reward is averaged across a group of candidate molecules sampled under the same design condition to enable relative ranking. The inner token-level objective (Eq. 4) en-courages the updated policy to increase the likelihood of favor-able molecule completions, while clipping the probability ratio to stabilize training. Here, ˆAi,t denotes the relative advantage for token t in the i-th sampled molecule mi, computed through outcome-level group-wise reward normalization. Specifically, for each molecular design condition c, a group of G candidate molecules {m1, . . . , m G} is sampled from the old policy πθold ,and their rewards {r1, . . . , r G} are obtained from a verifiable reward function v(c, m i). The normalized advantage is then calculated as: 
+
+ˆAi,t = ˜ ri = ri − mean (r)
+
+std (r) . (5) This normalized scalar reward ˜ri is assigned as the advan-tage ˆAi,t for all tokens in the sequence of molecule mi. This design encourages comparisons among molecules generated under the same condition c, enabling stable optimization even with binary or sparse reward signals common in molecular design. This outcome-based advantage formulation avoids the need to train a separate value function, while preserving relative preference between candidate molecules. The clipping mechanism in Eq. 4 follows the PPO-style surrogate loss to prevent excessively large updates by restricting the policy ratio within the interval [1 −ϵ, 1+ ϵ]. The group size G controls how many candidate molecules are sampled per prompt to compute the intra-group statistics, serving as a trade-off between com-putational efficiency and reward variance reduction. To further regularize the policy, we apply a KL divergence penalty between the current policy and a frozen reference policy, which is initialized from the supervised finetuned model. Rather than incorporating the KL term into the reward function, we add it directly to the loss [37]. This helps decouple the reward shaping from exploration control. The KL divergence is estimated using the unbiased estimator defined in Eq. 6, and the coefficient β controls its strength. 
+
+DKL [πθ ∥πref ] = πref (mi,t | c, m i,<t )
+
+πθ (mi,t | c, m i,<t )
+
+− log πref (mi,t | c, m i,<t )
+
+πθ (mi,t | c, m i,<t ) − 1,
+
+(6) which is guaranteed to be positive. This formulation simpli-fies optimization while reducing variance and computational overhead, making GRPO well-suited for molecular generation tasks, where reward signals are typically sparse and verifiable. 
+
+D. Task-specific reward design 
+
+Having introduced the GRPO optimization framework for reinforcement learning with verifiable rewards, we now detail the design of reward functions for various molecular gener-ation objectives. Since molecular tasks can vary significantly in their property goals and constraint types, we employ task-specific verifiers to define meaningful and differentiable sig-nals. 6
+
+JGRPO (θ) = Ec∼P (c),{mi}Gi=1 ∼πθold 
+
+ 1
+
+G
+
+> G
+
+X
+
+> i=1
+
+1
+
+|mi|
+
+> |mi|
+
+X
+
+> t=1
+
+L(i,t ) 
+
+> token
+
+− βD KL [πθ ∥πref ]
+
+ . (3) 
+
+L(i,t ) 
+
+> token
+
+= min 
+
+ πθ (mi,t |c, m i,<t )
+
+πθold (mi,t |c, m i,<t ) ˆAi,t , clip 
+
+ πθ (mi,t |c, m i,<t )
+
+πθold (mi,t |c, m i,<t ) , 1 − ϵ, 1 + ϵ
+
+
+
+ˆAi,t 
+
+
+
+. (4) As a first step in reward computation, all completions are validated using RDKit. Invalid molecules are assigned a minimal reward as a penalty, which discourages the model from generating syntactically incorrect or chemically infeasi-ble structures, and prevents RLVR training from collapsing due to the accumulation of invalid outputs. 
+
+logP targeting: In this task, the goal is to gener-ate molecules whose physicochemical property—specifically logP—lies within a specified target range. To provide mean-ingful gradients and avoid sparse feedback, we design a reward function that assigns high scores to molecules within the target range, and applies a smooth decay for near-boundary cases. Given a predicted logP value ˆp for a generated molecule m,the reward function is defined as: 
+
+vlogP (c, m ) = 
+
+
+
+1, if pmin ≤ ˆp ≤ pmax ,ψ(ˆ p), if |ˆp − pmax | < δ, 
+
+0, otherwise ,
+
+(7) where pmin and pmax specify the target logP interval, and 
+
+δ controls the width of the smooth transition region. The smoothing function ψ(ˆ p) is defined as: 
+
+ψ(ˆ p) = exp 
+
+
+
+− min ( |ˆp − pmin |, |ˆp − pmax |)
+
+δ
+
+
+
+. (8) Molecules with ˆp values slightly outside the desired range receive gradually decayed rewards, while those far outside (more than δ away) receive zero reward. This formulation promotes exploration while maintaining a smooth reward land-scape, facilitating more stable and sample-efficient learning. 
+
+QED and penalized logP maximization: In this task, the goal is to generate molecules that maximize specific properties: QED and P-logP. QED scores lie in the range (0 , 1) 
+
+and exhibit a natural upper bound around 0.948 [60], due to the way they are computed from empirical distributions. Drug-like molecules with QED ≥ 0.9 are extremely rare [59]. To emphasize high QED regions while maintaining gradient signal, we square the score to obtain the reward: 
+
+vQED (c, m ) = RDKit.QED (m)2. (9) The penalized logP metric accounts for the octanol–water partition coefficient, synthetic accessibility, and structural fea-tures. However, as noted in prior work [60], P-logP can be trivially increased by generating long alkyl chains. To mitigate this issue, we apply a hybrid logarithmic transformation to compress the scale and reduce the reward bias towards large molecules. The reward is defined as: 
+
+vP-logP (c, m ) = 
+
+(
+
+log(1 + s), if s ≥ 0,
+
+− log(1 + |s|), if s < 0, (10) where s = RDKit.P-logP (m). This hybrid design ensures that both positive and negative scores are smoothly compressed, discouraging degenerate molecule structures while preserving relative differences across the reward spectrum. 
+
+Similarity-constrained target property maximization: In this task, the objective is to generate molecules that simultane-ously maintain structural similarity to a reference compound and exhibit improved molecular properties, such as penalized logP or QED. This setting closely aligns with real-world drug discovery scenarios like lead optimization, where newly designed candidates are expected to retain key structural motifs from known actives while enhancing specific physicochemical attributes. Let s(m) denote the Tanimoto similarity between the refer-ence molecule mref and the generated molecule m:
+
+s(m) = Tanimoto similarity (mref , m ). (11) We define the similarity reward as: 
+
+vsim (c, m ) = s(m)2. (12) The final reward function is constructed as a weighted sum of the similarity component and the target property score (either penalized logP or QED), denoted generically as 
+
+vprop (c, m ):
+
+vjoint (c, m ) = λ · vsim (c, m ) + (1 − λ) · vprop (c, m ). (13) Here, vprop (c, m ) denotes either vP-logP (c, m ) or vQED (c, m )
+
+depending on the task, as defined in Eq. 10 and Eq. 9, respec-tively. The hyperparameter λ ∈ [0 , 1] governs the trade-off between preserving molecular similarity and enhancing target properties. This reward formulation encourages the generation of molecules that remain within the local chemical space of the reference compound while progressively improving target characteristics. Notably, the modular structure of this reward design highlights the scalability of the RLVR framework with GRPO, allowing seamless extension to multi-objective optimization tasks involving diverse molecular properties. V. E XPERIMENTS 
+
+In this section, we detail the experimental setup used to evaluate our proposed framework, LLMol, and present com-prehensive results across multiple molecular generation tasks introduced in Section III-B. Our primary goal is to address the following questions:  
+
+> •
+
+Q1) Can LLMol learn the syntactic and semantic structure of molecular data and generate valid, novel molecules through supervised finetuning?  
+
+> •
+
+Q2) Does LLMol achieve higher success rates in gener-ating molecules that fall within the desired logP range? 7  
+
+> TABLE II THE PERFORMANCE OF SUPERVISED LEARNING ON ZINC. V ALIDITY AND NOVELTY ARE REPORTED AS PERCENTAGES . B ASELINE RESULTS TAKEN FROM [30].
+
+Method Validity ↑ Diversity ↑ Novelty ↑
+
+AAE 93.68% 0.8557 79.31% LatentGAN 89.66% 0.8565 94.98% CharRNN 97.48% 0.8562 84.19% VAE 97.67% 0.8558 69.49% JT-VAE 99.65% 0.8551 91.43% LIMO 100.00% 0.8544 89.56% Chemformer 98.43% 0.8553 95.81% MOLGEN 100.00% 0.8567 100.00% 
+
+LLMol † 100.00% 0.8473 100.00%  
+
+> •
+
+Q3) Can LLMol generate molecules with improved QED and penalized logP scores compared to baseline models?  
+
+> •
+
+Q4) In the similarity-constrained setting, can LLMol effectively improve molecular properties while preserving structural similarity to known compounds? 
+
+A. Experimental Setup 
+
+We conduct experiments on the ZINC dataset following the LIMO protocol [14]. In the first stage, supervised fine-tuning, we randomly sample over 200,000 molecules from the publicly available ZINC250K dataset [65]. The dataset is randomly split into training and test sets using a 9:1 ratio. For model initialization, we adopt Qwen-3 [66], a 4-billion-parameter language model, as the base model for supervised fine-tuning. Training is implemented using the Transformers library [67] and PyTorch [68]. To facilitate efficient training on limited GPU resources, we apply LoRA [35] to reduce the number of trainable parameters. 
+
+B. Baselines 
+
+We consider a diverse set of baseline models spanning four major categories: VAE-based methods (e.g., JT-VAE [13], LIMO [14]), reinforcement learning-based approaches (e.g., GCPN [17], MOLGQN [60], GraphDF [18]), autoregressive and flow-based models (e.g., GraphAF [19]), and Transformer-based molecular language models (e.g., Chemformer [27], RT [48], MOLGEN [30]). We also include retrieval-augmented generation (RetMol [21]) and MCMC-based frameworks (MARS [32]). Details of each baseline are provided in Ap-pendix VI-A. 
+
+C. Evaluation 
+
+To evaluate the quality of generated molecules, we adopted the metrics following baseline MOLGEN [30]. Validity mea-sures the proportion of generated molecules that conform to chemical valence rules, ensuring structural correctness. 
+
+Diversity evaluates the chemical diversity within the generated set by computing the average pairwise Tanimoto distance, reflecting the model’s ability to produce varied molecular structures. Novelty quantifies the percentage of generated molecules that are not present in the training set, indicating the model’s capacity to explore novel regions of chemical space. 
+
+D. Results and discussion 1) Q1: Performance on molecular distribution learning: Afoundational requirement for molecular generation models is the ability to capture the structural and semantic distribution of molecules and generate diverse, valid, and novel candidates. This capacity is critical for constructing virtual libraries in computer-aided drug discovery [69], where the quality and variability of generated molecules directly affect downstream screening and optimization stages. To evaluate the generative capacity of our supervised model, LLMol †, we compare it against established baselines on the ZINC dataset. The results are summarized in Table II. LLMol † achieves 100% validity—matching the strongest baselines. This demonstrates that a general-purpose language model, when fine-tuned on simplified SELFIES representa-tions, can effectively learn the syntactic and valence con-straints of molecular structures without requiring explicit graph-based modules or large-scale molecular pretraining. In terms of novelty, LLMol † matches MOLGEN with a perfect score (100%), highlighting its ability to explore novel regions of the chemical space beyond the training distribution. This suggests that fine-tuned LLMs can generalize molecular syntax in a way that supports both correctness and creative genera-tion. While diversity is slightly lower, LLMol † still achieves competitive performance. This minor gap can be attributed to the balance between validity enforcement and chemical exploration during autoregressive decoding. Overall, LLMol †
+
+demonstrates a strong ability to model molecular distributions with high validity and novelty, using only prompt-based super-vised tuning—without the need for domain-specific inductive biases or pretraining on large-scale molecular corpora. 
+
+2) Q2: Performance on logP targeting: Table III reports the performance of LLMol on the task of generating molecules whose logP values fall within the narrow target interval of 
+
+−2.5 < logP < −2.0. This task poses a significant chal-lenge due to the sparsity of valid molecules in this range and the need for precise property-controlled generation. Such constraints often reflect early-stage drug-likeness filters related        
+
+> TABLE III PROPERTY TARGETING TO −2.5< logP < −2.0. S UCCESS (%): PERCENT OF GENERATED MOLECULES WITHIN THE TARGET RANGE . D IVERSITY :ONE MINUS THE AVERAGE PAIRWISE TANIMOTO SIMILARITY BETWEEN
+> MORGAN FINGERPRINTS . B ASELINE RESULTS TAKEN FROM [14]
+
+Method Success (%) Diversity 
+
+ZINC250K 0.44 0.919 JT-VAE 11.3 0.846 GCPN 85.5 0.392 MolDQN 9.66 0.854 GraphDF 0 -MOLGEN 0 -LIMO 10.4 0.914 
+
+LLMol † 0.46 0.887 LLMol 46.91 0.893 8           
+
+> TABLE IV COMPARISON OF QED AND PENALIZED LOG PMAXIMIZATION METHODS . ”LL” ( LENGTH LIMIT )DENOTES WHETHER A MODEL HAS A LIMITED OUTPUT LENGTH (ABOUT THE MAXIMUM MOLECULE SIZE OF ZINC250 K), AS P-LOG PSCORE CAN INCREASE LINEARLY WITH MOLECULE LENGTH . B ASELINE RESULTS TAKEN FROM [14], [30]
+
+Method LL Penalized logP QED Time 
+
+1st 2nd 3rd 1st 2nd 3rd (HRS) ZINC250K 4.52 4.30 4.23 0.948 0.948 0.948 JT-VAE ✗ 5.30 4.93 4.49 0.925 0.911 0.910 24 MARS ✗ 45.0 44.3 43.8 0.948 0.948 0.948 12 GraphDF ✗ 13.7 13.2 13.2 0.948 0.948 0.948 8GraphAF ✗ 12.23 11.29 11.05 0.948 0.948 0.947 8GCPN ✓ 7.98 7.85 7.80 0.948 0.947 0.946 8MolDQN ✓ 11.8 11.8 11.8 0.948 0.943 0.943 24 MOLGEN ✓ 30.52 28.73 28.65 0.948 0.947 0.946 16 LIMO ✓ 10.5 9.69 9.60 0.947 0.946 0.945 1
+
+LLMol † ✓ 4.86 4.59 4.24 0.948 0.944 0.942 2
+
+LLMol ✓ 31.12 30.05 29.96 0.948 0.948 0.948 1
+
+to solubility and permeability. We evaluate two variants of our model: LLMol †, trained only via supervised finetuning, and the full LLMol, which additionally incorporates reinforcement learning with verifiable reward optimization. The SFT-only model achieves a success rate of 0.46%, which closely mirrors the empirical distribution in ZINC250K (0.44%). This suggests that the supervised model faithfully reproduces the training data distribution, without introducing directional bias in logP values. In contrast, the RL-augmented model achieves a signif-icantly higher success rate of 46.91%, surpassing all prior baselines by a substantial margin. This demonstrates that incorporating verifiable reward signals via RLVR enables the model to generate molecules that satisfy narrow physico-chemical constraints with high precision. Beyond property satisfaction, LLMol also maintains high structural diversity: it achieves a diversity score of 0.893, approaching that of LIMO (0.914). This indicates that reinforcement learning does not compromise the model’s ability to explore a chemically rich and varied molecular space. 
+
+3) Q3: Performance on QED and penalized logP maxi-mization: Targeted molecular design focuses on generating novel molecules with optimized physicochemical properties. Following the evaluation protocol [14], [19], we report the top-3 penalized logP and QED scores in Table IV. Since penalized logP increases with molecule length [60], we group baselines by whether they impose length limits (LL) to avoid inflation of reward scores. LLMol † achieves penalized logP scores comparable to those observed in the training dataset. In contrast, after apply-ing reinforcement learning with verifiable rewards, LLMol achieves substantially higher scores, outperforming all prior methods. In terms of drug-likeness, LLMol demonstrates a strong ability to generate molecules with high QED, with 1.20% of generated molecules surpassing a QED score of 0.9,highlighting its effectiveness in optimizing specific molecular properties. These results indicate that LLMol is highly capable of targeted property optimization, achieving state-of-the-art     
+
+> TABLE V MEAN (AND STANDARD DEVIATION )PENALIZED LOG PIMPROVEMENT OF GENERATED MOLECULES COMPARED TO INPUTS WITH DIFFERENT SIMILARITY CONSTRAINTS . B ASELINE RESULTS TAKEN FROM [30].
+
+Method Improvement 
+
+δ = 0 .6 δ = 0 .4
+
+JT-VAE 0.28 (0.79) 1.03 (1.39) 
+
+GCPN 0.79 (0.63) 2.49 (1.30) 
+
+MolDQN 1.86 (1.21) 3.37 (1.62) 
+
+VSeq2Seq 2.33 (1.17) 3.37 (1.75) 
+
+VJTNN 2.33 (1.24) 3.55 (1.67) 
+
+GA 3.44 (1.09) 5.93 (1.41) 
+
+GraphAF 4.98 (6.49) 8.21 (6.51) 
+
+GraphDF 4.51 (5.80) 9.19 (6.43) 
+
+LIMO 1.80 (2.00) 3.60 (2.30) 
+
+Chemformer 2.48 (0.89) 3.56 (1.32) 
+
+RetMol 3.78 (3.29) 11.55 (11.27) 
+
+RT 2.21 (1.30) 3.16 (1.50) 
+
+MOLGEN 12.08 (0.82) 12.35 (1.21) 
+
+LLMol 10.60 (13.00) 17.50 (13.82) 
+
+results in a short generation time, and further solidifying its potential in efficient molecular design. Fig. 2 shows six sampled molecules with the highest score discovered by our model. 
+
+4) Q4: Similarity-constrained target property maximiza-tion: This optimization task aims to enhance specific molec-ular properties while preserving structural similarity to areference molecule. Following MOLGEN [30], we optimize 800 molecules from the ZINC250K dataset with the lowest penalized logP scores, under different similarity constraints (denoted as δ). The similarity between the original and op-timized molecules is assessed using the Tanimoto coefficient computed over Morgan fingerprints [61]. As shown in Table V, LLMol outperforms baseline models under both similarity thresholds, demonstrating its capacity to generate molecules with improved properties while staying close in chemical space to their reference compounds. These results validate the effectiveness of LLMol in similarity-90.9475 0.9476 0.9476 0.9478 0.9479 0.9480 0.9484 0.9479 
+
+Fig. 2. Six sampled molecules with the highest QED scores discovered by LLMol. sim = 0.507 
+
+> 0.6703
+> 0.9389
+> sim = 0.517
+> 0.7599
+> 0.9389
+> sim = 0.717
+> 0.7632
+> 0.9346 0.9378
+> sim = 0.621
+> 0.7353
+> sim = 0.556
+> 2.7281
+> 4.1322
+> sim = 0.672
+> 2.0082
+> 3.1333 3.0389
+> sim = 0.520
+> 0.7721
+> sim = 0.537
+> 1.5358
+> 3.1764
+> 1.5358
+
+QED Improvement P-logP Improvement 
+
+Fig. 3. An illustration of constrained optimization results based on P-logP and QED scores. The top row shows reference molecules from the test dataset, while the bottom row displays the molecules generated by LLMol. The value sim denotes the Tanimoto similarity between the reference and the generated molecule. 
+
+constrained optimization, a setting critical to applications such as lead optimization in drug discovery. In addition, Fig. 3 illustrates qualitative examples of similarity-constrained optimization for both penalized logP and QED. The top row displays reference molecules, while the bottom row presents generated molecules with improved scores. The annotated similarity values confirm that the gener-ated molecules remain structurally similar to their respective references while achieving significant property enhancements. CONCLUSION 
+
+In this work, we present a novel molecular design frame-work based on Reinforcement Learning with Verifiable Re-wards and Group Relative Policy Optimization. Our approach combines supervised fine-tuning of large language models with reinforcement learning, utilizing RDKit-based rewards for efficient and objective optimization of molecular properties. Experimental results demonstrate that our method outperforms state-of-the-art baselines in generating molecules with target properties while maintaining structural similarity constraints. Additionally, our framework achieves high efficiency, sig-nificantly reducing computational time compared to existing methods. Overall, RLVR with GRPO provides a scalable and effective solution for targeted molecular optimization. Future work will focus on enhancing model scalability and exploring more complex molecular design tasks. REFERENCES [1] T. Xie, X. Fu, O.-E. Ganea, R. Barzilay, and T. S. Jaakkola, “Crystal diffusion variational autoencoder for periodic material generation,” in 
+
+International Conference on Learning Representations , 2022. [2] M. Xu, L. Yu, Y. Song, C. Shi, S. Ermon, and J. Tang, “Geodiff: A geometric diffusion model for molecular conformation generation,” 
+
+arXiv preprint arXiv:2203.02923 , 2022. [3] H. Hong, W. Lin, and K. C. Tan, “Accelerating 3d molecule generation via jointly geometric optimal transport,” in The Thirteenth International Conference on Learning Representations , 2025. [4] ——, “Diffusion-driven domain adaptation for generating 3d molecules,” 
+
+arXiv preprint arXiv:2404.00962 , 2024. [5] Z. Wang, H. Hua, W. Lin, M. Yang, and K. C. Tan, “Crystalline material discovery in the era of artificial intelligence,” arXiv preprint arXiv:2408.08044 , 2024. [6] P. G. Polishchuk, T. I. Madzhidov, and A. Varnek, “Estimation of the size of drug-like chemical space based on gdb-17 data,” Journal of computer-aided molecular design , vol. 27, pp. 675–679, 2013. [7] R. Macarron, M. N. Banks, D. Bojanic, D. J. Burns, D. A. Cirovic, T. Garyantes, D. V. Green, R. P. Hertzberg, W. P. Janzen, J. W. Paslay 
+
+et al. , “Impact of high-throughput screening in biomedical research,” 
+
+Nature reviews Drug discovery , vol. 10, no. 3, pp. 188–195, 2011. [8] C. Rupakheti, A. Virshup, W. Yang, and D. N. Beratan, “Strategy to discover diverse optimal molecules in the small molecule universe,” 
+
+Journal of chemical information and modeling , vol. 55, no. 3, pp. 529– 537, 2015. [9] B. Macedo, I. Ribeiro Vaz, and T. Taveira Gomes, “Medgan: optimized generative adversarial network with graph convolutional networks for novel molecule design,” Scientific Reports , vol. 14, no. 1, p. 1212, 2024. [10] Y. Song, J. Gong, M. Xu, Z. Cao, Y. Lan, S. Ermon, H. Zhou, and W.-Y. Ma, “Equivariant flow matching with hybrid probability transport for 3d molecule generation,” Advances in Neural Information Processing Systems , vol. 36, 2024. [11] D. P. Kingma, M. Welling et al. , “Auto-encoding variational bayes,” 2013. [12] R. G´ omez-Bombarelli, J. N. Wei, D. Duvenaud, J. M. Hern´ andez-Lobato, B. S´ anchez-Lengeling, D. Sheberla, J. Aguilera-Iparraguirre, T. D. Hirzel, R. P. Adams, and A. Aspuru-Guzik, “Automatic chemical design using a data-driven continuous representation of molecules,” ACS central science , vol. 4, no. 2, pp. 268–276, 2018. [13] W. Jin, R. Barzilay, and T. Jaakkola, “Junction tree variational autoen-coder for molecular graph generation,” in International conference on machine learning . PMLR, 2018, pp. 2323–2332. [14] P. Eckmann, K. Sun, B. Zhao, M. Feng, M. K. Gilson, and R. Yu, “Limo: 10 
+
+Latent inceptionism for targeted molecule generation,” Proceedings of machine learning research , vol. 162, p. 5777, 2022. [15] G. L. Guimaraes, B. Sanchez-Lengeling, C. Outeiral, P. L. C. Farias, and A. Aspuru-Guzik, “Objective-reinforced generative adversarial networks (organ) for sequence generation models,” arXiv preprint arXiv:1705.10843 , 2017. [16] A. Kadurin, S. Nikolenko, K. Khrabrov, A. Aliper, and A. Zhavoronkov, “drugan: an advanced generative adversarial autoencoder model for de novo generation of new molecules with desired molecular properties in silico,” Molecular pharmaceutics , vol. 14, no. 9, pp. 3098–3104, 2017. [17] J. You, B. Liu, Z. Ying, V. Pande, and J. Leskovec, “Graph convolutional policy network for goal-directed molecular graph generation,” Advances in neural information processing systems , vol. 31, 2018. [18] Y. Luo, K. Yan, and S. Ji, “Graphdf: A discrete flow model for molecular graph generation,” in International conference on machine learning .PMLR, 2021, pp. 7192–7203. [19] C. Shi, M. Xu, Z. Zhu, W. Zhang, M. Zhang, and J. Tang, “Graphaf: a flow-based autoregressive model for molecular graph generation,” arXiv preprint arXiv:2001.09382 , 2020. [20] Q. Liu, M. Allamanis, M. Brockschmidt, and A. Gaunt, “Constrained graph variational autoencoders for molecule design,” Advances in neural information processing systems , vol. 31, 2018. [21] Z. Wang, W. Nie, Z. Qiao, C. Xiao, R. Baraniuk, and A. Anandku-mar, “Retrieval-based controllable molecule generation,” arXiv preprint arXiv:2208.11126 , 2022. [22] J. Bai, S. Bai, Y. Chu, Z. Cui, K. Dang, X. Deng, Y. Fan, W. Ge, Y. Han, F. Huang, B. Hui, L. Ji, M. Li, J. Lin, R. Lin, D. Liu, G. Liu, C. Lu, K. Lu, J. Ma, R. Men, X. Ren, X. Ren, C. Tan, S. Tan, J. Tu, P. Wang, S. Wang, W. Wang, S. Wu, B. Xu, J. Xu, A. Yang, H. Yang, J. Yang, S. Yang, Y. Yao, B. Yu, H. Yuan, Z. Yuan, J. Zhang, X. Zhang, Y. Zhang, Z. Zhang, C. Zhou, J. Zhou, X. Zhou, and T. Zhu, “Qwen technical report,” arXiv preprint arXiv:2309.16609 , 2023. [23] D. Flam-Shepherd, K. Zhu, and A. Aspuru-Guzik, “Language models can learn complex molecular distributions,” Nature Communications ,vol. 13, no. 1, p. 3293, 2022. [24] D. Weininger, “Smiles, a chemical language and information system. 1. introduction to methodology and encoding rules,” Journal of chemical information and computer sciences , vol. 28, no. 1, pp. 31–36, 1988. [25] J. Deng, Z. Yang, H. Wang, I. Ojima, D. Samaras, and F. Wang, “A systematic study of key elements underlying molecular property prediction,” Nature Communications , vol. 14, no. 1, p. 6395, 2023. [26] D. S. Wigh, J. M. Goodman, and A. A. Lapkin, “A review of molecular representation in the age of machine learning,” Wiley Interdisciplinary Reviews: Computational Molecular Science , vol. 12, no. 5, p. e1603, 2022. [27] R. Irwin, S. Dimitriadis, J. He, and E. J. Bjerrum, “Chemformer: a pre-trained transformer for computational chemistry,” Machine Learning: Science and Technology , vol. 3, no. 1, p. 015022, 2022. [28] J. Li, Y. Liu, W. Fan, X.-Y. Wei, H. Liu, J. Tang, and Q. Li, “Empowering molecule discovery for molecule-caption translation with large language models: A chatgpt perspective,” IEEE transactions on knowledge and data engineering , 2024. [29] S. Liu, J. Wang, Y. Yang, C. Wang, L. Liu, H. Guo, and C. Xiao, “Conversational drug editing using retrieval and domain feedback,” in The Twelfth International Conference on Learning Representations ,2024. [30] Y. Fang, N. Zhang, Z. Chen, L. Guo, X. Fan, and H. Chen, “Domain-agnostic molecular generation with chemical feedback,” in The Twelfth International Conference on Learning Representations , 2024. [31] M. Popova, M. Shvets, J. Oliva, and O. Isayev, “Molecularrnn: Generat-ing realistic molecular graphs with optimized properties,” arXiv preprint arXiv:1905.13372 , 2019. [32] Y. Xie, C. Shi, H. Zhou, Y. Yang, W. Zhang, Y. Yu, and L. Li, “Mars: Markov molecular sampling for multi-objective drug discovery,” arXiv preprint arXiv:2103.10432 , 2021. [33] N. Lambert, J. Morrison, V. Pyatkin, S. Huang, H. Ivison, F. Brahman, L. J. V. Miranda, A. Liu, N. Dziri, S. Lyu et al. , “T \” ulu 3: Pushing frontiers in open language model post-training,” arXiv preprint arXiv:2411.15124 , 2024. [34] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray et al. , “Training language models to follow instructions with human feedback,” Advances in neural information processing systems , vol. 35, pp. 27 730–27 744, 2022. [35] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “Lora: Low-rank adaptation of large language models,” 
+
+arXiv preprint arXiv:2106.09685 , 2021. [36] G. Landrum et al. , “Rdkit: A software suite for cheminformatics, computational chemistry, and predictive modeling,” Greg Landrum ,vol. 8, no. 31.10, p. 5281, 2013. [37] Z. Shao, P. Wang, Q. Zhu, R. Xu, J. Song, X. Bi, H. Zhang, M. Zhang, Y. Li, Y. Wu et al. , “Deepseekmath: Pushing the limits of mathematical reasoning in open language models,” arXiv preprint arXiv:2402.03300 ,2024. [38] W. Jin, K. Yang, R. Barzilay, and T. Jaakkola, “Learning multimodal graph-to-graph translation for molecular optimization,” arXiv preprint arXiv:1812.01070 , 2018. [39] D. C. Elton, Z. Boukouvalas, M. D. Fuge, and P. W. Chung, “Deep learn-ing for molecular design—a review of the state of the art,” Molecular Systems Design & Engineering , vol. 4, no. 4, pp. 828–849, 2019. [40] P. Baldi, “Autoencoders, unsupervised learning, and deep architectures,” in Proceedings of ICML workshop on unsupervised and transfer learn-ing . JMLR Workshop and Conference Proceedings, 2012, pp. 37–49. [41] R. Winter, F. Montanari, A. Steffen, H. Briem, F. No´ e, and D.-A. Clevert, “Efficient multi-objective molecular optimization in a continuous latent space,” Chemical science , vol. 10, no. 34, pp. 8016–8024, 2019. [42] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Bengio, “Generative adversarial networks,” 
+
+Communications of the ACM , vol. 63, no. 11, pp. 139–144, 2020. [43] E. Putin, A. Asadulaev, Y. Ivanenkov, V. Aladinskiy, B. Sanchez-Lengeling, A. Aspuru-Guzik, and A. Zhavoronkov, “Reinforced ad-versarial neural computer for de novo molecular design,” Journal of chemical information and modeling , vol. 58, no. 6, pp. 1194–1204, 2018. [44] O. M´ endez-Lucio, B. Baillif, D.-A. Clevert, D. Rouqui´ e, and J. Wichard, “De novo generation of hit-like molecules from gene expression signa-tures using artificial intelligence,” Nature communications , vol. 11, no. 1, p. 10, 2020. [45] W. Jin, R. Barzilay, and T. Jaakkola, “Hierarchical generation of molecular graphs using structural motifs,” in International conference on machine learning . PMLR, 2020, pp. 4839–4848. [46] A. Tripp and J. M. Hern´ andez-Lobato, “Genetic algorithms are strong baselines for molecule generation,” arXiv preprint arXiv:2310.09267 ,2023. [47] A. Nigam, P. Friederich, M. Krenn, and A. Aspuru-Guzik, “Augmenting genetic algorithms with deep neural networks for exploring the chemical space,” arXiv preprint arXiv:1909.11655 , 2019. [48] J. Born and M. Manica, “Regression transformer enables concurrent sequence regression and generation for molecular language modelling,” 
+
+Nature Machine Intelligence , vol. 5, no. 4, pp. 432–444, 2023. [49] C. Edwards, T. Lai, K. Ros, G. Honke, K. Cho, and H. Ji, “Translation between molecules and natural language,” arXiv preprint arXiv:2204.11817 , 2022. [50] Z. Liang, J. Cao, W. Lin, J. Chen, and H. Xu, “Hierarchical deep re-inforcement learning for multi-robot cooperation in partially observable environment,” in 2021 IEEE third international conference on cognitive machine intelligence (CogMI) . IEEE, 2021, pp. 272–281. [51] A. O’Neill, A. Rehman, A. Maddukuri, A. Gupta, A. Padalkar, A. Lee, A. Pooley, A. Gupta, A. Mandlekar, A. Jain et al. , “Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collab-oration 0,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 6892–6903. [52] L. Gao, J. Schulman, and J. Hilton, “Scaling laws for reward model overoptimization,” in International Conference on Machine Learning .PMLR, 2023, pp. 10 835–10 866. [53] D. Guo, D. Yang, H. Zhang, J. Song, R. Zhang, R. Xu, Q. Zhu, S. Ma, P. Wang, X. Bi et al. , “Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning,” arXiv preprint arXiv:2501.12948 ,2025. [54] M. Popova, O. Isayev, and A. Tropsha, “Deep reinforcement learning for de novo drug design,” Science advances , vol. 4, no. 7, p. eaap7885, 2018. [55] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Prox-imal policy optimization algorithms,” arXiv preprint arXiv:1707.06347 ,2017. [56] Y. Mroueh, “Reinforcement learning with verifiable rewards: Grpo’s effective loss, dynamics, and success amplification,” arXiv preprint arXiv:2503.06639 , 2025. [57] M. Krenn, F. H¨ ase, A. Nigam, P. Friederich, and A. Aspuru-Guzik, “Self-referencing embedded strings (selfies): A 100% robust molecular string representation,” Machine Learning: Science and Technology , vol. 1, no. 4, p. 045024, 2020. [58] T. Sterling and J. J. Irwin, “Zinc 15–ligand discovery for everyone,” 
+
+Journal of chemical information and modeling , vol. 55, no. 11, pp. 2324– 2337, 2015. 11                               
+
+> [59] G. R. Bickerton, G. V. Paolini, J. Besnard, S. Muresan, and A. L. Hopkins, “Quantifying the chemical beauty of drugs,” Nature chemistry ,vol. 4, no. 2, pp. 90–98, 2012. [60] Z. Zhou, S. Kearnes, L. Li, R. N. Zare, and P. Riley, “Optimization of molecules via deep reinforcement learning,” Scientific reports , vol. 9, no. 1, p. 10752, 2019. [61] D. Rogers and M. Hahn, “Extended-connectivity fingerprints,” Journal of chemical information and modeling , vol. 50, no. 5, pp. 742–754, 2010. [62] E. Zelikman, G. Harik, Y. Shao, V. Jayasiri, N. Haber, and N. D. Goodman, “Quiet-star: Language models can teach themselves to think before speaking,” arXiv preprint arXiv:2403.09629 , 2024. [63] M. D. Hoffman, D. Phan, D. Dohan, S. Douglas, T. A. Le, A. Parisi, P. Sountsov, C. Sutton, S. Vikram, and R. A. Saurous, “Training chain-of-thought via latent-variable inference,” in NeurIPS , 2023. [64] J. Gehring, K. Zheng, J. Copet, V. Mella, Q. Carbonneaux, T. Cohen, and G. Synnaeve, “Rlef: Grounding code llms in execution feedback with reinforcement learning,” arXiv preprint arXiv:2410.02089 , 2024. [65] Z. Wu, B. Ramsundar, E. N. Feinberg, J. Gomes, C. Geniesse, A. S. Pappu, K. Leswing, and V. Pande, “Moleculenet: a benchmark for molecular machine learning,” Chemical science , vol. 9, no. 2, pp. 513– 530, 2018. [66] Q. Team, “Qwen3 technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2505.09388 [67] T. Wolf, L. Debut, V. Sanh, J. Chaumond, C. Delangue, A. Moi, P. Cistac, T. Rault, R. Louf, M. Funtowicz et al. , “Transformers: State-of-the-art natural language processing,” in Proceedings of the 2020 conference on empirical methods in natural language processing: system demonstrations , 2020, pp. 38–45. [68] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin, N. Gimelshein, L. Antiga et al. , “Pytorch: An imperative style, high-performance deep learning library,” Advances in neural information processing systems , vol. 32, 2019. [69] N. van Hilten, F. Chevillard, and P. Kolb, “Virtual compound libraries in computer-assisted drug discovery,” Journal of chemical information and modeling , vol. 59, no. 2, pp. 644–651, 2019.
+
+VI. A PPENDIX 
+
+A. Baseline Descriptions 
+
+JT-VAE [13] is a VAE-based generative model that first generates a scaffold junction tree and then assembles its nodes into a complete molecular graph. 
+
+GCPN [17] is an RL-based molecular graph generation method that optimizes molecules by maximizing a compos-ite reward function incorporating both adversarial loss and property-specific objectives. 
+
+MOLGQN [60] is an RL-based method that integrates double Q-learning with chemical domain knowledge to guide molecular generation more effectively. 
+
+MARS [32] is a Markov Chain Monte Carlo sampling framework that employs an adaptive fragment-editing proposal distribution, enhanced with Graph Neural Networks to propose chemically valid modifications. 
+
+GraphAF [19] is an autoregressive flow-based model that constructs molecular graphs by sequentially adding nodes and edges in a learnable, probabilistic manner. 
+
+GraphDF [18] is a normalizing flow model for molecule generation that operates in a discrete latent space and is further refined via reinforcement learning. 
+
+Chemformer [27] is a pre-trained Transformer-based molecular language model that operates on SMILES repre-sentations for both generative and discriminative tasks. 
+
+LIMO [14] is a variational autoencoder (VAE)-based frame-work that explores a latent space tailored for molecular design, enabling controlled molecule optimization and generation. 
+
+RetMol [21] is a retrieval-augmented generation framework built on Chemformer, which leverages a task-specific molecu-lar database to guide generation toward satisfying predefined design constraints. 
+
+RT [48] is a Transformer-based model pre-trained on SELF-IES. It generates molecules by taking expected molecular property values as input along with a given molecular scaffold, ensuring that the generated molecules incorporate this scaffold. 
+
+MOLGEN [30], a pre-trained molecular language model on SELFIES, employs prefix tuning to enhance generation diversity and utilizes contrastive learning to ensure alignment with predefined chemical preferences. 
+
+B. Prompt Design 
+
+We design task-specific prompts for both supervised fine-tuning (SFT) and reinforcement learning with verifiable re-wards (RLVR). Prompts are constructed in a structured, instruction-driven format to facilitate reliable molecule gen-eration under property or constraint guidance. Each training instance consists of: (i) a system message defining the assistant’s role, (ii) an illustrative example with a molecule and its associated property value, and (iii) ageneration instruction. For SFT, the prompt is followed by a ground-truth response. Examples are randomly sampled from the training set to enhance diversity. For RLVR, we adopt a similar format but revise the instruction to reflect optimization intent (e.g., ”as high as possible”). Optionally, a high-quality reference example can be included to stabilize early-stage policy learning. 12 
+
+Below we show one prompt used for logP-targeted SFT, and one for QED maximization in the RLVR setting: Prompt for logP Targeting (SFT) 
+
+[{ "role": "system", "content": "You specialize in molecular design and property-constrained molecule generation." },{ "role": "user", "content": "Example:\nProperty: logP\ nValue: <value>1.90</value>\n< SELFIES> C C Branch1 C C NH2+1 C C=C O C =C C =C C =C Ring1 =Branch2 Ring1 =Branch1 </SELFIES>" },{ "role": "user", "content": "Now generate a molecule with:\nProperty: logP\nValue: <value>1.16</value>" },{ "role": "assistant", "content": "<SELFIES> C C C@@H1 Branch1 C C C O C@@H1 C C C NH2+1 C@@H1 Ring1 =Branch1 C </SELFIES>" }] 
+
+Prompt for QED Maximization (RLVR) 
+
+[{ "role": "system", "content": "You specialize in molecular design and property-constrained molecule generation.\ nYour goal is to generate molecules with as high QED as possible." },{ "role": "user", "content": "Example:\nProperty: QED\ nValue: <value>0.946</value>\n< SELFIES> C C N C =C Branch1 C Br CBranch1 =C C =Branch1 C =O N C =C C =C C =N Ring1 =Branch1 =N Ring1 #C </SELFIES>" },{ "role": "user", "content": "Now generate a molecule with:\nProperty: QED\nValue: <value>as high as possible</value>" }] 
+
+All prompts are serialized using the apply chat template 
+
+function of the Qwen3 tokenizer [66], ensuring consistent formatting across both SFT and RLVR training regimes. 
+
+C. Model Training 
+
+This section provides detailed hyperparameter configura-tions for both the supervised fine-tuning (SFT) stage and the reinforcement learning with verifiable rewards (RLVR) stage.  
+
+> TABLE VI HYPERPARAMETER CONFIGURATIONS FOR LLM OL TRAINING .
+
+Hyperparameter Value 
+
+Model Configuration 
+
+Base model Qwen-3 (4B) LoRA rank 16 LoRA scaling factor 32 LoRA dropout 0.05 
+
+Supervised Fine-tuning 
+
+Training epochs 8Learning rate 1 × 10 −6
+
+Per-device batch size 2Gradient accumulation steps 8Effective batch size 16 Gradient checkpointing Enabled 
+
+Reinforcement Learning (GRPO) 
+
+Training epochs 8Learning rate 1 × 10 −6
+
+Per-device batch size 4Gradient accumulation steps 4KL coefficient ( β) 0.2 Group size ( G) 16 Top-k sampling k = 20 
+
+Nucleus sampling ( p) 0.9 Temperature 0.8 Max prompt length 512 tokens Max completion length 128 tokens Mixed precision bfloat16 
+
+All experiments are conducted using the HuggingFace Transformers library [67] and PyTorch [68]. The supervised fine-tuned model is used to initialize both the policy model and the frozen reference model for GRPO optimization. Task-specific verifiable reward functions are implemented using RDKit [36]. 13 
+
+Fig. 4. Training curves across different tasks. Each plot shows the metric trend over training steps. The top-left figure shows the supervised fine-tuning (SFT) process on three molecular properties and similarity, while the remaining plots illustrate reward progression during Reinforcement Learning with Verifiable Rewards (RLVR) with Group Relative Policy Optimization (GRPO).

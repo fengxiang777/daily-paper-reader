@@ -1,0 +1,1427 @@
+Title: Fishing Out Free Riders: Shapley-Based Reward Attribution for Parallel Reasoning via Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2607.18979v1
+
+Published Time: Wed, 22 Jul 2026 00:52:53 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Fishing Out Free Riders : Shapley-Based Reward Attribution for Parallel Reasoning via Reinforcement Learning 
+
+Wentao Zhang 1*, Haoyu Zhang 2*, Xinke Jiang 3*, Yuxuan Cheng 4, Yuhan Pan 1
+
+Miao Li 1, Zhipeng Qiao 1, Tao Feng 5, Zhen Tao 5, Dengji Zhao 1†1ShanghaiTech University 2City University of Hong Kong 3Peking University 
+
+> 4
+
+The Chinese University of Hong Kong, Shenzhen 5Zhejiang University wentaozh2001@gmail.com, hzhang2838-c@my.cityu.edu.hk, thinkerjiang@foxmail.com yuxuancheng1@link.cuhk.edu.cn, zhaodj@shanghaitech.edu.cn 
+
+Abstract 
+
+Large Language Models (LLMs) excel at multi-step reasoning, yet current parallel reasoning approaches often fail to distinguish the contri-butions of individual reasoning paths. Many paths may be redundant, misleading, or even detrimental, but outcome-level rewards assign uniform reward, leading to ambiguous learning signals and unstable training. We propose Par-allel Shapley , a reinforcement learning frame-work that attributes fine-grained, path-level con-tributions in multi-path reasoning. Treating each path as a player in a cooperative game, we leverage Shapley values to quantify marginal contributions, using a generative reward model to evaluate path utilities and Monte Carlo sam-pling for efficient approximation. Experiments on mathematical reasoning benchmarks show that Parallel Shapley outperforms existing base-lines while providing more stable and inter-pretable training. Our framework effectively “fishes out the free riders,” assigning reward pro-portionally and improving multi-path reasoning in LLMs. 
+
+1 Introduction 
+
+Large Language Models (LLMs) have achieved impressive performance across a wide range of nat-ural language processing tasks (Kaplan et al., 2020; Yang et al., 2024; Vu et al., 2024). More recently, inspired by human cognition (Lewis, 2025), ad-vances in deep reasoning (Sun et al., 2024) have significantly improved the logical consistency and multi-step reasoning capabilities of LLMs, as exem-plified by DeepSeek-R1, which shows that increas-ing reasoning depth during inference leads to sub-stantial gains on challenging reasoning tasks (Guo et al., 2025; Shao et al., 2024). This success of such human-inspired deep rea-soning models (Guo et al., 2025; Shao et al., 2024) 
+
+> *Equal contribution.
+> †Corresponding author.
+
+naturally raises a further question: beyond increas-ing reasoning depth, can models better emulate how humans explore multiple candidate solutions 
+
+and synthesize them into final decisions? Recent studies investigate this idea through test-time scal-ing (TTS) (Zhang et al., 2025), where multiple can-didate outputs are generated in parallel and evalu-ated via metric Pass@ k to reflect whether a correct solution exists among the trajectories. However, such approaches mainly estimate an upper bound of model performance (Brown et al., 2024), which treat reasoning trajectories independently. In con-trast, recent models (Comanici et al., 2025; Guo et al., 2025; Wen et al., 2025) move beyond by explicitly aggregating complementary information across parallel trajectories—referred to as Parallel Reasoning —thereby mitigating premature conver-gence to suboptimal solutions. This paradigm di-rectly responds to the above question and motivates the research in this work. Early Parallel Reasoning work (Yang et al., 2025b; Chen et al., 2025; Wen et al., 2025), em-ploys supervised fine-tuning (SFT) methods to imitate parallel thinking by learning from pre-constructed trajectories but often falls short on deep reasoning. More recently, motivated by the poten-tial of on-policy reinforcement learning, Parallel-R1 (Zheng et al., 2025) proposes a framework to teach models to parallel thinking and reasoning via Group Relative Policy Optimization (Shao et al., 2024). However, existing SFT and RL-based ap-proaches, especially Parallel-R1, still lack fine-grained modeling of individual reasoning paths .Since parallel paths may be complementary or even conflicting, explicitly modeling interactions and differentiating path contributions at the process level is crucial for improving inference-time rea-soning quality. This limitation motivates our approach: we pro-1arXiv:2607.18979v1 [cs.AI] 21 Jul 2026 <Summary>       
+
+> <\Summary>
+> Shared Policy Grandient
+> While
+> Δ
+> = (−2) ²− 4·1·3
+> = 4 − 12 = −8 < 0,
+> the roots are
+> complex.
+> Using the
+> quadratic
+> formula...
+> Roots are real ,
+> complete the square
+> <path2>
+> </path2>
+> <path3>
+> </path3>
+> While Δ = (−2) ²−
+> 4·1·3 = −8 < 0, the
+> roots are complex .
+> <path1>
+> </path1>
+> Using the quadratic
+> formula, x = [–b ±
+> √(b ²– 4ac)] / (2a)
+> Conflict
+> Complement
+> Query: Solve the quadratic equation x² − 2x + 3 = 0
+> Gradient
+> Flow
+> Operation
+> Flow
+> Ignored
+> Path
+> Path
+> Relationship Helpful
+> Path
+> Misleading
+> Path
+> Advantage
+> Outcome
+> Reward
+
+Figure 1: Misleading path and helpful path shared pol-icy gradient without recognizing. When solving the problem, path 1 and path 2 provide complementary and helpful solutions, while path 3 misleads the prediction. 
+
+pose a Parallel Thinking RL framework that en-ables fine-grained, path-level control over reason-ing trajectories. Nevertheless, effectively designing such a framework remains the following challenge: 
+
+Challenge: Quantifying path-level contributions and designing corresponding rewards. In par-allel reasoning, reasoning trajectories are inher-ently heterogeneous and not independent : some provide complementary and critical information that jointly improves the final prediction, while others introduce redundant, conflicting, or even detrimental evidence. Existing parallel thinking RL frameworks (Zheng et al., 2025) primarily compute rewards at the aggregated outcome level and uniformly assign them to all reasoning tra-jectories. However, since the summary is inher-ently a compressed representation of multiple paths , outcome-level rewards fail to reflect the true marginal contribution of each individual path. As a result, erroneous, redundant, or misleading reason-ing trajectories may still receive positive policy gra-dient updates when their information is absorbed or overridden during summarization—an instance of reward hacking (Shihab et al., 2025). More fundamentally, under intra- and inter-path de-pendencies , the marginal contribution of a single path cannot be meaningfully evaluated in isolation, as its usefulness is defined by its interaction with other paths, whether complementary or conflicting. To address this challenge, we propose Paral-lel Shapley , a fine-grained reinforcement learn-ing framework for multi-path reasoning via Group Relative Policy Optimization. In implementation, we design a hierarchical reward mechanism : an 
+
+outcome reward at summary level based on cor-rectness, and a process reward at path level that captures each reasoning trajectory’s marginal con-tribution. To compute process rewards, we formal-ize the parallel reasoning process as a cooperative game, where each reasoning path is treated as a player. We employ a Generative Reward Model to evaluate the utility of different path combinations, and leverage Shapley values as process rewards to quantify each path’s contribution to the final out-come. To circumvent the exponential complexity of exact Shapley value computation, we adopt Monte Carlo sampling to efficiently approximate marginal contributions by sampling permutations of paths, reducing the otherwise intractable combinatorial cost to a practical and scalable estimation proce-dure. Extensive experiments on multiple bench-marks demonstrate that Parallel Shapley consis-tently outperforms strong baselines, achieving an average of 42.3% improvement on Pass@16 com-pared to the SOTA parallel-thinking model, while exhibiting improved training stability and faster convergence. In summary, our contributions are as follows: • We propose Parallel Shapley , the first frame-work to introduce cooperative game theory and Shapley value attribution into parallel thinking, enabling fine-grained quantification of path-level marginal contributions. • We design a Monte Carlo Shapley-based reward estimation method combined with a Genera-tive Reward Model to disentangle path-level pro-cess rewards from outcome rewards, addressing the intrinsic difficulty of reward attribution in summary-based parallel reasoning frameworks. • Our approach demonstrates substantial and con-sistent performance gains across diverse bench-marks, accompanied by enhanced optimization stability and accelerated learning dynamics. 
+
+2 Related Work 
+
+2.1 Parallel Reasoning 
+
+Parallel Reasoning can be broadly categorized into inference-time and training-based approaches. 2Inference-time methods explore multiple reasoning paths through brute-force sampling (Wang et al., 2022; Brown et al., 2024) or heuristic-guided tree search, such as Tree of Thoughts (Yao et al., 2023) and Monte Carlo Tree Search (Zhang et al., 2024). These approaches rely on fixed search strate-gies or hand-crafted heuristics and do not adapt the model’s reasoning behavior through learning. Training-based methods aim to internalize paral-lel reasoning capabilities within the model. Un-der SFT, Multiverse (Yang et al., 2025b) models parallel generation via latent path merging deci-sions; ASPD (Chen et al., 2025) exploits intrin-sic parallelism for adaptive decoding; and Para-Thinker (Wen et al., 2025) introduces a native paral-lel paradigm to scale test-time computation. More recently, Parallel-R1 (Zheng et al., 2025) adopts a reinforcement learning framework with a pro-gressive curriculum to encourage multi-path ex-ploration. However, existing training-based ap-proaches predominantly rely on outcome-level re-wards shared across all reasoning paths , leaving fine-grained reward assignment among parallel tra-jectories underexplored. 
+
+2.2 Reinforcement Learning for LLMs 
+
+Reinforcement learning (RL) has emerged as a powerful paradigm for improving LLM alignment and reasoning, with recent work such as OpenAI-O1 (OpenAI, 2025) and DeepSeek-R1 (Guo et al., 2025) demonstrating strong performance on com-plex tasks. Methods like PPO (Schulman et al., 2017) have been widely adopted, but require mul-tiple rounds of on-policy optimization. To im-prove efficiency, alternatives such as Direct Pref-erence Optimization (DPO) (Rafailov et al., 2024) bypass reward modeling by directly optimizing preference loss, but suffer from off-policy bias. Group Relative Policy Optimization (GRPO) (Shao et al., 2024) offers a compromise by avoiding learned value networks and leveraging intra-group comparisons for relative rewards. Building on these, recent RL methods specifically designed for multi-step reasoning and tool interaction include AEPO (Dong et al., 2025a), which addresses en-tropy imbalance and rollout collapse in multi-round agents; ARPO (Dong et al., 2025b), which guides exploration of uncertain high-entropy tool calls us-ing advantage attribution; and MEM1 (Zhou et al., 2025), which synergizes memory and reasoning to support long-horizon multi-step interactions. More recently, DeepSearch (Wu et al., 2026) addresses the exploration bottleneck in RLVR by integrating Monte Carlo Tree Search into the training loop. De-spite these advances, existing RL approaches still face key challenges: coarse-grained action mod-eling, trajectory-level scalar rewards, limited exploration in more broad dimensions .
+
+3 Parallel Shapley Construction 
+
+In this section, we present Parallel Shapley, which consists of three key components: ❶ tag-guided parallel reasoning structure using <Path> and 
+
+<Summary> blocks (Section 3.1), ❷ Shapley value computation via Monte Carlo sampling to quan-tify path-level marginal contributions (Section 3.2), and ❸ outcome and path-level rewards two-level reward strategy for reinforcement training in Sec-tion 3.3. More details of Proofs, Prompt are in Appendix A,B. 
+
+3.1 Parallel Thinking Behavior Formulation 
+
+Following the prior works (Yang et al., 2025b; Zheng et al., 2025), we intro-duce these three control HTML-like tags: 
+
+<Parallel>...</Parallel> ,<Path>...</Path> 
+
+and <Summary>...</Summary> to explicitly elicit parallel reasoning behaviors in large language models. At the beginning of inference, the model performs standard autoregressive generation along a main reasoning chain. ❶ Once the <Parallel> 
+
+tag is generated, the model temporarily suspends the main chain and simultaneously expands multiple reasoning paths, each enclosed within an independent ❷ <Path>...</Path> block. 
+
+❸ After all parallel paths are completed, the model aggregates their contents into a concise 
+
+<Summary>...</Summary> block, where interme-diate conclusions from different perspectives are synthesized to produce the final answer. 
+
+3.2 Shapley-Based Reward Attribution 
+
+Under the parallel thinking formulation, the model generates K reasoning trajectories within the blocks <Path>...</Path> . We denote the set of all reasoning paths for a given sample as P := 
+
+{path 1, path 2, · · · , path K }, with path j denoting each path entry. 
+
+Marginal Contribution Calculation. Let P =
+
+{path 1, . . . , path K } denote the set of reasoning paths generated in the parallel thinking stage. To quantify the contribution of each individual path to 3GG
+
+> Learnable
+> Operation
+> Flow
+> Policy
+> Gradient
+> Path
+> Calculation
+
+𝐀 𝐀 𝐀 𝐀 ℎ1
+
+𝐀 𝐀 𝐀 𝐀 ℎ2
+
+𝐀 𝐀 𝐀 𝐀 ℎ𝐀 
+
+> Normalization
+> ...
+> Advantege
+> Trajectory Generation
+> rule-base
+> reward model
+
+Parallel-R1  
+
+> outcome
+> reward
+> <Path1>. . .</Path1>
+> <Path2>. . .</Path2>
+> <PathK>. . .</PathK>
+> ...
+> <Summary> . . .</Summary>
+> Output 1
+> Query
+> Policy
+> Model
+> <Path1>. . .</Path1>
+> <Path2>. . .</Path2>
+> <PathK>. . .</PathK>
+> ...
+> <Summary> . . . </Summary>
+
+Parallel 
+
+Shapley Trajectory Generation 
+
+> Output
+> outcome
+> reward
+> 𝐀 1,𝐀
+> 𝐀 𝐀 𝐀 ℎ1
+> Query
+> Policy
+> Model
+> Shapley-Based
+> Reward Attribution
+> rule-base reward
+> model
+
+∆𝐀 𝐀 𝐀 ℎ3
+
+> 𝐀 1
+
+∆𝐀 𝐀 𝐀 ℎ2   
+
+> 𝐀 1
+> U(𝐀 3
+> 𝐀 1)：
+> U(𝐀 2
+> 𝐀 1)：
+> 𝐀 (𝐀 𝐀
+> 𝐀 1)：
+> < 0
+
+∆𝐀 𝐀 𝐀 ℎ1
+
+> 𝐀 1
+> Monte Carlo Sampling
+> ...
+> M
+
+G
+
+... 
+
+> = [path1, path3, path2, pathj,...]
+
+𝐀 1      
+
+> 𝐀 𝐀
+> 𝐀 𝐀 ∪ { 𝐀𴐀𝐀𰠀 𝐀 } = { 𝐀𴐀𝐀𰠀 𝐀 } =
+> 𝐀 𝐀
+> 𝐀 𝐀 ∪ { 𝐀𴐀𝐀𰠀 𝐀 } = { 𝐀𴐀𝐀𰠀 𝐀 ,𝐀𴐀𝐀𰠀 𝐀 } =
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀 ∪ { 𝐀𴐀𝐀𰠀 𝐀 } = { 𝐀𴐀𝐀𰠀 𝐀 ,𝐀𴐀𝐀𰠀 𝐀 ,𝐀𴐀𝐀𰠀 𝐀 } =
+> Generative Reward
+> Models
+> ...
+> M
+> Path marginal
+> contribution
+
+Shapley-Based Reward Attribution 
+
+𝐀 𝐀 
+
+> Monte Carlo
+> Permutation
+> Shapley Value
+> for Path
+
+𝐀 𝐀 𝐀 𝐀 ℎ
+
+> 𝐀 (· )
+> Utility Function
+> of Path Subset
+
+... ... ...    
+
+> U(𝐀 3
+> 𝐀 1)
+> U(𝐀 2
+> 𝐀 1)
+> 𝐀 (𝐀 𝐀
+> 𝐀 1)
+
+... Figure 2: Overview of Parallel Shapley Pipeline. Left: Comparison of training frameworks. Parallel-R1 assigns uniform outcome rewards to all paths, while Parallel Shapley computes individualized marginal contributions for each reasoning path. Right: The Shapley-based reward attribution mechanism. We sample M path permutations via Monte Carlo, compute marginal contributions ∆πm 
+
+> j
+
+under each ordering, and aggregate them to obtain ϕMC path j as the path-level reward for reinforcement learning. 
+
+the final outcome, we define the score of a path us-ing the Shapley value , which measures its expected marginal contribution across all possible subsets of other paths. Formally, let U : 2 P → R be a utility function defined over subsets of reasoning paths. For any path path j ∈ P , its Shapley value ϕpath j is: 
+
+ϕpath j := 1
+
+K
+
+KX
+
+k=1 
+
+K − 1
+
+k − 1
+
+−1 X
+
+S⊆P\ path j
+
+|S|=k−1
+
+∆Sj ,
+
+where the utility function U(·) evaluates the quality of a set of reasoning paths when they jointly con-tribute to the final decision. By adding path j to S,the inner difference ∆Sj = U(S ∪{ path j })−U(S)
+
+represents the marginal utility of path j , and the averaging ensures fairness across all subset sizes. However, due to complex dependencies and inter-actions among reasoning paths, U(·) cannot be reliably estimated using verified reward signals such as RLVR (Wang et al., 2025). Therefore, we instantiate U(·) using Generative Reward Model 
+
+(GRM) (Mahan et al., 2024) to provide reward sig-nals for generated outputs. Thus, all paths within a given subset can be holistically evaluated as: 
+
+U(S) = GRM( S) ⊂ [0 , 5] , S ⊆ P .
+
+The GRM is prompted to produce scores in 
+
+[0 , 5] considering five dimensions and the detailed prompting template for GRM-based subset evalua-tion is provided in Appendix B. 
+
+Monte Carlo Approximation. Exact computa-tion of Shapley values requires evaluating the utility function U(·) for all 2K possible subsets of paths, which becomes computationally prohibitive as K
+
+grows. To address this challenge, we adopt a Monte Carlo approximation based on the permutation for-mulation of Shapley values. The key insight is that instead of explicitly enumerating all subsets, we can estimate the expected marginal contribution by sampling random orderings of paths: for each ordering, a path’s contribution is measured by com-paring the utility before and after its insertion at its designated position. Formally, let Π denote the set of all permu-tations of the path set P. We uniformly sam-ple M permutations {πm}Mm=1 from Π, where each permutation represents a hypothetical or-der in which paths are added to an initially empty coalition. For a given permutation πm =(path πm(1) , path πm(2) , . . . , path πm(K)), let Sπm
+
+j de-note the set of paths appearing before path j in this ordering. The marginal contribution of path j under permutation πm is then computed as the difference 4in utility when path j joins the coalition Sπm 
+
+> j
+
+:
+
+∆πm 
+
+> j
+
+= U(Sπm 
+
+> j
+
+∪ { path j }) − U(Sπm 
+
+> j
+
+).
+
+By averaging these marginal contributions across all sampled permutations, we obtain the Monte Carlo estimate of the Shapley value: 
+
+ϕMC  
+
+> path j
+
+= 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+∆πm 
+
+> j
+
+.
+
+This approximation converges to the true Shapley value as M → ∞ , with the estimation error de-creasing at rate O(1 /√M ). The resulting estimate 
+
+ϕMC  
+
+> path j
+
+serves as the path-level reward in our rein-forcement learning framework Section 3.3. 
+
+3.3 Reinforcement Training 
+
+After formulating the tag-guided parallel reason-ing behavior through supervised fine-tuning fol-lowing (Yang et al., 2025b; Zheng et al., 2025), we further optimize it via reinforcement learn-ing. Our RL framework is on-policy and de-rived from PPO (Schulman et al., 2017), following GRPO (Shao et al., 2024). Specifically, consider a rollout group consisting of Gs trajectories {y(p)}Gs 
+
+> p=1
+
+sampled from the old policy πθold , where each trajectory is a sequence of generated tokens. Let RG denote the set of all token-level rewards {r(p) 
+
+> i
+
+} across the group. For each token x(p) 
+
+> i
+
+in trajectory y(p), we compute a normalized group-relative advantage as: 
+
+ˆA(p) 
+
+> i
+
+=
+
+
+
+r(p) 
+
+> i
+
+− mean (RG)
+
+
+
+/std (RG).
+
+The GRPO optimization objective is defined as:               
+
+> J(θ) = E
+> "
+> 1
+> GsGsX
+> p=1
+> 1
+> |y(p)|
+> |y(p)|
+> X
+> i=1
+> Clip
+> 
+> ˜z(p)
+> i,ˆA(p)
+> i
+>  #
+> −βDKL ,
+> Clip
+> 
+> ˜z(p)
+> i,ˆA(p)
+> i
+> 
+> = min
+> 
+> ˜z(p)
+> iˆA(p)
+> i,clip(˜ z(p)
+> i,1±ε) ˆA(p)
+> i
+> 
+> ,
+
+here importance ratio ˜z(p) 
+
+> i
+
+= πθ (x(p)      
+
+> i|q,x (p)
+> <i )
+> πθold (x(p)
+> i|q,x (p)
+> <i )
+
+de-notes the probability ratio at the token level. Term 
+
+DKL (πθ∥πref ) constrains the updated policy to re-main close to a frozen reference policy πref . No-tably, all rewards, advantages, and policy updates in our framework are defined at action level and applied at token level with two aspects: • Outcome-level reward: evaluates the quality of the final answer produced by output i. We extract the final answer from output i and com-pare it with the ground truth agold via exact string matching after normalization (removing whites-pace, lowercasing, standardizing notation), with 
+
+±1% tolerance for numerical answers: 
+
+Rout  
+
+> i
+
+= Acc (answer i, a gold ) ∈ { 0, 1}.
+
+• Path-level reward: Monte Carlo Shapley value 
+
+ϕMC  
+
+> path j
+
+(Sec. 3.2) quantifies the marginal contri-bution of each reasoning path, providing fine-grained reward assignment to individual paths. 
+
+Reward Combination. For each rollout, we parse the response into K paths and a final 
+
+<Summary> block. After normalizing both reward signals, we construct the token-level reward tensor as: 
+
+rt = λoRout · 1[t = T ] + λpKX
+
+> j=1
+
+˜ϕMC  
+
+> j
+
+· 1[t = ej ],
+
+where T is the last valid token of the whole re-sponse, ej is the last token of the corresponding 
+
+<Path_j> span, and ˜ϕMC  
+
+> j
+
+denotes the normalized Shapley reward. In other words, the outcome re-ward is assigned to the last valid token of the full response, while each path-level reward is assigned to the closing token of its <Path> span. This fol-lows the standard last-token reward assignment convention in RL for LLMs (Sheng et al., 2024): since both final-answer correctness and path-level marginal utility can only be judged after the corre-sponding sequence or span is complete, the scalar reward is injected at its last valid token. After the reward tensor is constructed, GRPO performs group-normalized advantage estimation and applies token-level policy-gradient updates through the au-toregressive likelihood objective. 
+
+4 Experiments 
+
+4.1 Experimental Setups Setup. We use Qwen3-4B-Base (Yang et al., 2025a) as our backbone model. Following Parallel-R1 (Zheng et al., 2025), we perform a cold-start initialization via supervised fine-tuning on Parallel-GSM8K (Zheng et al., 2025), resulting in 230 gra-dient update steps. For reinforcement learning, we train on the DAPO dataset for only 40 gradient update steps using the GRPO algorithm, with a batch size of 256, a learning rate of 1e-6, and 8 rollouts per sample, without warm-up or learning 5Type Method AIME25 AIME24 AMC23 MATH Avg.                                                                                                
+
+> Mean@16 Pass@16 Mean@16 Pass@16 Mean@16 Pass@16 Mean@1
+> Baselines
+> Qwen3-4B-Base 1.3 10.2 2.9 16.5 8.1 51.2 13.9 6.6
+> SFT + Parallel
+> Parallel-SFT-Unseen 5.2 20.9 8.5 26.7 41.7 80.1 71.5 31.7
+> RL Approach
+> GRPO (DAPO) 14.8 32.4 18.5 30.6 63.6 85.1 83.5 45.1 + RL on GSM8K 13.3 26.3 18.8 34.9 66.4 82.2 82.6 45.3 Parallel-R1-Unseen 17.7 37.8 18.3 33.2 69.7 88.9 82.6 47.1
+> Ours Parallel Shapley 17.2 50.0 20.1 63.3 72.8 92.5 83.1 48.3 Ablation
+> Leave One Out 15.9 35.4 18.8 34.1 67.7 86.5 82.4 46.2 Path Independent Evaluation 16.8 36.1 19.1 33.7 68.4 87.6 81.5 46.5
+> GRM Sensitivity
+> w/ Qwen2.5-3B-Instruct 18.1 43.2 19.4 46.8 71.2 90.1 82.9 47.4 w/ Qwen3-4B-Instruct 18.4 45.7 19.7 52.4 71.8 91.0 83.0 47.9 w/ Qwen2.5-7B-Instruct 18.6 47.3 19.9 58.2 72.3 91.8 83.0 48.1
+
+Table 1: Performance comparison on mathematical reasoning benchmarks for the Qwen-3-4B-Base model trained under different parallel thinking configurations. We report Mean@16 and Pass@16 for AIME25, AIME24, and AMC23, while MATH is evaluated with Mean@1. GRM sensitivity rows share the same Parallel Shapley training setup ( K = 4 ) with different evaluator choices.                              
+
+> Counts ( K)AIME 25 AIME 24 AMC 23 MATH Avg.
+> K= 2 16.0 18.1 67.2 80.4 45.4
+> K= 3 16.4 17.0 67.8 81.2 45.6
+> K= 4 17.2 20.1 72.8 83.1 48.3
+> K= 5 15.2 18.9 69.4 81.6 46.2
+
+Table 2: Ablation Study on Path Counts ( K). Perfor-mance comparison across different number of paths. 
+
+rate scheduling. The maximum prompt length and response length are set to 2,000 and 3,000 tokens, respectively. We use qwen-plus as our default GRM. All experiments are built upon the VERL codebase (Sheng et al., 2024), with its default train-ing recipe adopted throughout without additional hyperparameter tuning. 
+
+Evaluation. At test time, we evaluate on four mathematical reasoning benchmarks: AIME24, AIME25, AMC23, and MATH (Hendrycks et al., 2021a). We generate one response per problem on MATH. For the remaining three benchmarks, we draw 16 i.i.d. samples per problem at the same decoding temperature and report Mean@16 accu-racy to reduce sampling variance, consistent with prior work (Zheng et al., 2025; Wang et al., 2025). We additionally report Pass@16, computed as the fraction of problems for which at least one of the 16 sampled responses is correct, to reflect the upper bound of model capability. 
+
+4.2 Main Results Analysis 
+
+We conduct experiments on AIME25, AIME24, AMC23, and MATH as shown in Table 1. Overall, SFT with parallel-format prompting brings a large gain over the base model, but still lags behind RL, indicating that parallel thinking structure is help-ful but not sufficient and on-policy optimization is necessary for strong mathematical reasoning. 
+
+Overall comparison. Parallel Shapley achieves the best overall results while being substantially more training-efficient: with only 40 RL steps ,our model already matches or exceeds Parallel-R1-Unseen trained with 200 RL steps on most settings. In particular, we obtain a clear improve-ment on the hardest benchmark AIME25, improv-ing Pass@16 from 37 .8 → 50 .0 (+32.3% ). We also improve AIME24 Mean@16 from 18 .3 →
+
+20 .1 (+9.8% ) and Pass@16 from 33 .2 → 63 .3
+
+(+90.7% ), and raise AMC23 Mean@16 from 
+
+69 .7 → 72 .8 (+4.4% ) and Pass@16 from 88 .9 →
+
+92 .5 (+4.0% ). On MATH, we achieve 83 .1 vs. 
+
+82 .6 for Parallel-R1-Unseen. These results sup-port that Shapley-based path-level reward assign-ment provides denser and less biased learning sig-nals than outcome-only shared rewards, effectively discouraging misleading trajectories and enabling faster convergence. 
+
+Pass@16 gains and the Mean@16 trade-off. 
+
+The gains on Pass@16 are particularly striking, 6with an average improvement of 42.3% across three benchmarks, reaching 50.0 on AIME25 and 
+
+63.3 on AIME24. By rewarding each path propor-tionally to its marginal contribution, the model is steered toward generating diverse and complemen-tary reasoning trajectories, substantially increasing the probability of covering correct solutions across multiple attempts. Meanwhile, Mean@16 improve-ments are more moderate and, on AIME25, slightly below Parallel-R1 ( 17 .2 vs. 17 .7). This is a natural consequence of the same mechanism: Shapley attri-bution encourages path specialization (Section 4.4), so individual rollouts explore different angles rather than converging on a single answer, which elevates the upper bound (Pass@16) while tempering ex-pected accuracy (Mean@16). We discuss bridging this gap via on-policy self-distillation in Section 5. 
+
+4.3 Ablation Study 
+
+To investigate the effectiveness of path-level con-trol, we conducted ablation studies comparing the following two strategies: • Leave-One-Out (LOO): Measures each path’s contribution by removing it from the full path set and evaluating the utility difference: 
+
+ϕLOO path j = GRM (P) − GRM (P − { path j }).
+
+This approach captures marginal contributions at the full coalition but does not incorporate weight-ing across different coalition sizes. • Independent Path Evaluation: Evaluates each path in isolation without considering the pres-ence of other paths, computing ϕIndep path j =
+
+GRM ({path j }).The empirical results are presented in Table 1. Both baselines yield suboptimal performance com-pared to Parallel Shapley. Independent path evalua-tion achieves the lowest performance (Avg. 46 .5), as it evaluates paths in isolation without modeling how they complement or conflict with each other in the final reasoning chain. LOO performs slightly worse (Avg. 46 .2) since measuring contributions only relative to the full path set overlooks how path values vary across different subset compositions— a key factor that Shapley values capture through weighted averaging over all possible coalitions. Parallel Shapley (Avg. 48 .3) outperforms both baselines by a substantial margin, demonstrating that explicit modeling of coalition-based marginal contributions is essential for accurately assigning reward in multi-path reasoning. 
+
+GRM Sensitivity Analysis. In our framework, the GRM serves exclusively as a reward signal provider : it scores subsets of already-generated reasoning paths to estimate coalition-level utility for Shapley attribution, and does not participate in path generation, provide reasoning traces, or di-rectly supervise individual path content. To verify that the observed gains are not an artifact of using a proprietary evaluator, we replace qwen-plus with progressively weaker open-source alternatives un-der the same K = 4 , 40-step RL setting. Results are reported in the lower block of Table 1. Two findings emerge. First, even the weakest evaluator (Qwen2.5-3B-Instruct) yields consistent improve-ments over Parallel-R1-Unseen across all bench-marks, confirming that the method does not rely exclusively on a strong proprietary model. Second, stronger evaluators provide better subset-utility esti-mates and further improve performance, indicating that GRM quality and Shapley attribution are com-plementary: better utility estimates lead to more ac-curate marginal contribution scores, which in turn produce cleaner training signals. Finally, using the identical qwen-plus evaluator (46.5 vs. 48.3 on average), the contrast between Independent Path Evaluation and Parallel Shapley isolates the effect of coalition - aware attribution, demonstrating that improvements arise from Shapley - based path in-teraction modeling instead of evaluator strength alone. 
+
+Training Dynamics. Figure 3 compares the train-ing curves of Parallel Shapley, Parallel-R1, and GRPO over 40 RL steps. Parallel Shapley improves faster and reaches a higher final score ( 0.652 )compared with Parallel-R1 ( 0.609 ) and GRPO (0.591 ). Notably, Parallel Shapley achieves stable convergence after approximately 30 steps, whereas Parallel-R1 and GRPO continue to improve slowly without plateauing within the same budget. This suggests that Shapley-based path-level reward at-tribution provides denser and more discriminative training signals, enabling the policy to identify and reinforce high-contribution paths more efficiently than uniform outcome-level rewards. 
+
+Parameter Sensitivity Study. We also con-ducted a parameter sensitivity study with differ-ent path counts K = 2 , 3, 4, 5. We found that the model performs best at K = 4 , achieving state-of-the-art results of 17 .2, 20 .1, and 72 .8 on AIME25, AIME24, and AMC23, respectively. Fur-ther increasing to K = 5 degrades performance 7Figure 3: Training-curve comparison among Parallel Shapley, GRPO, and Parallel-R1 over 40 RL steps. 
+
+uniformly (Avg. 46 .2), indicating that excessive parallel paths introduce redundancy and computa-tional overhead without proportional benefit. This suggests an optimal trade-off at K = 4 . The ob-served sensitivity underscores the importance of carefully tuning K to balance exploration depth against diminishing returns, as overly large path sets can dilute the signal-to-noise ratio in Shapley value estimation. 
+
+4.4 Path Complementarity Analysis 
+
+To verify whether Parallel Shapley encourages complementary reasoning across paths, we con-duct a Path Complementarity Analysis( K = 4 ): if paths are truly complementary , each carries non-redundant information not covered elsewhere, and masking any path should cause a sharp accu-racy drop; if paths are redundant , surviving paths suffice to reconstruct the answer and degradation should be mild. We therefore randomly mask a fraction of generated paths before the <Summary> 
+
+stage and measure the resulting accuracy loss as a diagnostic signal. Results are shown in Figure 4. Across all benchmarks, both methods naturally degrade under path masking, yet Parallel Shap-ley degrades more sharply —consistent with higher path complementarity. Under 20% masking, Paral-lel Shapley loses an average of 66.8% of its origi-nal score (e.g., AIME 25: 17 .2 → 2.2, AIME 24: 
+
+20 .1 → 4.7), whereas Parallel-R1 drops by 64.5% 
+
+(AIME 25: 15 .6 → 1.9, AIME 24: 15 .4 → 5.0). The gap widens considerably at 40% masking: Par-allel Shapley degrades by 82.1% on average, com-pared with 71.9% for Parallel-R1—a difference of 10.2 percentage points. This differential degradation directly reflects the two methods’ structural difference. Parallel Shapley rewards each path by its marginal contri-bution , steering the model toward a clear division of labor where each path specializes in a distinct reasoning role—algebraic manipulation, case enu-AIME 25 AIME 24 AMC 23 MATH    
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Score (Avg.)
+> 20% Path Dropout
+> Parallel Shapley
+> Parallel Shapley w/ 20% Path Dropout
+> Parallel R1 (Baseline)
+> Parallel R1 w/ 20% Path Dropout
+> AIME 25 AIME 24 AMC 23 MATH
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Score (Avg.)
+> 40% Path Dropout
+> Parallel Shapley
+> Parallel Shapley w/ 40% Path Dropout
+> Parallel R1 (Baseline)
+> Parallel R1 w/ 40% Path Dropout
+
+Figure 4: Path dependency analysis ( K = 4 ). Solid lines denote full-path baselines; dashed lines denote the corresponding masking conditions. 
+
+meration, or boundary verification. Parallel-R1’s uniform rewards, by contrast, produce redundant paths that rehearse the same logic, so surviving paths still suffice to reconstruct the answer. These results confirm that Parallel Shapley successfully induces complementary, non-overlapping rea-soning across paths. 
+
+5 Conclusion and Future Work 
+
+We propose Parallel Shapley , a reinforcement learning framework that formalizes each reason-ing path as a player in a cooperative game and leverages Shapley values with Monte Carlo ap-proximation and a Generative Reward Model to quantify path-level marginal contributions. Experi-ments on four mathematical reasoning benchmarks show consistent improvements over strong base-lines with fewer training steps, yielding an average 
+
+42.3% Pass@16 improvement while maintaining competitive Mean@16. Preliminary multi-hop QA results (Appendix H) further suggest generalizabil-ity beyond mathematical reasoning. As discussed in Section 4.2, Shapley-based at-tribution encourages path specialization, elevat-ing Pass@16 while introducing a trade-off with Mean@16. To bridge this gap, we plan to explore on-policy self-distillation (Wu et al., 2025), using the diverse multi-path trajectories as distillation 8targets to internalize synthesis behavior into single-generation performance. We also intend to extend Parallel Shapley to code generation, where parallel paths can naturally decompose into sub-modules and alternative implementations. 
+
+Limitations 
+
+While Parallel Shapley demonstrates consistent im-provements in path-level reward assignment for parallel reasoning, several limitations remain. First, due to computational constraints, our experiments are conducted on Qwen3-4B-Base, and the method has not yet been evaluated on larger-scale models; we plan to extend validation to larger backbones in future work. Second, although Monte Carlo sampling reduces the combinatorial cost of exact Shapley computation, the number of GRM queries still grows with the number of parallel paths K,which may become a bottleneck at larger scales; we plan to explore more sample-efficient approx-imation strategies such as stratified sampling to address this. Third, the gap between Pass@16 and Mean@16 indicates that while Parallel Shap-ley effectively improves the model’s upper-bound reasoning capability, consistently converting this into single-generation accuracy remains an open challenge; we plan to investigate on-policy self-distillation as a principled mechanism to bridge this gap in future work. 
+
+References 
+
+Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald Clark, Quoc V Le, Christopher Ré, and Azalia Mirho-seini. 2024. Large language monkeys: Scaling infer-ence compute with repeated sampling. arXiv preprint arXiv:2407.21787 .Keyu Chen, Zhifeng Shen, Daohai Yu, Haoqian Wu, Wei Wen, Jianfeng He, Ruizhi Qiao, and Xing Sun. 2025. Aspd: Unlocking adaptive serial-parallel de-coding by exploring intrinsic parallelism in llms. 
+
+arXiv preprint arXiv:2508.08895 .Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, and 1 others. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Guanting Dong, Licheng Bao, Zhongyuan Wang, Kangzhi Zhao, Xiaoxi Li, Jiajie Jin, Jinghan Yang, Hangyu Mao, Fuzheng Zhang, Kun Gai, and 1 others. 2025a. Agentic entropy-balanced policy optimiza-tion. arXiv preprint arXiv:2510.14545 .Guanting Dong, Hangyu Mao, Kai Ma, Licheng Bao, Yifei Chen, Zhongyuan Wang, Zhongxia Chen, Ji-azhen Du, Huiyang Wang, Fuzheng Zhang, and 1 others. 2025b. Agentic reinforced policy optimiza-tion. arXiv preprint arXiv:2507.19849 .Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhu-oshu Li, Ziyi Gao, Aixin Liu, and 175 others. 2025. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature , 645(8081):633–638. Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, D. Song, and J. Steinhardt. 2021a. Measuring mathematical problem solving with the math dataset. ArXiv ,abs/2103.03874. Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021b. Measuring mathematical problem solving with the math dataset. Preprint ,arXiv:2103.03874. Xanh Ho, Anh-Khoa Duong, Quoc-Huy Nguyen, and Suong Nguyen. 2020. Constructing a multi-hop qa dataset for comprehensive evaluation of reasoning steps. In COLING .Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. Preprint ,arXiv:2001.08361. David Scott Lewis. 2025. From brute force to brain power: How stanford’s s1 surpasses deepseek-r1. Dakota Mahan, Duy Van Phung, Rafael Rafailov, Chase Blagden, Nathan Lile, Louis Castricato, Jan-Philipp Fränken, Chelsea Finn, and Alon Al-balak. 2024. Generative reward models. Preprint ,arXiv:2410.12832. Mathematical Association of America. 2023. American mathematics competitions (AMC). https://maa. org/student-programs/amc/ . Problems from the 2023 AMC 10 and AMC 12 examinations. Mathematical Association of America. 2024. American invitational mathematics ex-amination (AIME). https://maa.org/ maa-invitational-competitions/ . Problems from AIME 2024 and AIME 2025 editions. OpenAI. 2025. Openai-o1. Accessed: 2025-05-16. Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, and Chelsea Finn. 2024. Direct preference optimization: Your lan-guage model is secretly a reward model. Preprint ,arXiv:2305.18290. 
+
+9John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proxi-mal policy optimization algorithms. arXiv preprint arXiv:1707.06347 .Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Y Wu, and 1 others. 2024. Deepseek-math: Pushing the limits of mathematical reason-ing in open language models. arXiv preprint arXiv:2402.03300 .Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. 2024. Hybridflow: A flexible and efficient rlhf framework. arXiv preprint arXiv: 2409.19256 .Ibne Farabi Shihab, Sanjeda Akter, and Anuj Sharma. 2025. Detecting and mitigating reward hacking in reinforcement learning systems: A comprehensive empirical study. arXiv preprint arXiv:2507.05619 .Jiankai Sun, Chuanyang Zheng, Enze Xie, Zhengying Liu, Ruihang Chu, Jianing Qiu, Jiaqi Xu, Mingyu Ding, Hongyang Li, Mengzhe Geng, Yue Wu, Wen-hai Wang, Junsong Chen, Zhangyue Yin, Xiaozhe Ren, Jie Fu, Junxian He, Wu Yuan, Qi Liu, and 15 others. 2024. A survey of reasoning with foundation models. Preprint , arXiv:2312.11562. Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. 2022. Musique: Multihop reasoning dataset with explanation. arXiv preprint arXiv:2108.00573 .Minh Duc Vu, Han Wang, Zhuang Li, Jieshan Chen, Shengdong Zhao, Zhenchang Xing, and Chunyang Chen. 2024. Gptvoicetasker: Llm-powered virtual as-sistant for smartphone. Preprint , arXiv:2401.14268. Shenzhi Wang, Le Yu, Chang Gao, Chujie Zheng, Shix-uan Liu, Rui Lu, Kai Dang, Xionghui Chen, Jianxin Yang, Zhenru Zhang, and 1 others. 2025. Beyond the 80/20 rule: High-entropy minority tokens drive effective reinforcement learning for llm reasoning. 
+
+arXiv preprint arXiv:2506.01939 .Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2022. Self-consistency improves chain of thought reasoning in language models. arXiv preprint arXiv:2203.11171 .Hao Wen, Yifan Su, Feifei Zhang, Yunxin Liu, Yunhao Liu, Ya-Qin Zhang, and Yuanchun Li. 2025. Para-thinker: Native parallel thinking as a new paradigm to scale llm test-time compute. arXiv preprint arXiv:2509.04475 .Fang Wu, Weihao Xuan, Heli Qi, Aaron Tu, Ximing Lu, Li Erran Li, and Yejin Choi. 2026. Deepsearch: Over-come the bottleneck of reinforcement learning with verifiable rewards via tree-based search. In The Four-teenth International Conference on Learning Repre-sentations .Tong Wu, Yang Liu, Jun Bai, Zixia Jia, Shuyi Zhang, Ziyong Lin, Yanting Wang, Song-Chun Zhu, and Zilong Zheng. 2025. Native parallel reasoner: Rea-soning in parallelism via self-distilled reinforcement learning. arXiv preprint arXiv:2512.07461 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayi-heng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 others. 2025a. Qwen3 technical report. An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, and 1 others. 2024. Qwen2. 5 technical report. arXiv preprint arXiv:2412.15115 .Xinyu Yang, Yuwei An, Hongyi Liu, Tianqi Chen, and Beidi Chen. 2025b. Multiverse: Your language mod-els secretly decide how to parallelize and merge gen-eration. Zhilin Yang, Peng Qi, Saizheng Zhang, and 1 others. 2018. Hotpotqa: A dataset for diverse, explainable multi-hop question answering. In EMNLP .Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, and Karthik Narasimhan. 2023. Tree of thoughts: Deliber-ate problem solving with large language models. 
+
+Preprint , arXiv:2305.10601. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xi-aochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gao-hong Liu, Lingjun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Wang Zhang, and 16 others. 2025. DAPO: An open-source LLM reinforcement learning system at scale. In Advances in Neural In-formation Processing Systems (NeurIPS) .Di Zhang, Xiaoshui Huang, Dongzhan Zhou, Yuqiang Li, and Wanli Ouyang. 2024. Accessing gpt-4 level mathematical olympiad solutions via monte carlo tree self-refine with llama-3 8b. arXiv preprint arXiv:2406.07394 .Qiyuan Zhang, Fuyuan Lyu, Zexu Sun, Lei Wang, Weixu Zhang, Wenyue Hua, Haolun Wu, Zhihan Guo, Yufei Wang, Niklas Muennighoff, Irwin King, Xue Liu, and Chen Ma. 2025. A survey on test-time scal-ing in large language models: What, how, where, and how well? Preprint , arXiv:2503.24235. Tong Zheng, Hongming Zhang, Wenhao Yu, Xiaoyang Wang, Xinyu Yang, Runpeng Dai, Rui Liu, Huiwen Bao, Chengsong Huang, Heng Huang, and Dong Yu. 2025. Parallel-r1: Towards parallel thinking via reinforcement learning. Zijian Zhou, Ao Qu, Zhaoxuan Wu, Sunghwan Kim, Alok Prakash, Daniela Rus, Jinhua Zhao, Bryan Kian Hsiang Low, and Paul Pu Liang. 2025. MEM1: Learning to synergize memory and reason-ing for efficient long-horizon agents. arXiv preprint arXiv:2506.15841 .
+
+10 A Outcome-Level Reward Misallocation in Parallel Reasoning 
+
+Theorem A.1 (Gradient Bias under Out-come-Only Rewards) . Consider a parallel reasoning framework where K reasoning paths 
+
+P = {path 1, . . . , path K } are generated and aggregated into a summary s that produces the final answer. Let rout denote the outcome-level reward assigned based on answer correctness, and let πθ(path j | q0) represent the policy generating path j conditioned on query q0. Under the standard policy gradient framework with uniform reward distribution, each path receives an equal share ˜rj = rout  
+
+> K
+
+regardless of its actual contribution. For a path path A that provides 
+
+misleading or redundant information (i.e., with negative true marginal contribution ϕA < 0), the policy update still satisfies: 
+
+θt+1 = θt +μ· rout 
+
+K ·∇ θ log πθ(path A | q0), (1) 
+
+where μ > 0 is the learning rate. This leads to a 
+
+probability increase for path path A proportional to the product of its own gradient magnitude and its alignment with other paths: 
+
+πθt+1 (path A) − πθt (path A)
+
+πθt (path A)
+
+≃ μ · rout 
+
+K · ∇θ log πθ(path A) 2
+
+·
+
+> K
+
+X
+
+> j=1
+
+ρ(path A, path j ) · ∇θ log πθ(path j ) 2,
+
+(2) 
+
+For convenience, we denote the policy gradient for path i as: gθ 
+
+> i
+
+= ∇θ log πθ(path i), then the gradi-ent similarity between two paths is measured by cosine similarity: 
+
+ρ(path i, path j ) = ⟨gθ 
+
+> i
+
+, gθ 
+
+> j
+
+⟩∥gθ 
+
+> i
+
+∥2∥gθ 
+
+> j
+
+∥2
+
+. (3) 
+
+Consequently, when rout > 0 (correct final an-swer), all paths receive positive gradient updates 
+
+even if some paths (like path A) contributed neg-atively or were overridden during summarization. This constitutes a form of reward hacking , where misleading paths “free-ride” on the success of com-plementary paths. Proof. We analyze the policy gradient dynamics under outcome-level reward allocation through a multi-stage derivation. Under the REINFORCE algorithm with outcome reward rout , the expected gradient for the entire path set P is: 
+
+∇θE[Rtotal ] = E
+
+rout ·
+
+> K
+
+X
+
+> j=1
+
+∇θ log πθ(path j | q0)
+
+ .
+
+(4) Expanding this expression by linearity of expecta-tion and gradient operators: 
+
+∇θE[Rtotal ]=
+
+> K
+
+X
+
+> j=1
+
+E rout · ∇ θ log πθ(path j | q0)
+
+=
+
+> K
+
+X
+
+> j=1
+
+E
+
+"
+
+rout 
+
+K · K
+
+· ∇ θ log πθ(path j | q0)
+
+#
+
+= K
+
+> K
+
+X
+
+> j=1
+
+E ˜rj · ∇ θ log πθ(path j | q0) ,
+
+(5) where we introduce the uniform per-path reward 
+
+˜rj = rout  
+
+> K
+
+. This formulation reveals the implicit assumption of equal contribution : each path is treated as if it contributes 1 
+
+> K
+
+of the total outcome, regardless of its actual semantic utility. However, in practice, paths exhibit heterogeneous marginal contributions {ϕj }Kj=1 where PKj=1 ϕj = rout but individual ϕj can be negative (misleading paths) or near-zero (redundant paths). Consider a single misleading path path A with true contribution ϕA < 0. The parameter update from Eq. (1) induces: 
+
+∆θ = θt+1 − θt = μ · rout 
+
+K · ∇ θ log πθt (path A).
+
+(6) Recall that gθt 
+
+> A
+
+= ∇θ log πθt (path A) denotes the policy gradient. Under the parameter update ∆θ =
+
+μ · rout  
+
+> K
+
+· gθt 
+
+> A
+
+, we apply Taylor expansion to the policy probability around θt:
+
+πθt+1 (path A) = πθt (path A)+ 
+
+μ · rout 
+
+K · ∇ θπθt (path A) · gθt 
+
+> A
+
++ O(μ2).
+
+(7) Now we apply the log-derivative trick . Recall that for any probability distribution: 
+
+∇θπθ(path A) = πθ(path A) · gθt 
+
+> A
+
+. (8) 11 Substituting Eq. (8) into Eq. (7): 
+
+πθt+1 (path A) = πθt (path A)·
+
+h
+
+1 + μ · rout 
+
+K · gθt
+
+> A
+> 22
+
+i
+
++ O(μ2),
+
+(9) where the inner product ⟨g, g⟩ = ∥g∥22 for any gradient vector g. This reveals the critical flaw: since rout > 0 for correct answers and gra-dient norms are always positive, the bracketed term [1 + μ · rout  
+
+> K
+
+· ∥ gθt 
+
+> A
+
+∥22] > 1, guaranteeing 
+
+πθt+1 (path A) > πθt (path A) regardless of the path’s true contribution ϕA < 0.The previous analysis considered only self-interaction ( ∇ log π(path A) with itself). To un-derstand how misleading paths exploit correlations with high-quality paths, we must analyze the full gradient update across all K paths. From Eq. (5) ,the aggregate gradient is: 
+
+gtotal = rout 
+
+K
+
+> K
+
+X
+
+> j=1
+
+∇θ log πθ(path j ). (10) The probability change for path A under this aggre-gate update becomes: 
+
+πθt+1 (path A)
+
+≃ πθt (path A) + πθt (path A) ·
+
+D
+
+gθt 
+
+> A
+
+, μ · gtotal 
+
+E
+
+= πθt (path A) + μ · rout 
+
+K · πθt (path A)·
+
+*
+
+gθt 
+
+> A
+
+,
+
+> K
+
+X
+
+> j=1
+
+gj
+
++
+
+.
+
+(11) Expanding the inner product by linearity: 
+
+*
+
+gθA,
+
+> K
+
+X
+
+> j=1
+
+gθj
+
++
+
+=
+
+> K
+
+X
+
+> j=1
+
+D
+
+gθA, gθj
+
+E
+
+=
+
+> K
+
+X
+
+> j=1
+
+gθA 2 · gθj 2 · ρ, 
+
+(12) where we introduced the cosine similarity ρ from Eq. (3). Combining Eq. (11) and Eq. (12): 
+
+πθt+1 (path A) − πθt (path A)
+
+πθt (path A)
+
+≃ μ · rout 
+
+K · gθA 2
+
+> K
+
+X
+
+> j=1
+
+ρ(path A, path j ) · gθj 2.
+
+(13) The probability increase of path A is a weighted sum of its gradient similarities ρ(path A, path j )
+
+with all other paths . Critically, if path A shares surface-level linguistic features (e.g., similar phras-ing, common reasoning templates) with high-quality paths, their gradient vectors will align (ρ > 0) even if path A’s semantic contribution is negative. This creates a spurious correlation where misleading paths “free-ride” on the success of com-plementary paths through gradient space proximity rather than semantic utility. To formalize the long-term impact of reward misallocation, we introduce the reward allocation error :
+
+εj = ˜ rj − ϕj = rout 
+
+K − ϕj , (14) which measures the discrepancy between the uni-form reward ˜rj and the true marginal contribution 
+
+ϕj . For a misleading path with ϕA < 0, we have 
+
+εA = rout  
+
+> K
+
+− ϕA > rout  
+
+> K
+
+> 0 when rout > 0. Over 
+
+T training iterations, the cumulative gradient bias accumulates as: 
+
+B(T ) 
+
+> A
+
+=
+
+> T
+
+X
+
+> t=1
+
+εA · gθt
+
+> A
+
+=
+
+> T
+
+X
+
+> t=1
+
+ rout 
+
+K − ϕA
+
+
+
+gθt
+
+> A
+
+= rout 
+
+K
+
+> T
+
+X
+
+> t=1
+
+gθt 
+
+> A
+
+− ϕATX
+
+> t=1
+
+gθt 
+
+> A
+
+.
+
+(15) Taking expectations and assuming stationarity of gradient statistics: 
+
+E[∥B(T ) 
+
+> A
+
+∥2] ≃ rout 
+
+K − ϕA · T · E
+
+h
+
+gθA 2
+
+i
+
+= εA · T · E
+
+h
+
+gθA 2
+
+i
+
+,
+
+(16) where we used the triangle inequality and the fact that gradient directions exhibit bounded variance under typical neural network parameterizations. This reveals that the bias grows linearly with train-ing duration T , progressively amplifying the gen-eration probability of misleading paths. The rate of amplification is proportional to both the mag-nitude of misallocation εA and the gradient norm, which measures the path’s “learnability” in param-eter space. The cumulative bias in Eq. (16) induces emer-gent optimization pathologies . To formalize this, we analyze the implicit objective that the policy actually optimizes under outcome-only rewards. 12 Ideally, we want to maximize the total utility: 
+
+max  
+
+> θ
+
+EP∼ πθ [rout (P)] = max  
+
+> θ
+
+EP∼ πθ [U (P)] ,
+
+(17) where U (P) represents the true utility function that depends on the collective semantic contribution of all paths in P. In an ideal scenario, this utility should decompose as: 
+
+U (P) = 
+
+> K
+
+X
+
+> j=1
+
+ϕj (P−j ), (18) where ϕj (P−j ) denotes the context-dependent marginal contribution of path j given the presence of all other paths P−j = P \{ path j }. Note that ϕj
+
+can be negative when path j introduces misleading information or contradicts high-quality paths. However, the uniform reward mechanism in Eq. (5) does not have access to individual marginal contributions. Instead, it implicitly optimizes: 
+
+max 
+
+> θ
+> K
+
+X
+
+> j=1
+
+Epath j ∼πθ
+
+h rout 
+
+K
+
+i
+
+= max 
+
+> θ
+
+1
+
+K
+
+> K
+
+X
+
+> j=1
+
+Epath j ∼πθ [rout (P)] = max  
+
+> θ
+
+EP∼ πθ [rout (P)] · 1
+
+K
+
+> K
+
+X
+
+> j=1
+
+1
+
+| {z }
+
+> uniform weight
+
+.
+
+(19) The critical issue is that Eq. (19) treats rout (P) as if it were equally attributable to each path, effectively assuming: 
+
+ϕj (P−j ) ≈ rout (P)
+
+K ∀j ∈ { 1, . . . , K }. (20) This assumption is fundamentally violated in par-allel reasoning, where paths exhibit heterogeneous contributions: some provide critical insights ( ϕj ≫ 
+
+> rout
+> K
+
+), some are redundant ( ϕj ≈ 0), and some are misleading ( ϕj < 0). The discrepancy between the ideal objective (Eq. (17) ) and the surrogate objective (Eq. (19) )creates a structurally misaligned optimization land-scape. To quantify this misalignment, define the 
+
+objective gap :
+
+∆gap = EP∼ πθ
+
+
+
+> K
+
+X
+
+> j=1
+
+ϕj
+
+ − K · EP∼ πθ
+
+h rout 
+
+K
+
+i
+
+=
+
+> K
+
+X
+
+> j=1
+
+EP∼ πθ
+
+h
+
+ϕj − rout 
+
+K
+
+i
+
+=
+
+> K
+
+X
+
+> j=1
+
+E[εj ] ,
+
+(21) where εj is the reward allocation error from Eq. (14) . While the errors may partially cancel due to the constraint PKj=1 ϕj = rout , the gradient-level impact does not cancel because each path’s update direction is determined by its individual εj ,not the aggregate sum. This misalignment manifests as three distinct emergent pathologies: ❶ From Eq. (13) , the pol-icy learns that probability increase is proportional to PKj=1 ρ(path i, path j ) · ∥∇ θ log π(path j )∥2.Since all paths receive positive rewards when 
+
+rout > 0, the policy is incentivized to maximize gradient alignment with the average path distribu-tion rather than maximizing semantic utility. Math-ematically, the policy implicitly optimizes: 
+
+max  
+
+> θ
+
+Epath i∼πθ
+
+
+
+> K
+
+X
+
+> j=1
+
+ρ(path i, path j )
+
+
+
+subject to E[rout ] > 0,
+
+(22) which favors paths that “look similar” to exist-ing paths in gradient space, regardless of whether they add new information. ❷ Paths that para-phrase or rephrase existing reasoning receive 
+
+˜rj = rout  
+
+> K
+
+> 0 despite contributing negligi-ble marginal utility ( ϕj ≈ 0). Since redundant paths naturally exhibit high gradient similarity 
+
+ρ(path redundant , path original ) → 1 due to shared linguistic structure, they receive amplified positive updates via the cross-path term in Eq. (13) . Over training, this creates a positive feedback loop where the policy increasingly generates near-duplicate paths, reducing the effective diversity of the path set P. ❸ Most critically, paths with logical errors or misleading reasoning ( ϕj < 0) still receive positive gradient updates as long as their surface features align with correct paths. From Eq. (13) , even if 
+
+path A contradicts the final answer, it benefits from P  
+
+> j̸=A
+
+ρ(path A, path j ) · ∥∇ log π(path j )∥2 > 0
+
+13 when its gradient direction happens to align with high-quality paths. This is particularly problematic in neural networks, where gradient alignment often reflects surface-level feature similarity (e.g., shared n-grams, common reasoning templates) rather than semantic coherence. The policy thus learns to gen-erate paths that “sound correct” without verifying their logical validity. These three pathologies collectively constitute re-ward hacking : the policy exploits structural prop-erties of the reward mechanism rather than optimiz-ing the true objective. We can now formally characterize the funda-mental limitation of outcome-only reward mech-anisms: Given a set of reasoning paths P =
+
+{path 1, . . . , path K } that collectively produce out-come reward rout , the reward assignment problem 
+
+asks: how should we distribute rout among individ-ual paths to align policy optimization with true se-mantic utility? Outcome-only mechanisms answer this question with uniform allocation ˜rj = rout  
+
+> K
+
+,which we have shown leads to: ❶ Systematic bias 
+
+(Eq. (14) ): Paths receive rewards misaligned with their true contributions ϕj , with error εj that can exceed rout  
+
+> K
+
+for misleading paths. ❷ Cumulative amplification (Eq. (16) ): The bias accumulates linearly over training ( O(T )), progressively distort-ing the policy’s learned distribution. ❸ Gradient-space exploitation (Eq. (13) ): The policy learns to maximize gradient alignment rather than semantic utility, leading to redundancy proliferation and con-tradiction tolerance. ❹ Optimization landscape misalignment (Eq. (21) ): The surrogate objective diverges from the ideal objective, causing high vari-ance and slow convergence. The root cause is the information bottleneck in outcome-level rewards: the scalar rout is a lossy compression of the K-dimensional contribution vector {ϕ1, . . . , ϕ K }. During summarization, the model may filter out low-quality paths, correct their errors, or override their conclusions—yet all paths receive the same reward signal, making it impossi-ble for the policy to learn which paths were actually useful. 
+
+B Evaluation Prompt for Path-subset in Generative Reward Model 
+
+As shown in Table 3, the prompt guides an evalu-ator through systematic assessment of mathemat-ical or reasoning solutions against ground truth answers. The evaluation follows two steps: ❶ Comprehen-sively analyzing the solution path including meth-ods, formulas, calculations, and errors; ❷ Scoring against the reference answer. The rubric uses a 0-5 point scale across five dimensions: Method Relia-bility (reasonable approach), Formula Complete-ness (mathematical expressions included), Com-putational Accuracy (correct calculations), Result Correctness (matches ground truth within toler-ance), and Information Purity (no misleading con-tent). Special rules handle edge cases like off-topic re-sponses, alternative valid methods, coincidentally correct answers with errors, and incomplete solu-tions. This structured approach enables nuanced evaluation beyond simple right-or-wrong judg-ments, which is essential for training reward mod-els that distinguish high-quality reasoning from flawed paths. 
+
+C Ethical Considerations 
+
+Our research focuses on enhancing the mathemat-ical reasoning capabilities of LLMs through rein-forcement learning. All experiments are conducted exclusively on publicly available datasets and benchmarks, including Parallel-GSM8K, DAPO, AIME, AMC, and MATH, in accordance with their respective licenses and usage terms. We ensure full transparency in our training procedures and evaluation protocols. This work does not involve any personally identifiable information, human sub-jects, or animal subjects, and poses no ethical risks related to data privacy or misuse. The sole intent of this research is to advance progress in LLM reasoning. This work focuses on enhancing mathematical reasoning in LLMs and poses no direct ethical risks. The datasets used are publicly available and contain no personally identifiable or sensitive information. As a general consideration, improvements in LLM reasoning ability could potentially be misused in educational contexts, such as automated problem-solving where independent reasoning is expected. We encourage responsible deployment of systems built upon this work. 
+
+D Further Experiment Details 
+
+D.1 Experimental Configuration 
+
+The RL hyperparameter settings are described in Section 4.1. For the cold-start SFT stage, we train on Parallel-GSM8K with a batch size of 128, a 14 Prompt 
+
+You are a professional academic evaluator responsible for as-sessing the quality of the solution-path summary for {query} .
+
+[Evaluation Procedure] Step 1: Provide a comprehensive summary of {path} • Summarize the methods and ideas proposed in the path • Organize the formulas and computational steps shown in the path • Extract intermediate results and the final answer from the path • Identify any issues, mistakes, or erroneous information in the path 
+
+Step 2: Score with reference to {ground_truth} • Use the final result in ground_truth as the evaluation bench-mark • Assign a score based on how close the path’s content/result is to the correct result 
+
+[Scoring Rubric] 
+
+• Score range: [0, 5] • Scoring dimensions (add 1 point for each satisfied item): 
+
+a. Method Reliability (1 point) 
+
+The path proposes a reasonable solution approach or computa-tional method (it does not need to be identical to ground_truth, but must be logically consistent and theoretically feasible). 
+
+b. Formula Completeness (1 point) 
+
+The path provides mathematical formulas/expressions used for computation (each key step has a corresponding equation). 
+
+c. Computational Accuracy (1 point) 
+
+The step-by-step calculations and intermediate derivations in the path are correct, with no errors. 
+
+d. Result Correctness (1 point) 
+
+Compared to ground_truth: the final answer obtained in the path matches the standard answer (a ±1% numerical error is allowed). 
+
+e. Information Purity (1 point) 
+
+The path contains no incorrect distracting information, logical contradictions, or misleading content. 
+
+[Special Rules] 
+
+1. If the path does not address {query} at all, assign a score of 0. 2. If the path uses a different method than ground_truth, di-mension A can still receive the point as long as the logic is sound and it can yield the correct result. 3. If the path contains clear mistakes but the final result is coincidentally correct (e.g., errors cancel out), award di-mension D but do not award dimension E. 4. If the computation in the path is unfinished, dimension D is automatically 0. 
+
+[Output Format] 
+
+Output only the total score: x points .
+
+Table 3: Prompt for path-subset evaluation in Generative Reward Model. 
+
+learning rate of 1e-5, a weight decay of 0.01, and a warm-up step ratio of 0.1 under a cosine learning-rate schedule, resulting in 58/230 gradient update steps. For Monte Carlo sampling in Shapley value computation, we perform full enumeration for path counts K = 2, and set the number of samples to 5 for K = 3 , 4, 5, balancing estimation fidelity and computational overhead. The reward combi-nation weights are set to λo = 0 .5 and λp = 0 .5
+
+throughout all experiments. 
+
+D.2 Datasets Statistics 
+
+We introduce the datasets used in our experiments, all of which are publicly available. • Parallel-GSM8K (Zheng et al., 2025) is a cold-start dataset constructed from the GSM8K train-ing set via parallel-thinking prompting, consist-ing of approximately 7,473 grade school math problems annotated with parallel thinking tra-jectories. It is used for supervised fine-tuning (SFT) in the cold-start stage of parallel thinking training, and will be released upon publication. • DAPO (Yu et al., 2025) is a large-scale mathe-matical reasoning dataset containing 17,000 cu-rated prompts, each paired with a verifiable in-teger answer. The problems are sourced from competition-level mathematics benchmarks and are designed to support reinforcement learning training for LLM reasoning. • AIME (Mathematical Association of America, 2024) (American Invitational Mathematics Ex-amination) is an olympiad-level mathematical reasoning benchmark. Each annual edition con-sists of 30 problems with integer answers in the range [0 , 999] . This work evaluates on AIME 2024 and AIME 2025. • AMC (Mathematical Association of America, 2023) (American Mathematics Competition) is a competition-level mathematical reasoning bench-mark. The AMC 2023 edition (AMC23) col-lects problems from the 2023 AMC 10 and AMC 12 examinations, covering a broad range of pre-calculus topics. • MATH (Hendrycks et al., 2021b) is a collec-tion of 12,500 challenging competition math-ematics problems spanning seven subject ar-eas, with difficulty levels ranging from 1 to 5. It is widely used for evaluating mathematical 15 problem-solving ability across diverse topics and difficulty levels. 
+
+E Computational Resources and Software Environment 
+
+All experiments were conducted on a single server equipped with four NVIDIA H100 GPUs (80 GB memory per GPU) and 503 GB of system RAM, running Ubuntu 22.04.5 LTS. The software environ-ment is based on Python 3.10.0 and Conda 23.5.2. We implemented our experiments using PyTorch 2.6.0 and HuggingFace Transformers 4.51.3; un-less otherwise specified, all default settings were used. For the generative reward model (GRM), we use qwen-plus to evaluate our path-subset values. 
+
+F Runtime Analysis 
+
+In the cold-start stage, we performed 5 hours of supervised fine-tuning with 230 gradient steps. In the post-training stage, we ran reinforcement learn-ing for 40 gradient steps. For different path counts 
+
+K = 2 , 3, 4, 5, the training times are 24 hours ×1,
+
+24 hours ×2, 24 hours ×3, and 24 hours ×3, re-spectively. The reported time includes both the necessary GPU computation and the GRM-based evaluation of each path subset. 
+
+Cost-Performance Analysis. Table 4 compares per-step training time and average Pass@16 be-tween Parallel-R1 and Parallel Shapley under the same K = 4 , 40-step RL setting.         
+
+> Method Time / Step Avg. Pass@16
+> Parallel-R1 0.94 min 53.3 Parallel Shapley 1.52 min 68.6
+> Table 4: Cost-performance comparison under the same
+> K= 4 , 40-step RL setting. Parallel Shapley increases per-step wall-clock time by ∼62% while improving Avg. Pass@16 by 15.3 points.
+
+Parallel Shapley increases per-step wall-clock time from 0.94 min to 1.52 min, while improving Avg. Pass@16 from 53.3 to 68.6. Although Shap-ley estimation requires evaluating multiple path subsets per step, these subset-evaluation requests are issued concurrently in our implementation, so the wall-clock overhead is closer to the latency of a batched evaluator call rather than the sum of all subset evaluations. Importantly, this overhead is 
+
+training-only : at inference time, Parallel Shap-ley uses the trained policy directly and requires no GRM calls. 
+
+G The Use of Large Language Models 
+
+In this study, Large Language Models (LLMs) were employed as auxiliary tools to assist with language refinement and programming-related sup-port. Their use was limited to enhancing grammati-cal accuracy, readability, and overall writing style, as well as offering general coding suggestions or debugging guidance. All LLM-assisted outputs were thoroughly examined and validated by the authors prior to adoption. The conception of the research, methodological design, and experiment results analyses were entirely carried out by the au-thors. LLMs did not contribute to the formulation of research ideas or the derivation of conclusions. 
+
+H Broader Applicability: Multi-Hop Question Answering 
+
+To examine whether Parallel Shapley generalizes beyond mathematical reasoning, we conduct addi-tional experiments on three multi-hop QA bench-marks: 2WikiMultiHopQA (Ho et al., 2020), Hot-potQA (Yang et al., 2018), and MuSiQue (Trivedi et al., 2022). These datasets require the model to gather, connect, and verify evidence across multi-ple reasoning hops, making them a natural testbed for path-level diversity and complementarity. Since Parallel-R1 was not evaluated on multi-hop QA in its original work, we compare against Qwen3-4B-Base, GRPO, and Parallel-R1 using the same cold-start SFT initialization and RL training protocol as in the main experiments ( K = 4 , 40 RL steps). Results are shown in Table 5.                     
+
+> Method 2Wiki HotpotQA MuSiQue Avg.
+> Qwen3-4B-Base 28.9 30.3 12.2 23.8 GRPO 31.2 32.5 13.7 25.8 Parallel-R1 33.5 36.4 15.1 28.3 Parallel Shapley 35.6 38.2 16.5 30.1
+> Table 5: Performance on multi-hop QA benchmarks. All methods use the same Qwen3-4B-Base backbone and training protocol as the main experiments.
+
+Parallel Shapley consistently outperforms all baselines across the three datasets, improving the average score from 28.3 (Parallel-R1) to 30.1 (+6.4%). These results suggest that Shapley-based path-level reward attribution is not limited to math-ematical reasoning: multi-hop QA tasks simi-larly benefit from complementary path generation, 16 where different paths gather and verify distinct pieces of evidence rather than repeating the same retrieval logic. 
+
+I More Case Studies 
+
+We present three case studies highlighting the com-plementary reasoning behavior induced by Shapley-based training. Table 6 shows a juice-equalization problem from the main text, where two parallel paths naturally decompose the problem into complementary sub-tasks: one establishing the quantitative target, the other performing the symbolic reasoning. This division of labor mirrors how humans approach multi-step problems and is a direct consequence of Shapley-based credit assignment, which discour-ages redundant paths and incentivizes genuinely distinct reasoning perspectives. In Table 7, the single <Parallel> block con-tains two complementary paths: Path 1 provides the theoretical justification via the Remainder The-orem, while Path 2 instantiates it with the concrete substitution n = −2 to obtain the divisor 39 . Nei-ther path alone constitutes a complete argument— the principle requires computation to be actionable, and the computation requires the principle to be valid. Table 8 shows a more complex example involving parabola rotation, where the model autonomously decomposes the problem into sub-questions, each handled by a dedicated 
+
+<Parallel> block. In the second block, Path 1 establishes the trigonometric transformation frame-work but does not identify how to proceed, while Path 2 supplies the missing step by recognizing the key condition that resolves the problem. Together, the two paths form a complete reasoning chain that neither could provide independently. 17 Problem: Mrs. Jones fills the first three glasses completely but runs out of juice when the fourth glass is only 13 full. What fraction of a glass must Mrs. Jones pour from each of the first three glasses into the fourth glass so that all four glasses will have the same amount of juice? m and n are relatively prime positive integers. What is m + n?
+
+Ground Truth: 7 Output: Let the capacity of each glass be 1 unit. The first three glasses each contain 1 unit and the fourth contains 13 unit. The total juice is 1 + 1 + 1 + 13 = 83 units, so the equal share per glass is 83 ÷ 4 = 23 units. 
+
+<Parallel> 
+
+• <Path> Let x be the fraction poured from each of the first three glasses. After pouring, glass 1 has 1 − x, glass 2 has 1 − x,glass 3 has 1 − x, and glass 4 has 13 + 3 x. Setting them equal: 1 − x = 13 + 3 x, so 23 = 4 x, giving x = 16 . </Path> 
+
+• <Path> The total juice is 83 units. Dividing equally among four glasses gives 23 units per glass. </Path> </Parallel> <Summary> The parallel block demonstrates complementary approaches: algebraic equation solving and total-and-divide. The consistent answer gives the fraction to pour as 16 . </Summary> 
+
+From the equation 1 − x = 13 + 3 x, solving yields x = 16 .
+
+<Parallel> 
+
+• <Path> From 1 − x = 13 + 3 x, we get 23 = 4 x, so x = 23 ÷ 4 = 16 . </Path> 
+
+• <Path> After pouring 16 from each of the first three glasses, glass 1: 1− 16 = 56 , glass 2: 56 , glass 3: 56 , glass 4: 13 +3 × 16 = 56 .All four glasses contain 56 units. </Path> </Parallel> <Summary> Both approaches confirm that the fraction to pour from each glass is 16 . </Summary> 
+
+Thus mn = 16 , so m = 1 , n = 6 , and m + n = 7 .Final Answer: 7
+
+Table 6: Juice-equalization problem demonstrating complementary path decomposition: one path sets up the algebraic equation, the other establishes the quantitative target. 
+
+Problem: Find the sum of all positive integers n such that n + 2 divides the product 3( n + 3)( n2 + 9) .
+
+Ground Truth: 49 Output: We seek all positive integers n such that n + 2 | 3( n + 3)( n2 + 9) , i.e., the division leaves no remainder. 
+
+<Parallel> 
+
+• <Path> Use the Remainder Theorem: dividing by n + 2 is equivalent to evaluating the polynomial at n = −2. </Path> 
+
+• <Path> Let f (n) = 3( n + 3)( n2 + 9) . Then f (−2) = 3(1)(13) = 39 , so n + 2 must divide 39 . </Path> </Parallel> <Summary> The divisibility condition reduces to requiring that n + 2 is a positive divisor of 39 . </Summary> 
+
+The positive divisors of 39 are 1, 3, 13 , 39 , yielding n = −1, 1, 11 , 37 . Discarding the negative value leaves n = 1 , 11 , 37 .Each remaining value satisfies the original divisibility condition upon direct verification. Summing the valid values gives 
+
+1 + 11 + 37 = 49 .Final Answer: 49 
+
+Table 7: Divisibility problem where parallel paths contribute complementary roles: one supplying the theoretical principle (Remainder Theorem) and the other the concrete computation. 
+
+18 Problem: The parabola with equation y = x2 − 4 is rotated 60 ◦ counterclockwise around the origin. The unique point in the fourth quadrant where the original parabola and its image intersect has y-coordinate a−√bc , where a, b, and c are positive integers, and a and c are relatively prime. Find a + b + c.
+
+Ground Truth: 62 Output: The parabola y = x2 − 4 is rotated 60 ◦ counterclockwise around the origin. To find the intersection in the fourth quadrant, I need to determine the equations of the rotated parabola and the original one, then solve for their intersection. 
+
+<Parallel> 
+
+• <Path> Geometric interpretation: the rotation transforms (x, y ) to  x cos 60 ◦ − y sin 60 ◦, x sin 60 ◦ + y cos 60 ◦. Substitut-ing y = x2 − 4 and simplifying with sin 60 ◦ = √32 , cos 60 ◦ = 12 yields the rotated equation Y = X2 
+
+> 2
+
++ √32 X − 2. </Path> 
+
+• <Path> Rotation matrix approach: (x′, y ′) =   12 x − √32 y, √32 x + 12 y. Substituting y = x2 − 4 into these expressions gives the rotated parabola, whose intersection with the original can then be solved algebraically. </Path> 
+
+• <Path> Inverse substitution: express x, y in terms of x′, y ′ via the inverse rotation, substitute into y = x2 − 4, and solve the resulting system for the fourth-quadrant intersection. </Path> 
+
+• <Path> Direct coordinate substitution: since cos 60 ◦ = 12 and sin 60 ◦ = √32 , use x′ = 12 x − √32 y and y′ = √32 x + 12 y,substitute y = x2 − 4, and simplify to obtain the rotated parabola equation. </Path> </Parallel> <Summary> The parallel block establishes the rotated parabola equation Y = X2 
+
+> 2
+
++ √32 X − 2 via rotation transformation, setting up the intersection problem with the original parabola. </Summary> 
+
+Setting the rotated equation equal to the original parabola: X2 
+
+> 2
+
++ √32 X − 2 = X2 − 4. Multiplying both sides by 2 gives 
+
+X2 + √3X − 4 = 2 X2 − 8, which simplifies to X2 − √3X − 4 = 0 .
+
+<Parallel> 
+
+• <Path> Quadratic formula directly: X = √3±√3+16 2 = √3±√19 2 . For the fourth quadrant ( X > 0, Y < 0), take 
+
+X = √3+ √19 2 . </Path> 
+
+• <Path> Geometric selection: the fourth-quadrant point requires Y < 0; checking both roots confirms X = √3−√19 2 gives 
+
+X < 0, so the valid root is X = √3+ √19 2 . </Path> 
+
+• <Path> Discriminant check: ∆ = 3 + 16 = 19 > 0, confirming two real roots; the positive root X = √3+ √19 2 corresponds to the fourth-quadrant intersection. </Path> 
+
+• <Path> Algebraic verification: substituting X = √3+ √19 2 back into X2 − √3X − 4 = 0 confirms it satisfies the equation. 
+
+</Path> </Parallel> <Summary> Both methods confirm X = √3+ √19 2 as the fourth-quadrant root, selecting the positive solution consistent with 
+
+X > 0, Y < 0. </Summary> 
+
+Substituting X = √3+ √19 2 into Y = X2 − 4:
+
+X2 = (√3 + √19) 2
+
+4 = 22 + 2 √57 4 = 11 + √57 2 .
+
+Then Y = 11+ √57 2 − 4 = 3+ √57 2 , which is positive—this point lies in the first quadrant, not the fourth. Taking instead 
+
+X = √3−√19 2 :
+
+X2 = (√3 − √19) 2
+
+4 = 22 − 2√57 4 = 11 − √57 2 .
+
+Then Y = 11 −√57 2 − 4 = 3−√57 2 . Since √57 > 3, we have Y < 0, confirming this is the fourth-quadrant point. Thus a = 3 ,
+
+b = 57 , c = 2 , and since gcd(3 , 2) = 1 , the answer is 3 + 57 + 2 = 62 .Final Answer: 62 
+
+Table 8: Parabola rotation problem with two <Parallel> blocks, each containing complementary paths that together complete the sub-problem reasoning chain. 
+
+19
