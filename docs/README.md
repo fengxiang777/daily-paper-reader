@@ -6,80 +6,79 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-22
-- 运行时间：2026-07-22 21:43:51 UTC
+- 最新运行日期：2026-07-23
+- 运行时间：2026-07-23 21:51:33 UTC
 - 运行状态：成功
-- 本次总论文数：20
-- 精读区：9
+- 本次总论文数：19
+- 精读区：8
 - 速读区：11
 
 ### 今日简报（AI）
-今天重点深入了用强化学习训练大模型搜索知识图谱，以及面向6G的可信感知推理接口；最值得关注的是图上的结构化推理和空间推理中的几何一致性突破；建议读者从视频空间推理新框架入手，对比其方向感知对齐的改进思路。
-- 详情：[/202607/22/README](/202607/22/README)
+今日精读两篇满分论文，聚焦多语言大模型对齐的元学习偏好与Solar Open 2最新技术报告。  
+最值得关注：用元学习动态适配多语言人类偏好，以及超大规模开源模型的训练细节。  
+建议读者跟进“多语言对齐”的具体方法，并留意开源模型在英文以外场景的实测表现。
+- 详情：[/202607/23/README](/202607/23/README)
 
 ### 精读区论文标签
-1. [Search-on-Graph-R1: Training Large Language Models to Search Knowledge Graphs with Reinforcement Learning](/202607/22/2607.18481v1-search-on-graph-r1-training-large-language-models-to-search-knowledge-graphs-with-reinforcement-learning)  
+1. [Meta-Learning Preferences for Multilingual LLM Alignment](/202607/23/2607.13315v2-meta-learning-preferences-for-multilingual-llm-alignment)  
    标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：使用监督微调和强化学习训练8B小模型进行知识图谱导航问答，直接应用强化学习于语言模型。
-2. [PERA: A Perceive-Reason-Act Interface Bridging Sensing, Cognitive Reasoning, and Trustworthy Agentic Response for 6G](/202607/22/2607.16896v1-pera-a-perceive-reason-act-interface-bridging-sensing-cognitive-reasoning-and-trustworthy-agentic-response-for-6g)  
+   evidence：元学习用于多语言LLM对齐中的RLHF和DPO
+2. [Solar Open 2 Technical Report](/202607/23/2607.20062v1-solar-open-2-technical-report)  
+   标签：评分：10.0/10、query:rl-mm-llm-ag
+   evidence：通过混合注意力栈交替软性和线性注意实现百万令牌上下文，面向智能体任务。
+3. [Reinforcement Learning for Large Language Model Selective Evidence Adoption from Contaminated Retrieval Results](/202607/23/2607.20090v1-reinforcement-learning-for-large-language-model-selective-evidence-adoption-from-contaminated-retrieval-results)  
+   标签：评分：10.0/10、query:rl-mm-llm-ag
+   evidence：使用强化学习微调大语言模型进行选择性证据采纳
+4. [Environment-free Synthetic Data Generation for API-Calling Agents](/202607/23/2607.16900v2-environment-free-synthetic-data-generation-for-api-calling-agents)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出PERA接口，利用LLM在6G中实现自主、可信的智能体响应
-3. [Retain or Consolidate? Budget-Dependent Operator Selection for Language Agent Memory](/202607/22/2607.17545v2-retain-or-consolidate-budget-dependent-operator-selection-for-language-agent-memory)  
+   evidence：无环境合成数据生成用于API调用智能体
+5. [Twin Agent: Context Residual Compression for Privilege Separated Agents](/202607/23/2607.19595v1-twin-agent-context-residual-compression-for-privilege-separated-agents)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：在上下文窗口限制下，为语言代理进行预算依赖的记忆算子选择
-4. [Why Does Feedback-Augmented Self-Distillation Fail to Improve Retrieval-Interleaved Search Agents?](/202607/22/2607.17558v1-why-does-feedback-augmented-self-distillation-fail-to-improve-retrieval-interleaved-search-agents)  
+   evidence：提出双生子智能体设计模式，分离不可信探索与特权操作，保障LLM智能体安全。
+6. [MV-Bench: Benchmarking Multimodal Large Language Models for Coordinated Multi-View Interface Construction](/202607/23/2607.19910v1-mv-bench-benchmarking-multimodal-large-language-models-for-coordinated-multi-view-interface-construction)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：分析反馈增强的自蒸馏为何在检索交错搜索智能体中失败
-5. [Convolution for Large Language Models](/202607/22/2607.18413v1-convolution-for-large-language-models)  
+   evidence：面向多视图界面构建的MLLM评测基准
+7. [PoTRE: Test-Time Reasoning inspired by Cognitive Heterogeneity](/202607/23/2607.20268v1-potre-test-time-reasoning-inspired-by-cognitive-heterogeneity)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：将深度卷积集成到Transformer大语言模型中以增强局部性
-6. [Dual Adversarial Fine-tuning for Enhancing Robustness of Large Vision Language Model](/202607/22/2607.18958v1-dual-adversarial-fine-tuning-for-enhancing-robustness-of-large-vision-language-model)  
+   evidence：使用四个推理智能体（对抗、规划、搜索、直接）组成的集成来鲁棒地求解复杂任务。
+8. [Notes to Self: Can LLMs Benefit from Experiential Abstractions?](/202607/23/2607.20372v1-notes-to-self-can-llms-benefit-from-experiential-abstractions)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出双重对抗微调方法以增强大型视觉语言模型对对抗攻击的鲁棒性
-7. [Fishing Out Free Riders: Shapley-Based Reward Attribution for Parallel Reasoning via Reinforcement Learning](/202607/22/2607.18979v1-fishing-out-free-riders-shapley-based-reward-attribution-for-parallel-reasoning-via-reinforcement-learning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：引入基于Shapley值的强化学习框架，用于LLM并行多路径推理中的奖励分配
-8. [HACO: Hedged Agent Computing for Reliable LLM Systems](/202607/22/2607.19215v1-haco-hedged-agent-computing-for-reliable-llm-systems)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：针对长程工作流的可靠LLM智能体系统的运行时控制方案
-9. [The Price of Reasoning: Cost-Quality Tradeoffs in Reinforcement Learning for Neural Machine Translation](/202607/22/2607.19226v1-the-price-of-reasoning-cost-quality-tradeoffs-in-reinforcement-learning-for-neural-machine-translation)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：研究基于大模型的神经机器翻译强化学习中推理轨迹的成本-质量权衡
+   evidence：使用强化学习与抽象增强提示提升大模型数学推理。
 
 ### 速读区论文标签
-1. [Otap:Structure-Aware Optimal Transport for Evaluating Planning and Execution in Agent Trajectories](/202607/22/2607.17082v1-otapstructure-aware-optimal-transport-for-evaluating-planning-and-execution-in-agent-trajectories)  
+1. [Stress Testing Concept Erasure with Large Language Model Agents](/202607/23/2607.17890v2-stress-testing-concept-erasure-with-large-language-model-agents)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：提出结构感知最优传输方法以评估大模型智能体的规划与执行轨迹
-2. [ConsiSpace: Learning Geometric Consistency Matters for Video Spatial Reasoning](/202607/22/2607.17599v1-consispace-learning-geometric-consistency-matters-for-video-spatial-reasoning)  
+   evidence：将概念消除评估构建为自适应假设搜索，通过LLM智能体迭代提出、批判和验证测试
+2. [SkillSight: Seeing Through Shared Descriptions for Accurate Skill Retrieval](/202607/23/2607.18785v1-skillsight-seeing-through-shared-descriptions-for-accurate-skill-retrieval)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：几何一致性框架用于多模态大模型长视频空间推理
-3. [OrientSAM: Mitigating Camera-Centric Shortcut in Multimodal Spatial Reasoning via Orientation-Aware Spatial Alignment](/202607/22/2607.17657v1-orientsam-mitigating-camera-centric-shortcut-in-multimodal-spatial-reasoning-via-orientation-aware-spatial-alignment)  
+   evidence：LLM智能体技能检索，校准描述中的共享背景
+3. [Same Game, Different Story: A Minimal Conservative Strategic Robustness Benchmark for Large Language Model Agents](/202607/23/2607.19670v1-same-game-different-story-a-minimal-conservative-strategic-robustness-benchmark-for-large-language-model-agents)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：面向多模态大模型的方向感知空间对齐，以改进空间推理
-4. [PGN: Design and Implementation of a Vision-Language Navigation System Based on Pangu Multimodal Foundation Model](/202607/22/2607.17806v1-pgn-design-and-implementation-of-a-vision-language-navigation-system-based-on-pangu-multimodal-foundation-model)  
+   evidence：测试LLM智能体在不同叙述下策略鲁棒性的基准
+4. [Trace: A Taxonomy-Guided Environment for Multidomain Visual Reasoning](/202607/23/2607.19790v1-trace-a-taxonomy-guided-environment-for-multidomain-visual-reasoning)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：基于多模态基础模型的视觉语言导航系统
-5. [Rethinking Heterogeneous LLM Merging: A Weighted Model Averaging Perspective](/202607/22/2607.18026v1-rethinking-heterogeneous-llm-merging-a-weighted-model-averaging-perspective)  
+   evidence：用于视觉语言模型视觉推理的RLVR环境
+5. [Memory-Augmented Multimodal Large Language Models for Small Object Understanding in Streaming Aerial Videos](/202607/23/2607.19857v1-memory-augmented-multimodal-large-language-models-for-small-object-understanding-in-streaming-aerial-videos)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：通过免训练维度适配和加权平均实现异构大模型合并
-6. [Athena-Brain Technical Report: An Efficient Robot Brain for General Intelligence and Embodied Interactio](/202607/22/2607.18985v1-athena-brain-technical-report-an-efficient-robot-brain-for-general-intelligence-and-embodied-interactio)  
+   evidence：增强多模态大语言模型进行航拍感知，通过记忆增强处理小目标和在线流数据
+6. [PRO-LONG: Programmatic Memory Enables Long-Horizon Reasoning](/202607/23/2607.20064v1-pro-long-programmatic-memory-enables-long-horizon-reasoning)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：提出Athena-Brain-8B，一个为具身智能设计的小型设备端智能体大语言模型
-7. [Adopting Reinforcement Learning with Verifiable Rewards for Molecular Generation](/202607/22/2607.19044v1-adopting-reinforcement-learning-with-verifiable-rewards-for-molecular-generation)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：使用基于可验证奖励的强化学习框架进行分子生成的LLMs
-8. [Automating structural reliability analysis with a multi-agent large language model framework](/202607/22/2607.16580v1-automating-structural-reliability-analysis-with-a-multi-agent-large-language-model-framework)  
+   evidence：为LLM智能体长时程推理设计的程序化记忆
+7. [A Better Start for Language Models: Domain-Conditional Position Offsets](/202607/23/2607.18302v1-a-better-start-for-language-models-domain-conditional-position-offsets)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：提出用于自动化结构可靠性分析的多智能体大语言模型框架
-9. [Searching for Task-Specific Vision Paths: Evolutionary Block Pruning Across Vision-Language Models](/202607/22/2607.17052v1-searching-for-task-specific-vision-paths-evolutionary-block-pruning-across-vision-language-models)  
+   evidence：领域条件位置偏移提升语言模型序列起始准确性
+8. [Scaling Laws for Hypernetwork-Based Knowledge Injection in Large Language Models](/202607/23/2607.19604v1-scaling-laws-for-hypernetwork-based-knowledge-injection-in-large-language-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：在视觉-语言模型中搜索任务特定的视觉编码器块剪枝
-10. [STeP: Signal Temporal Logic for Precise Specifications for Action Generation with Vision Language Models](/202607/22/2607.18580v1-step-signal-temporal-logic-for-precise-specifications-for-action-generation-with-vision-language-models)  
+   evidence：使用超网络向大语言模型注入知识并研究缩放规律
+9. [Personalized Recommendation Tool Learning via Autonomous Language Agents](/202607/23/2607.19739v1-personalized-recommendation-tool-learning-via-autonomous-language-agents)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：利用视觉语言模型从语言指令生成信号时序逻辑规范用于机器人动作
-11. [Token-Level Off-Policy Learning for Faithful Generation Under Distribution Shift](/202607/22/2607.17524v1-token-level-off-policy-learning-for-faithful-generation-under-distribution-shift)  
+   evidence：自主语言代理用于个性化推荐工具学习
+10. [Co-Evolving LLM Evaluators and Policies via DynamicRubric](/202607/23/2607.20083v1-co-evolving-llm-evaluators-and-policies-via-dynamicrubric)  
+   标签：评分：7.0/10、query:rl-mm-llm-ag
+   evidence：利用分数差距作为RL信号，共同进化评估器和策略以改进LLM后训练
+11. [Debiasing Text-to-Image Evaluation via Implicit Cultural Alignment Reward Modeling](/202607/23/2607.15740v1-debiasing-text-to-image-evaluation-via-implicit-cultural-alignment-reward-modeling)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：令牌级离线策略训练方法提高LLM对分布偏移的鲁棒性，与LLM训练相关。
+   evidence：基于多模态大语言模型的文化对齐评估奖励模型
 
 
 <div class="dpr-home-promo-card">

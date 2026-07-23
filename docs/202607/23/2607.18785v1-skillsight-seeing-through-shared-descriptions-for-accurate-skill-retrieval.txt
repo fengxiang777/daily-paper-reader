@@ -1,0 +1,386 @@
+Title: SkillSight: Seeing Through Shared Descriptions for Accurate Skill Retrieval
+
+URL Source: https://arxiv.org/pdf/2607.18785v1
+
+Published Time: Wed, 22 Jul 2026 00:36:00 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# SkillSight: Seeing Through Shared Descriptions for Accurate Skill Retrieval 
+
+## Jinying Xiao 1, Bin Ji 1, Shasha Li 1, Xiaodong Liu 1, Ma Jun 1, Jiacheng Jie 1,Chao Wang 2, Nyima Tashi 3, Jie Yu 1
+
+> 1
+
+National University of Defense Technology 
+
+> 2
+
+Qinghai Normal University 
+
+> 3
+
+Xizang University 
+
+Abstract 
+
+As large language model agents gain access to increasingly large skill libraries, retrieving the right skill becomes crit-ical to reliable capability selection and execution. Existing retrievers often treat skill descriptions as ordinary documents, overlooking their highly regular structure: shared descriptive patterns recur across many skills while providing little ev-idence for distinguishing the required capability. We show that this shared descriptive background systematically con-tributes to dense relevance scores, induces a pronounced en-ergy gap between queries and skill documents, and obscures task-relevant signals. Based on this observation, we propose SkillSight, a training-free retrieval framework that calibrates shared background in both semantic and lexical spaces. Se-mantic Background Calibration estimates a background sub-space from generic tokens identified by IDF, reducing sim-ilarity induced by shared descriptive patterns, while Lexical Evidence Calibration downweights shared background tokens to recover discriminative token-level evidence. Experiments on SRA-Bench and SkillBench-Supp demonstrate consistent improvements across retrieval metrics, with SkillSight im-proving Recall@10 by up to 20.21 percentage points over the original dense retriever. In end-to-end evaluation, Skill-Sight achieves the best overall performance across three agent models and outperforms LLM Selection by up to 4.97 per-centage points. It is also up to 1,248 times faster than the Dense + Reranker baseline. These results identify shared de-scriptive background as a key source of bias in skill retrieval and demonstrate that explicitly calibrating it enables accurate and efficient skill selection without additional training. Our code is available at https://github.com/xiaojinying/SkillSight. 
+
+## Introduction 
+
+As large language model agents gain access to an increasing number of skills (Xu et al. 2026; Ding et al. 2026), accurately identifying the capabilities required for a given task from a large skill repository becomes a critical retrieval problem in agent systems. A skill document typically specifies the capability scope, invocation interface, execution conditions, and usage instructions (Yuan et al. 2025). Providing all doc-uments directly to a large language model incurs substantial context overhead and increases the risk of selecting or invok-ing irrelevant capabilities (Qin et al. 2024). Skill retrieval addresses this problem by returning a compact set of rel-evant candidates. The agent then selects and executes the appropriate skill. Retrieval quality therefore directly affects the agent’s ability to use external capabilities effectively. Existing studies improve skill retrieval through query re-formulation, specialized retrievers, candidate reranking, and tool-relation modeling (Chen et al. 2024b; Zheng et al. 2024; Qin et al. 2024; Qu et al. 2024), primarily addressing query– skill semantic mismatch or reassessing candidate relevance with stronger models. However, skill retrieval exhibits a dis-tinctive input asymmetry: queries express instance-specific objectives, targets, and constraints, whereas reusable skill documents follow regular descriptive structures and exten-sively share content about capability specifications, invo-cation conditions, and execution procedures (Liang et al. 2026). This structural regularity can induce document-side background bias in dense retrieval, because query–document similarity aggregates task-relevant evidence with corpus-shared descriptive content. Consequently, a hard negative may receive a high score by matching generic interfaces or usage instructions despite mismatching the required opera-tion, target, or constraints. Existing representation correc-tion methods remove common embedding directions (Mu and Viswanath 2018; Zhou et al. 2024), while lexical aug-mentation and interaction-based reranking introduce com-plementary matching signals (Bruch, Gai, and Ingber 2023; Zhuang et al. 2024); however, neither explicitly identifies shared skill descriptions as a semantic source of ranking bias nor quantifies their contribution to relevance scores. We analyze this problem from three perspectives: ranking behavior, token statistics, and representation geometry. First, compared with conventional text retrieval datasets (Thakur et al. 2021), skill retrieval datasets require a greater retrieval depth to achieve the same coverage of gold skills, and a larger proportion of candidate documents are ranked ahead of the gold skill. Second, the gold-skill rates of generic tokens that frequently occur across skill documents are concentrated near zero, indicating that these tokens provide limited dis-crimination among skills. We further use generic tokens to estimate the background subspace of a skill corpus and ob-serve that skill documents consistently exhibit higher back-ground energy than queries in this subspace. This query– document energy gap is not evident in conventional text re-trieval datasets. An orthogonal decomposition of the dense score further shows that background alignment contributes additional scores to some candidates, thereby reducing the arXiv:2607.18785v1 [cs.AI] 21 Jul 2026 influence of task-specific evidence on ranking. Based on these findings, we propose SkillSight, a training-free relevance calibration framework for skill retrieval. Se-mantic Background Calibration (SBC) estimates a corpus-level background subspace from generic tokens and removes its contribution to dense similarity, while Lexical Evidence Calibration (LEC) downweights corpus-common terms to emphasize fine-grained capability-matching evidence. The calibrated semantic and lexical scores are fused within a local candidate set without additional training or model inference. Experiments on SRA-Bench and SkillBench-Supp show that SkillSight improves Recall@10 by up to 20.21 percent-age points over the original dense retriever. It also achieves the best non-oracle end-to-end performance across three agent models, outperforming LLM Selection by up to 4.97 points, while being up to 1,248 × faster than neural reranking. Our contributions are as follows: 
+
+• We identify and systematically analyze document-side background bias in skill retrieval. Through generic-token statistics, background energy analysis, and dense-score decomposition, we reveal how shared descriptive struc-tures affect relevance ranking. 
+
+• We propose SkillSight, which suppresses the contribu-tion of shared background to dense relevance scores through Semantic Background Calibration and recovers fine-grained capability-matching evidence through Lex-ical Evidence Calibration. The proposed framework re-quires neither additional training nor model inference. 
+
+• We conduct comprehensive evaluations on two skill re-trieval benchmarks and three agent models. The results demonstrate the advantages of SkillSight in offline re-trieval, end-to-end task performance, and inference effi-ciency, while ablation studies confirm that SBC and LEC provide effective and complementary relevance signals. 
+
+## Related Work 
+
+Agent Tool and Skill Retrieval 
+
+As tool libraries grow, exposing all descriptions to an LLM incurs substantial context overhead and increases selection errors. ToolLLM introduces a dedicated API retriever (Qin et al. 2024), while subsequent work improves retrieval through query reformulation, reranking, and tool-relation modeling (Chen et al. 2024b; Zheng et al. 2024; Qu et al. 2024). Recent studies extend this line to skill retrieval and agent execution (Shi et al. 2025; Li et al. 2026; Su et al. 2026). SkillRouter (Zheng et al. 2026) and SkillRet (Cho, Kang, and Kim 2026) both train specialized two-stage embedding and reranking pipelines. GoS (Liu et al. 2026) and GoSkills (Zeng et al. 2026) first use LLM- and encoder-assisted relation induction to transform a flat skill library into a structured graph, from which they retrieve dependency-aware bundles or role-labeled groups. This changes the retrieval corpus and intro-duces additional graph-construction costs, making them not directly comparable to our setting, which ranks individual skills from the original library without graph preprocessing. 10 0 10 1 10 2 10 3 10 4  
+
+> Top-k threshold (log scale)
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Gold recall
+> Top-50
+> (a)
+> SRA-Bench
+> Ordinary text
+> 0.0 0.5 1.0
+> Docs ranked above gold (%)
+> ArguAna
+> FiQA
+> SciFact
+> SRA-Bench
+> 0.05
+> 0.23
+> 0.42
+> 1.24
+> (b)
+> SRA-Bench
+> Ordinary text
+
+Figure 1: Retrieval ranking behavior for SRA-Bench and ordinary-text benchmarks using Qwen3-Embedding-0.6B with cosine similarity. (a) Gold recall over Top-k retrieval depth on a log scale, where gold recall is the fraction of queries whose best gold document appears within the top k results. (b) Average percentage of corpus documents ranked above the best gold document, computed as mean 
+
+(( rank − 1) /corpus size ) × 100 .
+
+Retrieval Representations and Relevance Calibration 
+
+Dense retrieval relies on the overall semantic similarity be-tween query and document representations (Karpukhin et al. 2020), but may underemphasize fine-grained evidence such as operations, entities, and constraints. Existing hybrid re-trieval methods address this limitation by combining dense and lexical signals (Zhuang et al. 2024; Bruch, Gai, and In-gber 2023). Another line of work reduces the influence of non-discriminative components on similarity estimation by removing common directions from representations or im-proving the geometry of the embedding space (Arora, Liang, and Ma 2017; Mu and Viswanath 2018; Zhou et al. 2024). These methods typically identify common components from the global representation distribution without explicitly char-acterizing their task-specific semantic origins. 
+
+## Analysis 
+
+Shared Descriptive Background 
+
+A dense retriever uses the inner product between the query and document embeddings as the relevance score: 
+
+s(q, d ) = q⊤d. (1) This score aggregates all alignment signals in the embed-ding space. In skill retrieval, these signals can be broadly divided into two categories. The first captures task-specific evidence required by the query, whereas the second reflects the explanatory background shared across skill documents. The former determines whether a skill actually satisfies the current request, while the latter mainly indicates whether a document follows a typical skill-description pattern. This mixture of signals affects the ranking of hard nega-tives. Figure 1 shows that the recall curve for gold skills on SRA-Bench consistently lags behind that observed in con-ventional text retrieval (Thakur et al. 2021), with a larger average proportion of candidate documents ranked ahead of the gold document. This result indicates that the dense 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> Token count (log scale)
+
+(a) SRA Bench      
+
+> Generic tokens
+> Other tokens
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> Token count (log scale)
+
+(b) SkillBench-Supp 
+
+> Generic tokens
+> Other tokens
+
+Figure 2: Gold-skill rate distributions of different token groups on SRA-Bench and SkillBench-Supp. The horizontal axis represents the proportion of skills containing a given to-ken that serve as the gold skill, while the vertical axis shows the corresponding number of tokens on a log scale. score reflects not only the capabilities required by the task, but also systematic document-side background similarity. Specifically, a hard negative may resemble the gold skill in writing style, interface description, and semantic struc-ture, thereby receiving a high dense score, even though it mismatches the query in key operations, target entities, or domain conditions. Such background alignment weakens the ranking contribution of fine-grained capability-matching sig-nals and introduces a systematic bias into skill retrieval. This observation motivates us to first identify the shared background structure in the skill corpus and then examine how it contributes to the dense score. An ideal relevance score should preserve the semantic content of skill doc-uments while limiting the excessive contribution of back-ground signals, so that the resulting ranking depends more strongly on query-specific evidence. 
+
+Query–Document Background Energy Gap 
+
+We characterize the shared background of a skill corpus through token commonality. Let D = {di}Ni=1 denote the skill documents with normalized embeddings {di}Ni=1 . For each corpus token t, we define 
+
+idf( t) = log N + 1 df( t) + 1 + 1 , (2) where df( t) is the number of documents containing t. We apply Otsu’s method (Otsu 1979) to the IDF distribution and denote the resulting low-IDF token set by Tg . Figure 2 shows that the gold-skill rates of these generic tokens con-centrate near zero, whereas other tokens retain greater mass in higher-rate regions. This indicates that corpus-frequent to-kens primarily encode shared descriptions and provide lim-ited discrimination among skills. We map this token-level commonality into the embedding space. For each t ∈ T g , let It = {i | t ∈ di} and compute its associated mean document embedding: 
+
+gt = 1
+
+|I t|
+
+X
+
+> i∈I t
+
+di. (3) We collect these token-induced directions together with the corpus mean ¯d = 1
+
+> N
+
+PNi=1 di and perform singular value decomposition: 
+
+G = gt1 , . . . , gtm , ¯d = U ΣV ⊤, B = [ u1, . . . , ur ],
+
+(4) where {t1, . . . , t m} ⊆ T g , and r denotes the selected rank of the background subspace. The orthonormal basis B spans a low-dimensional subspace that summarizes the background directions shared across skill documents. For any normalized embedding v, we define its back-ground energy as 
+
+eB (v) = B⊤v 22 . (5) Given normalized query embeddings {qj }Mj=1 , the average document- and query-side energies are 
+
+ED = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+eB (di), EQ = 1
+
+M
+
+> M
+
+X
+
+> j=1
+
+eB (qj ). (6) As shown in Figure 3, conventional text retrieval datasets lie close to the symmetry line ED = EQ, whereas skill retrieval datasets consistently exhibit ED > EQ. Their document-level energy distributions also shift toward higher-energy regions, showing that stronger coupling to the back-ground subspace is a systematic property of skill documents. This energy gap directly affects dense relevance scoring. Let PB = BB ⊤ be the projection matrix onto the back-ground subspace. Since PB and I − PB project onto orthog-onal subspaces, the dense score decomposes as 
+
+q⊤d = ( PB q)⊤(PB d)
+
+| {z }
+
+> background alignment
+
++  (I − PB )q⊤ (I − PB )d| {z }
+
+> residual alignment
+
+.
+
+(7) When documents exhibit elevated background energy, the first term can provide additional scores to candidates whose shared descriptions align with the query. Because this con-tribution is only weakly related to the required capability, it can obscure task-specific evidence and bias the resulting ranking. 
+
+## SkillSight 
+
+The preceding analysis shows that descriptive patterns widely shared across skill documents contribute to the dense rele-vance score and create a pronounced energy gap between queries and documents. Based on this observation, Skill-Sight calibrates shared corpus information at both the seman-tic representation and lexical matching levels. The semantic 0.0 0.1 0.2 0.3 0.4        
+
+> Document energy ED
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> Query energy  EQ
+> symmetry line
+> (a) Mean background energy
+> Ordinary text datasets
+> Skill datasets
+> 0.0 0.2 0.4 0.6
+> Background energy ‖B⊤v‖22
+> Density
+> (b) Per-item distribution
+> SciFact docs
+> SciFact queries
+> ToolQA docs
+> ToolQA queries
+
+Figure 3: Background energy statistics for queries and docu-ments. (a) Average background energy across datasets. The horizontal axis denotes document energy, and the vertical axis denotes query energy. The dashed line indicates equal query and document energy, while different markers dis-tinguish skill datasets from ordinary text corpora. (b) Dis-tributions of background energy for individual queries and documents. The horizontal axis denotes background energy, and the vertical axis denotes density. Different curves repre-sent the queries and documents in SciFact and ToolQA. channel removes alignment within the background subspace, while the lexical channel reduces the matching contribution of frequently shared tokens. SkillSight then combines these two complementary sources of relevance evidence within the candidate set. 
+
+Semantic Background Calibration 
+
+Given an orthonormal basis B of the background subspace, its projection matrix is PB = BB ⊤. SkillSight projects both the query and document representations onto the orthogonal complement of the background subspace: 
+
+q⊥ = ( I − PB )q, d⊥ = ( I − PB )d. (8) The background-calibrated dense relevance score is de-fined as 
+
+s⊥(q, d ) = q⊤⊥d⊥. (9) According to Eq. (7), s⊥(q, d ) corresponds to the seman-tic alignment outside the background subspace and therefore excludes the direct contribution of background alignment. We do not renormalize the representations after projection, allowing their norms to preserve the residual semantic en-ergy of the original embeddings. For a document with high background energy, the remaining component available for relevance matching becomes correspondingly smaller, which reduces the influence of shared descriptive patterns on the ranking. After background calibration, the dense score provides a more task-specific estimate of semantic relevance. Figure 2 further shows that other tokens retain substantial mass in re-gions with high gold-skill fractions, suggesting that lexical signals contain additional discriminative information. Skill-Sight therefore incorporates lexical evidence to improve the distinction between specific operations, entities, and con-straints. 
+
+Lexical Evidence Calibration 
+
+We first remove the generic tokens from the query token set: 
+
+T sp  
+
+> q
+
+= Tq \ T g . (10) As shown in Figure 2, the remaining tokens still vary sub-stantially in discriminative power. We quantify their residual commonality by document prevalence, 
+
+p(t) = df( t)
+
+N , (11) and assign each t ∈ T sp  
+
+> q
+
+the calibrated weight 
+
+wβ (t) = idf( t) 1 − p(t)β , β ≥ 0. (12) The factor (1 − p(t)) β further suppresses tokens shared by many documents, with β controlling the calibration strength. When β = 0 , the weight reduces to standard IDF. For a candidate document d, we define the lexical relevance score as the weighted coverage of non-generic query tokens: 
+
+slex (q, d ) = 
+
+X 
+
+> t∈T sp
+> q
+
+wβ (t)I[t ∈ d]
+
+X 
+
+> t∈T sp
+> q
+
+wβ (t) . (13) This score emphasizes discriminative exact matches and complements the capability-level semantic evidence cap-tured by the dense channel. Because s⊥ and slex have different scales, we normalize each channel c ∈ {⊥ , lex } within the candidate set Cq :
+
+esc(q, d ) = sc(q, d ) − μc(q)
+
+σc(q) + ϵ , (14) where μc(q) and σc(q) are the corresponding mean and stan-dard deviation over Cq . The final relevance score is 
+
+sSkillSight (q, d ) = es⊥(q, d ) + [ eslex (q, d )] + , (15) where [x]+ = max( x, 0) . The background-calibrated dense score provides the primary ranking signal, while above-average lexical matches receive a positive correction. If the lexical scores are constant across Cq , the correction becomes zero and ranking relies solely on the dense channel. 
+
+## Experiments 
+
+Experimental Setup 
+
+Datasets We conduct retrieval experiments on SRA-Bench (Su et al. 2026) and SkillBench-Supp (Zheng et al. 2026), both of which provide queries, candidate skill docu-ments, and corresponding gold skills. SRA-Bench contains 5,400 test instances and approximately 26k candidate skills, whereas SkillBench-Supp contains approximately 77k can-didate skills, covering retrieval settings at different corpus scales. We additionally report comparative retrieval results on SkillRet (Cho, Kang, and Kim 2026) in Appendix C of the supplementary material. End-to-end agent evaluation is conducted on SRA-Bench, whose unified execution protocol enables controlled comparison across retrieval methods. Method SRA-Bench SkillBench-Supp Hit@5 Recall@10 MRR@10 Latency Hit@5 Recall@10 MRR@10 Latency BM25 63.37 63.51 51.54 3.41 65.75 53.15 57.16 24.20 TF-IDF Cosine 56.30 58.04 42.56 2.32 53.42 42.11 46.26 16.42 ColBERTv2 41.88 42.36 31.36 12.42 56.16 38.94 38.69 31.54 SPLADE 55.25 54.91 43.60 40.55 28.77 14.40 22.88 42.01 ABTT 67.70 66.01 57.08 0.12 78.08 59.77 66.53 3.18 SIF 35.46 36.07 27.28 0.11 39.73 29.02 33.44 0.75 Dense 67.70 66.02 57.09 0.13 75.34 56.56 66.67 0.57 BGE-M3 Hybrid 65.67 65.46 55.29 19.07 72.60 58.60 62.20 45.82 Dense–BM25 RRF 75.67 77.13 62.10 167.74 73.97 56.72 64.36 219.26 Dense + Reranker 80.87 77.18 72.21 1460.35 76.71 56.83 66.71 1740.79 
+
+SkillSight 86.04 86.23 74.02 1.17 76.71 64.24 67.28 2.57 Table 1: Main retrieval results on SRA-Bench and SkillBench-Supp. Dense, ABTT, SIF, and SkillSight use Qwen3-Embedding-0.6B, while the reranker uses Qwen3-Reranker-0.6B. Latency is measured in milliseconds (ms). The best result for each retrieval metric is highlighted in bold .
+
+Baselines We compare SkillSight with representative re-trieval methods covering complementary relevance signals. BM25 (Robertson and Zaragoza 2009) and SPLADE (For-mal et al. 2021) represent sparse retrieval, Dense (Zhang et al. 2025) represents dense retrieval, and ColBERTv2 (San-thanam et al. 2022) models fine-grained token interac-tions. We further include ABTT (Mu and Viswanath 2018) for representation-space correction, BGE-M3 Hybrid (Chen et al. 2024a) for dense–sparse fusion, and Dense + Reranker for two-stage ranking. For end-to-end evaluation, we com-pare against LLM Selection and Progressive Disclosure, two representative skill-incorporation strategies evaluated in SRA-Bench (Su et al. 2026). LLM Selection uses the agent model to select a skill from the retrieved candidates before execution, whereas Progressive Disclosure allows the agent to load full skill content on demand. Together, they represent model-based preselection and dynamic agent-controlled skill access. 
+
+Evaluation Metrics For offline retrieval evaluation, we use 
+
+Hit@ k, Recall@ k, and MRR@ k to provide a comprehensive assessment of retrieval performance. These metrics measure whether the top-k results contain a correct skill, the propor-tion of gold skills covered by the top-k results, and the re-ciprocal rank of the first correct result, respectively. Detailed definitions and explanations of the metrics are provided in Appendix B of the supplementary material. For end-to-end evaluation, we measure agent execution performance according to the task-specific evaluation pro-tocol of each benchmark. All methods use the same agent model and execution environment, with only the skill re-trieval or selection module varied. 
+
+Implementation Details For each query, SBC constructs an intermediate candidate pool Cq of size Kc = 300 , within which semantic and lexical evidence are fused for final rank-ing. We set β = 1 and determine r automatically from the spectral effective rank of the background matrix with-out evaluation labels. For end-to-end evaluation, the top three retrieved skill documents are inserted into the con-text of Llama-3.1-8B-Instruct (Grattafiori et al. 2024), GPT-5.4-mini, or Qwen3-4B-Instruct (Yang et al. 2025). Appen-dices A and D provide the algorithmic details and hyperpa-rameter analyses, respectively. 
+
+Main Results 
+
+Offline Retrieval As shown in Table 1, SkillSight consis-tently improves retrieval performance on both datasets, with the largest gains observed in Recall@10 . Compared with the original Dense retriever, SkillSight increases Recall@10 
+
+from 66.02 to 86.23 on SRA-Bench and from 56.56 to 64.24 on SkillBench-Supp. These results indicate that SkillSight reduces cases in which gold skills are obscured by candi-dates with similar descriptions. SkillSight improves all met-rics on SRA-Bench, whereas its gains on SkillBench-Supp are concentrated primarily in recall. This difference suggests that its main effect is to increase the coverage of gold skills among the top-ranked candidates, while improvements at ear-lier ranks depend more strongly on dataset characteristics. Overall, the consistent recall gains across datasets demon-strate the complementary effects of background semantic cal-ibration and fine-grained lexical evidence. Further retrieval results across different cutoffs and datasets are provided in Appendix C of the supplementary material. 
+
+End-to-end Agent Execution As shown in Table 2, Skill-Sight achieves the best non-oracle Overall score across all three models, outperforming LLM Selection by 4.97, 1.84, and 4.28 percentage points, respectively. The improvement is particularly pronounced on ToolQA with weaker mod-els, reaching 10.21 percentage points for Llama-3.1-8B and 5.46 percentage points for Qwen3-4B. This result indicates that when candidate skills share similar functional descrip-tions but differ in specific operations and invocation con-straints, SkillSight identifies the target skill more accurately by suppressing bias from shared descriptions and strength-ening fine-grained matching signals. SkillSight narrows the Model Method TheoremQA LogicBench ToolQA CHAMP MedCalc BigCodeBench Overall Latency (s) Token                                                                                                                                        
+
+> Llama-3.1-8B LLM Direct 31.06 54.47 3.29 22.42 27.55 30.09 25.72 10.42 4,496 Oracle Skill 46.18 68.95 16.85 39.46 60.82 36.14 42.20 13.05 6,617 LLM Selection 35.34 54.87 4.69 27.80 56.36 34.82 33.83 21.65 8,525 Progressive Disclosure 38.69 48.42 0.35 26.46 58.82 31.14 31.91 74.18 10,942
+> SkillSight 42.70 61.05 14.90 30.94 58.64 33.77 38.80 19.91 7,703 GPT-5.4-mini LLM Direct 78.31 76.84 41.05 77.58 77.36 49.12 61.85 5.51 4,581 Oracle Skill 81.93 92.11 55.24 81.17 90.64 61.40 73.70 6.03 6,521 LLM Selection 79.92 80.13 48.25 79.37 86.82 55.70 67.83 17.02 10,591 Progressive Disclosure 79.92 73.55 44.20 79.82 89.45 53.42 65.91 7.87 10,258
+> SkillSight 81.39 84.61 45.66 82.06 89.82 60.26 69.67 6.12 9,205 Qwen3-4B LLM Direct 51.27 76.32 27.41 68.61 36.18 42.41 44.25 13.58 3,279 Oracle Skill 67.47 88.68 47.62 71.75 82.91 49.30 64.69 16.86 5,985 LLM Selection 64.66 77.63 35.59 69.96 77.18 42.37 56.85 26.85 8,829 Progressive Disclosure 66.67 79.34 29.23 70.85 67.73 42.32 53.79 30.85 9,446
+> SkillSight 68.40 80.53 41.05 73.99 80.91 47.02 61.13 20.51 8,234
+
+Table 2: End-to-end performance on SRA-Bench across six tasks and three agent models. Oracle Skill directly provides the annotated gold skills as an reference. From the top-50 BM25 candidates, LLM Selection loads one skill before execution, whereas Progressive Disclosure loads skills on demand during inference. Overall is averaged over all instances, and Token denotes the average number of input tokens per instance. The best non-oracle results are bolded. overall gap to Oracle Skill, showing that more accurate re-trieval brings agent performance closer to that achieved when gold skills are provided directly. 
+
+Efficiency Analysis 
+
+SkillSight adds limited overhead to standard dense retrieval. The background subspace B and projected document rep-resentations d⊥ are precomputed offline. At inference time, query projection costs O(dr ), while lexical matching over Cq
+
+costs O(|Cq || T sp  
+
+> q
+
+|). The corpus-wide semantic search retains the standard dense retrieval cost of O(N d ). Therefore, Skill-Sight introduces only O dr + |Cq || T sp  
+
+> q
+
+| additional online complexity, without extra neural inference beyond the base encoder or trainable parameters. As shown in Table 1, SkillSight achieves retrieval laten-cies of only 1.17 and 2.57 on the two datasets, respectively. It is 85–143 × faster than Dense–BM25 RRF and 677–1,248 ×
+
+faster than Dense + Reranker, while also achieving better re-trieval performance. In the end-to-end setting, Table 2 shows that SkillSight reduces latency by 8.0%–64.0% and token consumption by 6.7%–13.1% compared with LLM Selec-tion. 
+
+Comparison with Specialized Skill Retrievers 
+
+Full-Pipeline Comparison. As shown in Table 3, Skill-Sight outperforms SkillRouter (Zheng et al. 2026) by 15.84 Recall@10 points and is 1,397 × faster on SRA-Bench. On SkillBench-Supp, SkillRouter leads by 2.13 points, whereas SkillSight is 716 × faster, demonstrating a favor-able accuracy–efficiency trade-off. Since the pretrained Skill-Ret (Cho, Kang, and Kim 2026) reranker checkpoint was unavailable, we evaluate only its released embedding model. 
+
+Generalization across Embedding Models. Table 4shows that SkillSight consistently improves Recall@10 across Qwen, SkillRouter, and SkillRet embeddings, with gains of 8.21–21.80 points on SRA-Bench and 2.62–7.68 points on SkillBench-Supp. This demonstrates that Skill-Sight complements retrievers of varying strengths and is not tied to a particular embedding model. 
+
+SRA-Bench SkillBench-Supp Method R@10 Latency R@10 Latency SkillRouter 70.39 1633.97 66.37 1839.97 SkillSight 86.23 1.17 64.24 2.57 
+
+Table 3: Recall@10 and retrieval latency (ms) of Skill-Sight and the complete SkillRouter retrieval pipeline. Skill-Router uses its specialized embedding and reranking models, whereas SkillSight requires no neural reranking. 
+
+SRA-Bench SkillBench-Supp Model Dense SkillSight Dense SkillSight Qwen3 66.02 86.23 56.56 64.24 SkillRouter 58.01 79.81 62.39 68.85 SkillRet 78.21 86.42 61.78 64.40 
+
+Table 4: Recall@10 of Dense and SkillSight with Qwen3-Embedding-0.6B, SkillRouter-Embedding-0.6B, and SkillRet-Embedding-0.6B on SRA-Bench and SkillBench-Supp. 
+
+Ablation Study 
+
+Effects of the Calibration Components Table 5 shows that both components provide effective signals beyond their respective retrieval paradigms. Adding LEC to Dense re-trieval increases Recall@10 from 66.02 to 79.76, demon-strating that exact matches on discriminative tokens recover fine-grained capability differences overlooked by dense rep-resentations. Adding SBC to BM25 yields an 11.90-point Method Hit@5 R@10 MRR@10 
+
+Dense retrieval 
+
+Dense 67.70 66.02 57.09 Dense + LEC 81.50 79.76 69.53 
+
+Sparse retrieval 
+
+BM25 63.37 63.51 51.54 BM25 + SBC 72.26 75.41 58.62 
+
+Ablation study 
+
+w/o LEC (SBC only) 78.61 78.23 65.77 w/o SBC (LEC only) 69.43 71.46 54.28 
+
+SkillSight 86.04 86.23 74.02 
+
+Table 5: Component-level ablation results on SRA-Bench. Dense + LEC and BM25 + SBC evaluate the incremental contribution of lexical and semantic calibration under dense and sparse retrieval paradigms, respectively. The remaining variants remove the corresponding component from the com-plete SkillSight framework. 
+
+Strategy Hit@5 R@10 MRR@10 
+
+All 82.12 85.54 71.39 Reverse 80.94 79.48 68.28 Random 84.72 85.20 72.38 
+
+SkillSight 86.04 86.23 74.02 
+
+Table 6: Retrieval performance of different generic token se-lection strategies on SRA-Bench. All, Reverse, and Random estimate the background structure using all tokens, high-IDF tokens, and randomly selected tokens, respectively, while SkillSight uses low-IDF generic tokens. gain in Recall@10 , indicating that calibrated semantic sig-nals alleviate the sensitivity of lexical retrieval to surface-form variation. Removing LEC from SkillSight reduces MRR@10 from 74.02 to 65.77, whereas removing SBC further decreases it to 54.28. This larger degradation identifies shared-description alignment as a primary source of dense ranking bias, while LEC mainly improves the ordering of semantically similar candidates. The full model performs best across all metrics, confirming that SBC suppresses corpus-shared signals and LEC restores task-specific matching evidence. 
+
+Generic Token Selection As shown in Table 6, low-IDF generic tokens achieve the best performance across all met-rics. In contrast, the high-IDF Reverse strategy reduces 
+
+Recall@10 from 86.23 to 79.48, indicating that task-specific tokens are less suitable for background estimation. Although the All and Random strategies retain strong recall, their lower 
+
+Hit@5 and MRR@10 suggest that generic-token selection provides a cleaner estimate of the shared background and im-proves top-ranked results beyond low-rank projection alone. 
+
+Effect of Top-k Figure 4 shows how the number of re-trieved skills supplied to the agent affects end-to-end ac-curacy and latency. Increasing k from 1 to 3 substantially 20 50 100 200 300 
+
+> Latency (s)
+> 54
+> 56
+> 58
+> 60
+> 62
+> Accuracy (%)
+> Topk=1
+> Topk=5
+> Topk=10
+> Topk=20
+> Topk=3
+> LLM Selection
+> Progressive Disclosure
+> Dense + Reranker (topk=5)
+> SkillSight
+> Baselines
+
+Figure 4: End-to-end accuracy–latency trade-off of different methods on SRA-Bench using Qwen3-4B-Instruct. Circles denote SkillSight with different Top-k settings, while squares denote the baselines. The star marks the default Top-3 setting. SkillSight uses Top-3 in the main experiments. improves accuracy with limited additional latency, whereas larger k values increase latency and reduce accuracy by in-troducing functionally similar or irrelevant skills. Top-1 pro-vides insufficient target coverage, while Top-3 best balances coverage, candidate interference, and inference cost, and is therefore used in the main experiments. 
+
+## Conclusion 
+
+In this work, we investigated how shared descriptive pat-terns in skill documents affect retrieval. Our analysis re-veals that these patterns form a document-side background that contributes to dense relevance scores, creates an en-ergy gap between queries and skill documents, and obscures task-relevant signals. Motivated by this finding, we pro-posed SkillSight, a training-free framework that calibrates the shared background in both semantic and lexical spaces. Experiments on SRA-Bench and SkillBench-Supp demon-strate consistent improvements over strong retrieval base-lines, while end-to-end evaluations confirm that these gains translate into more effective skill invocation with low in-ference overhead. Overall, our findings highlight the impor-tance of explicitly accounting for the distinctive structure of skill documents in retrieval. Future work may extend back-ground calibration to dynamically evolving skill libraries and retrieval models with jointly learned background representa-tions. 
+
+## References 
+
+Arora, S.; Liang, Y.; and Ma, T. 2017. A simple but tough-to-beat baseline for sentence embeddings. In International conference on learning representations .Bruch, S.; Gai, S.; and Ingber, A. 2023. An analysis of fusion functions for hybrid retrieval. ACM Transactions on Information Systems , 42(1): 1–35. Chen, J.; Xiao, S.; Zhang, P.; Luo, K.; Lian, D.; and Liu, Z. 2024a. M3-Embedding: Multi-Linguality, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation. In Ku, L.-W.; Martins, A.; and Srikumar, V., eds., Findings of the Association for Compu-tational Linguistics: ACL 2024 , 2318–2335. Bangkok, Thai-land: Association for Computational Linguistics. Chen, Y.; Yoon, J.; Sachan, D. S.; Wang, Q.; Cohen-Addad, V.; Bateni, M.; Lee, C.-Y.; and Pfister, T. 2024b. Re-invoke: Tool invocation rewriting for zero-shot tool retrieval. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2024 , 4705–4726. Cho, H.; Kang, R.; and Kim, Y. 2026. SkillRet: A large-scale benchmark for skill retrieval in LLM agents. arXiv preprint arXiv:2605.05726 .Ding, R.; Cheng, W.; Shao, M.; and Zhao, C. 2026. SkillGen: Learning Domain Skills for In-Context Sequential Decision Making. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, 30512–30520. Formal, T.; Lassance, C.; Piwowarski, B.; and Clinchant, S. 2021. SPLADE v2: Sparse lexical and expansion model for information retrieval. arXiv preprint arXiv:2109.10086 .Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; Kadian, A.; Al-Dahle, A.; Letman, A.; Mathur, A.; Schelten, A.; Vaughan, A.; et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Karpukhin, V.; Oguz, B.; Min, S.; Lewis, P.; Wu, L.; Edunov, S.; Chen, D.; and Yih, W.-t. 2020. Dense passage retrieval for open-domain question answering. In Proceedings of the 2020 conference on empirical methods in natural language processing (EMNLP) , 6769–6781. Li, X.; Liu, Y.; Chen, W.; You, B.; Di, Z.; He, Y.; Zheng, S.; Choe, K. W.; Sun, J.; Wang, S.; et al. 2026. SkillsBench: Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670 .Liang, Q.; Wang, H.; Liang, Z.; and Liu, Y. 2026. From skill text to skill structure: The scheduling-structural-logical rep-resentation for agent skills. arXiv preprint arXiv:2604.24026 .Liu, D.; Li, Z.; Du, H.; Wu, X.; Gui, S.; Kuang, Y.; and Sun, L. 2026. Graph-of-Skills: Dependency-Aware Struc-tural Retrieval for Massive Agent Skills. arXiv preprint arXiv:2604.05333 .Mu, J.; and Viswanath, P. 2018. All-but-the-Top: Simple and Effective Postprocessing for Word Representations. In 
+
+International Conference on Learning Representations .Otsu, N. 1979. A Threshold Selection Method from Gray-Level Histograms. IEEE Transactions on Systems, Man, and Cybernetics , 9(1): 62–66. Qin, Y.; Liang, S.; Ye, Y.; Zhu, K.; Yan, L.; Lu, Y.; Lin, Y.; Cong, X.; Tang, X.; Qian, B.; Zhao, S.; Hong, L.; Tian, R.; Xie, R.; Zhou, J.; Gerstein, M.; li, d.; Liu, Z.; and Sun, M. 2024. ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs. In Kim, B.; Yue, Y.; Chaudhuri, S.; Fragkiadaki, K.; Khan, M.; and Sun, Y., eds., 
+
+International Conference on Learning Representations , vol-ume 2024, 9695–9717. Qu, C.; Dai, S.; Wei, X.; Cai, H.; Wang, S.; Yin, D.; Xu, J.; and Wen, J.-R. 2024. Towards completeness-oriented tool retrieval for large language models. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management , 1930–1940. Robertson, S.; and Zaragoza, H. 2009. The probabilistic relevance framework: BM25 and beyond , volume 4. Now Publishers Inc. Santhanam, K.; Khattab, O.; Saad-Falcon, J.; Potts, C.; and Zaharia, M. 2022. Colbertv2: Effective and efficient retrieval via lightweight late interaction. In Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technolo-gies , 3715–3734. Shi, Z.; Wang, Y.; Yan, L.; Ren, P.; Wang, S.; Yin, D.; and Ren, Z. 2025. Retrieval models aren’t tool-savvy: Bench-marking tool retrieval for large language models. In Findings of the Association for Computational Linguistics: ACL 2025 ,24497–24524. Su, W.; Long, J.; Ai, Q.; He, Q.; Tang, Y.; Wang, C.; Tu, Y.; Wang, Y.; and Liu, Y. 2026. Skill retrieval augmentation for agentic ai. arXiv preprint arXiv:2604.24594 .Thakur, N.; Reimers, N.; Rücklé, A.; Srivastava, A.; and Gurevych, I. 2021. BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models. In 
+
+Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2) .Xu, P.; Wu, G.; Chen, X.; Yu, T.; Xiao, C.; Dernoncourt, F.; Zhou, T.; Ai, W.; and Swaminathan, V. 2026. Skill Discovery for Software Scripting Automation via Offline Simulations with LLMs. In Demberg, V.; Inui, K.; and Marquez, L., eds., Findings of the Association for Computational Linguis-tics: EACL 2026 , 743–759. Rabat, Morocco: Association for Computational Linguistics. ISBN 979-8-89176-386-9. Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Gao, C.; Huang, C.; Lv, C.; et al. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Yuan, S.; Song, K.; Chen, J.; Tan, X.; Shen, Y.; Ren, K.; Li, D.; and Yang, D. 2025. Easytool: Enhancing llm-based agents with concise tool instruction. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , 951–972. Zeng, K.; Huo, Y.; Zhang, S.; Ye, Z.; Zhuo, Y.; Liu, H.; Lu, Y.; Wen, J.; and Tang, X. 2026. Group of skills: Group-structured skill retrieval for agent skill libraries. arXiv preprint arXiv:2605.06978 .Zhang, Y.; Li, M.; Long, D.; Zhang, X.; Lin, H.; Yang, B.; Xie, P.; Yang, A.; Liu, D.; Lin, J.; et al. 2025. Qwen3 em-bedding: Advancing text embedding and reranking through foundation models. arXiv preprint arXiv:2506.05176 .Zheng, Y.; Li, P.; Liu, W.; Liu, Y.; Luan, J.; and Wang, B. 2024. Toolrerank: Adaptive and hierarchy-aware reranking for tool retrieval. In Proceedings of the 2024 joint inter-national conference on computational linguistics, language resources and evaluation (LREC-COLING 2024) , 16263– 16273. Zheng, Y.; Zhang, Z.; Ma, C.; Yu, Y.; Zhu, J.; Wu, Y.; Xu, T.; Dong, B.; Zhu, H.; Huang, R.; et al. 2026. Skill-router: Skill routing for llm agents at scale. arXiv preprint arXiv:2603.22455 .Zhou, X.; Gao, Y.; Jie, X.; Cai, X.; Bu, J.; and Wang, H. 2024. Ease-dr: enhanced sentence embeddings for dense retrieval. In Proceedings of the 47th international ACM SIGIR confer-ence on research and development in information retrieval ,2374–2378. Zhuang, S.; Ma, X.; Koopman, B.; Lin, J.; and Zuccon, G. 2024. PromptReps: Prompting large language models to generate dense and sparse representations for zero-shot doc-ument retrieval. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 4375– 4391.

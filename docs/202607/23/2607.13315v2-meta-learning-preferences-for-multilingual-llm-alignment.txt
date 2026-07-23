@@ -1,0 +1,2719 @@
+Title: Meta-Learning Preferences for Multilingual LLM Alignment
+
+URL Source: https://arxiv.org/pdf/2607.13315v2
+
+Published Time: Thu, 23 Jul 2026 00:05:31 GMT
+
+Number of Pages: 36
+
+Markdown Content:
+# Meta-Learning Preferences for Multilingual LLM Alignment 
+
+Jiaying Lin 1,∗, Seongho Son 2,∗, Nam Phuong Tran 1,Long Tran-thanh 1, Ilija Bogunovic 3, Debmalya Mandal 11Department of Computer Science, University of Warwick, Coventry, United Kingdom 
+
+> 2
+
+Department of Computer Science, University College London, London, United Kingdom 
+
+> 3
+
+Department of Mathematics and Computer Science, University of Basel, Basel, Switzerland 
+
+{Jiaying.Lin, nam.p.tran, Long.Tran-Thanh, Debmalya.Mandal}@warwick.ac.uk, seong.son.22@ucl.ac.uk, ilija.bogunovic@unibas.ch 
+
+> ∗
+
+## Abstract 
+
+Unequal availability of human preference data across languages poses a significant challenge for aligning large language models in multilingual settings. To address the lack of sufficient data in low-resource language alignment, we propose a meta-learning framework for Reinforcement Learning from Human Feedback and Direct Preference Optimization. By leveraging preference data from other languages, our framework learns a transferable initialization that enables effective adaptation to a target language with minimal data. We provide theoretical guarantees for both the meta-reward modeling and meta-policy optimization settings, and empirically demonstrate the effectiveness of our approach on multilingual benchmarks. In an extremely low-resource setting with only 100 target-language preference samples, our approach achieves up to 28% win-rate improvements over baseline methods, and consistently outperforms baselines across multiple target languages and model scales. Our approaches retain these advantages across different combinations of meta-training languages and varying linguistic distances from the target languages. 
+
+## 1 Introduction 
+
+Alignment of Large Language Models (LLMs) have shown great progress, using methods such as Reinforcement Learning with Human Feedback (RLHF) [ 57 , 36 ] and Direct Preference Optimization (DPO) [ 38 ]. However, these approaches heavily rely on a large amount of high-quality human pref-erence data, whose availability is severely unequal across languages . As a result, LLMs often exhibit significantly weaker performance in low-resource languages, failing to provide global accessibility. Existing works have investigated improving multilingual LLMs through approaches such as fine-tuning to a specific target language [ 12 ] or aggregating preference data across multiple languages and training models on them [ 27 ]. While these approaches are effective, they rely on strong assumptions, either requiring sufficient target-language data or a close linguistic relationship between languages. In practice, direct transfer of general capabilities across languages is suboptimal, particularly, when only a small amount of data is available for a given language. In this work, we propose a meta-learning approach for preference-based multilingual alignment of LLMs. We formulate multilingual alignment as an adaptation problem , by treating each language in the dataset as a task. Our approach leverages data from multiple languages to meta-train the LLM                 
+
+> ∗Equal contribution. Correspondence to seong.son.22@ucl.ac.uk .Preprint. arXiv:2607.13315v2 [cs.CL] 21 Jul 2026 Source Preference Data
+> English
+> ✓Hello
+> ✗Hllo.
+> French
+> ✓Bonjour
+> ✗Je ne …
+> Italian
+> ✓Ciao
+> ✗Vorrei…
+> ⋮more languages
+> MAML -DPO
+> meta -train
+> Adaptation -DPO
+> few -shot fine -tune MAML -DPO Policy
+> MAML -RLHF
+> meta -train
+> Adaptation -RLHF
+> few -shot fine -tune MAML -RLHF Policy
+> ⚑Target Language :Romanian
+> ✓Bună ✗Cât …
+> low -resource :~100 samples
+> Performance
+> on target (Romanian)
+> MAML -DPO Policy
+> Baseline -DPO
+> MAML -RLHF Policy
+> Baseline -RLHF
+
+Figure 1: When the target language has low resource availability (e.g. Romanian) and has a very small number of data samples, such as 100, conventional approaches fail to properly fine-tune LLMs. On the other hand, our approach first meta-trains the model using other languages with sufficient data, allowing the model to boost sample efficiency in the target language. Our MAML-DPO/MAML-RLHF methods achieve significant performance improvement over the baseline methods, given the same amount of datapoints from the target language. policy, that can be rapidly adapted to a new target language using only a small number of preference comparisons. We visually summarize our approach in Figure 1. For the first time, we instantiate this framework for both RLHF (via meta-reward learning) and DPO (via meta-policy learning) using gradient-based meta-learning. Multilingual preference alignment naturally exhibits a task-level adaptation structure, where each language can be viewed as a distinct task with unevenly distributed preference data. Existing methods commonly extend RLHF or DPO through joint training over multilingual data, leaving task-level adaptation largely underexplored. Gradient-based meta-learning is well suited to this setting, as it learns an initialization that can efficiently adapt across related tasks [ 18 , 58 ]. We close this gap by formulating multilingual preference alignment as a meta-learning problem and instantiating it as MAML-RLHF and MAML-DPO. The resulting algorithms meta-train across languages and adapt to a target language with as few as 100 preference samples. On the theory side, the Bradley-Terry losses that govern preference learning sit outside the regression/classification setting of existing MAML convergence theory, and we establish the first convergence guarantees for MAML in this setting, characterising the regime in which the meta-trained initialisation provably accelerates target-language adaptation over both target-only and multitask baselines. We empirically evaluate our methods on various popular benchmarks across multiple target languages [ 9, 56 , 20 , 12 ]. Using open-source LLMs with 270M and 7B parameters, we demonstrate that meta-trained models substantially outperform standard RLHF and DPO baselines in low-resource settings. Notably, with only 100 target-language preference samples, our meta-DPO approach improves win rates by up to 28%. In addition, the benefits of meta-training persist as the amount of adaptation data increases to more than 1k samples, still more stably improving performances across benchmarks than the baseline method. In this paper, we provide four main contributions: • We introduce a unified meta-learning framework for LLM alignment using preference data, which greatly improves the sample efficiency of low-resource languages. • We provide convergence guarantees of our reward modeling and preference optimization algo-rithms, theoretically proving the efficiency of our approach. • Using multilingual instruction-following datasets, we empirically demonstrate the greatly im-proved sample efficiency of our approach, outperforming baselines by up to 28% in win rates. • We show that our method retains advantage across different combinations of meta-training and tar-get languages, suggesting that our method learns a broadly transferable initialization for adaptation. 
+
+## 2 Preliminaries 
+
+Offline learning via human preference. In the offline setting, we assume access to a dataset 
+
+D = ( x, y w, y ℓ), where x is a prompt and (yw, y ℓ) are two possible completions of the prompt x. A 2human labeler then indicates a preference between the two responses according to a reward function 
+
+r⋆(x, y ) and the Bradley–Terry (BT) model: 
+
+P (y1 ≻ y2|x) = σ(r⋆(x, y 1) − r⋆(x, y 2)) = exp( r⋆(x, y 1)) exp( r⋆(x, y 1)) + exp( r⋆(x, y 2)) , (1) where σ is the sigmoid function, σ(z) = 1 /(1 + exp( −z)) . We aim to learn an aligned policy from the offline preference dataset D. To this end, we study RLHF and DPO. 
+
+Reinforcement learning from human feedback. As proposed by [ 57 ], RLHF consists of two phases: reward learning and policy optimization. Let rϕ be a reward function parameterized by ϕ.The RLHF loss is 
+
+LRLHF (ϕ) ≜ −E(x,y w ,y ℓ)∼D [log ( σ (rϕ(x, y w) − rϕ(x, y ℓ)))] . (2) After learning the reward function (denoted rbϕ), the last step is to optimize a policy using the following regularized objective with respect to rbϕ:
+
+bπ = arg max 
+
+> π
+
+E x∼D 
+
+> y∼π(·| x)
+
+
+
+rbϕ(x, y ) − β log π(y|x)
+
+πSFT (y|x)
+
+
+
+, (3) where β > 0 is a regularization coefficient that penalizes deviation from the reference policy πSFT ,a supervised fine-tuned policy. 
+
+Direct preference optimization. Direct Preference Optimization (DPO), proposed by [ 38 ], is an alternative to RLHF. DPO updates the policy directly from preference data, skipping the separate reward-modeling step. The main idea is that the reward can be written implicitly in terms of the optimal policy and πSFT , which leads to a loss defined purely by preference comparisons. In particular, let πθ be a policy parameterized by θ. Then, the DPO loss is 
+
+LDPO (θ) ≜ −E(x,y w ,y ℓ)∼D 
+
+
+
+log 
+
+
+
+σ
+
+
+
+β log πθ (yw|x)
+
+πSFT (yw|x) − β log πθ (yℓ|x)
+
+πSFT (yℓ|x)
+
+ 
+
+. (4) 
+
+## 3 Multilingual preference alignment as a meta-learning problem 
+
+Multilingual preference alignment is fundamentally a multi-task adaptation problem. Each language 
+
+τ has its own preference distribution, shaped by elements such as grammar and culture. On the other hand, large-scale comparison data is collected for only a handful of high-resource languages. Thus, the relevant question is not “how do we align a single language?” but “how do we align a 
+
+target language efficiently when preference data is available only from other languages?”. In this point of view, the problem maps to the meta-learning regime: each language is a task drawn from a distribution PTASK , with taskwise preference loss L(ω; τ ). The goal here is a meta-initialisation from which a few gradient steps on a small target-language dataset Dτnew recover a near-optimal aligned policy. The Model-Agnostic Meta-Learning (MAML) framework [ 18 ] formalizes this objective through the one-step meta-learning loss 
+
+LM (ω) ≜ Eτ ∼PTASK 
+
+L ω − α ∇ω L(ω; τ ); τ  , (5) with α > 0 the inner-loop learning rate. Adaptation to a new task τnew then runs gradient descent on the empirical loss bL( · ; τnew ) initialized at the meta-solution ω⋆M = arg min ω LM (ω):
+
+bω τnew  
+
+> t+1
+
+= bω τnew  
+
+> t
+
+− η ∇ω bL ω τnew  
+
+> t
+
+; τnew 
+
+, bω τnew  
+
+> 0
+
+= ω⋆M , (6) with adaptation step size η > 0. Instantiating L(ω; τ ) as the per-language RLHF reward-modelling loss or the per-language DPO policy loss yields the two algorithms developed in this paper: MAML-RLHF and MAML-DPO. Both RLHF and DPO are based on a Bradley-Terry sigmoid log-likelihood structure, which is different from the regression and classification settings on which existing MAML convergence theory is built [ 17 , 58 ]. The per-task strong-convexity constant of the DPO loss depends on both the feature-coverage constant and the reference policy log-ratio bound, and the meta-objective LM
+
+becomes strongly convex only when the inner learning rate α is restricted in terms of these constants. 3Algorithm 1 Meta-reward learning 
+
+Input : Dataset D = (xi, y iw, y iℓ, τ i) Ni=1 , #iterations T , initial reward model ϕ1. 
+
+> 1:
+
+Initialize ϕ ← ϕ1 
+
+> 2:
+
+for t = 1 , . . . , T do  
+
+> 3:
+
+Choose a batch Bt ⊆ I of i.i.d. tasks from distribution PTASK with size |B t| = B 
+
+> 4:
+
+for each task τ ∈ B t do  
+
+> 5:
+
+Sample Dτ 
+
+> in
+
+⊆ D τ 
+
+> 6:
+
+Compute empirical loss bLRLHF (·; τ ) with Dτ 
+
+> in
+> 7:
+
+ϕτt+1 = ϕt − α∇ϕ bLRLHF (ϕt; τ ) 
+
+> 8:
+
+Sample Dτ 
+
+> o
+
+⊆ D τ 
+
+> 9:
+
+Compute empirical loss bLRLHF (ϕτt+1 ; τ ) with Dτ 
+
+> o
+> 10:
+
+end for  
+
+> 11:
+
+ϕt+1 = ϕt − ηB
+
+P  
+
+> τ∈B t
+
+∇ϕ bLRLHF (ϕτt+1 ; τ ) 
+
+> 12:
+
+end for Output : bϕM = ϕt⋆ where t⋆ ∼ Unif {1, . . . , T }.For DPO, the reference policy term further couples the loss to an external SFT model. We give the first convergence analysis of MAML for both losses in Section 4 (Theorems 4.3 and 4.6), and characterize the regime in which the meta-trained initialization provably accelerates target language adaptation over both target-only and multitask baselines (Theorems E.3 and F.3). In both algorithms, meta-learning is anchored at the preference learning stage. Formally, a task (language) τ is drawn from a distribution PTASK , and we assume access to a multi-task dataset 
+
+D = {(xi, y iw, y iℓ, τ i)}Ni=1 . We also denote Dτ ⊂ D as the subset of the dataset corresponding to task τ . Slightly abusing notation, we write (x, y w, y ℓ) ∼ D τ to denote uniform sampling from the dataset Dτ for task τ .
+
+3.1 MAML-RLHF Algorithm 2 Reward adaptation 
+
+Input : Dataset Dτnew , meta reward model bϕM , #gradient steps em, step size η. 
+
+> 1:
+
+Initialize ϕ ← bϕM 
+
+> 2:
+
+for i = 1 , . . . , em do  
+
+> 3:
+
+ϕ ← ϕ − η∇ϕ bLRLHF (ϕ; τnew ). 
+
+> 4:
+
+end for Output : ϕ.For RLHF, the per-task object that car-ries the cross-lingual preference sig-nal is the reward function rϕ. We therefore meta-learn rϕ across lan-guages and adapt it to the target lan-guage at deployment time, leaving SFT and policy optimisation as stan-dard single-task stages. Concretely, the task-wise reward-modelling loss in (5) takes the form 
+
+LRLHF (ϕ; τ ) ≜ −E(x,y w ,y ℓ)∼D τ [log ( σ (rϕ(x, y w) − rϕ(x, y ℓ)))] . (7) Given LRLHF (ϕ, τ ), we solve the meta-learning problem ϕ⋆M ∈ arg min ϕ LRLHF  
+
+> M
+
+(ϕ), where 
+
+LRLHF  
+
+> M
+
+(ϕ) ≜ Eτ ∼PTASK (·)
+
+LRLHF (ϕτ ; τ ) , ϕτ ≜ ϕ − α∇ϕLRLHF (ϕ; τ ). (8) Algorithm 1 utilizes the MAML framework [ 18 , 17 ] to approximate the solution of (8) . It learns a meta-initialization bϕM that can be quickly adapted to a new task using few samples. At each meta-iteration t, we sample a batch of i.i.d. tasks Bt ∼ PTASK . For each task τ ∈ B t, we first sample an inner-loop dataset Dτ 
+
+> in
+
+⊂ D τ and perform one gradient step on the empirical RLHF loss bLRLHF (·; τ ) starting from ϕt, yielding an adapted parameter ϕτt+1 . We then evaluate the adapted parameter on a fresh outer dataset Dτ 
+
+> o
+
+⊂ D τ , which is sampled independently of Dτ
+
+> in
+
+, to compute the outer empirical loss, and use its gradient to update the meta-parameter. Finally, we aggregate gradients across tasks and take a meta-update step ϕt+1 = ϕt − ηB
+
+P  
+
+> τ∈B t
+
+∇ϕ bLRLHF (ϕτt+1 ; τ ).In the adaption phase, we are given a new task τnew , and a preference dataset Dτnew =
+
+{(xi, y iw, y iℓ)}ni=1 where yiw (resp. yiℓ) is the winning (resp. losing) completion among the pair 4of completions yiw, y iℓ on the task τnew given prompt x. The reward model rϕM is updated as in Algorithm 2, by performing gradient descent on the empirical loss function bLRLHF (ϕ; τnew ). This results in an adapted reward model rτnew  
+
+> ϕ
+
+. Given the adapted reward model ϕ, we can train the KL-regularized policy specific to task τnew using (3). 
+
+3.2 MAML-DPO 
+
+For DPO, the policy is the only learnable object in the preference-learning stage, so meta-learning naturally lands on the policy itself. The policy is meta-trained on preference datasets from non-target languages, then adapted to the target language by running DPO on Dτnew .For a task τ , the task-wise loss function of policy learning is 
+
+LDPO (θ; τ ) ≜ −E(x,y w ,y ℓ)∼D τ
+
+
+
+log 
+
+
+
+σ
+
+
+
+β log πθ (yw|x)
+
+πSFT (yw|x) − β log πθ (yℓ|x)
+
+πSFT (yℓ|x)
+
+ 
+
+. (9) Given LDPO (θ, τ ) we solve the meta-learning problem ϕ⋆M ∈ arg min θ LDPO  
+
+> M
+
+(θ), where 
+
+LDPO  
+
+> M
+
+(θ) ≜ Eτ ∼PTASK (·)
+
+LDPO (θτ ; τ ) , θτ ≜ θ − α∇θ LDPO (θ; τ ). (10) Similar to MAML-RLHF, we employ a MAML framework (Algorithm 1) to approximate the solution for (10) by using DPO loss instead. In the adaptation phase, however, in contrast to meta-RLHF, we can directly update the meta-policy πM for the new task τnew using the empirical DPO loss [ 38 ] i.e. bLDPO (π; Dτnew ). In particular, starting from the meta-policy πM , we perform gradient descent steps for the loss function bLDPO and dataset Dτnew , which is described as in Algorithm 3. 
+
+Algorithm 3 Policy adaptation 
+
+Input : Dataset Dτnew , meta policy bθM ,number of gradient steps em, and step size η. 
+
+> 1:
+
+Initialize θ ← bθM . 
+
+> 2:
+
+for i = 1 , . . . , em do  
+
+> 3:
+
+θ ← θ − η∇θ bLDPO (θ; τnew ) 
+
+> 4:
+
+end for Output : πDPO  
+
+> τnew
+
+= πθ .Both approaches described in Section 3.1, 3.2 aim to transfer preference structure across languages for few-shot adaptation, but they apply meta-learning at different points in the pipeline. In practice, RLHF and DPO exhibit different stability and compute tradeoffs even in the standard setting, and this also carries over to the meta setting. We therefore treat MAML-RLHF and MAML-DPO as complementary methods and evaluate how effectively each method adapts to the target language. 
+
+## 4 Theoretical analysis 
+
+In this section, we initiate the study of how accurately Algorithm 1 (i.e., the MAML algorithm) can estimate the solution of the meta-learning problem in both the RLHF and DPO settings. When clear from the context, we drop the subscripts RLHF and DPO and write L for the corresponding loss. In particular, we use L(ϕ) = LRLHF (ϕ) for reward learning and L(θ) = LDPO (θ) for policy learning. For theoretical tractability, we focus on a linear reward class and a log-linear policy class, a standard setup in theoretical studies (e.g., [ 35 ]). In particular, we study linear reward and log-linear policy functions based on a d-dimensional feature map ψ satisfying max (x,y ) ∥ψ(x, y )∥22 ≤ 1. We also define ∆ψ(x, y w, y ℓ) ≜ (ψ(x, y w) − ψ(x, y ℓ)) .
+
+4.1 Convergence of MAML-RLHF 
+
+In this section, we analyze the convergence rate of Algorithm 1 in the RLHF setting. For some constant Bϕ > 0, we consider the linear reward function class 
+
+F = {rϕ(x, y ) = ϕ⊤ψ(x, y ) | ∥ ϕ∥2 ≤ Bϕ}, (11) with the corresponding task-wise loss 
+
+L(ϕ; τ ) = −E(x,y w ,y ℓ)∼D τ
+
+log σ  ϕ⊤∆ψ(x, y w, y l) .
+
+We make the following assumptions on the data distribution. 5Assumption 4.1 (Uniform coverage of data distribution) . For any task τ , there exists a constant 
+
+ν > 0 s.t. 
+
+E(x,y w ,y ℓ)∼Dτ [(∆ ψ(x, y w, y ℓ)∆ ψ(x, y w, y ℓ)⊤] ≽ νI. 
+
+Assumption 4.1 is the standard uniform coverage condition in offline reinforcement learning. Here it is used to ensure convexity of the meta-loss function. 
+
+Assumption 4.2 (Variance of tasks) . Let ∇ϕL(ϕ) = Eτ ∼PTASK [∇ϕL(ϕ, τ )] . Then there exists σ > 0
+
+such that 
+
+Eτ ∼PTASK 
+
+h
+
+∥∇ ϕL(ϕ) − ∇ ϕL(ϕ, τ )∥22
+
+i
+
+≤ σ2.
+
+Assumption 4.2 bounds task diversity and is standard in the MAML literature [17]. 
+
+Main results. We state a convergence guarantee for MAML applied to the meta objective for RLHF. 
+
+Theorem 4.3. Suppose Assumptions 4.1 and 4.2 hold, and Algorithm 1 is run for T = O   Lα2σ2
+
+
+
+iterations, and the batch size B = 1 /α 2, dataset sizes Do = Dio = O(1) , D in = Di 
+
+> in
+
+= 1 /σ .Then for the linear model: 
+
+E
+
+h
+
+ϕ⋆M − bϕM 2
+
+i
+
+≤ 2ασ mM
+
+,
+
+where mM = c·νν+2(4+ c)(1+exp(2 Bϕ)) for a constant c > 0.Proof. Provided in Appendix C. Theorem 4.3 indicates that the proposed first-order method can approximate the solution of the MAML-RLHF objective up to a prescribed error. In particular, it provides a guarantee on how close the output of MAML-RLHF is to the meta-solution of (8) in Euclidean distance. Moreover, Zou et al. [58] shows that the meta-solution is, in expectation, close (in Euclidean distance) to the task-wise solution (see their Theorem 2). This implies that the output of MAML-RLHF also yields an initialization close to the task-wise solution. 
+
+4.2 Convergence of MAML-DPO 
+
+We now analyze the convergence rate of Algorithm 1 in the DPO setting. Given constant Bθ > 0, we define the log-linear (softmax) policy with feature map ψ as 
+
+Π = 
+
+
+
+πθ (y | x) = exp( θ⊤ψ(x,y )) P  
+
+> y′exp( θ⊤ψ(x,y ′))
+
+∥θ∥2 ≤ Bθ
+
+
+
+. (12) Using this formulation, the population DPO loss for a task τ [35] can be written as 
+
+L(θ; τ ) = E(x,y w ,y ℓ)∼Dτ
+
+log  1 + exp( −zθ (x, y w, y ℓ))  , (13) where zθ (x, y w, y ℓ) ≜ βθ ⊤∆ψ(x, y w, y ℓ) − J(x, y w, y ℓ), and J(x, y w, y ℓ) ≜ β log πSFT (yw |x) 
+
+> πSFT (yℓ|x)
+
+. We further make the following assumptions. 
+
+Assumption 4.4 (Bounded reference log-ratio) . For all τ and (x, y w, y ℓ) ∈ D τ , there exists J0 < ∞
+
+such that log πSFT (yw |x) 
+
+> πSFT (yℓ|x)
+
+≤ J0. Equivalently, |J(x, y w, y ℓ)| ≤ βJ 0.For all triplet (x, y w, y ℓ), define the uniform bound on Π:
+
+|zθ (x, y w, y ℓ)| ≤ 2βB θ + βJ 0 ≜ Zmax . (14) Assumption 4.4 is mild because, in practice, both yw and yℓ typically occur with non-negligible probability under the reference policy, so imposing a uniform bound on the log-ratio is a standard coverage condition. Next, we assume the following bound on the variability of task-wise gradients. 
+
+Assumption 4.5. Let ∇θ L(θ) = Eτ ∼PTASK [∇θ L(θ, τ )] . Then there exists σ > 0 such that 
+
+Eτ ∼PTASK 
+
+h
+
+∥∇ θ L(θ) − ∇ θ L(θ, τ )∥22
+
+i
+
+≤ σ2.
+
+6Main result. The following theorem gives a finite-sample convergence guarantee for first-order MAML applied to the MAML-DPO objective. 
+
+Theorem 4.6. Assume Assumptions 4.1, 4.4, 4.5 hold. Let α ≤ 1
+
+> β2
+
+(2+ 8(1+exp( Zmax))  
+
+> ν
+
+) . Suppose Algorithm 1 is run for T = O   Lα2σ2
+
+ iterations, and the batch size B = 1 /α 2, dataset sizes 
+
+Do = Dio = O(1) , D in = Di 
+
+> in
+
+= β/σ . Then for the log-linear model, we obtain 
+
+θ⋆M − bθM 2
+
+≤ 2ασ mM
+
+,
+
+where mM = β2 cν 3 
+
+> (1+exp( Zmax )) 3
+
+for some constant c > 0.Proof. Provided in Appendix D. 
+
+Remark 4.7 . Theorem 4.6 is the DPO counterpart of Theorem 4.3. It shows that Algorithm 1 can also approximate the minimizer of the DPO meta objective, i.e., bθM converges to θ⋆M , with accuracy controlled by the inner-loop step size α, the task-gradient variability σ, and the conditioning of the meta objective through mM (the strong-convexity constant of LM prescribed in the theorems). Together, these results indicate that the same meta-learning pipeline can be applied to both RLHF (meta-reward learning) and DPO (meta-policy learning), yielding comparable convergence guarantees under analogous coverage and task-variance assumptions. 
+
+Remark 4.8 . We analyze an unconditional improvement of MAML-DPO’s adaptation speed over baseline DPO in Section F. As long as the inner learning rate is small enough, α ≤
+
+min 1/(8 β2), m M /(2 √2 μτ ) (where μτ is the strong-convexity constant of the per-task DPO loss; see Theorem D.3), Theorem F.3 shows the adaptation of MAML-DPO is faster than baseline DPO. This result further shows that MAML-DPO obtains greater acceleration when the gap between the SFT-initialized policy and preference-optimal policy is bigger, which corresponds to cases where the SFT policy is not yet good enough on the target task. The comparison of MAML-DPO to Multitask-DPO is analyzed in Theorem E.3: we show that the relative improvement of MAML-DPO over Multitask-DPO depends on a task-geometry parameter Φ that measures the alignment between the MAML correction direction and the direction from the multitask solution θ⋆ 
+
+> base
+
+to the unweighted task-optima centroid θ⋆ = Eτ [θ⋆τ ]. When Φ is positive and α is small enough, MAML-DPO shows faster adaptation than Multitask-DPO. 
+
+## 5 Experiments 
+
+We evaluate the proposed meta-learning frameworks in a multilingual instruction-following setting, where each language is treated as a separate task. Across multiple model sizes and languages, we assess three key aspects of the proposed approach: (i) sample efficiency under limited target-language data, (ii) performance when sufficient adaptation data is available, and (iii) robustness to linguistic distance and different meta-training language groups. 
+
+5.1 Experiment setup 
+
+We provide further details of our experiment settings in Section A, and provide code of our experi-ments. 2
+
+Datasets. We use two multilingual preference datasets for the experiments. We use the Okapi dataset [12 ], derived from Alpaca-64K [ 43 ], which provides preference datasets of over 26 languages with over 40k preference pairs per language. We also use multilingual/orca_dpo_pairs publicly available on Huggingface, which provides at least 3.4k preference pairs across 7 languages. 
+
+Language models. We evaluate our methods under two different model configurations. In the first configuration, we use BLOOM [ 5 ] with 7.1B parameters for both the RLHF and DPO settings, which follows a GPT-3-like architecture and was originally pretrained on a multilingual corpus. To examine performance under smaller model scales, we additionally consider a lightweight configuration based on Gemma3 [ 48 ], which supports efficient fine-tuning for rapid adaptation. In this configuration, the 
+
+> 2Source code is available at https://github.com/geronest/maml-preferences
+
+7Arabic Slovak Indonesian       
+
+> Target Language
+> 40
+> 50
+> 60
+> 70
+> 80
+> Win Rate (%)
+> French Catalan Romanian
+> Target Language
+> DPO Multitask-DPO TT Multitask-DPO TT DPO MAML-DPO (Ours)
+
+Figure 2: [Left] Win rate of Gemma 270M models adapted to 100 samples. MAML-DPO models significantly outperform baselines with higher win rates. [Right] Win rate of BLOOM 7.1B models adapted to 100 samples. MAML-DPO models show comparable or higher win rates than the baselines, including Translate-Test (TT) with gpt-4o as translator. policy model is replaced by a Gemma3 model with 270 million parameters, and a lightweight BLOOM model with 1.7B parameters is used as the reward model in RLHF. To improve training efficiency, we apply LoRA adapters for both BLOOM models during fine-tuning to reduce memory consumption. 
+
+Baselines. In order to examine the efficiency of our approach, we compare against standard 
+
+RLHF and DPO pipelines trained with the same amount of target-language preference data as the meta-trained models. We additionally include a multitask baseline that uses the same multilingual training data as the meta-learning methods, but removes the inner-loop adaptation step (i.e., setting the inner loop learning rate α = 0 in Algorithm 1). This baseline allows us to isolate the effect of meta-learning from standard multitask pretraining. To provide a stronger cross-lingual transfer baseline, we also include translation-test approaches, which uses gpt-4o to translate target language prompts and responses to a high-resource language (e.g. French) and translate it back to the target language. Further details of the experiment configurations are provided in Section A. 
+
+Evaluation metrics. We evaluate how quickly and robustly the models adapt to the limited target language data using separately trained and fixed reward models, referred to as the Judge reward models (RM) . Each configuration uses its corresponding reward model architecture as the Judge RM, which is fully fine-tuned on the entire preference dataset and used exclusively for evaluation. The Judge RMs compute win rates by comparing model-generated responses against a fixed base policy, defined as the initial policy model without any training or adaptation. During evaluation, all policy models generate responses to the same set of 1,000 prompts sampled from the test split of policy optimization dataset. Section B also includes the reward accuracies of models in the validation split of the preference dataset to examine how the performances of reward function evolve during the training. 
+
+5.2 Main results How do meta-trained models perform under limited adaptation data? We first evaluate adaptation performance in an extremely low-resource situation, using only 100 preference samples from the target language. In this setting, the model repeatedly adapts to a fixed and small set of samples, resulting in both limited data quantity and limited data diversity during adaptation. We evaluate model adaptation on six target languages, reporting results for three Romance languages from the same family as the meta-training tasks and for three languages from different families in Figure 2. We compare the win rates of different models against the base model using the judge RM as described in Section 5.1. We report standard errors over three random seeds and show that MAML-DPO consistently outperforms baseline DPO and translation-test baseline. Figure 2-left shows that when adapting to target languages from different language families, MAML-DPO significantly outperforms the multi-task baseline. RLHF experiment results in Section B.2 show similar pattern, where MAML-RLHF models achieve consistently higher win rates across all target languages. Figure 2-right demonstrates the performance of MAML-DPO comparable or better than the baselines when adapted to European languages, despite the translate-test baseline’s use of a strong model gpt-4o . Figure 3-right shows that also in the multilingual orca-dpo dataset, MAML-DPO significantly outperforms baseline DPO with almost the 40% win rate gap in Turkish. 
+
+How do meta-trained languages affect the adaptation performance? We investigate the effect of languages used for meta-training on the adaptation performance in Figure 3. We test three different 8Group 1 Group 2 Group 3 Group 1+2    
+
+> Meta-Training Language Group
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> Win Rate (%)
+> 2 languages
+> 4 languages
+> 4 languages
+> 4 languages
+> 8 languages French Spanish Turkish
+> Target Language
+> 40
+> 60
+> 80
+> 100
+> Win Rate (%)
+> DPO MAML-DPO (Ours)
+
+Figure 3: [Left] Win rates of BLOOM 7.1B models with different language groups for the MAML-DPO stage, adapted to 100 French samples. Neither the number of languages nor linguistic distance significantly affects adaptation performance. [Right] Win rate of BLOOM 7.1B models adapted to 100 samples, using multilingual orca-dpo dataset. MAML-DPO shows strong improvement over baseline-DPO. groups for meta-training: Romanian, Catalan, Italian, Spanish (Group 1, Romance); Vietnamese, Indonesian, Arabic, Hindi (Group 2, mixed non-Romance); Chinese, Bengali, Malayalam, Kannada (Group 3, mixed non-Romance). We additionally vary the number of meta-training languages by sub-sampling Group 1 to its first two members (Romanian, Catalan) for the “Group 1 (2 languages)” bar in Figure 3 (left). The adaptation target is fixed to French. Across three random seeds, the win rates of all three groups overlap within standard error, and Group 2 shows the highest point estimate despite being linguistically distant from French. This result is consistent with our theoretical bound (56) , which de-pends on task-gradient variance σ2 and the SFT preference-loss gap RSFT rather than on linguistic dis-tance to the target. Increasing the number of meta-training languages produces a small additional gain. 
+
+Do meta-trained models still have advantage under sufficient adaptation data? In this setting, we adapt models using 4K and 40K samples for MAML-DPO, while for MAML-RLHF we use 12K and 40K samples. As shown in Table 8, MAML-DPO achieves the highest win rates in every case and preserves its advantage as the data scale increases. MAML-RLHF (Table 9) outperforms vanilla RLHF in every setting and is competitive with multitask-RLHF, which is consistent with multitask-RLHF being a strong baseline when the target language is closely aligned with the Romance meta-training tasks. These results show that meta-training accelerates early adaptation while preserving competitive performance with sufficient target data. 
+
+## 6 Related work 
+
+While most LLMs possess multilingual capabilities, their performance across languages is unequal [ 4,49 , 13 , 52 ]. Previous works have investigated improving multilingual capability of LLMs by curating data [ 8, 54 , 25 ], adopting a new objective during pretraining [ 2 ], in-context learning [ 31 , 6 , 28 ], and fine-tuning on multilingual datasets [ 12 , 27 ]. Improving few-shot capabilities of deep neural networks have been investigated from meta-learning perspectives [ 51 , 18 , 23 ]. Application of meta-learning to LLMs have been studied, but most of them discuss in-context learning scenarios [ 7, 10 , 39 , 29 , 22 , 32 ]. Hu et al. [24] meta-train a separate autoregressive model to train importance weighting of tokens in a document, which is then used to fine-tuning an LLM. A complementary line of work addresses multilingual preference alignment via gradient-level interventions, filtering conflicting per-language gradients during joint preference training to mitigate negative interference across languages [ 30 ]. Our approach does not modify the gradient of joint training but replace it with a meta-objective that explicitly optimises for fast adaptation to a held-out target language. To the best of our knowledge, our work is the first approach to addressing under-representation of low-resource languages by applying meta-learning to the preference learning pipeline, providing theoretical guarantees and demonstrating improved multilingual capabilities. See Section G for further discussion on related work. 
+
+## 7 Conclusion 
+
+We presented a meta-learning framework for aligning multilingual LLMs using human preference data. By treating each language as a task, we develop MAML-RLHF and MAML-DPO as two meta-learning algorithms that leverage preference data across languages to enable efficient adaptation to 9low-resource languages. We provided theoretical guarantees and empirically demonstrated substantial improvements in sample efficiency across multiple languages and model sizes. In particular, meta-trained models achieve higher win rates than standard RLHF and DPO baselines in low-resource languages, while maintaining or improving performance as more adaptation data become available. Importantly, these gains remain consistent across varying language distances between meta-training and target languages, and are not sensitive to the choice of meta-language combinations. Overall, our work demonstrates meta-learning as an effective way to address data imbalance in multilingual alignment. While we focused on preference learning, extending our approach to reinforcement learning stages and reducing end-to-end pipeline compute are promising directions for future work. 10 References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. [2] Project Apertus, Alejandro Hernández-Cano, Alexander Hägele, Allen Hao Huang, Ange-lika Romanou, Antoni-Joan Solergibert, Barna Pasztor, Bettina Messmer, et al. Apertus: Democratizing open and compliant llms for global language environments, 2025. URL 
+
+https://arxiv.org/abs/2509.14233 .[3] Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, et al. Qwen technical report. arXiv preprint arXiv:2309.16609 , 2023. [4] Rachel Bawden and François Yvon. Investigating the translation performance of a large multilingual language model: the case of bloom. arXiv preprint arXiv:2303.01911 , 2023. [5] BigScience Workshop. BLOOM (revision 4ab0472), 2022. URL https://huggingface.co/ bigscience/bloom .[6] Samuel Cahyawijaya, Holy Lovenia, and Pascale Fung. Llms are few-shot in-context low-resource language learners. arXiv preprint arXiv:2403.16512 , 2024. [7] Yanda Chen, Ruiqi Zhong, Sheng Zha, George Karypis, and He He. Meta-learning via lan-guage model in-context tuning. In Smaranda Muresan, Preslav Nakov, and Aline Villavi-cencio, editors, Proceedings of the 60th Annual Meeting of the Association for Computa-tional Linguistics (Volume 1: Long Papers) , pages 719–730, Dublin, Ireland, May 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.acl-long.53. URL 
+
+https://aclanthology.org/2022.acl-long.53/ .[8] Ye Chen, Wei Cai, Liangmin Wu, Xiaowei Li, Zhanxuan Xin, and Cong Fu. Tigerbot: An open multilingual multitask llm, 2023. URL https://arxiv.org/abs/2312.08688 .[9] Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. arXiv preprint arXiv:1803.05457 , 2018. [10] Julian Coda-Forno, Marcel Binz, Zeynep Akata, Matthew Botvinick, Jane X. Wang, and Eric Schulz. Meta-in-context learning in large language models, 2023. URL https://arxiv.org/ abs/2305.12907 .[11] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. [12] Viet Dac Lai, Chien Van Nguyen, Nghia Trung Ngo, Thuat Nguyen, Franck Dernoncourt, Ryan A Rossi, and Thien Huu Nguyen. Okapi: Instruction-tuned large language models in multiple languages with reinforcement learning from human feedback. arXiv e-prints , pages arXiv–2307, 2023. [13] Guoliang Dong, Haoyu Wang, Jun Sun, and Xinyu Wang. Evaluating and mitigating linguistic discrimination in large language models: Perspectives on safety equity and knowledge equity. 2025. [14] Hanze Dong, Wei Xiong, Bo Pang, Haoxiang Wang, Han Zhao, Yingbo Zhou, Nan Jiang, Doyen Sahoo, Caiming Xiong, and Tong Zhang. Rlhf workflow: From reward modeling to online rlhf, 2024. URL https://arxiv.org/abs/2405.07863 .[15] Yann Dubois, Balázs Galambosi, Percy Liang, and Tatsunori B Hashimoto. Length-controlled alpacaeval: A simple way to debias automatic evaluators. arXiv preprint arXiv:2404.04475 ,2024. 11 [16] Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. Kto: Model alignment as prospect theoretic optimization. arXiv preprint arXiv:2402.01306 , 2024. [17] Alireza Fallah, Aryan Mokhtari, and Asuman Ozdaglar. On the convergence theory of gradient-based model-agnostic meta-learning algorithms. In International Conference on Artificial Intelligence and Statistics , pages 1082–1092. PMLR, 2020. [18] Chelsea Finn, Pieter Abbeel, and Sergey Levine. Model-agnostic meta-learning for fast adap-tation of deep networks. In International conference on machine learning , pages 1126–1135. PMLR, 2017. [19] Mohammad Gheshlaghi Azar, Zhaohan Daniel Guo, Bilal Piot, Remi Munos, Mark Rowland, Michal Valko, and Daniele Calandriello. A general theoretical paradigm to understand learning from human preferences. In Sanjoy Dasgupta, Stephan Mandt, and Yingzhen Li, editors, 
+
+Proceedings of The 27th International Conference on Artificial Intelligence and Statistics ,volume 238 of Proceedings of Machine Learning Research , pages 4447–4455. PMLR, 02–04 May 2024. URL https://proceedings.mlr.press/v238/gheshlaghi-azar24a.html .[20] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. arXiv preprint arXiv:2009.03300 , 2020. [21] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. Proceedings of the International Conference on Learning Representations (ICLR) , 2021. [22] Youssef Attia El Hili, Albert Thomas, Malik Tiomoko, Abdelhakim Benechehab, Corentin Léger, Corinne Ancourt, and Balázs Kégl. Llms as in-context meta-learners for model and hyperparameter selection, 2025. URL https://arxiv.org/abs/2510.26510 .[23] Timothy Hospedales, Antreas Antoniou, Paul Micaelli, and Amos Storkey. Meta-learning in neural networks: A survey. IEEE transactions on pattern analysis and machine intelligence , 44 (9):5149–5169, 2021. [24] Nathan Hu, Eric Mitchell, Christopher D Manning, and Chelsea Finn. Meta-learning online adaptation of language models. arXiv preprint arXiv:2305.15076 , 2023. [25] Aditya Kallappa, Palash Kamble, Abhinav Ravi, Akshat Patidar, Vinayak Dhruv, Deepak Kumar, Raghav Awasthi, Arveti Manjunath, Himanshu Gupta, Shubham Agarwal, Kumar Ashish, Gautam Bhargava, and Chandra Khatri. Krutrim llm: Multilingual foundational model for over a billion people, 2025. URL https://arxiv.org/abs/2502.09642 .[26] Siddharth Karamcheti, Laurel Orr, Jason Bolton, Tianyi Zhang, Karan Goel, Avanika Narayan, Rishi Bommasani, Deepak Narayanan, Tatsunori Hashimoto, Dan Jurafsky, et al. Mistral–a journey towards reproducible language model training, 2021. [27] Wen Lai, Mohsen Mesgar, and Alexander Fraser. Llms beyond english: Scaling the multilingual capability of llms with cross-lingual feedback. arXiv preprint arXiv:2406.01771 , 2024. [28] Chong Li, Shaonan Wang, Jiajun Zhang, and Chengqing Zong. Improving in-context learning of multilingual generative language models with cross-lingual alignment. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 8058–8076, 2024. [29] Guozheng Li, Peng Wang, Jiajun Liu, Yikai Guo, Ke Ji, Ziyu Shang, and Zijie Xu. Meta in-context learning makes large language models better zero and few-shot relation extractors, 2024. URL https://arxiv.org/abs/2404.17807 .[30] Jiangnan Li, Thuy Vu, Christian Herold, Amirhossein Tebbifakhr, Shahram Khadivi, and Gholamreza Haffari. Congrad: Conflicting gradient filtering for multilingual preference align-ment. In Proceedings of the 19th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 6371–6387, 2026. 12 [31] Junlei Li, Xiao Wei, Xiaobao Wang, Ning Zhuang, Longbiao Wang, and Jianwu Dang. Language-emphasized cross-lingual in-context learning for multilingual llm. In CCF Interna-tional Conference on Natural Language Processing and Chinese Computing , pages 327–339. Springer, 2024. [32] Yichuan Li, Xiyao Ma, Sixing Lu, Kyumin Lee, Xiaohu Liu, and Chenlei Guo. Mend: Meta demonstration distillation for efficient and effective in-context learning, 2024. URL https: //arxiv.org/abs/2403.06914 .[33] Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang, Bochao Wu, Chengda Lu, Chenggang Zhao, Chengqi Deng, Chenyu Zhang, Chong Ruan, et al. Deepseek-v3 technical report. arXiv preprint arXiv:2412.19437 , 2024. [34] Yu Meng, Mengzhou Xia, and Danqi Chen. Simpo: Simple preference optimization with a reference-free reward. Advances in Neural Information Processing Systems , 37:124198–124235, 2024. [35] Andi Nika, Debmalya Mandal, Parameswaran Kamalaruban, Georgios Tzannetos, Goran Radanovi´ c, and Adish Singla. Reward model learning vs. direct policy optimization: A compar-ative analysis of learning from human preferences. In Proceedings of the 41st International Conference on Machine Learning , 2024. [36] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems ,35:27730–27744, 2022. [37] Rafael Rafailov, Joey Hejna, Ryan Park, and Chelsea Finn. From r to Q*: Your language model is secretly a q-function. arXiv preprint arXiv:2404.12358 , 2024. [38] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. 
+
+Advances in Neural Information Processing Systems , 36, 2024. [39] Sanchit Sinha, Yuguang Yue, Victor Soto, Mayank Kulkarni, Jianhua Lu, and Aidong Zhang. Maml-en-llm: Model agnostic meta-training of llms for improved in-context learning. In 
+
+Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining ,pages 2711–2720, 2024. [40] Seongho Son, William Bankes, Sayak Ray Chowdhury, Brooks Paige, and Ilija Bogunovic. Right now, wrong then: Non-stationary direct preference optimization under preference drift. 
+
+arXiv preprint arXiv:2407.18676 , 2024. [41] Yuhao Sun, Yifan Zhang, Quandong Wang, QinZhuo Wu, Wei Liu, and Jian Luan. Spo: Self preference optimization with self regularization. In Findings of the Association for Computa-tional Linguistics: EMNLP 2025 , pages 5601–5614, 2025. [42] Xiaohang Tang, Sangwoong Yoon, Seongho Son, Huizhuo Yuan, Quanquan Gu, and Ilija Bogunovic. Game-theoretic regularized self-play alignment of large language models. arXiv preprint arXiv:2503.00030 , 2025. [43] Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model. 
+
+https://github.com/tatsu-lab/stanford_alpaca , 2023. [44] Gemini Team, Petko Georgiev, Ving Ian Lei, Ryan Burnell, Libin Bai, Anmol Gulati, Garrett Tanzer, Damien Vincent, et al. Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context, 2024. URL https://arxiv.org/abs/2403.05530 .[45] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M. Dai, Anja Hauth, Katie Millican, David Silver, et al. Gemini: A family of highly capable multimodal models, 2025. URL https://arxiv.org/abs/2312. 11805 .13 [46] Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupatiraju, Shreya Pathak, Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale, Juliette Love, et al. Gemma: Open models based on gemini research and technology. arXiv preprint arXiv:2403.08295 , 2024. [47] Gemma Team, Morgane Riviere, Shreya Pathak, Pier Giuseppe Sessa, Cassidy Hardin, Surya Bhupatiraju, Léonard Hussenot, Thomas Mesnard, Bobak Shahriari, Alexandre Ramé, et al. Gemma 2: Improving open language models at a practical size. arXiv preprint arXiv:2408.00118 , 2024. [48] Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Rivière, et al. Gemma 3 technical report. arXiv preprint arXiv:2503.19786 , 2025. [49] Klaudia Thellmann, Bernhard Stadler, Michael Fromm, Jasper Schulze Buschhoff, Alex Jude, Fabio Barth, Johannes Leveling, Nicolas Flores-Herr, Joachim Köhler, René Jäkel, et al. Towards multilingual llm evaluation for european languages. arXiv preprint arXiv:2410.08928 , 2024. [50] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023. [51] Oriol Vinyals, Charles Blundell, Timothy Lillicrap, Daan Wierstra, et al. Matching networks for one shot learning. Advances in neural information processing systems , 29, 2016. [52] Dandan Wang, Stephanie Jean Tsang, and Yadong Zhou. Performance unfairness of large language models in cross-language fact-checking. Information Processing & Management , 63 (4):104616, 2026. ISSN 0306-4573. doi: https://doi.org/10.1016/j.ipm.2026.104616. URL 
+
+https://www.sciencedirect.com/science/article/pii/S0306457326000087 .[53] Zhichao Wang, Bin Bi, Shiva Kumar Pentyala, Kiran Ramnath, Sougata Chaudhuri, Shubham Mehrotra, Zixu, Zhu, Xiang-Bo Mao, Sitaram Asur, Na, and Cheng. A comprehensive survey of llm alignment techniques: Rlhf, rlaif, ppo, dpo and more, 2024. URL https://arxiv.org/ abs/2407.16216 .[54] Xiang Yue, Yueqi Song, Akari Asai, Seungone Kim, Jean de Dieu Nyandwi, Simran Khanuja, Anjali Kantharuban, Lintang Sutawika, Sathyanarayanan Ramamoorthy, and Graham Neu-big. Pangea: A fully open multilingual multimodal llm for 39 languages. In The Thirteenth International Conference on Learning Representations , 2024. [55] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. HellaSwag: Can a machine really finish your sentence? In Anna Korhonen, David Traum, and Lluís Màrquez, edi-tors, Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics ,pages 4791–4800, Florence, Italy, July 2019. Association for Computational Linguistics. doi: 10.18653/v1/P19-1472. URL https://aclanthology.org/P19-1472/ .[56] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence? arXiv preprint arXiv:1905.07830 , 2019. [57] Daniel M. Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B. Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. Fine-tuning language models from human preferences, 2020. URL https://arxiv.org/abs/1909.08593 .[58] Yingtian Zou, Fusheng Liu, and Qianxiao Li. Unraveling model-agnostic meta-learning via the adaptation learning rate. In International Conference on Learning Representations , 2022. 14 Appendix 
+
+# Table of Contents 
+
+A Further Details of Experimental Setting 16 B Additional Experimental Results 18 
+
+B.1 Additional Results of MAML-DPO with LoRA adapters . . . . . . . . . . . . . 18 B.2 Additional Results of MAML-RLHF with LoRA adapters . . . . . . . . . . . . 20 B.3 Resource Consumption of MAML-DPO . . . . . . . . . . . . . . . . . . . . . 22 
+
+C Convergence of Meta-RLHF 24 
+
+C.1 Proof of Theorem 4.3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 C.2 Technical Lemmas . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 
+
+D Convergence of Meta-DPO 27 
+
+D.1 Proof of Theorem 4.6 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 D.2 Technical Lemmas . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 
+
+E Convergence Analysis of the Adaptation Phase for MAML-DPO 29 
+
+E.1 Preliminaries and Task Geometry . . . . . . . . . . . . . . . . . . . . . . . . . 29 E.2 Deriving the Initialization Advantage . . . . . . . . . . . . . . . . . . . . . . . 29 E.3 Comparative Convergence Rate . . . . . . . . . . . . . . . . . . . . . . . . . . 31 
+
+F Comparative Convergence Analysis: MAML-DPO vs. Baseline-DPO 32 
+
+F.1 Setup and Baseline-DPO Initialization . . . . . . . . . . . . . . . . . . . . . . 32 F.2 Initialization Distance Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 F.3 Comparative Convergence Rate . . . . . . . . . . . . . . . . . . . . . . . . . . 33 F.4 Discussion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34 
+
+G Additional Related Work 35 H Impact Statement and Limitations 35 
+
+15 A Further Details of Experimental Setting 
+
+In this section, we explain the remaining details of the experimental setting. 
+
+Datasets. For each language task, the Okapi dataset provides 52K instruction–response pairs for supervised fine-tuning, 42K preference comparisons for reward modeling or DPO, and 64K instructions for policy optimization. For meta-training with Okapi, we use 12K samples from each language for DPO and 16K samples from each language for reward modeling. For the target languages, we use 100 or more samples for each of SFT, reward modeling, and policy optimization stage. Unless specified, MAML-based or Multitask- approaches use one of French, Italian, Spanish, Catalan, Romanian as the target language, while the others are used for MAML/Multitask training stage. For multilingual/orca_dpo_pairs , we use 3 sets of 1K samples for each of SFT, preference optimization for policies, preference learning for judge reward functions. 2 sets of 200 samples are used for each of preference learning validation and win rate evaluation using judge reward models. For MAML/Multitask training, we use Arabic, German, Russian and Chinese, while using the remaining French, Spanish, Turkish for adaptation. Base Model    
+
+> MAML-DPO Pipeline
+> MAML-DPO Adaptation-DPO:
+> Final Policy
+> Baseline-DPO Pipeline
+> Base Model SFT Baseline-DPO:
+> Final Policy
+
+Figure 4: Visualization of DPO training pipelines. MAML-DPO pipeline does not use SFT, in-stead initializing the Adaptation-DPO policy with MAML-DPO algorithm on several non-target lan-guages with sufficient data. 
+
+MAML-DPO. The base model is directly trained with MAML-DPO using 4 out of 5 lan-guages being considered in Section 5.1. For BLOOM with 7.1B parameters, MAML-DPO is trained for 400 steps, while each step accumu-lates gradients over 40 iterations of choosing a task and sampling 6 datapoints. We use 3×10 −5
+
+for learning rate, while 3 is multiplied to the learning rate for inner loop updates. For each outer loop update, we use 2 consecutive inner loop steps. Once meta-training is complete, we apply adaptation DPO. We use batch size 20 and 2 gradient accumulation steps with 1 × 10 −5 as the learning rate. For experiments with 100 and 8K samples, we train the models over 200 steps and use the model showing the lowest validation loss. For experiments with 40K samples, we train the model for 2K steps. For Gemma-3 with 270M parameters, MAML-DPO is meta-trained for 300 steps. At each outer step, the model accumulates gradients over 40 iterations by selecting 2 tasks and sampling 2 data points per task. We use a single inner loop step for each outer loop update. The learning rate configuration is chosen from the pairs (5 × 10 −5, 5) and (1 × 10 −5, 3) for the outer learning rate and inner-loop learning coefficient. After meta-training, the model is adapted using DPO. For experiments with 100 samples, adaptation is performed for 100 steps using a batch size of 2 with 20 gradient accumulation steps. For experiments with 4k and 40k samples, adaptation is trained over 1000 steps with a batch size of 2, using 2 and 20 gradient accumulation steps, respectively. The adaptation learning rate is selected between 1 × 10 −4 and 5 × 10 −6.We visually describe the pipeline of our DPO training pipeline in Figure 4. 
+
+MAML-RLHF. Before reward modeling, MAML-SFT is first applied to the base model, followed by MAML-RM and then adaptation reward modeling. For BLOOM with 7.1B parameters, we use 100 outer steps for MAML-SFT with 3 × 10 −5 as the learning rate and multiplying 3 to it for a single inner loop update. Each outer step includes 40 gradient accumulation steps of sampling 2 datapoints from each of 2 tasks. MAML-RM uses the same learning rate and datapoint sampling hyperparameters as MAML-SFT, except that MAML-RM is run for 400 steps. Adaptation reward modeling fine-tunes the MAML-RM trained model with 1 × 10 −5 as the learning rate and 40 as the batch size without gradient accumulation. For 100 samples, we use 100 steps of reward modeling while we use 200 steps for 8K samples. The policy is first trained with SFT, using 1 × 10 −4 as the learning rate and 40 as the batch size without gradient accumulation. For experiments with 8K samples, SFT is run for 200 steps. The final fine-tuning of MAML-RLHF pipeline is applying GRPO to the SFT model using the adapted reward model. We use 400 prompts for training, while each of 16 Baseline-RLHF  Pipeline: BLOOM 7.1B   
+
+> BLOOM 7.1B
+> Base Model SFT
+> GRPO:
+> Final Policy
+> RM
+> Baseline-RLHF Pipeline: Gemma3 270M
+> Gemma3 270M
+> Base Model
+> SFT
+> GRPO:
+> Final Policy
+> RM
+> SFT
+> BLOOM 1.7B
+> Base Model
+
+Figure 5: Visualization of baseline RLHF pipeline for both model architectures. For Gemma3 270M policies, BLOOM 1.7B is used for initializing the reward function. BLOOM 7.1B    
+
+> Base Model
+> MAML-RLHF Pipeline: BLOOM 7.1B
+> MAML-SFT
+> GRPO:
+> Final Policy
+> MAML-RM Adapt-RM
+> SFT
+> Gemma3 270M
+> Base Model
+> MAML-RLHF Pipeline: Gemma3 270M
+> MAML-SFT
+> GRPO:
+> Final Policy
+> MAML-RM Adapt-RM
+> SFT MAML-SFT
+> BLOOM 1.7B
+> Base Model
+
+Figure 6: Visualization of MAML-RLHF pipeline for BLOOM 7.1B model and Gemma3 270M model. The main difference between the models is that for Gemma3 270M model, we use a separate BLOOM 1.7B model as the base model of reward functions. 100 training steps consists of generating 4 responses from each prompt. We use batch size 4 and 4 gradient accumulation steps with learning rate of 1 × 10 −4.For Gemma 3 with 270M parameters, MAML-SFT is trained for 3000 outer steps with an outer learning rate of 5 × 10 −4, using an inner-loop learning rate scaled by a factor of 3. Each outer step samples 2 data points from each of 2 tasks per step, without extra accumulation steps. Initialized from the MAML-SFT model, the SFT policy is fine-tuned with a learning rate of 1 × 10 −4 and a batch size of 4 in 3000 steps, without extra accumulation steps. MAML-RM is trained for 300 steps with 40 gradient accumulation steps, sampling 4 data points from each of 2 tasks per accumulation step. The learning rate configuration is selected from (5 × 10 −4, 3) and (3 × 10 −4, 1) for the outer learning rate and inner-loop coefficient. We use 8 data points with 5 gradient accumulation steps for adapting reward models. It is trained for 100, 300, and 1000 steps in the 100-, 12k-, and 40k-sample experiments, respectively, with adaptation learning rates selected between 5 × 10 −4 and 5 × 10 −5.Using the adapted reward model for the target language, the SFT policy is further optimized via GRPO for 1000 steps with batch size 4 and no gradient accumulation, where the GRPO learning rate is selected between 5 × 10 −5 and 5 × 10 −6.Visualization of the baseline RLHF pipeline for both models is presented in Figure 5. See Figure 6 for the MAML-RLHF pipelines for each model architecture. 
+
+Compute Resources. For experiments with BLOOM 7.1B models, we use one NVIDIA H200 GPU. For experiments with Gemma3 270M models, we use NVIDIA Quadro RTX 6000 GPU. 17 B Additional Experimental Results 
+
+B.1 Additional Results of MAML-DPO with LoRA adapters Limited adaptation data. Based on Gemma3 270M, Table 1 provides the numerical results of adaptation performance for MAML-DPO using only 100 samples from non-Romance target languages, where MAML-DPO substantially outperforms both the multitask and standard DPO baselines. Since our meta-DPO policies are trained with 4 Romance languages, these results suggest that the proposed meta-learning approach can retain its adaptation advantage even when the target languages are linguistically distant from the meta-training tasks. This is particularly important because larger linguistic distances can reduce the transferability of shared multilingual representations, thereby weakening the effectiveness of standard multitask training. Table 1: Win rate of Gemma3 270M adapted to 100 samples from each non-Romance target language in the DPO pipeline.                                        
+
+> Target Algorithm Samples WR (%) Arabic MAML-DPO 100 75 .36 ±1.39
+> Multitask 100 61 .07 ±0.54
+> DPO 100 53 .72 ±3.35
+> Slovak MAML-DPO 100 79 .68 ±2.11
+> Multitask 100 70 .00 ±0.12
+> DPO 100 64 .03 ±2.55
+> Indonesian MAML-DPO 100 76 .91 ±4.90
+> Multitask 100 63 .57 ±1.76
+> DPO 100 48 .95 ±3.31
+
+Table 2 presents the adaptation performance of MAML-DPO on Romance target languages based on Gemma. Across all three target languages, MAML-DPO consistently demonstrates strong adaptation ability and substantially outperforms conventional DPO. Compared with the multitask baseline, MAML-DPO achieves either comparable or better performance. This indicates that our method remains competitive even when the target language is linguistically close to the meta-training languages, where multitask training is expected to be a relatively strong baseline. Table 2: Win rate of Gemma3 270M adapted to 100 samples from each target language in the DPO pipeline.                                        
+
+> Target Algorithm Samples WR (%) French MAML-DPO 100 66 .88 ±1.47
+> Multitask 100 66 .28 ±0.84
+> DPO 100 53 .81 ±5.76
+> Catalan MAML-DPO 100 70 .55 ±0.72
+> Multitask 100 69 .75 ±0.29
+> DPO 100 63 .40 ±1.76
+> Romanian MAML-DPO 100 79 .83 ±0.26
+> Multitask 100 59 .51 ±0.94
+> DPO 100 51 .56 ±2.97
+
+Sufficient adaptation data. Due to the reduced sample diversity and substantially higher computa-tional cost associated with larger amounts of adaptation data, we report standard errors only for the 100-sample experiments. Results in Table 3 show the performances of BLOOM 7.1B DPO models when sufficient amount of adaptation samples are provided, from 8K to 40K. While MAML-DPO outperforms the baselines across all target languages, we note that the performance gap between the MAML-DPO models and baseline models decrease as the number of available adaptation samples increases. This is expected because the number of meta-training samples is less than 20K, whose 18 advantageous effect on the adaptation stage is supposed to diminish as the number of adaptation datapoints exceeds it. Table 3: Win rate evaluation of BLOOM 7.1B models adapted to 8k/40k samples from each target language. Not only does MAML training stage help models obtain a higher performance with a small amount of samples, but also shows better performance improvement with a larger amount of data. 
+
+Target Algorithm Samples WR(%) French MAML-DPO 8000 66.2 
+
+Multitask-DPO 8000 56 .9
+
+DPO 8000 57 .8
+
+MAML-DPO 40000 71.4 
+
+DPO 40000 67 .4
+
+Catalan MAML-DPO 8000 63.4 
+
+DPO 8000 52 .9
+
+MAML-DPO 40000 64.1 
+
+DPO 40000 60 .7
+
+Romanian MAML-DPO 8000 62.0 
+
+DPO 8000 55 .3
+
+MAML-DPO 40000 67.0 
+
+DPO 40000 66 .8
+
+Table 8 further evaluates MAML-DPO based on Gemma3 under settings with sufficient adaptation data, where MAML-DPO remains stable as the number of adaptation samples increases to 4k or 40k, and continues to maintain advantages over both baselines. 
+
+Out-of-distribution evaluation. To examine robustness beyond the training distribution, we follow the Okapi evaluation protocol in Dac Lai et al. [12] and report zero-shot performance on ARC [ 9 ], HellaSwag [ 55 ], and MMLU [ 21 ], which are multiple-choice benchmarks and assess robustness to out-of-distribution shifts in format and content. In Table 4, we evaluate BLOOM 7.1B models trained with DPO algorithms in OOD benchmarks. While both MAML-DPO and baseline DPO models have used 10K samples for adaptation to the target language, baseline DPO models show higher accuracy than the base model in fewer columns than MAML-DPO. This shows the robustness of MAML-DPO training pipeline to OOD evaluations. We further provide OOD benchmark evaluation of DPO models based on Gemma3 270M architecture in Table 5. Similarly to Table 4, MAML-DPO models show improvements in more benchmarks and metrics than baseline DPO models. This indicates that MAML-DPO provides stable improvement across different model architectures and data domains. Table 4: Out-of-distribution benchmark evaluation results of BLOOM 7.1B models. Bold numbers indicate where the trained model outperformed the base model. With 10k samples given for adaptation, MAML-DPO maintains its robustness to OOD datapoints and gains improvement in more diverse benchmarks and metrics than the baseline method.                                                                          
+
+> Language Algorithm Samples ARC Hellaswag MMLU Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. French Base model -0.3293 0.3644 0.4259 0.5452 0.2884 0.297 MAML-DPO 10000 0.3362 0.3704 0.434 0.5464 0.2885 0.2977
+> DPO 10000 0.3251 0.3721 0.4339 0.5477 0.2820 0.2887 Catalan Base model -0.3199 0.3482 0.3956 0.4992 0.2796 0.2887 MAML-DPO 10000 0.3242 0.3611 0.401 0.4981 0.2811 0.2898
+> DPO 10000 0.3344 0.3670 0.3981 0.4958 0.2730 0.2829 Romanian Base model -0.2091 0.2708 0.2814 0.3186 0.2557 0.2736 MAML-DPO 10000 0.2134 0.2639 0.2864 0.3254 0.2599 0.2739
+> DPO 10000 0.2125 0.2699 0.2864 0.3266 0.2596 0.2719
+
+19 Table 5: Out-of-distribution (OOD) benchmark evaluation results of Gemma 270M models under baseline and MAML-DPO. Bold numbers indicate where the trained model outperformed the base model.                                                                                         
+
+> Language Algorithm Samples ARC Hellaswag MMLU Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. French Base model -0.210 0.249 0.271 0.261 0.251 0.266 MAML-DPO 40000 0.222 0.253 0.274 0.263 0.250 0.261 DPO 40000 0.212 0.243 0.271 0.259 0.249 0.262 Catalan Base model -0.212 0.239 0.265 0.281 0.242 0.252 MAML-DPO 40000 0.214 0.225 0.282 0.29 0.257 0.257
+> DPO 40000 0.200 0.239 0.274 0.281 0.24 0.244 Romanian Base model -0.191 0.240 0.283 0.276 0.260 0.268 MAML-DPO 40000 0.194 0.246 0.294 0.259 0.262 0.264 DPO 40000 0.186 0.233 0.284 0.263 0.256 0.259 020 40 60 80 100
+> Adaptation Steps
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> Reward Accuracy
+> Adapted RM
+> Baseline RM 020 40 60 80 100
+> Adaptation Steps
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> Reward Accuracy
+> Adapted RM
+> Baseline RM 020 40 60 80 100
+> Adaptation Steps
+> 0.450
+> 0.475
+> 0.500
+> 0.525
+> 0.550
+> 0.575
+> 0.600
+> 0.625
+> 0.650
+> Reward Accuracy
+> Adapted RM
+> Baseline RM
+
+Figure 7: Average reward accuracies with standard deviation bands of Gemma 270M reward functions over 3 random seeds during adaptation on the target language with 100 samples. [Left] Arabic. [Center] Slovak. [Right] Indonesian. In all settings, MAML reward functions show consistently higher reward accuracy than the baseline reward functions in adaptation. 
+
+B.2 Additional Results of MAML-RLHF with LoRA adapters Limited adaptation data. Table 6 reports the win rates of the corresponding policies optimized with these reward models in the RLHF pipeline. MAML-RLHF achieves the highest mean win rate across all three Romance target languages, suggesting that the benefits of our approach are not limited to reward modeling and can also be reflected to policy. At the same time, the margins over the multitask-RLHF are relatively small in Catalan and French. In both cases, the multitask-RLHF substantially improves over conventional RLHF, suggesting that pretraining on Romance preference data provides a strong basis for adapting to these targets. Against this competitive baseline, MAML-RLHF still performs best on average. Table 6: Win rate of Gemma3 270M adapted to 100 samples from each target language in the RLHF pipeline. 
+
+Target Algorithm Samples WR (%) French MAML-RLHF 100 66 .23 ± 1.32 
+
+Multitask-RLHF 100 64 .55 ± 1.40 
+
+RLHF 100 49 .12 ± 2.21 
+
+Catalan MAML-RLHF 100 63 .28 ± 1.35 
+
+Multitask-RLHF 100 62 .97 ± 1.07 
+
+RLHF 100 50 .03 ± 3.30 
+
+Romanian MAML-RLHF 100 85 .23 ± 0.32 
+
+Multitask-RLHF 100 63 .41 ± 2.34 
+
+RLHF 100 60 .28 ± 6.17 
+
+In Figure 7, we evaluate Gemma 270M settings on Arabic, Slovak, and Indonesian, which come from language families different from the Romance meta-training languages. The averaged curves with standard deviation bands show that MAML-RM continues to outperform the baseline across all three targets. This suggests that the benefit of meta-training is not limited to closely related Romance 20 languages, but also transfers to linguistically distant target languages while preserving a similar adaptation trend. Table 7 reports the corresponding policy evaluation results for these non-Romance languages. Overall, MAML-RLHF improves over both baselines on Arabic and Indonesian, with larger margins over multitask RLHF than those observed for the Romance targets. Similar to MAML-DPO on non-Romance languages, this comparison suggests that our approach yields more robust transfer across language families, whereas multitask appears more sensitive to the language composition during preference pretraining. The improvement is more modest in Slovak, where conventional RLHF already achieves a strong win rate, resulting limited room for further improvement through GRPO even when MAML-RLHF provides stronger reward-model adaptation. Table 7: Win rate of Gemma3 270M adapted to 100 samples from each non-Romance target language in the RLHF pipeline.                                        
+
+> Target Algorithm Samples WR (%) Arabic MAML-RLHF 100 76 .90 ±6.29
+> Multitask-RLHF 100 59 .30 ±6.80
+> RLHF 100 50 .71 ±4.35
+> Slovak MAML-RLHF 100 77 .30 ±3.81
+> Multitask-RLHF 100 75 .60 ±0.92
+> RLHF 100 76 .22 ±0.65
+> Indonesian MAML-RLHF 100 82 .07 ±1.66
+> Multitask-RLHF 100 44 .17 ±0.42
+> RLHF 100 48 .67 ±1.47
+
+Table 8: Win rates of Gemma-270M models adapted to 4k and 40k samples from each target language. MAML-DPO models consistently outperform the baselines, followed by multitask method.                                        
+
+> Target Algorithm Samples WR(%) French MAML-DPO 4000 66 .60
+> Multitask-DPO 4000 56 .25
+> DPO 4000 56 .20
+> MAML-DPO 40000 75 .40
+> Multitask-DPO 40000 60 .405
+> DPO 40000 54 .00
+> Catalan MAML-DPO 4000 71 .95
+> Multitask-DPO 4000 70 .20
+> DPO 4000 61 .35
+> MAML-DPO 40000 74 .50
+> Multitask-DPO 40000 70 .30
+> DPO 40000 62 .90
+> Romanian MAML-DPO 4000 86 .95
+> Multitask-DPO 4000 84 .50
+> DPO 4000 71 .35
+> MAML-DPO 40000 88 .20
+> Multitask-DPO 40000 80 .15
+> DPO 40000 75 .30
+
+Table 9: Win rate evaluation of Gemma 270M models adapted with 12k and 40k samples from each target language under baseline, multi-task, and MAML RLHF settings.                                        
+
+> Target Algorithm Samples WR(%) French MAML-RLHF 12000 72 .05
+> Multitask-RLHF 12000 73 .45
+> RLHF 12000 69 .25
+> MAML-RLHF 40000 72 .30
+> Multitask-RLHF 40000 74 .90
+> RLHF 40000 64 .90
+> Catalan MAML-RLHF 12000 63 .00
+> Multitask-RLHF 12000 57 .70
+> RLHF 12000 50 .30
+> MAML-RLHF 40000 69 .65
+> Multitask-RLHF 40000 65 .80
+> RLHF 40000 58 .20
+> Romanian MAML-RLHF 12000 87 .25
+> Multitask-RLHF 12000 85 .10
+> RLHF 12000 76 .15
+> MAML-RLHF 40000 88 .95
+> Multitask-RLHF 40000 87 .00
+> RLHF 40000 82 .60
+
+Sufficient adaptation data. Table 9 and Table 10 report the win-rate results for models fine-tuned using the RLHF pipeline using 12k/8k and 40k target language samples. With both model configurations, MAML-RLHF consistently outperforms conventional RLHF in all cases, showing the 21 effectiveness of the meta-learned initialization for RLHF-based adaptation. With Gemma3 270M, MAML-RLHF achieves higher win rates than multitask RLHF on Catalan and Romanian under both data settings, while multitask RLHF performs better on French. This suggests that MAML-RLHF provides a stronger adaptation advantage in most target-language settings, although multitask training can remain competitive when the target language is closely aligned with the meta-training languages. Table 10: Win rate evaluation of BLOOM 7.1B models trained with RLHF pipelines. MAML-RLHF models achieve at least 9% in performance improvement over baseline models. 
+
+Target Algorithm Samples WR(%) French MAML-RLHF 8000 69.6 
+
+RLHF 8000 60 .1
+
+Catalan MAML-RLHF 8000 73.2 
+
+RLHF 8000 56 .8
+
+Romanian MAML-RLHF 8000 65.0 
+
+RLHF 8000 52 .7
+
+Out-of-distribution evaluation. We evaluate the OOD benchmark performances of Gemma 3 270M models trained with the RLHF pipeline in Table 11. While MAML-RLHF models show improvements in more benchmarks and metrics than the baseline RLHF models in French and Catalan, the same pattern is not present in Romanian. We attribute this to the diminishing advantage of MAML-RLHF as the amount of adaptation dataset becomes larger. We also note that compared to DPO models, RLHF models are more unstable, due to training with reward functions increasing the possibility of overfitting and losing generalization. Table 11: Out-of-distribution (OOD) benchmark evaluation results of Gemma 270M models under baseline and MAML-RLHF. Bold numbers indicate where the trained model outperformed the base model.                                                                          
+
+> Language Algorithm Samples ARC Hellaswag MMLU Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. Acc. (%) Norm. Acc. French Base model -0.210 0.249 0.271 0.261 0.251 0.266 MAML-RLHF 40000 0.213 0.250 0.273 0.291 0.239 0.251 RLHF 40000 0.210 0.248 0.270 0.264 0.260 0.258 Catalan Base model -0.212 0.239 0.265 0.281 0.242 0.252 MAML-RLHF 40000 0.214 0.257 0.279 0.287 0.247 0.253
+> RLHF 40000 0.230 0.271 0.263 0.265 0.238 0.268
+> Romanian Base model -0.191 0.240 0.283 0.276 0.260 0.268 MAML-RLHF 40000 0.188 0.244 0.255 0.251 0.230 0.246 RLHF 40000 0.207 0.241 0.271 0.263 0.241 0.247
+
+Table 12: Resource consumption of different training stages based on Bloom 7.1B model. Note that the Adaptation-DPO/RM is also used for conventional DPO/RM. All the processes run with a single H200 GPU. Method Training steps Samples Wall-clock time GPU memory consumption MAML-DPO 400 12,000 23 hours max. 137.2GB Multitask-DPO 400 12,000 23 hours max. 128.8GB Adaptation-DPO 100 100 0.5 hour max. 121.8GB MAML-RM 400 16,000 10 hours max. 135.8GB Multitask-RM 400 16,000 8 hours max. 131.6GB Adaptation-RM 100 100 0.25 hour max. 114.8GB 
+
+B.3 Resource Consumption of MAML-DPO 
+
+We further report the resource consumption of different approaches in Table 12. With the first-order approximation to the MAML objective, the additional cost of our MAML-based methods 22 remains moderate compared with the corresponding multitask models trained on the same amount of multilingual preference data. Specifically, MAML-DPO mainly increases peak GPU memory usage, while MAML-RM incurs a small increase in both wall-clock time and memory consumption. These results suggest that the cost of our approaches remains manageable with respect to both training time and GPU memory requirements. 23 C Convergence of Meta-RLHF 
+
+C.1 Proof of Theorem 4.3 
+
+We first show that the task-specific loss function has Lipschitz-continuous gradient. Recall the definition of L(ϕ; τ ) and its gradient ∇ϕL(ϕ; τ ).
+
+L(ϕ; τ ) = −E(x,y w ,y ℓ)∼D τ
+
+log σ  ϕ⊤∆ψ(x, y w, y ℓ) 
+
+∇ϕL(ϕ; τ ) = −E(x,y w ,y ℓ)∼D τ
+
+σ(−ϕ⊤∆ψ(x, y w, y ℓ)) · ∆ψ(x, y w, y ℓ)
+
+Now, 
+
+|∇ ϕL(ϕ; τ ) − ∇ ϕL(ϕ′; τ )| ≤ E 
+
+> (x,y w,y ℓ)∼D τ
+
+ σ(−ϕ⊤∆ψ(x, y w, y ℓ)) · ∆ψ(x, y w, y ℓ)
+
+− σ(−ϕ′⊤ ∆ψ(x, y w, y ℓ)) · ∆ψ(x, y w, y ℓ) 
+
+≤ E 
+
+> (x,y w,y ℓ)∼D τ
+
+ σ(−ϕ⊤∆ψ(x, y w, y ℓ)) − σ(−ϕ′⊤ ∆ψ(x, y w, y ℓ)) · ∥ ∆ψ(x, y w, y ℓ)∥
+
+≤ 2 E 
+
+> (x,y w,y ℓ)∼D τ
+
+ (ϕ − ϕ′)⊤∆ψ(x, y w, y ℓ)) 
+
+≤ 2 E 
+
+> (x,y w,y ℓ)∼D τ
+
+[∥ϕ − ϕ′∥ ∥ ∆ψ(x, y w, y ℓ)∥]
+
+≤ 4 ∥ϕ − ϕ′∥ .
+
+Additionally, let e∇ϕL(ϕ; τ ) = 1
+
+|Dτ 
+
+> in
+
+|
+
+P
+
+> j∈D τ
+> in
+
+∇ϕL(ϕ; τ, j ) be a stochastic gradient estimator for task 
+
+τ . Since ∥∇ ϕL(ϕ; τ )∥2 ≤ 2, standard concentration inequality gives us, 
+
+EDτ
+
+> in
+
+e∇ϕL(ϕ; τ ) − ∇ ϕL(ϕ; τ ) 22
+
+
+
+≤ O
+
+ 1
+
+|D τ
+
+> in
+
+|
+
+
+
+≜ eσ2.
+
+We can now apply Theorem 4.15 from [ 17 ] to conclude that as long as the number of iterations 
+
+T ≥ ∆ min 
+
+n 4 
+
+> ε2
+
+, 4 
+
+> σ2(16 α2+B−1)
+
++ 4( BD o+Din )
+
+> eσ2
+
+o
+
+with ∆ = LM (ϕ1) − min ϕ LM (ϕ), we have 
+
+E
+
+h
+
+∇ϕLM ( bϕM ) 2
+
+i
+
+≤ O
+
+s
+
+σ2
+
+
+
+16 α2 + 1
+
+B
+
+
+
++ eσ2
+
+BD o
+
++ eσ2
+
+Din 
+
+!
+
++ ε
+
+Now we substitute the value of eσ and choose Din = 1 /σ, D o = O(1) , B = 1 /α 2, and ε = ασ . Then we obtain 
+
+E
+
+h
+
+∇ϕLM ( bϕM ) 2
+
+i
+
+≤ O(ασ ).
+
+Moreover, ∆ = LM (ϕ1) − min ϕ LM (ϕ) ≤ O(L) as feature norms are bounded by L. Then the number of iterations T is bounded by O   Lα2σ2
+
+.By lemma C.1, LM (ϕ) is a mM -strongly convex function for mM = c·m0 
+
+> 4+ c+m0
+
+.
+
+LM (ϕ⋆M ) ≥ L M ( bϕM ) + 
+
+D
+
+∇ϕLM ( bϕM ), ϕ ⋆M − bϕM
+
+E
+
++ mM
+
+2 ϕ⋆M − bϕM
+
+> 22
+
+After rearranging and using Cauchy-Schwartz inequality, we obtain the following bound. 
+
+mM
+
+2 ϕ⋆M − bϕM
+
+> 22
+
+≤ L M (ϕ⋆M ) − L M ( bϕM ) + ∇ϕLM ( bϕM ) 2
+
+ϕ⋆M − bϕM 2
+
+≤ ∇ϕLM ( bϕM ) 2
+
+ϕ⋆M − bϕM 2
+
+This implies E
+
+h
+
+ϕ⋆M − bϕM 2
+
+i
+
+≤ E
+
+h 2 
+
+> mM
+
+∇ϕLM ( bϕM ) 2
+
+i
+
+≤ 2ασ mM .24 C.2 Technical Lemmas 
+
+We dedicate this section to proving that the meta-objective LM (ϕ) is strongly convex under the conditions of Theorem 4.3. This property is formalized in the following lemma. 
+
+Lemma C.1. Suppose Assumption 4.1 hold and m0 = ν 
+
+> 2(1+exp(2 Bϕ))
+
+. If α ≤ α0 = m0 
+
+> 2(4+ m0)
+
+, then 
+
+∇2
+
+> ϕ
+
+LM (ϕ) is positive semidefinite. Moreover, if α ≤ m0 
+
+> 2(4+ c+m0)
+
+for some constant c > 0 then 
+
+∇2
+
+> ϕ
+
+LM (ϕ) ≽ c·m0 
+
+> 4+ c+m0
+
+I.Proof. We first derive the third derivative of the task specific loss function. Moreover, we will also write z = ϕT ∆ψ.
+
+∇3
+
+> ϕ
+
+L(ϕ; τ ) = ∇ϕ
+
+ E(x,y w ,y ℓ)[σ(z)(1 − σ(z))∆ ψ∆ψT ]
+
+= E(x,y w ,y ℓ)
+
+ ddz (σ(z)(1 − σ(z))) ∇ϕz · ∆ψ∆ψT
+
+
+
+Since ∇ϕz = ∆ ψ and ddz (σ(z)(1 − σ(z))) = σ(z)(1 − σ(z))(1 − 2σ(z)) , we have: 
+
+∇3
+
+> ϕ
+
+L(ϕ; τ ) = E(x,y w ,y ℓ)
+
+σ(z)(1 − σ(z))(1 − 2σ(z))∆ ψ ⊗ ∆ψ∆ψT  (15) Where ⊗ represents the tensor product. Let ϕτ = ϕ − α∇ϕL(ϕ; τ ) denote the adapted parameter for task τ . The gradient of the meta-loss is given as follows. 
+
+∇ϕLM (ϕ) = Eτ ∼PTASK 
+
+(I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) ∇ϕL(ϕτ ; τ ) (16) Differentiating the gradient with respect to ϕ we get the Hessian of the meta-loss. 
+
+∇2
+
+> ϕ
+
+LM (ϕ) = Eτ
+
+∇ϕ
+
+ (I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) ∇ϕL(ϕτ ; τ ) 
+
+= Eτ
+
+∇ϕ(I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ ϕL(ϕτ ; τ ) + ( I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ ϕ(∇ϕL(ϕτ ; τ )) 
+
+= Eτ
+
+−α∇ϕ(∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ ϕL(ϕτ ; τ ) + ( I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ ϕ(∇ϕL(ϕτ ; τ )) 
+
+The first term involves the third derivative tensor ∇3
+
+> ϕ
+
+L(ϕ; τ ), and for the second term, we calculate 
+
+∇ϕ(∇ϕL(ϕτ ; τ )) .
+
+∇ϕ(∇ϕL(ϕτ ; τ )) = ∇2
+
+> ϕ
+
+L(ϕτ ; τ ) · ∇ ϕϕτ (17) 
+
+= ∇2
+
+> ϕ
+
+L(ϕτ ; τ ) · ∇ ϕ(ϕ − α∇ϕL(ϕ; τ )) (18) 
+
+= ∇2
+
+> ϕ
+
+L(ϕτ ; τ ) · (I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) (19) Substituting back we obtain. 
+
+∇2
+
+> ϕ
+
+LM (ϕ) = Eτ
+
+−α∇3
+
+> ϕ
+
+L(ϕ; τ ) · ∇ ϕL(ϕτ ; τ )+( I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ 2
+
+> ϕ
+
+L(ϕτ ; τ ) · (I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) 
+
+The following is the complete expression for the Hessian, which consists of two terms. 
+
+∇2
+
+> ϕ
+
+LM (ϕ) = Eτ [T1(τ ) + T2(τ )] (20) where 
+
+T1(τ ) = −α∇3
+
+> ϕ
+
+L(ϕ; τ ) · ∇ ϕL(ϕτ ; τ ) (21) 
+
+T2(τ ) = ( I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) · ∇ 2
+
+> ϕ
+
+L(ϕτ ; τ ) · (I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) (22) Since ∇2
+
+> ϕ
+
+LM (ϕ) = Eτ [T1(τ ) + T2(τ )] , for the Hessian to be positive semidefinite, we need. 
+
+E[w⊤T2(τ )w] − | E[w⊤T1(τ )w]| ≥ 0
+
+25 For any unit vector w, Lemma C.2 shows |wT T1(τ )w| ≤ 8α, and w⊤T2(τ )w ≥ (1 − α)2m0.Then the sufficient condition is the following. 
+
+(1 − α)2m0 > 8α. (23) Therefore, a sufficient condition is α < m0 
+
+> 2(4+ m0)
+
+.In order to show positive definiteness, the required condition is 
+
+(1 − α)2m0 > 8α + 2 cα, (24) for some c > 0. The rest of the proof is almost identical to the positive-semidefinite setting. 
+
+Lemma C.2. Assume Assumption 4.1. Fix any task τ and stepsize α > 0. Let T1(τ ) and T2(τ ) be defined as in the proof of Lemma C.1. Then, 
+
+∥T1(τ )∥2 ≤ 8α, and , λmin (T2(τ )) ≥ (1 − α)2m0,
+
+where m0 = ν 
+
+> 2(1+exp(2 Bϕ))
+
+.Proof. Bound for T1(τ ). We first expand T1(τ ) as follows: 
+
+T1(τ ) = −αf (z) (∆ ψ⊤v) ∆ ψ∆ψ⊤, v ≜ ∇ϕL(ϕτ ; τ ), f (z) = σ(z)(1 −σ(z))(1 −2σ(z)) , z = ϕ⊤∆ψ. 
+
+Using ∥∆ψ∆ψ⊤∥F = ∥∆ψ∥22, and Cauchy–Schwarz, 
+
+∥T1(τ )∥F ≤ α|f (z)|| ∆ψ⊤v|∥ ∆ψ∥22 ≤ α|f (z)|∥ ∆ψ∥32∥v∥2.
+
+Moreover, from the gradient expression ∇ϕL(·; τ ) = −E[σ(−z)∆ ψ], we have 
+
+∥v∥2 = ∥∇ ϕL(ϕτ ; τ )∥2 ≤ E∥∆ψ∥2 ≤ 2.
+
+Finally, |f (z)| ≤ 1/2. Therefore, 
+
+∥T1(τ )∥2 ≤ ∥ T1(τ )∥F ≤ α · 12 · 23 · 2 = 8 α, 
+
+which completes the proof. 
+
+Bound for T2(τ ). By Lemma C.3, we have that ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≽ m0 and ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≼ I. For any unit 
+
+w let u = ( I − α∇2
+
+> ϕ
+
+L(ϕ; τ )) w, we have that ∥u∥22 ≤ (1 − α)2. Then 
+
+w⊤T2(τ )w = u⊤∇2
+
+> ϕ
+
+L(ϕτ ; τ )u ≥ m0∥u∥22 ≥ m0(1 − α)2.
+
+In other words, ∥T2(τ )∥2 ≥ m0(1 − α)2 as claimed. 
+
+Lemma C.3. For any task τ , the loss function L(ϕ; τ ) is positive semidefinite i.e. ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≽ 0.Additionally, if Assumption 4.1 hold, then it is positive definite i.e. 
+
+∇2
+
+> ϕ
+
+L(ϕ)∥2 ≼ I and ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≽ ν
+
+2(1 + exp(2 Bϕ)) I, 
+
+for any ϕ with ∥ϕ∥2 ≤ Bϕ.Proof. First, as ∥∆ψ(·)∥22 ≤ 2, one can show that ∥∇ 2
+
+> ϕ
+
+L(ϕ)∥2 ≤ 1.Since σ(u) ≥ 0 ∀u, the multiplication of two sigmoid functions satisfy σ(u)σ(−u) ≥ 0. The matrix 
+
+ψψ ⊤ is positive semidefinite. Hence, ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≽ 0.Additionally, for any u, σ(u)σ(−u) = 11+exp( u)11+exp( −u) = 12+exp( u)+exp( −u) ≥ 12+2 exp( |u|) .Moreover, |zϕ(x, y w, y ℓ)| = ϕ⊤(ψ(x, y w) − ψ(x, y ℓ) ≤ 2Bϕ. Moreover, under assumption 4.1 the matrix ψψ ⊤ is positive-definite with constant ν. Therefore, ∇2
+
+> ϕ
+
+L(ϕ; τ ) ≽ ν 
+
+> 2(1+exp(2 Bϕ))
+
+I.26 D Convergence of Meta-DPO 
+
+D.1 Proof of Theorem 4.6 
+
+The key step of the proof of Theorem 4.6 is similar to that of Theorem 4.3. By Lemma D.3, for all τ , we have that the smoothness constant of task-wise gradient as 
+
+∥∇ θ L(θ, τ ) − ∇ θ L(θ′, τ )∥2 ≤ β2∥θ − θ′∥2. (25) Moreover, by Proposition D.4, we have that ∥∇ θ L(θ, τ )∥2 ≤ 2β.Additionally, let e∇ϕL(θ; τ ) = 1
+
+|Dτ 
+
+> in
+
+|
+
+P
+
+> j∈D τ
+> in
+
+∇θ L(θ; τ, j ) be a stochastic gradient estimator for task 
+
+τ . Since by Proposition D.4, we have that ∥∇ θ L(θ, τ )∥2 ≤ 2β, standard concentration inequality gives us, 
+
+EDτ
+
+> in
+
+e∇θ L(θ; τ ) − ∇ θ L(θ; τ ) 22
+
+
+
+≤ O
+
+ β2
+
+|D τ
+
+> in
+
+|
+
+
+
+≜ eσ2.
+
+We can now apply Theorem 4.15 from [ 17 ] to conclude that as long as the number of iterations 
+
+T ≥ ∆ min 
+
+n 4 
+
+> ε2
+
+, 4 
+
+> σ2(16 α2+B−1)
+
++ 4( BD o+Din )
+
+> eσ2
+
+o
+
+with ∆ = LM (θ1) − min θ LM (θ), we have 
+
+E
+
+h
+
+∇θ LM (bθM ) 2
+
+i
+
+≤ O
+
+s
+
+σ2
+
+
+
+16 α2 + 1
+
+B
+
+
+
++ eσ2
+
+BD o
+
++ eσ2
+
+Din 
+
+!
+
++ ε. 
+
+Now we substitute the value of eσ and choose Din = β/σ, D o = O(1) , B = 1 /α 2, and ε = ασ . Then we obtain 
+
+E
+
+h
+
+∇θ LM (bθM ) 2
+
+i
+
+≤ O(ασ ).
+
+Moreover, ∆ = LM (θ1) − min θ LM (θ) ≤ O(L) as feature norms are bounded by L. Then the number of iterations T is bounded by O   Lα2σ2
+
+.By Theorem D.1, LM (θ) is mM -strongly convex with mM = (1 − αβ 2)2 μτ − 4αβ 4, where μτ
+
+is the per-task strong-convexity constant of Theorem D.3. Standard calculation gives us that, with 
+
+α = 1
+
+> β2
+
+(2+ 8(1+exp( Zmax))  
+
+> ν
+
+) , we have mM ≥ β2 cν 3 
+
+> (1+exp( Zmax )) 3
+
+for some constant c > 0. We have the following 
+
+LM (θ⋆M ) ≥ L M (bθM ) + 
+
+D
+
+∇θ LM (bθM ), θ ⋆M − bθM
+
+E
+
++ mM
+
+2 θ⋆M − bθM
+
+> 22
+
+.
+
+After rearranging and using Cauchy-Schwartz inequality, we obtain the following bound. 
+
+mM
+
+2 θ⋆M − bθM
+
+> 22
+
+≤ L M (θ⋆M ) − L M (bθM ) + ∇θ LM (bθM ) 2
+
+θ⋆M − bθM 2
+
+≤ ∇θ LM (bθM ) 2
+
+θ⋆M − bθM 2
+
+.
+
+This implies E
+
+h
+
+θ⋆M − bθM 2
+
+i
+
+≤ 2 
+
+> mM
+
+E
+
+h
+
+∇θ LM (bθM ) 2
+
+i
+
+≤ 2ασ mM .
+
+D.2 Technical Lemmas 
+
+We first show the the meta loss function LM (θ) is strongly convex under condition of Theorem 4.6. 
+
+Theorem D.1 (Strong convexity of DPO loss) . Let μτ be the per-task strong-convexity constant of Theorem D.3. Define 
+
+mM ≜ (1 − αβ 2)2 μτ − 4αβ 4. (26) 
+
+If mM > 0, then 
+
+∇2 
+
+> θ
+
+LM (θ) ≽ mM I. 
+
+27 Proof. Let θτ = θ − α∇θ L(θ, τ ). Then for any unit w,
+
+∇θ LM (θ) = Eτ
+
+(I − α∇2 
+
+> θ
+
+L(θ, τ )) · ∇ θ L(θτ , τ ),
+
+∇2 
+
+> θ
+
+LM (θ) = Eτ [T1(τ ) + T2(τ )] , (27) where 
+
+T1(τ ) = −α∇3 
+
+> θ
+
+L(θ; τ ) · ∇ θ L(θτ ; τ ), (28) 
+
+T2(τ ) = ( I − α∇2 
+
+> θ
+
+L(θ; τ )) · ∇ 2 
+
+> θ
+
+L(θτ ; τ ) · (I − α∇2 
+
+> θ
+
+L(θ; τ )) . (29) Now, we have that 
+
+w⊤∇2LM (θ)w = Eτ
+
+w⊤(T1(τ ) + T2(τ )) w ≥ Eτ [w⊤T2(τ )w] − Eτ |w⊤T1(τ )w|.
+
+Apply Lemma D.2 to obtain 
+
+w⊤∇2LM (θ)w ≥ (1 − αβ 2)2μτ − 4αβ 4 = mM .
+
+Thus ∇2LM (θ) ≽ mM I, i.e. LM (θ) is mM -strongly convex. 
+
+Lemma D.2 (Bounds on the meta-Hessian terms) . Under Assumption 4.1, we have that 
+
+|w⊤T1(τ )w| ≤ 4αβ 4, w⊤T2(τ )w ≥ (1 − αβ 2)2 μτ .
+
+Proof. For T2, by Theorem D.3 we have that ∇2 
+
+> θ
+
+L(θ, τ ) ≼ Lτ I = β2I and ∇2 
+
+> θ
+
+L(θτ , τ ) ≽ μτ I;thus, 
+
+w⊤T2(τ )w =  (I−α∇2 
+
+> θ
+
+L(θ, τ )) w⊤∇2 
+
+> θ
+
+L(θτ , τ ) (I−α∇2 
+
+> θ
+
+L(θ, τ )) w ≥ μτ ∥(I−α∇2 
+
+> θ
+
+L(θ, τ )) w∥2 ≥ (1 −αβ 2)2μτ .
+
+For T1, by Cauchy-Schwarz for tensor contraction, 
+
+|w⊤T1(τ )w| ≤ α ∥∇ 3 
+
+> θ
+
+L(θ; τ )∥op ∥∇ θ L(θτ ; τ )∥ ∥ w∥2.
+
+Apply Lemma D.4: ∥∇ 3L(·)∥op ≤ 2β3 and ∥∇L (θτ ; τ )∥ ≤ 2β, hence |w⊤T1(τ )w| ≤ 4αβ 4.
+
+Lemma D.3 (Task-wise smoothness and strong convexity) . Define the task-wise smoothness and strong-convexity constants as 
+
+Lτ ≜ β2, μτ ≜ β2 ν
+
+2 1 + eZmax 
+
+ .
+
+Then ∇2 
+
+> θ
+
+L(θ; τ ) ≼ Lτ I, and under Assumption 4.4 (so |zθ | ≤ Zmax ) and Assumption 4.1 we also have ∇2 
+
+> θ
+
+L(θ; τ ) ≽ μτ I.Proof. Upper bound. Note that σ(u)σ(−u) ≤ 1/4,
+
+∥∇ 2L(θ; τ )∥2 = β2 Eσ(zθ )σ(−zθ )∆ ψ∆ψ⊤ ≤ β2 Eσ(zθ )σ(−zθ ) ∥∆ψ∆ψ⊤∥ ≤ β2· 14 ·4 = β2.
+
+Lower bound. For any scalar u,
+
+σ(u)σ(−u) = 12 + eu + e−u ≥ 12 + 2 e|u| = 12(1 + e|u|) .
+
+Using (14), |zθ | ≤ Zmax , hence σ(zθ )σ(−zθ ) ≥ 12(1+ eZmax ) . Therefore 
+
+∇2L(θ; τ ) ≽ β2 · 12(1 + eZmax ) E[∆ ψ∆ψ⊤] ≽ β2 · 12(1 + eZmax ) νI, 
+
+where the last step uses Assumption 4.1. 
+
+Lemma D.4 (Uniform bound on the third derivative of the task loss) . For all τ ,
+
+∥∇ 3 
+
+> θ
+
+L(θ; τ )∥op ≤ 2β3,
+
+∥∇ θ L(θ; τ )∥2 ≤ 2β. 
+
+Proof. For the scalar loss ℓ(z) = log(1 + e−z ), we have ℓ′′′ (z) = −σ(z)σ(−z)(1 − 2σ(z)) so 
+
+|ℓ′′′ (z)| ≤ 1/4. For a single sample, zθ = β θ ⊤∆ψ − J is affine in θ with ∇θ zθ = β∆ψ. Hence, for unit vectors a, b, c ,
+
+|∇ 3 
+
+> θ
+
+ℓ(zθ )[ a, b, c ]| = |ℓ′′′ (zθ )|·|⟨ β∆ψ, a ⟩|·|⟨ β∆ψ, b ⟩|·|⟨ β∆ψ, c ⟩| ≤ 14 β3 ∥∆ψ∥3 ≤ 14 β3 ·8 = 2 β3,
+
+using ∥∆ψ∥ ≤ 2. Taking expectation over Dτ preserves the bound. For the gradient, ∇θ L(θ; τ ) = −E[βσ (−zθ )∆ ψ], so ∥∇ θ L(θ; τ )∥ ≤ β E∥∆ψ∥ ≤ 2β.28 E Convergence Analysis of the Adaptation Phase for MAML-DPO 
+
+In this section, we provide a comparative convergence analysis of the adaptation phase. We prove that the meta-learned initialization ˆθM yields a faster expected convergence rate to a target task’s optimal policy θ∗ 
+
+> τ
+
+compared to a baseline multitask initialization θbase .
+
+E.1 Preliminaries and Task Geometry 
+
+Let the target task τ ∼ PTASK be drawn from the distribution of languages. During adaptation, we optimize the empirical DPO loss using gradient descent with step size η:
+
+θt+1 = θt − η∇θ LDPO (θt; τ ) (30) From Theorem D.3, the task-wise DPO loss LDPO (θ; τ ) is Lτ -smooth and μτ -strongly convex. We define the baseline initialization as the minimizer of the joint expected risk across all tasks: 
+
+θ∗ 
+
+> base
+
+= arg min  
+
+> θ
+
+Eτ ∼PTASK [LDPO (θ; τ )] (31) We define the optimal MAML initialization as the minimizer of the meta-objective: 
+
+θ∗ 
+
+> M
+
+= arg min  
+
+> θ
+
+Eτ ∼PTASK [LDPO (θ − α∇θ LDPO (θ; τ ); τ )] (32) By Theorem 4.6, our gradient-based algorithm produces ˆθM such that || θ∗ 
+
+> M
+
+− ˆθM || 2 ≤ ϵmeta .
+
+E.2 Deriving the Initialization Advantage 
+
+To prove faster convergence, we must first bound the expected squared distance of both initializations to the task-specific optimum θ∗ 
+
+> τ
+
+= arg min θ LDPO (θ; τ ).
+
+Lemma E.1 (Baseline Initialization Distance) . Let Theorem 4.5 hold, such that the variance of task gradients is bounded by σ2. The expected distance from the baseline initialization θ∗ 
+
+> base
+
+to a sampled task optimum θ∗ 
+
+> τ
+
+is bounded by: 
+
+Eτ [|| θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 22] ≤ σ2
+
+μ2
+
+> τ
+
+≜ D2base (33) 
+
+Proof. By the strong convexity of the task-specific loss LDPO (θ; τ ), the gradient is co-coercive. For any θ, the following inequality holds: 
+
+⟨∇L DPO (θ; τ ) − ∇L DPO (θ∗ 
+
+> τ
+
+; τ ), θ − θ∗ 
+
+> τ
+
+⟩ ≥ μτ || θ − θ∗ 
+
+> τ
+
+|| 22
+
+Because θ∗ 
+
+> τ
+
+is the exact minimizer for task τ , its gradient is zero ( ∇L DPO (θ∗ 
+
+> τ
+
+; τ ) = 0 ). Evaluating this at the baseline initialization θ∗ 
+
+> base
+
+yields: 
+
+⟨∇L DPO (θ∗
+
+> base
+
+; τ ), θ ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+⟩ ≥ μτ || θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 22
+
+Applying the Cauchy-Schwarz inequality to the left side: 
+
+||∇L DPO (θ∗
+
+> base
+
+; τ )|| 2|| θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 2 ≥ μτ || θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 22
+
+Assuming θ∗
+
+> base
+
+̸ = θ∗ 
+
+> τ
+
+, we divide by μτ || θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 2 to isolate the distance: 
+
+|| θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 2 ≤ 1
+
+μτ
+
+||∇L DPO (θ∗
+
+> base
+
+; τ )|| 2 (34) Squaring both sides and taking the expectation over the task distribution PT ASK :
+
+Eτ [|| θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 22] ≤ 1
+
+μ2
+
+> τ
+
+Eτ [||∇L DPO (θ∗
+
+> base
+
+; τ )|| 22] (35) By definition, θ∗ 
+
+> base
+
+minimizes the expected joint loss, meaning the expected gradient across tasks is zero ( Eτ [∇L DPO (θ∗
+
+> base
+
+; τ )] = 0 ). Therefore, the uncentered second moment is exactly equal to the variance of the task gradients, which is bounded by σ2 (Theorem 4.5): 
+
+Eτ [|| θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+|| 22] ≤ σ2
+
+μ2
+
+> τ
+
+≜ D2base 
+
+29 Lemma E.2 (MAML Initialization Advantage) . Let us define θ∗ = Eτ [θ∗ 
+
+> τ
+
+], G(θ) =
+
+Eτ
+
+h
+
+∥∇L (θ; τ )∥22
+
+i
+
+and Hbase = Eτ [∇2L(θ∗
+
+> base
+
+; τ )] . There exists a deterministic vector δ ∈ Rd and a scalar Φ ∈ R, both independent of α, such that for all sufficiently small α > 0,
+
+Eτ θ∗ 
+
+> M
+
+− θ∗ 
+
+> τ
+> 22
+
+= Eτ θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+> 22
+
+− 2α Φ + O(α2), (36) 
+
+where 
+
+δ = H−1base ∇G(θ∗
+
+> base
+
+), Φ = −
+
+D
+
+θ∗ 
+
+> base
+
+− θ∗, H −1base ∇G(θ∗
+
+> base
+
+)
+
+E
+
+. (37) 
+
+In particular, combining (36) with the variance bound Eτ ∥θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+∥22 ≤ D2base = σ2/μ 2 
+
+> τ
+
+from Theorem 4.5 yields the inequality Eτ ∥θ∗ 
+
+> M
+
+− θ∗ 
+
+> τ
+
+∥22 ≤ D2base − 2αΦ + O(α2).Proof. Step 1: First-order expansion of the meta objective. 
+
+By the integral form of Taylor’s theorem applied to s 7 → L (θ − s∇L (θ; τ ); τ  on [0 , α ],
+
+L θ − α∇L (θ; τ ); τ  = L(θ; τ ) − α ∥∇L (θ; τ )∥22
+
++ α2
+
+Z 10
+
+(1 − s) ∇L (θ; τ )⊤ ∇2L θ − sα ∇L (θ; τ ); τ  ∇L (θ; τ ) ds. (38) By Theorem D.3, ∇2L( · ; τ ) op ≤ β2, and by Theorem D.4 the paper, ∥∇L (θ; τ )∥2 ≤ 2β
+
+uniformly in τ on the relevant region. Hence the remainder in (38) is O(α2) uniformly in τ . Taking expectation with respect to τ ,
+
+LMAML (θ) = Eτ [L(θ; τ )] − α G (θ) + R(θ; α), sup 
+
+> θ∈B
+
+|R(θ; α)| = O(α2). (39) Differentiating once more under the expectation (the integrand and its θ-derivative are bounded uniformly in τ ), 
+
+∇L MAML (θ) = Eτ [∇L (θ; τ )] − α ∇G(θ) + r(θ; α), sup 
+
+> θ∈B
+
+∥r(θ; α)∥2 = O(α2). (40) Note that when α = 0 , ∇L MAML (θ∗
+
+> base
+
+) = 0 as θ∗ 
+
+> base
+
+minimizes Eτ [∇L (θ; τ )] .
+
+Step 2: Implicit-function expansion of θ∗ 
+
+> M
+
+(α).
+
+By Theorem D.1, LMAML is mM -strongly convex for α small, so θ∗ 
+
+> M
+
+(α) is well-defined and unique. The map F : ( θ, α ) 7 → ∇L MAML (θ) is C1 on a neighbourhood of θ∗ 
+
+> base
+
+for small α, and 
+
+∂θ F (θ∗
+
+> base
+
+, 0) = Hbase ⪰ μI is invertible. The implicit function theorem yields a C1 branch 
+
+α 7 → θ∗ 
+
+> M
+
+(α) with θ∗ 
+
+> M
+
+(0) = θ∗
+
+> base
+
+.Write θ∗ 
+
+> M
+
+(α) = θ∗ 
+
+> base
+
++α δ +O(α2). Inserting into the stationarity condition ∇L MAML (θ∗ 
+
+> M
+
+(α)) = 0 ,expanding ∇Fbase (θ∗ 
+
+> M
+
+(α)) = Hbase (αδ ) + O(α2), and using (40): 
+
+0 = αH base δ − α ∇G(θ∗
+
+> base
+
+) + O(α2).
+
+Dividing by α and sending α → 0,
+
+δ = H−1base ∇G(θ∗
+
+> base
+
+). (41) Crucially, δ is a single deterministic vector, independent of τ .
+
+Step 3: Expected squared distance to task optima. 
+
+Expanding the squared norm, 
+
+∥θ∗ 
+
+> M
+
+(α) − θ∗ 
+
+> τ
+
+∥22 = ∥θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+∥22 + 2 α ⟨θ∗ 
+
+> base
+
+− θ∗ 
+
+> τ
+
+, δ ⟩ + O(α2),
+
+where the O(α2) remainder is uniform in τ since δ is deterministic. Taking Eτ and pulling δ out of the expectation, 
+
+Eτ θ∗ 
+
+> M
+
+(α) − θ∗ 
+
+> τ
+> 22
+
+= D2base + 2 α
+
+D
+
+θ∗ 
+
+> base
+
+− θ∗, δ 
+
+E
+
++ O(α2)= D2base − 2α Φ + O(α2), (42) with Φ = −
+
+D
+
+θ∗ 
+
+> base
+
+− θ∗, δ 
+
+E
+
+= −
+
+D
+
+θ∗ 
+
+> base
+
+− θ∗, H −1base ∇G(θ∗
+
+> base
+
+)
+
+E
+
+. This establishes (36)–(37). 30 E.3 Comparative Convergence Rate Theorem E.3 (Accelerated Adaptation via MAML-DPO) . Let η ≤ 1/L τ and let ϵ > 0 be the target accuracy threshold. Under Assumptions 4.1, 4.4, 4.5, the expected number of gradient steps t
+
+required to reach E[|| θt − θ∗ 
+
+> τ
+
+|| 22] ≤ ϵ2 for the baseline ( tbase ) and MAML-DPO ( tMAML ) pipelines satisfies: 
+
+E[tbase ] − E[tMAML ] ≥ 1
+
+ημ τ
+
+ln 
+
+ D2base 
+
+D2base − 2αΦ + c1 · α2
+
+
+
+. (43) 
+
+for a universal constant c1 > 0.Proof. For a μτ -strongly convex and Lτ -smooth function optimized via gradient descent, the distance to the optimum contracts geometrically: 
+
+|| θt − θ∗ 
+
+> τ
+
+|| 22 ≤ (1 − ημ τ )t|| θinit − θ∗ 
+
+> τ
+
+|| 22 (44) Taking expectations over the task distribution and solving for the minimum steps t to achieve ϵ2 error: 
+
+t ≥ 1
+
+ημ τ
+
+ln 
+
+ Eτ [|| θinit − θ∗ 
+
+> τ
+
+|| 22]
+
+ϵ2
+
+
+
+(45) For the baseline pipeline, substituting θinit = θ∗ 
+
+> base
+
+yields: 
+
+tbase ≥ 1
+
+ημ τ
+
+ln 
+
+ D2base 
+
+ϵ2
+
+
+
+(46) For the MAML-DPO pipeline, initializing at ˆθM , we bound the distance using the triangle inequality and Theorem 4.6. 
+
+Eτ [|| ˆθM − θ∗ 
+
+> τ
+
+|| 22] ≤ D2MAML + ϵ2meta (47) 
+
+tMAML ≥ 1
+
+ημ τ
+
+ln 
+
+ D2MAML + ϵ2meta 
+
+ϵ2
+
+
+
+(48) Taking the difference yields: 
+
+tbase − tMAML ≥ 1
+
+ημ τ
+
+ln 
+
+ D2base 
+
+D2MAML + ϵ2meta 
+
+
+
+(49) By Theorem E.2 we have D2MAML = D2base − 2αΦ + O(α2) and by Theorem 4.6 we have, ϵmeta = 
+
+> 2ασ mM
+
+. Substituting these values we obtain the desired bound. 
+
+Remark : If Φ > 0 and α is sufficiently small, then 2αΦ − c1 · α2 < 0 and we have E[tbase ] −
+
+E[tMAML ] > 0. Recall that Φ = −
+
+D
+
+θ∗ 
+
+> base
+
+− θ∗, δ 
+
+E
+
+where δ is the MAML update direction, θ∗
+
+> base
+
+is the curvature-weighted centroid of the task optima, and θ∗ = E[θ∗ 
+
+> τ
+
+] is the unweighted centroid. MAML update usually corrects for curvature-weighting bias and tends to push θ∗ 
+
+> M
+
+away from θ∗
+
+> base
+
+and towards solutions with large task-specific gradient. This means we should expect the MAML update δ to align with the direction θ∗ − θ∗
+
+> base
+
+, which makes Φ > 0.31 F Comparative Convergence Analysis: MAML-DPO vs. Baseline-DPO 
+
+The analysis in Section E compares MAML-DPO with multitask-DPO, which is recovered from Algorithm 1 by setting the inner-loop learning rate α = 0 . Multitask-DPO is a strong reference because it consumes the same multilingual preference data as MAML-DPO; consequently, the rigorous gap is at most O(α), in agreement with prior MAML theory in the mixed-linear-regression setting [ 58 ]. In our experiments, however, the most natural and most informative comparison is against baseline-DPO : a standard DPO pipeline that does not see any preference data outside the target language and is initialized solely from the target-language SFT model. We now provide a dedicated convergence analysis for this comparison. The resulting bound captures the benefit of any 
+
+cross-lingual preprocessing—it applies equally to MAML-DPO and to multitask-DPO over baseline-DPO—and is controlled by the SFT preference-loss gap RSFT , a quantity directly measurable from data and reflecting how far the SFT-initialized policy is from preference-optimal on the target task. The MAML-specific refinement over multitask-DPO is then the additional O(α) term established in Section E; the two analyses are complementary. 
+
+F.1 Setup and Baseline-DPO Initialization Baseline-DPO. Let πSFT  
+
+> τnew
+
+be the policy obtained by running supervised fine-tuning on target-language data only, and let θBL 0 ∈ Rd be its log-linear parameter, i.e. πθBL 0 = πSFT  
+
+> τnew
+
+. Baseline-DPO performs gradient descent on the empirical DPO loss for τnew starting from θBL 0 :
+
+θBL  
+
+> t+1
+
+= θBL  
+
+> t
+
+− η ∇θ bLDPO (θBL  
+
+> t
+
+; τnew ), θBL 0 = πSFT  
+
+> τnew
+
+-parameter . (50) Crucially, θBL 0 is a function only of target-language SFT data and is independent of the preference data S 
+
+> τ
+
+Dτ used for meta-training. By the constraint ∥θ∥2 ≤ Bθ defining the log-linear policy class 
+
+Π in (12) , both θBL 0 and every task optimum θ⋆τ = arg min θ∈Rd LDPO (θ; τ ) satisfy ∥θ∥2 ≤ Bθ on the relevant feasible set. 
+
+Why this comparison is harder for MAML. Multitask-DPO, by definition, lies on the trajectory of MAML at α = 0 , which forces the gap to scale with α. Baseline-DPO instead lies off this trajectory: it is constructed without using any cross-lingual preference signal. The resulting gap can therefore be controlled by the difference between an SFT-only initialization and the manifold of task optima, a quantity that does not vanish as α → 0.
+
+F.2 Initialization Distance Bounds 
+
+We separately bound the expected squared distance to the task optimum from each initialization. Define the SFT preference-loss gap on the target task as 
+
+RSFT ≜ Eτ
+
+LDPO (θBL 0 ; τ ) − L DPO (θ⋆τ ; τ ) . (51) This is a quantity directly measurable from data: it is the average DPO loss of the SFT-initialized policy minus the optimal DPO loss for the target task, and it captures how much room is left for preference learning after SFT .
+
+Lemma F.1 (Initialization distance for Baseline-DPO) . Suppose θBL 0 , θ ⋆τ ∈ { θ ∈ Rd : ∥θ∥2 ≤ Bθ }
+
+for every τ ∼ PTASK (the standing constraint of the log-linear policy class Π in (12) ). Then 
+
+Eτ
+
+∥θBL 0 − θ⋆τ ∥22
+
+ ≤ D2BL ≜ min 
+
+
+
+4B2 
+
+> θ
+
+, 2RSFT 
+
+μτ
+
+
+
+. (52) 
+
+The first bound is the policy-class diameter; the second is loss-aware and tight whenever the SFT-initialized policy already incurs small DPO loss on the target task. Proof. By the triangle inequality, ∥θBL 0 −θ⋆τ ∥2 ≤ ∥ θBL 0 ∥2 +∥θ⋆τ ∥2 ≤ 2Bθ , so Eτ ∥θBL 0 −θ⋆τ ∥22 ≤ 4B2 
+
+> θ
+
+.For the second bound, μτ -strong convexity (Theorem D.3) yields 
+
+LDPO (θ; τ ) ≥ L DPO (θ⋆τ ; τ ) + μτ 
+
+> 2
+
+∥θ − θ⋆τ ∥22,
+
+since ∇L DPO (θ⋆τ ; τ ) = 0 . Rearranging at θ = θBL 0 and taking expectation gives Eτ ∥θBL 0 − θ⋆τ ∥22 ≤
+
+2RSFT /μ τ . The bound is the smaller of the two. 32 The role of RSFT is the central conceptual difference between this analysis and the multitask comparison in Section E: rather than a worst-case parameter-space diameter, we now control the baseline distance by the actual quality of the SFT initialization, which is independent of α and reflects 
+
+how much DPO learning the SFT model has not yet done. 
+
+The bound in Theorem F.1 is the rigorous, α-independent counterpart of the variance bound D2base =
+
+σ2/μ 2 
+
+> τ
+
+that holds for the multitask initialization θ⋆
+
+> base
+
+. The two are different: D2base only quantifies how far the task optima are from the multitask minimizer, whereas D2BL quantifies how far they are from a target-only SFT model that has never seen any non-target preference data. 
+
+Lemma F.2 (Distance for MAML-DPO) . Let ˆθM be the output of Algorithm 1 under the conditions of Theorem 4.6. Then 
+
+Eτ
+
+h
+
+∥ˆθM − θ⋆τ ∥22
+
+i
+
+≤  DMAML + ϵmeta 
+
+2 ≤ 2D2MAML + 2 ϵ2meta , (53) 
+
+where D2MAML ≜ D2base − 2αΦ + O(α2), D2base = σ2/μ 2 
+
+> τ
+
+, Φ is as in Theorem E.2, and ϵ2meta =(2 ασ/m M )2.Proof. By the triangle inequality, ∥ˆθM − θ⋆τ ∥2 ≤ ∥ ˆθM − θ⋆M ∥2 + ∥θ⋆M − θ⋆τ ∥2. Squaring and taking expectation over τ ,
+
+Eτ
+
+∥ˆθM − θ⋆τ ∥22
+
+ ≤ ∥ ˆθM − θ⋆M ∥22 + 2 ∥ˆθM − θ⋆M ∥2 · Eτ
+
+∥θ⋆M − θ⋆τ ∥2
+
+ + Eτ
+
+∥θ⋆M − θ⋆τ ∥22
+
+.
+
+Applying Theorem 4.6 (which gives ∥ˆθM − θ⋆M ∥2 ≤ ϵmeta ), Jensen’s inequality on the cross term (Eτ ∥θ⋆M − θ⋆τ ∥2 ≤ pEτ ∥θ⋆M − θ⋆τ ∥22 = DMAML ), and Theorem E.2 (which gives Eτ ∥θ⋆M − θ⋆τ ∥22 =
+
+D2MAML ) yields the first inequality (DMAML + ϵmeta )2. The second follows from (a + b)2 ≤
+
+2a2 + 2 b2.In the regime that motivates meta-learning, namely small task variance σ, θ⋆M approaches the manifold of task optima while θBL 0 does not. Concretely, D2MAML ≤ σ2/μ 2 
+
+> τ
+
+, which can be much smaller than 
+
+D2BL ≤ 4B2 
+
+> θ
+
+whenever σμτ
+
+≪ Bθ , (54) i.e. task heterogeneity, measured in parameter space, is much smaller than the diameter of the policy class. 
+
+F.3 Comparative Convergence Rate 
+
+We now plug these distance bounds into the standard contraction inequality for strongly-convex smooth optimization and obtain the main comparative result of this section. 
+
+Theorem F.3 (Accelerated adaptation: MAML-DPO vs. Baseline-DPO) . Let η ≤ 1/L τ and ϵ > 0.Under Theorem 4.1, 4.4, 4.5, and the standing assumption θBL 0 , θ ⋆τ ∈ {∥ θ∥2 ≤ Bθ }, the expected number of gradient steps needed to reach E[∥θt − θ⋆τ ∥22] ≤ ϵ2 for baseline-DPO ( tBL ) and MAML-DPO ( tMAML ) satisfies 
+
+E[tBL ] − E[tMAML ] ≥ 12ημ τ
+
+ln 
+
+ D2BL 
+
+(DMAML + ϵmeta )2
+
+
+
+, (55) 
+
+where D2BL = min(4 B2 
+
+> θ
+
+, 2RSFT /μ τ ), D2MAML = σ2/μ 2 
+
+> τ
+
+− 2αΦ + c1α2, and ϵmeta = 2 ασ/m M .In particular, as long as α ≤ min 
+
+n 18β2 , mM 
+
+> 2√2μτ
+
+o
+
+the right-hand side of (55) is at least 
+
+E[tBL ] − E[tMAML ] ≥ 12ημ τ
+
+ln 
+
+ RSFT μτ
+
+2σ2
+
+
+
+, (56) 
+
+which is also lower bounded by the looser worst-case form 12ημ τ ln( B2 
+
+> θ
+
+μ2 
+
+> τ
+
+/σ 2) when RSFT ≥ 2B2 
+
+> θ
+
+μτ .Proof. Tight contraction. LDPO ( · ; τ ) is μτ -strongly convex and Lτ -smooth (Theorem D.3). Writing 
+
+θt+1 − θ⋆τ = ( I − ηH t)( θt − θ⋆τ ) with Ht = R 10 ∇2LDPO (θ⋆τ + s(θt − θ⋆τ ); τ ) ds satisfying μτ I ≼
+
+Ht ≼ Lτ I, the operator-norm bound ∥I − ηH t∥2 ≤ 1 − ημ τ holds for η ≤ 1/L τ , so 
+
+∥θt − θ⋆τ ∥2 ≤ (1 − ημ τ )t∥θinit − θ⋆τ ∥2, ∥θt − θ⋆τ ∥22 ≤ (1 − ημ τ )2t∥θinit − θ⋆τ ∥22. (57) 33 Taking expectation over τ , the smallest t that ensures Eτ ∥θt − θ⋆τ ∥22 ≤ ϵ2 is 
+
+t ≥ 12ημ τ
+
+ln 
+
+ Eτ ∥θinit − θ⋆τ ∥22
+
+ϵ2
+
+
+
+. (58) Substituting θinit = θBL 0 gives tBL ≥ 12ημ τ ln( D2BL /ϵ 2) via Theorem F.1, and substituting θinit = ˆθM
+
+gives tMAML ≥ 12ημ τ ln  (DMAML + ϵmeta )2/ϵ 2 via Theorem F.2. Subtracting yields (55). 
+
+Reduction to (56) . We show that (DMAML + ϵmeta )2 ≤ 4D2base in the valid range of α.
+
+(a) Bound on |Φ|. By Cauchy-Schwarz, |Φ| ≤ ∥ θ⋆ 
+
+> base
+
+− θ⋆∥2 · ∥ H−1base ∇G(θ⋆
+
+> base
+
+)∥2. By Jensen, 
+
+∥θ⋆ 
+
+> base
+
+− θ⋆∥22 = ∥Eτ [θ⋆τ ] − θ⋆
+
+> base
+
+∥22 ≤ Eτ ∥θ⋆τ − θ⋆
+
+> base
+
+∥22 = D2base . For the second factor, ∥H−1base ∥2 ≤
+
+1/μ τ by strong convexity, and 
+
+∥∇ G(θ⋆
+
+> base
+
+)∥2 = Eτ
+
+2∇2L(θ⋆
+
+> base
+
+; τ ) ∇L (θ⋆
+
+> base
+
+; τ ) 
+
+> 2
+
+≤ 2Lτ Eτ
+
+∥∇L (θ⋆
+
+> base
+
+; τ )∥2
+
+ ≤ 2Lτ σ, 
+
+using ∇2L ⪯ Lτ I and the variance bound (Theorem 4.5, with Eτ [∇L (θ⋆
+
+> base
+
+; τ )] = 0 by definition of 
+
+θ⋆
+
+> base
+
+). Thus |Φ| ≤ Dbase · (2 Lτ σ/μ τ ) = 2 Lτ D2base . Substituting Lτ = β2, |2αΦ| ≤ 4αβ 2D2base ,which is at most 12 D2base whenever α ≤ 1/(8 β2).
+
+(b) Bound on ϵ2meta . From Theorem D.1, mM = β2cν 3/(1 + exp( Zmax )) 3 = Θ( μτ · ν2/(1 + exp( Zmax )) 2), hence σ/m M = κM · σ/μ τ = κM Dbase for a constant κM = O(1) that depends only on (ν, Z max ). Therefore ϵ2meta = 4 α2κ2 
+
+> M
+
+D2base , which is at most 12 D2base for α ≤ 1/(2 √2κM ).
+
+(c) Combining. For α smaller than min {1/(8 β2), 1/(2 √2κM )} (and the smaller of these is implied by the validity ranges of Theorems 4.6 and E.2), the higher-order c1α2 term is also negligible, so 
+
+D2MAML ≤ D2base + |2αΦ| + c1α2 ≤ 32 D2base ,
+
+and (DMAML + ϵmeta )2 ≤ 2D2MAML + 2 ϵ2meta ≤ 3D2base + D2base = 4D2base =4σ2/μ 2 
+
+> τ
+
+. Plugging the SFT-aware D2BL ≤ 2RSFT /μ τ from Theorem F.1 into (55) yields  
+
+> 12ημ τ
+
+ln  (2 RSFT /μ τ )(4 σ2/μ 2 
+
+> τ
+
+) = 12ημ τ ln( RSFT μτ /(2 σ2)) , establishing (56) . The diameter form follows analogously by plugging D2BL ≤ 4B2 
+
+> θ
+
+.
+
+F.4 Discussion 
+
+We now position Theorem F.3 relative to the multitask comparison in Section E, link the bound to the empirical patterns observed in our experiments, and discuss its limitations. 
+
+(i) Cross-lingual preprocessing helps; the bound is shared by MAML and multitask. Because 
+
+θBL 0 never sees any non-target preference data, Theorem F.3 attributes the speed-up to any algorithm whose initialization θinit achieves Eτ ∥θinit − θ⋆τ ∥22 = O(σ2/μ 2 
+
+> τ
+
+). Both MAML-DPO and multitask-DPO satisfy this property under mild conditions: multitask-DPO directly minimizes Eτ L(θ; τ )
+
+(whose minimizer attains D2base = σ2/μ 2 
+
+> τ
+
+), and MAML-DPO additionally trims this distance by an O(α) amount via Theorem E.2. The bound (56) is therefore best read as “ any cross-lingual preprocessing dominates target-only adaptation by a log( RSFT μτ /σ 2) factor in adaptation step count.” The additional MAML-specific gain over multitask is captured separately by the O(α)
+
+analysis in Section E. 
+
+(ii) The gap does not vanish as α → 0. (56) depends only on RSFT , μτ , σ, and η; it is bounded below by a positive constant uniformly in α as long as RSFT μτ ≫ σ2. In contrast, the multitask gap from Section E is O(α) and collapses to zero as α → 0. This complementarity gives a two-tier story: the cross-lingual preprocessing gain is order-one and order-log in the parameters, while the meta-vs-multitask gain is order-α.
+
+(iii) Harder target languages should benefit more from MAML-DPO. The asymptotic gap (56) scales with log RSFT , where RSFT is the SFT-init DPO loss gap on the target task. A target language for which the base/SFT model performs poorly has a large RSFT : the policy is far from optimal under preference comparisons, leaving more room for cross-lingual preprocessing to help. The bound therefore predicts a larger MAML-vs-baseline win-rate gap on lower-resource or harder 34 target languages. This matches Tables 1 and 8: the largest improvements appear on Romanian and Indonesian (lowest base-model competence among the targets we evaluate), while comparatively closer-to-MAML targets such as French show smaller gaps. The same monotone trend appears across model scales (270M → 7.1B) and adaptation budgets (100, 4k, 40k), all consistent with 
+
+RSFT -scaling. 
+
+(iv) Empirical magnitudes. Tables 1 to 3 and 8 show the MAML-DPO advantage over baseline-DPO is consistently large ( 10 –28 win-rate points) and substantially exceeds the MAML-DPO ad-vantage over multitask-DPO ( 2–15 points) across all six target languages we evaluate. Both regimes are predicted by our analysis: the large gap is the Θ(ln( RSFT μτ /σ 2)) separation of (56) , while the smaller gap is the O(α) refinement of Section E. 
+
+(v) Limitations. The bound is in the population (infinite-sample) regime. A finite-sample extension is straightforward via standard concentration of the per-task gradient: with n adaptation samples, the empirical iterate satisfies Eτ ∥θt − θ⋆τ ∥22 ≤ (1 − ημ τ )2tD2init + O(σ2grad log( d/δ )/(μ2 
+
+> τ
+
+n)) with high probability, where the second term is an irreducible sampling floor that is the same for both MAML-DPO and baseline-DPO; the step-count gap of Theorem F.3 is therefore preserved on top of this shared floor. Beyond sampling, the strong-convexity-and-smoothness framework forces the per-step contraction (1 − ημ τ ) to be the same for any vanilla-GD adaptation, regardless of initialization, so the gain manifests only through the initialization distance and not through a faster rate. Obtaining a faster rate would require either a different inner loop (e.g., Newton-type) or stronger structural assumptions such as a shared low-rank multilingual representation across tasks; under such an assumption, MAML-style methods can in principle achieve exponential rate improvements in the conditioning, which we leave for future work. 
+
+## G Additional Related Work 
+
+Due to their wide range of capabilities, LLMs have rapidly gained popularity in both business and research, being developed as closed-source models [ 1, 45 , 44 , 11 ] as well as open-source ones [50 , 46 –48 , 26 , 3 , 33 ]. Regardless of their public availability or parameter size, RLHF and preference optimization have been two most popular approaches to training LLMs with human feedback data. RLHF uses preference data consisting of human feedback to train reward functions and use them to train the policies [ 57 , 36 , 14 , 53 ]. Direct Preference Optimization has been proposed as an alternative to RLHF, which eliminates the need to train a separate reward function [ 38 , 37 ]. Due to its practical advantage, many works have proposed improvements of DPO. Most follow-up works to DPO have investigated alternative objective functions [ 16 , 19 , 34 ], trying to address well-known issues of DPOs, including ones coming from the use of Bradley-Terry model. Son et al. [40] proposes addressing temporal drift in the dataset by applying exponential discount to the samples in the past. Tang et al. [42] proposes regularizing the self-play optimization method [ 41 ], further stabilizing the training and improving performances on an independent benchmark such as AlpacaEval [15]. 
+
+## H Impact Statement and Limitations 
+
+This work proposes a meta-learning approach for LLM preference learning, designed to mitigate the unequal performance across different languages. By significantly improving sample efficiency in low-resource settings, demonstrating effective alignment with only 100 samples, our method addresses the data scarcity issue that often limits the access of linguistic communities with less population to AI services. Furthermore, our theoretical guarantees provide a rigorous foundation in cross-lingual transfer, supporting the development of more equitable, globally accessible, and representative AI systems without the excessive cost of massive human-labeled datasets for every target language. However, like existing cross-lingual approaches, our method may inadvertently propagate biases, normative assumptions, and safety standards learned from high-resource source languages to low-resource target languages. Therefore, while the method improves alignment performance, it does not guarantee culturally appropriate or community-specific alignment. Beyond that, although the first-order approximation used in our MAML-based methods reduces the computational overhead, MAML 35 still introduces an inner–outer optimization structure, which requires additional hyperparameters, such as the inner-loop learning rate coefficient. 36
