@@ -6,79 +6,85 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-23
-- 运行时间：2026-07-23 21:51:33 UTC
+- 最新运行日期：2026-07-24
+- 运行时间：2026-07-24 21:28:14 UTC
 - 运行状态：成功
-- 本次总论文数：19
-- 精读区：8
+- 本次总论文数：21
+- 精读区：10
 - 速读区：11
 
 ### 今日简报（AI）
-今日精读两篇满分论文，聚焦多语言大模型对齐的元学习偏好与Solar Open 2最新技术报告。  
-最值得关注：用元学习动态适配多语言人类偏好，以及超大规模开源模型的训练细节。  
-建议读者跟进“多语言对齐”的具体方法，并留意开源模型在英文以外场景的实测表现。
-- 详情：[/202607/23/README](/202607/23/README)
+今日精读两篇9分高质研究，聚焦LLM动态评估机制与多模态模型在连续视觉场景中的推理新基准。  
+最值得关注：协同进化的动态评分标准让模型评估不再死板，而多模态大模型在视频级连续视觉线索理解上仍短板明显。  
+下一步建议开发者关注动态评估流水线以加速迭代，普通读者不妨试试能“看懂”连续动作的视觉AI新应用。
+- 详情：[/202607/24/README](/202607/24/README)
 
 ### 精读区论文标签
-1. [Meta-Learning Preferences for Multilingual LLM Alignment](/202607/23/2607.13315v2-meta-learning-preferences-for-multilingual-llm-alignment)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：元学习用于多语言LLM对齐中的RLHF和DPO
-2. [Solar Open 2 Technical Report](/202607/23/2607.20062v1-solar-open-2-technical-report)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：通过混合注意力栈交替软性和线性注意实现百万令牌上下文，面向智能体任务。
-3. [Reinforcement Learning for Large Language Model Selective Evidence Adoption from Contaminated Retrieval Results](/202607/23/2607.20090v1-reinforcement-learning-for-large-language-model-selective-evidence-adoption-from-contaminated-retrieval-results)  
-   标签：评分：10.0/10、query:rl-mm-llm-ag
-   evidence：使用强化学习微调大语言模型进行选择性证据采纳
-4. [Environment-free Synthetic Data Generation for API-Calling Agents](/202607/23/2607.16900v2-environment-free-synthetic-data-generation-for-api-calling-agents)  
+1. [Co-Evolving LLM Evaluators and Policies via DynamicRubric](/202607/24/2607.20083v2-co-evolving-llm-evaluators-and-policies-via-dynamicrubric)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：无环境合成数据生成用于API调用智能体
-5. [Twin Agent: Context Residual Compression for Privilege Separated Agents](/202607/23/2607.19595v1-twin-agent-context-residual-compression-for-privilege-separated-agents)  
+   evidence：通过类RL反馈协同进化评估器和策略以改进大语言模型后训练
+2. [ViSTR-Bench: Can MLLMs Reason from Continuous Visual Cues in Dynamic Scenes?](/202607/24/2607.20868v1-vistr-bench-can-mllms-reason-from-continuous-visual-cues-in-dynamic-scenes)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：提出双生子智能体设计模式，分离不可信探索与特权操作，保障LLM智能体安全。
-6. [MV-Bench: Benchmarking Multimodal Large Language Models for Coordinated Multi-View Interface Construction](/202607/23/2607.19910v1-mv-bench-benchmarking-multimodal-large-language-models-for-coordinated-multi-view-interface-construction)  
+   evidence：提出评测多模态大模型在连续视觉线索下时空推理的基准
+3. [Beyond Independent Optimization: Compression, MoE Routing, and Quantization Interactions in Multimodal Edge Intelligence](/202607/24/2607.20981v1-beyond-independent-optimization-compression-moe-routing-and-quantization-interactions-in-multimodal-edge-intelligence)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：面向多视图界面构建的MLLM评测基准
-7. [PoTRE: Test-Time Reasoning inspired by Cognitive Heterogeneity](/202607/23/2607.20268v1-potre-test-time-reasoning-inspired-by-cognitive-heterogeneity)  
+   evidence：综述高效视觉-语言和多模态大模型
+4. [GuardianAgentBench: Where Agents Fail and How to Guard Them](/202607/24/2607.20982v1-guardianagentbench-where-agents-fail-and-how-to-guard-them)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用四个推理智能体（对抗、规划、搜索、直接）组成的集成来鲁棒地求解复杂任务。
-8. [Notes to Self: Can LLMs Benefit from Experiential Abstractions?](/202607/23/2607.20372v1-notes-to-self-can-llms-benefit-from-experiential-abstractions)  
+   evidence：对使用生产级框架的LLM智能体在六个领域的安全性和可靠性进行基准测试
+5. [EmoAgent-R1: Towards Multimodal Emotion Understanding with Reinforcement Learning-based Dynamic Agent Specialization](/202607/24/2607.21013v1-emoagent-r1-towards-multimodal-emotion-understanding-with-reinforcement-learning-based-dynamic-agent-specialization)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用强化学习与抽象增强提示提升大模型数学推理。
+   evidence：提出基于强化学习的动态智能体专业化用于多模态情感理解
+6. [Training Large Language Models for Self-Explanation Faithfulness](/202607/24/2607.21090v1-training-large-language-models-for-self-explanation-faithfulness)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：强化学习直接优化自我解释忠实性
+7. [AttriMem: Attribution-Guided Process Feedback for Agent Memory Learning](/202607/24/2607.21106v1-attrimem-attribution-guided-process-feedback-for-agent-memory-learning)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：使用归因引导的过程反馈进行LLM智能体记忆构建，解决RL中的信用分配
+8. [GRADRAG: Cross-Component Prompt Adaptation for Coordinated Multi-Agent RAG](/202607/24/2607.21324v1-gradrag-cross-component-prompt-adaptation-for-coordinated-multi-agent-rag)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：引入协同多智能体RAG的跨组件提示自适应
+9. [PATS: Policy-Aware Training Scaffolding for Agentic Reinforcement Learning](/202607/24/2607.21419v1-pats-policy-aware-training-scaffolding-for-agentic-reinforcement-learning)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：以策略为中心的训练范式，为LLM智能体强化学习提供动态脚手架
+10. [MIRROR: Learning from the Other View for Multi-Modal Reasoning](/202607/24/2607.21552v1-mirror-learning-from-the-other-view-for-multi-modal-reasoning)  
+   标签：评分：9.0/10、query:rl-mm-llm-ag
+   evidence：研究视觉语言模型在文本和图像视图间互补推理的现象
 
 ### 速读区论文标签
-1. [Stress Testing Concept Erasure with Large Language Model Agents](/202607/23/2607.17890v2-stress-testing-concept-erasure-with-large-language-model-agents)  
+1. [PPL-Factory: Task-Aware and Budget-Aware Data Selection from Language Modeling to Reasoning](/202607/24/2607.18199v1-ppl-factory-task-aware-and-budget-aware-data-selection-from-language-modeling-to-reasoning)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：将概念消除评估构建为自适应假设搜索，通过LLM智能体迭代提出、批判和验证测试
-2. [SkillSight: Seeing Through Shared Descriptions for Accurate Skill Retrieval](/202607/23/2607.18785v1-skillsight-seeing-through-shared-descriptions-for-accurate-skill-retrieval)  
+   evidence：针对语言建模和推理任务的高效大语言模型微调数据选择
+2. [Multimodal Large Language Models for Remote Sensing Image Understanding: Domain-Specific or General-Purpose?](/202607/24/2607.20284v1-multimodal-large-language-models-for-remote-sensing-image-understanding-domain-specific-or-general-purpose)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：LLM智能体技能检索，校准描述中的共享背景
-3. [Same Game, Different Story: A Minimal Conservative Strategic Robustness Benchmark for Large Language Model Agents](/202607/23/2607.19670v1-same-game-different-story-a-minimal-conservative-strategic-robustness-benchmark-for-large-language-model-agents)  
+   evidence：综述多模态大语言模型在遥感图像理解中的应用
+3. [From Agent Failures to Text Policies: What Works and What Breaks](/202607/24/2607.20668v1-from-agent-failures-to-text-policies-what-works-and-what-breaks)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：测试LLM智能体在不同叙述下策略鲁棒性的基准
-4. [Trace: A Taxonomy-Guided Environment for Multidomain Visual Reasoning](/202607/23/2607.19790v1-trace-a-taxonomy-guided-environment-for-multidomain-visual-reasoning)  
+   evidence：通过TextGrad从智能体轨迹学习策略
+4. [Euclid-MCP: A Model Context Protocol Server for Deterministic Logical Reasoning via Prolog](/202607/24/2607.21412v1-euclid-mcp-a-model-context-protocol-server-for-deterministic-logical-reasoning-via-prolog)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：用于视觉语言模型视觉推理的RLVR环境
-5. [Memory-Augmented Multimodal Large Language Models for Small Object Understanding in Streaming Aerial Videos](/202607/23/2607.19857v1-memory-augmented-multimodal-large-language-models-for-small-object-understanding-in-streaming-aerial-videos)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：增强多模态大语言模型进行航拍感知，通过记忆增强处理小目标和在线流数据
-6. [PRO-LONG: Programmatic Memory Enables Long-Horizon Reasoning](/202607/23/2607.20064v1-pro-long-programmatic-memory-enables-long-horizon-reasoning)  
-   标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：为LLM智能体长时程推理设计的程序化记忆
-7. [A Better Start for Language Models: Domain-Conditional Position Offsets](/202607/23/2607.18302v1-a-better-start-for-language-models-domain-conditional-position-offsets)  
+   evidence：通过Prolog为工具增强的LLM智能体提供确定性逻辑推理
+5. [Stochastic Meta-Unlearning: Bridging Language Backbone and Multimodal Unlearning](/202607/24/2607.18615v1-stochastic-meta-unlearning-bridging-language-backbone-and-multimodal-unlearning)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：领域条件位置偏移提升语言模型序列起始准确性
-8. [Scaling Laws for Hypernetwork-Based Knowledge Injection in Large Language Models](/202607/23/2607.19604v1-scaling-laws-for-hypernetwork-based-knowledge-injection-in-large-language-models)  
+   evidence：视觉-语言模型的机器遗忘
+6. [Selective State-Space Adaptation and Retrieval for Language Model Reasoning](/202607/24/2607.19326v1-selective-state-space-adaptation-and-retrieval-for-language-model-reasoning)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：使用超网络向大语言模型注入知识并研究缩放规律
-9. [Personalized Recommendation Tool Learning via Autonomous Language Agents](/202607/23/2607.19739v1-personalized-recommendation-tool-learning-via-autonomous-language-agents)  
+   evidence：引入具有选择性状态空间递归的适配器，处理长上下文
+7. [Test-Time Training for Modality Order Consistency in Vision-Language Models](/202607/24/2607.20351v1-test-time-training-for-modality-order-consistency-in-vision-language-models)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：自主语言代理用于个性化推荐工具学习
-10. [Co-Evolving LLM Evaluators and Policies via DynamicRubric](/202607/23/2607.20083v1-co-evolving-llm-evaluators-and-policies-via-dynamicrubric)  
+   evidence：测试时训练修正视觉语言模型模态顺序故障
+8. [Look Less, Think Faster: Joint Token-Compute Adaptation for Multimodal LLMs](/202607/24/2607.20357v1-look-less-think-faster-joint-token-compute-adaptation-for-multimodal-llms)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：利用分数差距作为RL信号，共同进化评估器和策略以改进LLM后训练
-11. [Debiasing Text-to-Image Evaluation via Implicit Cultural Alignment Reward Modeling](/202607/23/2607.15740v1-debiasing-text-to-image-evaluation-via-implicit-cultural-alignment-reward-modeling)  
-   标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：基于多模态大语言模型的文化对齐评估奖励模型
+   evidence：联合适配视觉令牌剪枝和大模型层跳过以提升多模态LLM效率
+9. [PrefReward: Learning User Preference Matrix for Personalized Text Generation](/202607/24/2607.21067v1-prefreward-learning-user-preference-matrix-for-personalized-text-generation)  
+   标签：评分：7.0/10、query:rl-mm-llm-ag
+   evidence：通过使用偏好矩阵作为奖励信号处理个性化生成中的长上下文依赖
+10. [C-PTQ: Fisher-weighted Channel-wise Sensitivity for Post-training Quantization of MLLMs](/202607/24/2607.21076v1-c-ptq-fisher-weighted-channel-wise-sensitivity-for-post-training-quantization-of-mllms)  
+   标签：评分：7.0/10、query:rl-mm-llm-ag
+   evidence：多模态大模型后训练量化中利用费舍尔信息加权通道敏感性
+11. [HalluScope: Fine-grained Hallucination Diagnosis for Multimodal Large Language Models](/202607/24/2607.21105v1-halluscope-fine-grained-hallucination-diagnosis-for-multimodal-large-language-models)  
+   标签：评分：7.0/10、query:rl-mm-llm-ag
+   evidence：提出针对MLLM的细粒度幻觉诊断，包括检测、分类和解释
 
 
 <div class="dpr-home-promo-card">
