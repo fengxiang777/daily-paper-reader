@@ -1,0 +1,1009 @@
+Title: Learning to Detect Cross-Modal Negation: An Analysis of Latent Representations and an Attention-Based Solution
+
+URL Source: https://arxiv.org/pdf/2607.17712v1
+
+Published Time: Tue, 21 Jul 2026 01:58:06 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Learning to Detect Cross-Modal Negation: An Analysis of Latent Representations and an Attention-Based Solution 
+
+1st Ali AbuSaleh* 
+
+Text Technology Lab Department of Computer Science Goethe University Frankfurt 
+
+Frankfurt, Germany a.abusaleh@em.uni-frankfurt.de *Corresponding author 
+
+2nd Leon Hammerla 
+
+Text Technology Lab Department of Computer Science Goethe University Frankfurt 
+
+Frankfurt, Germany hammerla@em.uni-frankfurt.de 
+
+3rd Prof. Dr. Alexander Mehler 
+
+Text Technology Lab Department of Computer Science Goethe University Frankfurt 
+
+Frankfurt, Germany mehler@em.uni-frankfurt.de 
+
+©IEEE. This manuscript is an accepted version of the article (ICNLP2026). Published in IEEE Xplore, DOI: 10.1109/ICNLP69856.2026.11527861 [1]: 
+
+Abstract —Detecting high-level semantic concepts like negation across modalities remains a challenge for current multimodal systems. We analyze this as a fundamental representation learning problem, providing the first evidence that negation does not form a linearly or non-linearly separable class in the latent spaces of standard vision-language models (VLMs). We demonstrate that pretrained embeddings primarily encode modality-specific features, lacking a generalizable negation signal. To overcome this, we propose a novel cross-modal attention architecture that explicitly models inter-modal dependencies, achieving performance gains of up to +7.03% F1 over unimodal baselines. Our analysis reveals a key asymmetry: while textual negation often appears independently, visual negation is semantically dependent on linguistic context, a finding validated through our statistical analysis of 3,222 political video-text pairs automatically annotated via Q WEN 2.5-VL. By combining this analysis with self-supervised video representations (JEPA2), we advance the modeling of temporal negation. This work provides new methods and insights for learning robust, semantically-aligned representations in multimodal systems. 
+
+Index Terms —Vision language model, Natural language pro-cessing, Cross-modal retrieval, negation detection, video analysis, Multimodal analysis, Political Communication 
+
+I. I NTRODUCTION 
+
+Negation is central to communication, conveying absence, refusal, or opposition [2]. It supports critical thinking and effective debate, with individuals typically relying on speech, visual, or contextual cues to interpret it effortlessly [3]. In contrast, current visual-language models (VLMs) struggle with understanding and generating negation [4]. Given its ubiquity in everyday interaction, this poses a real limitation. Negation, like affirmation, can cause cognitive dissonance when descriptions conflict with perception [5], [6]. E.g., a politician denying climate change while storm footage suggests otherwise, or drought claims contradicted by visible rainfall. Such scenarios require careful reasoning across different modes. Processing negators (e.g., not , never , or without ) remains challenging for VLMs, especially when linking them to visuals of absence or opposition. Progress is slow, as subtle context shifts and implied meaning often escape systems focused on direct matches. To address this challenge, we answer two questions at the intersection of language, vision, and multimodality:  
+
+> •
+
+Q1: What visual or non-verbal patterns drive use of negation, and how do visuals influence choosing negation over affirmation?  
+
+> •
+
+Q2: Which visual cues in online media prompt humans to describe scenes in terms of absence, contradiction, or refusal rather than affirmation? 
+
+Negation is hard to define because it shifts meaning rather than referring to something tangible [2]. It does not add content but reverses the force of existing statements [7]. The abstract nature and variability of negation make it difficult to learn from statistics. While linguistic negation is usually expressed explicitly, it appears more indirectly in visual media, for example, through contradictions between text and image, or by visually emphasizing empty spaces that suggest absence. Our analysis reveals three issues in current multimodal setups: (1) negation lacks clear boundaries in typical embeddings, keeping accuracy near chance; (2) single-modality formats capture intramodal but miss crossmodal patterns essential for negation; and (3) simple overlaps fail to align negation across text and image. To address these issues, we proceed as follow: We provide a classification of eight negation types, often missed by standard VLMs, arising from text-image relations and enabling finer-grained analysis of meaning shifts when visuals contradict or modify statements. We use linear discriminant analysis along with wide-ranging classification tests to reveal that negated meanings do not clearly split from positive ones. We use cross-modal attention to link text and image by filtering irrelevant signals, boosting F1 by up to 7.03% over single-modality baselines. Using JEPA [8], we find that deeper video representations reveal negation more clearly than standard arXiv:2607.17712v1 [cs.AI] 20 Jul 2026 image-based encodings. We use LLMs–specifically Qwen-VL 2.5 [9]–to study political discourse. We analyze 3 222 video-text pairs, revealing fine-grained patterns in how negation manifests across modalities and how these correspond. We contribute five main advances: (1) an eight-class taxonomy of multimodal negation patterns, (2) diagnostic evidence of limitations in embedding representations, (3) effective cross-modal attention architectures, (4) analysis of specialized video representations (JEPA2), and (5) an LLM-based annotation framework. II. R ELATED WORK 
+
+Textual Negation Detection: Early negation detection used rule-based methods or regular expressions (e.g., NegEx, DEEPEN, or NegBio) to identify negation cues and their scope within sentences [10]–[12]. Supervised models (e.g., CRFs) trained on corpora like BioScope improved cue and scope detection [13]–[15]. More recently, fine-tuned transformers (e.g., NegBERT) outperformed earlier methods on benchmark datasets [16]–[18]. Recent work moves beyond cue–scope models to capture discourse-level negation [19], [20]. 
+
+Textual Negation in Twitter-Style Data: Most works on negation in social-media data embed negation handling within sentiment analysis (SA). Because negation can invert a state-ment’s sentiment, many Twitter-SA systems apply simple heuristics, static windowing, or preprocessing to flip polarity for negated tokens [21], [22]. Depiction of Negation in Visual Media: [23] examine whether media like photos and manga can convey negation effectively. In the photo setting, participants captioned images showing absent items (e.g., a trainless station). Humans reliably identified negation using commonsense and background knowledge. In contrast, CNNs performed near chance, likely due to their inability to infer implicit context. While highlighting human strengths with image negation, the study overlooks temporal patterns in video–a gap that we address. 
+
+Negation Understanding in VLMs: Building on work with static images, recent studies assess how well modern VLMs handle negation. [4] show that joint VLM embeddings often blur the distinction between affirmations and negations. Using their NegBench benchmark of images and videos, they show that models like CLIP and BLIP perform at chance when distinguishing captions such as ‘ a cup on the table ’ vs. ‘ no cup on the table ’. Fine-tuning on synthetic negated data improved results, pointing to training bias rather than semantic failure. Our work extends this by testing whether latent embeddings encode negation and if cross-modal attention can recover it. 
+
+Context in Negation Understanding: The effect detected by [4] may stem from limited contextual grounding, not a fundamental failure to model negation [24]. Their study shows that with sufficient context, pretrained LMs better distinguish negation from affirmation even without fine-tuning. This is especially relevant in videos, where temporal context supports negation understanding. Our hypothesis–that video negation relies on textual context–aligns with this view and is tested via cross-modal attention. 
+
+Video-related Architectures for Temporal Reasoning: Video’s temporal structure introduces challenges and opportunities for negation beyond what static images allow. Recent video models like V-JEPA2 [8] use self-supervised learning to predict video tokens from context, extending JEPA’s semantic representation approach [25]. These methods are especially relevant for negation detection, which often relies on temporal reasoning and expectations about absent elements. Reflecting this, we test whether V-JEPA2 embeddings better capture negation than general-purpose VLMs. 
+
+Cross-Modal Approaches to Negation: The challenge of negation has spurred interest in cross-modal architectures that leverage complementary, cross-modal signals. X-Poll [26] shows that cross-modal attention significantly improves compositional video-text retrieval. This underscores the value of structured modality alignment, which we extend to political discourse. We extend this with a cross-modal attention frame-work tailored to the nuanced semantics of negation in political discourse. 
+
+Semantic Understanding in VLMs: Beyond architecture, recent work targets improving semantic understanding in video-language models. [27] show that adding commonsense and world knowledge boosts performance on tasks involving absence and contradiction. This shift toward semantically aware models enables stronger negation understanding, which we leverage via VLMs like Qwen2.5VL [9] for annotation. Our framework applies these semantic advances to negation in political discourse. 
+
+Research Gap and Our Contribution: While prior work highlights VLM challenges with negation, most focus on static images or simple video scenarios. We focus on negation in real-world political videos, where multimodal cues interact in complex ways. We combine embeddings, cross-modal attention, and LLM annotation to analyze how negation manifests across modalities in political content. This bridges the gap between controlled benchmarks and real-world negation in VLMs. III. M ETHODOLOGY 
+
+Figure 1 illustrates our overall processing pipeline for detecting and classifying negation patterns in multimodal tweets. We begin with a curated dataset of 13370 tweets (9359 train, 2006 eval, 2005 test - split) from MultiParTweet,  
+
+> 1
+
+[28] 3 222 containing one media item (video) alongside its accompanying text. For each tweet, we apply modality-specific transcription: OCR extracts any embedded text from images, while automatic speech recognition processes the audio track of videos. RWe then perform negation detection on both the original tweet text and the extracted transcriptions using rule-based and lexical pattern matching. Next, we extract high-dimensional embeddings from the text and media using multiple pretrained models (Qwen-2.5VL 3B, and JEPA-V2 variants). These embeddings are analyzed through a battery of classifiers to assess the separability of negation signals and test our hypothesis about cross-modal representation. Finally, 
+
+> 1Resources could be found in the following Github repository
+
+Figure 1: Overall pipeline we implement cross-modal attention mechanisms to fuse text and video embeddings, enabling joint modeling of negation across modalities. 
+
+A. Negation Classes 
+
+We define eight classes based on possible negation patterns in tweets. Each tweet includes either an image or a video, and all contain one of these media types. Classes are defined by the presence or absence of negation in the tweet text and media transcription: (T_I, T_V): Image/video tweet; no negation in text or transcription. (T_nI, T_nV): Image/video tweet; negation only in transcription. (nT_I, nT_V): Image/video tweet; negation only in text. (nT_nI, nT_nV): Image/video tweet; negation in both text and transcription. IV. E MBEDDINGS ANALYSIS 
+
+A. Cluster Analysis LDA 
+
+We build on the previously defined classes to examine how distinctly they cluster in our data. We first apply Linear Discriminant Analysis (LDA) to project the data into class-dimensional space, then reduce it to two dimensions with t-SNE for visualization. We perform this analysis on three views of the tweet data: (1) tweet text embedding, (2) media embedding, and (3) transcribed text embedding from accompanying images or videos. We generate nine plots: one for all tweets combined, and separate ones for image-only and video-only tweets. All plots show class-based clustering, with the clearest separation in video tweets, where all three views yield well-defined clusters. Class separation is weaker in the combined and image-only sets, though slightly clearer in the latter. Transcribed text embeddings consistently show the best class separation, outperforming tweet-text and media embeddings. The results suggest that transcribed visual content captures semantic cues especially effective for class separation, particularly in video tweets. Classes                 
+
+> T_I T_V T_nI T_nV nT_I nT_V nT_nI nT_nV
+> (a) Media (b) Text (c) Transcript (d) Embeddings from tweets with images and videos
+> (e) Media (f) Text (g) Transcript (h) Embeddings from tweets with images only
+> (i) Media (j) Text (k) Transcript (l) Embeddings from tweets with videos only
+
+Figure 2: t-SNE visualization of LDA features for media, tweet text, and transcribed text embeddings. 
+
+B. Text-Label, Media-Embeddings Classifications 
+
+We test whether text-based negation labels can be mapped to media-only embeddings from Qwen-2.5VL to capture latent negation signals. We assigned text-based negation labels to video, image, and text embeddings, and tested various classifiers to separate negated from non-negated samples. We use diverse classifiers across algorithmic paradigms (Table IX), all with scikit-learn defaults for baseline comparison. 
+
+a) Classification Results: Table IX presents classifica-tion performance across the full set of models for negation detection using media embeddings. Although several classifiers achieve superficially high accuracy (up to approximately 81%), Balanced Accuracy and ROC AUC scores remain close to 0.5 across nearly all models, indicating performance at chance level. Notably, simple baselines such as the DummyClassifier perform comparably to more sophisticated algorithms, suggesting that the latent negation signal in these embeddings is weak or not linearly/non-linearly separable. 
+
+b) Embedding Visualization via PCA: To understand why classifiers performed at chance, we applied Principal Component Analysis (PCA) to the media embeddings and visualized the first 50 components in Figure 5. PCA allows the reduction of high-dimensional embeddings into a lower-dimensional space that preserves the directions of greatest variance, facilitating the identification of systematic patterns that may be masked in the original high-dimensional space. The PCA visualizations revealed systematic differences by modality-embedding, indicating that embeddings primarily encode modality-specific features rather than negation. This observation motivated additional experiments in which we varied both the input embeddings and the label sources across modalities. For instance, an image or video was assigned the negation label if a negation cue was identified within its OCR-derived text or its associated transcription data 
+
+c) Modality-Label Experiments: Table I presents RNN-based model performance across combinations of embedding modalities and label sources. The results indicate that classifier performance is heavily influenced by the alignment between input embeddings and labels. Despite these variations, no configuration clearly isolates a latent negation signal. These findings provide the foundation for our subsequent cross-modal experiments, where multiple modalities are integrated to investigate whether joint representations can better capture negation. 
+
+C. Cross-Modal Attention Framework 
+
+We implement cross modal attention to integrate text and video embeddings V ∈ RB×d and T ∈ RB×d within a unified transformer architecture. The model concatenates the embeddings as X = Concat (V, T), (1) and applies multi head attention, MultiHead (X) = Concat (head 1, . . . , head h)WO, (2) where head i = Attention (XW Qi , XW Ki , XW Vi ). (3) 
+
+1) Comparative Framework:  
+
+> •
+
+Cross-modal : Joint processing of V and T 
+
+> •
+
+Self-attention (unimodal) : Isolated processing of V or T
+
+2) Cross-Modal Advantages: Cross-attention outperforms unimodal self-attention by modeling intermodal dependencies that support contextual disambiguation (e.g., resolving textual sarcasm via visual cues), crossmodal feature alignment, and complementary signal fusion. The 4-head cross-attention text-sentiment model achieves superior performance (Acc: 0.8342, F1: 0.8285) versus unimodal text processing (Acc: 0.7889, F1: 0.7582), representing +4.53% accuracy and +7.03% F1 gains. 
+
+3) Head Configuration Analysis: Optimal performance occurs with 4 attention heads, outperforming 8-head configura-tions (e.g., +2.52% accuracy for text-sentiment). This suggests reduced heads mitigate overparameterization in embedding spaces of moderate dimensionality. 
+
+D. JEPA-V2-based embeddings 
+
+We extend our analysis to specialized video representations using two variants of the JEPA-V2 model: base JEPA-V2 [25] and JEPA-V2 pretrained on the Something-Something-V2 (SSV) [29] human action dataset. These models provide high-level video features that capture temporal and action-oriented information, which we hypothesize may better encode visual negation cues. By comparing their performance with standard VLM embeddings (Qwen), we assess how video-specific pretraining affects cross-modal attention mechanisms for negation detection. 
+
+1) Impact of High-Level Representations on Attention Mecha-nisms: Our experiments examine how attention head configura-tion interacts with high-level embeddings from different models. As shown in Table II, 4-head cross-modal attention with Qwen embeddings achieves the best performance (accuracy: 0,834 2, F1: 0,828 5) for text-negation detection, outperforming 8-head configurations. The specialized video representations from JEPA models show distinct performance patterns, with JEPA-V2-SSV demonstrating improved alignment capabilities. This suggests that in moderate-dimensional embedding spaces, fewer attention heads mitigate overparameterization while still effectively modeling cross-modal interactions, and that the choice of base embedding model significantly impacts attention mechanism effectiveness for negation detection. 
+
+E. Attention Weight Distribution Analysis 
+
+To understand how cross-modal attention processes negation, we analyze attention distributions for models trained on text negation and video negation targets (Table IV). The two models exhibit fundamentally different strategies. For text negation, cross-modal attention is asymmetric (90.7% total) and, critically, differs significantly between negated and non-negated samples: non-negated samples show high cross-modal attention ( μ = 0.973 ), while negated samples show a 29.4% decrease ( μ = 0.678 , p < 0.0001 ). This suggests the model suppresses alignment when modalities contradict. For video negation, cross-modal attention is substantially higher (138.3%) and nearly symmetric, with both modalities strongly attending to each other. However, we find no difference between negated and non-negated samples ( p = 0.817 ). This reveals that visual negation requires constant cross-modal grounding–the model maintains high alignment regardless of negation status, consistent with our finding that visual negation depends on linguistic context. 
+
+F. Cross-Modal Framework with FLAVA Embeddings 
+
+To isolate the benefit of cross-modal attention independent of specific feature extractors, we conducted experiments using FLAVA embeddings [30] for both text and video. Table V compares unimodal classifiers against our cross-modal attention framework using identical features. For text negation, cross-modal attention achieves 80.22% accuracy, outperforming text-only (73.63%, +6.6% gain) and video-only (52.75%, +27.5% gain). For video negation, cross-modal attention reaches 79.12% accuracy, exceeding text-only (72.53%, +6.6% gain) and video-only (51.65%, +27.5% gain). F1 scores show similar improvements: +10.0% over text-only and +30.0% over video-only for text negation; +6.7% and +31.5% respectively for 
+
+> 2The experiments is conducted on a subset of the data with a total of 527 randomly selected samples
+
+Table I: RNN-Based Model performance grouped by modality category (video, text, photo) and training epoch. Checkmarks indicate presence of each modality as input or label. 
+
+Epoch Model Accuracy F1 ROC AUC Inputs (embeddings) Labels Text Video Photo Text Video Photo Video-based Embeddings 
+
+30 Video Model 0.6957 0.6605 0.7162 ✓ ✓
+
+Video-Text Model 0.6916 0.6359 0.5718 ✓ ✓
+
+50 Video Model 0.6489 0.6209 0.6948 ✓ ✓
+
+Video-Text Model 0.6932 0.6331 0.5707 ✓ ✓
+
+Text-based Embeddings 
+
+30 Text Model (video-contains) 0.8037 0.7883 0.8569 ✓ ✓
+
+Text-Video Model 0.7614 0.7408 0.7758 ✓ ✓
+
+Text Model (photo-contains) 0.8499 0.8135 0.9040 ✓ ✓
+
+Text-photo Model 0.9327 0.9010 0.7278 ✓ ✓
+
+50 Text Model (video-contains) 0.8045 0.7995 0.8574 ✓ ✓
+
+Text-Video Model 0.7384 0.6968 0.7679 ✓ ✓
+
+Text Model (photo-contains) 0.8597 0.8323 0.9090 ✓ ✓
+
+Text-photo Model 0.9310 0.9010 0.7313 ✓ ✓
+
+Photo-based Embeddings 
+
+30 Photo Model 0.9441 0.9333 0.8632 ✓ ✓
+
+Photo-text Model 0.7837 0.7365 0.5891 ✓ ✓
+
+50 Photo Model 0.9421 0.9316 0.8536 ✓ ✓
+
+Photo-text Model 0.7887 0.7384 0.5907 ✓ ✓
+
+Table II: Performance of attention architectures (30 epochs). CM: Cross-modal, SA: Self-attention.                                                             
+
+> Heads Type Metrics Input Target sentiment
+> Acc. F1 ROC-AUC Text Video
+> Cross-Modal Attention
+> 8CM-Video 0.7705 0.7721 0.8964 ✓✓Video-Neg 8CM-Text 0.8090 0.8040 0.8916 ✓✓Text-Neg 4CM-Video 0.7672 0.7605 0.9038 ✓✓Video-Neg 4CM-Text 0.8342 0.8285 0.9136 ✓✓Text-Neg
+> Self-Attention
+> 8SA-Video 0.6499 0.6374 0.7574 ✓Video-Neg 8SA-Text 0.7755 0.7472 0.9051 ✓Text-Neg 4SA-Video 0.6415 0.6305 0.7541 ✓Video-Neg 4SA-Text 0.7889 0.7582 0.9037 ✓Text-Neg
+
+Note : Photo modality excluded as unused in experiments 
+
+video negation. These results confirm that explicitly modeling inter-modal dependencies –not just better feature extractors– drives our framework’s effectiveness. The consistent cross-modal advantage across both targets demonstrates that fusion itself, independent of embedding choice, is essential for robust negation detection. V. LLM-B ASED NEGATION DETECTION IN POLITICAL 
+
+MULTIMODAL DISCOURSE 
+
+To analyze negation in political multimodal content, we employ a prompting-based framework using the multimodal large language model Qwen-VL 2.5 [9]. This model is queried with video-text pairs using a structured prompt designed to assess negation and alignment within political communication. The framework explicitly targets discourse strategies used to reject, contradict, or oppose claims across modalities. Table III: Performance of attention types (30 epochs, 4 heads). CM: Cross-modal, SA: Self-attention.                                                       
+
+> Attention Heads Type Metrics Input Target sentiment
+> Acc. F1 ROC-AUC Text Video
+> Cross-Modal Attention (V-JEPA2)
+> 4CM-Video 0.7513 0.7517 0.8100 ✓✓Video-Neg 4CM-Text 0.7513 0.7439 0.7891 ✓✓Text-Neg
+> Cross-Modal Attention (V-JEPA2 SSV)
+> 4CM-Video 0.7513 0.7472 0.8019 ✓✓Video-Neg 4CM-Text 0.8016 0.8004 0.8290 ✓✓Text-Neg
+> Self-Attention(V-JEPA2)
+> 4SA-Video 0.7460 0.7469 0.8296 ✓Video-Neg 4SA-Text 0.8016 0.7837 0.8204 ✓Text-Neg
+> Self-Attention (V-JEPA2 SSV)
+> 4SA-Video 0.6825 0.6573 0.7557 ✓Video-Neg
+
+Table IV: Attention patterns by prediction target. CM = Cross-modal total (Video →Text + Text →Video). 
+
+Target V→V V→T T→V T→T CM 
+
+Text Negation 0.542 0.458 0.449 0.551 0.907 Video Negation 0.258 0.742 0.642 0.358 1.383 
+
+Modeling Setup.: Each input consists of two components: a text excerpt derived from a political video (via transcription or manual captioning) and a structured video representation. The model is prompted to analyze the modalities independently and jointly, producing structured outputs capturing negation presence, type, confidence, alignment, and political intent. 
+
+Prompt Structure.: The prompt (see Appendix A) is crafted for political discourse analysis and includes three stages: 1) Textual Negation Detection: Identifies explicit and implicit Table V: Cross-modal attention vs. unimodal baselines with FLAVA embeddings. 2                                   
+
+> Model Accuracy F1 ROC AUC Input Target
+> Text Negation
+> Cross-modal 0.8022 0.8022 0.8546 Text+Video Text-Neg Text-only 0.7363 0.7021 0.8591 Text Text-Neg Video-only 0.5275 0.5023 0.6560 Video Text-Neg
+> Video Negation
+> Cross-modal 0.7912 0.7907 0.8546 Text+Video Video-Neg Text-only 0.7253 0.7239 0.8130 Text Video-Neg Video-only 0.5165 0.4754 0.6386 Video Video-Neg
+
+political negation using markers such as “not,” “deny,” or “oppose.” It classifies the negation type (e.g., policy rejection, factual contradiction) and assigns a confidence score. 2) Visual Negation Detection: Analyzes the video for multi-modal signals of negation such as contradictory imagery, disapproving gestures, or symbolic opposition. Negation is classified into types such as evidentiary contradiction or emotional rejection, with associated confidence and cue annotations. 3) Modality Alignment: Assesses the relationship between textual and visual negation. Four alignment outcomes are possible: FULL ALIGNMENT, PARTIAL ALIGNMENT, SINGLE MODALITY, and UNRELATED. Each output also includes a description and inferred strategic political effect (e.g., reinforcement or audience targeting). 
+
+Output Format.: The model outputs a structured JSON object encoding all decisions made in the three stages above. Each output includes both categorical and confidence infor-mation, along with supporting cues and key phrases that can be used for further analysis or annotation validation. This method enables scalable, politically informed annotation of negation phenomena in multimodal discourse, without requiring additional training of the underlying model. 
+
+A. LLM-Based Negation Analysis 1) Modality-Specific Expression vs. Cross-Modal Semantics: 
+
+Our working hypothesis is that negation manifests as a modality-specific feature , observable independently in either text or video. However, the semantic interpretation of negation ,such as whether it constitutes contradiction, rejection, or denial, 
+
+emerges primarily through multimodal fusion , when both streams are aligned and interpreted jointly. 
+
+2) Negation Frequency in Text and Video: Negation appears more frequently in text (675 instances) than in video (372 in-stances), with the majority of data (over 75 percent) containing no detectable negation in either modality. This supports the idea that negation is a modality-dependent signal , more easily detected in linguistic form. Its infrequent appearance in video suggests that visual negation is either semantically subtler or harder to isolate without fusion with textual cues .
+
+3) Negation Confidence Score Distribution: Text-based negation confidence clusters tightly around 85, with minimal variance. This uniformity may reflect a calibration bias or fixed      
+
+> 0100 200 300 400 500
+> Policy rejection
+> Rhetorical denial
+> Factual contradiction
+
+480 
+
+175 
+
+20    
+
+> 050 100 150
+> Emotional rejection
+> Rhetorical denial
+> Visual negation evidence
+> Visual negation
+> Symbolic opposition
+> Visual contradiction
+> Evidentiary contradiction
+> Visual rejection
+
+177 
+
+99 
+
+34 
+
+31 
+
+12 
+
+9
+
+8
+
+2
+
+> Frequency
+
+Figure 3: Overview of negation types across modalities. Table VI: Co-occurrence between text and video negation            
+
+> Video negation Present Absent Total Text negation Present 298 377 675 Absent 74 2473 2547 Total 372 2850 3222
+
+threshold, while video confidence shows wider spread, with a 90 median and notable outliers (please refer to Figure 4 for more details). These differences suggest video-based negation is less stable and relies on contextual cues best resolved multimodally. 
+
+4) Negation Type Frequencies: The taxonomy of negation types shows that text mainly encodes propositional rejections, like policy or rhetorical denials. In contrast, video conveys broader emotive and symbolic negation, like visual contradic-tion or emotional rejection. However, such cases are sparse and hard to interpret alone. This supports the view that negation is modality-specific and gains meaning only through cross-modal fusion. 
+
+5) Text-Video Negation Co-occurrence: As shown in Ta-ble VI, while 298 instances show co-occurrence of negation in both modalities, mismatches are common. There are 377 cases where only text expresses negation and 74 where only video does. These results suggest that the presence of negation is not itself predictive of alignment, and may reflect modality-specific encoding of intent. However, when both modalities express negation, the joint presence is more likely to contribute to semantic-level interpretations such as contradiction or conflict. A chi-squared test of independence confirms a strong association between text and video negation ( χ2(1) = 888 .7,
+
+p < 0.001 , φ = 0.53 )3, with the observed co-occurrence (298 instances) far exceeding the expected count under independence (77.93).                     
+
+> 3(see Appendix C for detailed analysis) Negation Source Negation Exists FA PA SM UText negation No 074 14 2165 Yes 47 348 86 2447 Video negation No 023 00Yes 47 348 86 2447
+
+Table VII: Alignment type distribution in negated media. The x-axis shows alignment types (FA: FULL-ALIGNMENT, PA: PARTIAL-ALIGNMENT, SM: SINGLE MODALITY, U: UNRELATED). Table VIII: Performance of multihead vs. cross-modal attention (30 epochs, 4 heads, LLM-labeled negation)                                                             
+
+> Attention Heads Type Metrics Input Target LLM-negation
+> Acc. F1 ROC-AUC Text Video
+> Multihead Attention (Qwen)
+> 8SA-Video 0.8650 0.8430 0.7337 ✓Video-Neg 8SA-Text 0.8650 0.8640 0.9174 ✓Text-Neg
+> Multihead Attention (Jepa2)
+> 8SA-Video 0.8704 0.8684 0.7931 ✓Video-Neg 8SA-Text 0.8150 0.8191 0.8829 ✓Text-Neg
+> Cross-Modal Attention (Qwen Video + Text)
+> 4CM-Video 0.8525 0.8460 0.7451 ✓✓Video-Neg 4CM-Text 0.8350 0.8226 0.8545 ✓✓Text-Neg
+> Cross-Modal Attention (Jepa2 Video + Qwen Text)
+> 4CM-Video 0.8862 0.8832 0.8318 ✓✓Video-Neg 4CM-Text 0.8651 0.8693 0.9320 ✓✓Text-Neg
+
+6) Negation vs. Alignment Type: Text negation is prevalent even in UNRELATED alignments, confirming that textual negation is often modality-local and independent of cross-modal support. In contrast, video negation occurs exclusively in aligned examples (FULL-ALIGNMENT or PARTIAL-ALIGNMENT), and is completely absent in unrelated or unimodal pairs. This provides strong evidence for the hypoth-esis that video-based negation is semantically dependent on textual context and only becomes interpretable when modalities are fused. 
+
+7) Human Validation of LLM Annotations: To assess LLM annotation reliability, we compared Qwen2.5-VL annotations against two generalist human experts (BU: PhD student; MO: postdoc) across three experimental setups: (1) original 3B model with full multimodal input, (2) same 3B model with text only, and (3) new 7B model with revised prompt (multimodal). The two human annotators show near-perfect agreement ( κ = 1.0), establishing a reliable reference. The original multimodal model yields near-zero agreement with humans ( κ = 0.07 with BU; κ = −0.0 with MO). When the same 3B model is given only tweet text, agreement rises dramatically to moderate levels ( κ = 0.53 with BU; κ = 0.47 with MO), confirming the LLM’s inherent capability for textual negation detection. Scaling to 7B with the same multimodal input improves agreement to κ = 0.19 with BU and κ = 0.24 with MO, but remains well below text-only levels. These results demonstrate that visual information systematically degrades LLM negation performance, and simply increasing model size only partially compensates–effective multimodal negation requires specialized fusion architectures like our cross-modal attention framework. VI. D ISCUSSION 
+
+This study investigated the detection and representation of negation in multimodal political discourse through a series of progressively complex experiments. Our findings reveal a clear trajectory: while negation as a semantic concept is readily identifiable by humans and advanced LLMs, it does not manifest as a strong, separable signal within the latent embeddings of individual modalities when using standard supervised classifiers. 
+
+a) The Embedding-Level Challenge: Initial experiments using diverse classifiers (linear, tree-based, ensemble) on modality-specific embeddings (video, image, text) yield a key null result. Despite high nominal accuracy for some models (e.g., ∼ 81% for Random Forests), balanced accuracy and ROC AUC scores remain at chance levels ( ∼ 0,5). This performance was matched by a DummyClassifier, indicating that the negation labels derived from text were not mapping to linearly or non-linearly separable regions in the video or image embedding spaces. PCA visualizations corroborated this, showing that the primary variance in these embeddings was attributable to modality-specific features rather than to the presence or absence of negation. 
+
+b) The Modality-Alignment Imperative: The RNN-based experiments (Table I) provide further subtlety. Performance is highest when the modality of the input embedding match the source modality of the label (e.g., text embeddings with text-derived negation labels, photo embeddings with photo-derived labels). Models trained on cross-modal label pairs (e.g., video embeddings with text-derived labels) perform poorly. This suggests that while pretrained embeddings are rich representations of their native modality, they do not encode a transferable negation signal that can be recognized using labels from another modality. The high performance in matched-modality scenarios may point more towards dataset-specific correlations or labeling artifacts than to a generalizable negation feature. 
+
+c) Cross-Modal Fusion as a Solution: The failure of unimodal classification led to the hypothesis that negation is a cross-modal semantic construct. The cross-modal attention framework validated this. By jointly processing text and video embeddings, the model learns intermodal dependencies, allowing it to disambiguate and fuse signals that are weak or confusing in isolation. The cross-modal attention model outperformed unimodal baselines, with gains up to +4,53% accuracy and +7,03% F1 for text sentiment. This shows that negation in discourse, such as politics, is often best understood through language-vision interaction: in this context, negation functions as a cross-modal communicative unit. d) LLM Analysis: Prompt-based analysis with Qwen-VL 2.5 provides strong upper-bound validation of our core hypothesis. The LLM analysis confirms that negation differs by modality: text conveys explicit rejection, while video expresses subtler emotive and symbolic forms. Crucially, the alignment analysis revealed a fundamental asymmetry: textual negation often stands alone, whereas visual negation was only identified in the context of aligned text. This provides strong evidence that visual negation is semantically dependent on linguistic context for its interpretation. The success of both self-attention and cross-modal classifiers (Table VIII) shows that when negation is represented via high-level semantic concepts (as in LLM-generated labels), it becomes a learnable target, especially for models with multimodal fusion .
+
+e) Classifier Capacity vs. Signal Absence.: A potential concern is whether our negative findings (classifiers performing at chance) stem from weak classifiers rather than the absence of negation signals in embeddings. Several observations argue against this interpretation. First, our classifier suite Table IX included 26 diverse models spanning multiple paradigms (linear, tree-based, ensemble, nearest neighbors), all yielding chance-level balanced accuracy. Second, sophisticated models (XGBClassifier, Random Forest) performed nearly identically to a stratified DummyClassifier, indicating the issue is signal absence, not classifier capacity. Third, our embeddings are static, pooled representations (2048-dim); Transformer-based classifiers would operate on the same feature space without access to sequential information that could theoretically aid sep-aration. While sequence-aware models might capture different patterns, they cannot create separable negation signals where none exist in the pooled representations. This supports our conclusion that negation is not linearly separable in standard VLM embeddings. VII. C ONCLUSION 
+
+We investigated negation detection in multimodal political video and draw three main conclusions: Negation is not an embedding-level signal: Supervised classifiers fail to detect negation across modalities because current pretrained embed-dings encode weak or entangled modality-specific signals. Negation is a cross-modal phenomenon whose expression and interpretation often rely on the alignment of textual and visual cues. To model this effectively and surpass unimodal baselines, architectures that support multimodal fusion such as cross-modal attention are essential. LLMs provide a viable framework for high-level negation annotation. Thus, by leveraging VLM reasoning, we generate structured negation and alignment labels that capture pragmatic meaning and supervise models bridging low-level embeddings and high-level rhetoric. Future work focuses on end-to-end architectures to learn cross-modal negation semantics from raw data, potentially using LLM-derived annotations as weak supervision. Exploring a finer-grained taxonomy of negation types and their cross-modal interaction patterns could offer insights into multimodal discourse. VIII. L IMITATIONS & E THICAL CONSIDERATIONS 
+
+a) Limitations: Our study has several limitations that warrant consideration. First, the LLM-based annotations, while scalable, may inherit biases from Qwen-VL 2.5’s training data and could miss nuanced negation forms. Second, we primarily evaluated Qwen2.5-VL and JEPA2 embeddings; other architectures may encode negation differently. Third, the LLM’s confidence scores showed poor calibration-text negation confidence was uniformly 85, limiting their relia-bility for uncertainty-aware applications. Fourth, our focus on political discourse may limit generalizability to other domains where negation functions differently. Finally, the computational demands of cross-modal attention may hinder accessibility. Despite these constraints, our work establishes foundational insights into multimodal negation and points toward future research in calibrated multimodal LLMs, broader model evaluations, and ethical applications. 
+
+b) Ethical Considerations: Our study analyzes German political discourse using automated annotation via Qwen2.5-VL, which may not be fully optimized for German language and cultural nuances, potentially introducing systematic biases. The use of negation detection in political content could be misapplied for surveillance or to discredit opposing views. We recommend human validation of automated labels and transparency in deployment to mitigate these risks. REFERENCES [1] A. AbuSaleh, L. Hammerla, and A. Mehler, “Learning to detect cross-modal negation: An analysis of latent representations and an attention-based solution,” in 2026 8th International Conference on Natural Language Processing (ICNLP) , 2026, pp. 613–622. [2] L. R. Horn and H. Wansing, “Negation,” in The Stanford Encyclopedia of Philosophy , Spring 2025 ed., E. N. Zalta and U. Nodelman, Eds. Metaphysics Research Lab, Stanford University, 2025. [3] V. Haase, “Disentangling inhibition and prediction in negation processing,”                                     
+
+> Frontiers in Language Sciences , vol. Volume 3 - 2024, 2024. [Online]. Available: https://www.frontiersin.org/journals/language-sciences/articles/ 10.3389/flang.2024.1304613 [4] K. Alhamoud, S. Alshammari, Y. Tian, G. Li, P. Torr, Y. Kim, and M. Ghassemi, “Vision-language models do not understand negation,” 2025. [Online]. Available: https://arxiv.org/abs/2501.09425 [5] C. Dudschig and B. Kaup, “How does “not left” become “right”? electrophysiological evidence for a dynamic conflict-bound negation processing account,” J Exp Psychol Hum Percept Perform , vol. 44, no. 5, pp. 716–728, Nov. 2017. [6] D. Carolin and K. Barbara, “Negation as conflict: Conflict adaptation following negating vertical spatial words,” Brain Lang , vol. 210, p. 104842, Sep. 2020. [7] M. Miestamo, “Negation –an overview of typological research,”
+> Language and Linguistics Compass , vol. 1, no. 5, pp. 552–570, 2007. [Online]. Available: https://compass.onlinelibrary.wiley.com/doi/abs/10. 1111/j.1749-818X.2007.00026.x [8] M. Assran, A. Bardes, D. Fan, Q. Garrido, R. Howes, Mojtaba, Komeili, M. Muckley, A. Rizvi, C. Roberts, K. Sinha, A. Zholus, S. Arnaud, A. Gejji, A. Martin, F. R. Hogan, D. Dugas, P. Bojanowski, V. Khalidov, P. Labatut, F. Massa, M. Szafraniec, K. Krishnakumar, Y. Li, X. Ma, S. Chandar, F. Meier, Y. LeCun, M. Rabbat, and N. Ballas, “V-jepa 2: Self-supervised video models enable understanding, prediction and planning,” 2025. [Online]. Available: https://arxiv.org/abs/2506.09985 [9] S. Bai, K. Chen, X. Liu, J. Wang, W. Ge, S. Song, K. Dang, P. Wang, S. Wang, J. Tang, H. Zhong, Y. Zhu, M. Yang, Z. Li, J. Wan, P. Wang, W. Ding, Z. Fu, Y. Xu, J. Ye, X. Zhang, T. Xie, Z. Cheng, H. Zhang, Z. Yang, H. Xu, and J. Lin, “Qwen2.5-vl technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2502.13923 [10] W. W. Chapman, W. Bridewell, P. Hanbury, G. F. Cooper, and B. G. Buchanan, “A simple algorithm for identifying negated findings and diseases in discharge summaries,” Journal of Biomedical Informatics , vol. 34, no. 5, p. 301–310, Oct. 2001. [Online]. Available: http://dx.doi.org/10.1006/jbin.2001.1029
+
+[11] S. Mehrabi, A. Krishnan, S. Sohn, A. M. Roch, H. Schmidt, J. Kesterson, C. Beesley, P. Dexter, C. Max Schmidt, H. Liu, and M. Palakal, “Deepen: A negation detection system for clinical text incorporating dependency relation into negex,” Journal of Biomedical Informatics , vol. 54, pp. 213–219, 2015. [Online]. Available: https://www.sciencedirect.com/science/article/pii/S153204641500043X [12] Y. Peng, X. Wang, L. Lu, M. Bagheri, R. Summers, and Z. Lu, “Negbio: a high-performance tool for negation and uncertainty detection in radiology reports,” 2017. [Online]. Available: https://arxiv.org/abs/1712.05898 [13] J. Read, E. Velldal, L. Øvrelid, and S. Oepen, “UiO1: Constituent-based discriminative ranking for negation resolution,” in *SEM 2012: The First Joint Conference on Lexical and Computational Semantics – Volume 1: Proceedings of the main conference and the shared task, and Volume 2: Proceedings of the Sixth International Workshop on Semantic Evaluation (SemEval 2012) , E. Agirre, J. Bos, M. Diab, S. Manandhar, Y. Marton, and D. Yuret, Eds. Montréal, Canada: Association for Computational Linguistics, 7-8 Jun. 2012, pp. 310–318. [Online]. Available: https://aclanthology.org/S12-1041/ [14] N. P. Cruz, M. Taboada, and R. Mitkov, “A machine-learning approach to negation and speculation detection for sentiment analysis,” Journal of the Association for Information Science and Technology , vol. 67, no. 9, pp. 2118–2136, 2016. [Online]. Available: https://asistdl.onlinelibrary.wiley.com/doi/abs/10.1002/asi.23533 [15] Y. Ou and J. Patrick, “Automatic negation detection in narrative pathology reports,” Artificial Intelligence in Medicine , vol. 64, no. 1, pp. 41–50, 2015. [Online]. Available: https://www.sciencedirect.com/science/ article/pii/S0933365715000159 [16] A. Khandelwal and S. Sawant, “Negbert: A transfer learning approach for negation detection and scope resolution,” 2020. [Online]. Available: https://arxiv.org/abs/1911.04211 [17] T. H. Truong, T. Baldwin, T. Cohn, and K. Verspoor, “Improving negation detection with negation-focused pre-training,” 2022. [Online]. Available: https://arxiv.org/abs/2205.04012 [18] Z. Qian, T. Zou, Z. Zhang, P. Li, Q. Zhu, and G. Zhou, “Speculation and negation identification via unified machine reading comprehension frameworks with lexical and syntactic data augmentation,” Engineering Applications of Artificial Intelligence , vol. 131, p. 107806, 2024. [Online]. Available: https://www.sciencedirect.com/science/article/pii/ S0952197623019905 [19] Y. So, G. Lee, S. Jung, J. Lee, J. Kang, S. Kim, and J. Lee, “Thunder-nubench: A benchmark for llms’ sentence-level negation understanding,” 2025. [Online]. Available: https://arxiv.org/abs/2506.14397 [20] T. Vrabcová, M. Kadlˇ cík, P. Sojka, M. Štefánik, and M. Spiegel, “Towards the roots of the negation problem: A multilingual NLI dataset and model scaling analysis,” in Findings of the Association for Computational Linguistics: EMNLP 2025 , C. Christodoulopoulos, T. Chakraborty, C. Rose, and V. Peng, Eds. Suzhou, China: Association for Computational Linguistics, Nov. 2025, pp. 25 537–25 551. [Online]. Available: https://aclanthology.org/2025.findings-emnlp.1391/ [21] J. Reitan, J. Faret, B. Gambäck, and L. Bungum, “Negation scope detection for Twitter sentiment analysis,” in Proceedings of the 6th Workshop on Computational Approaches to Subjectivity, Sentiment and Social Media Analysis , A. Balahur, E. van der Goot, P. Vossen, and A. Montoyo, Eds. Lisboa, Portugal: Association for Computational Linguistics, Sep. 2015, pp. 99–108. [Online]. Available: https://aclanthology.org/W15-2914/ [22] I. Gupta and N. Joshi, “A review on negation role in twitter sentiment analysis,” International Journal of Healthcare Information Systems and Informatics , vol. 16, no. 4, p. 1–19, Jul. 2021. [Online]. Available: http://dx.doi.org/10.4018/IJHISI.20211001.oa14 [23] Y. Sato, K. Mineshima, and K. Ueda, “Can negation be depicted? comparing human and machine understanding of visual representations,” 
+
+Cognitive Science , vol. 47, no. 3, p. e13258, 2023. [Online]. Available: https://onlinelibrary.wiley.com/doi/abs/10.1111/cogs.13258 [24] R. Gubelmann and S. Handschuh, “Context matters: A pragmatic study of PLMs’ negation understanding,” in Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , S. Muresan, P. Nakov, and A. Villavicencio, Eds. Dublin, Ireland: Association for Computational Linguistics, May 2022, pp. 4602– 4621. [Online]. Available: https://aclanthology.org/2022.acl-long.315/ [25] M. Assran, Q. Duval, I. Misra, P. Bojanowski, P. Vincent, M. Rabbat, Y. LeCun, and N. Ballas, “Self-supervised learning from images with a joint-embedding predictive architecture,” 2023. [Online]. Available: https://arxiv.org/abs/2301.08243 [26] S. Gorti, N. Vouitsis, J. Ma, K. Golestan, M. Volkovs, A. Garg, and G. Yu, “X-pool: Cross-modal language-video attention for text-video retrieval,” 06 2022, pp. 4996–5005. [27] J. Li, P. Cao, C. Wang, Z. Jin, Y. Chen, K. Liu, X. Jiang, J. Xu, and J. Zhao, “LINKED: Eliciting, filtering and integrating knowledge in large language model for commonsense reasoning,” in Findings of the Association for Computational Linguistics: EMNLP 2024 , Y. Al-Onaizan, M. Bansal, and Y.-N. Chen, Eds. Miami, Florida, USA: Association for Computational Linguistics, Nov. 2024, pp. 8886–8905. [Online]. Available: https://aclanthology.org/2024.findings-emnlp.519/ [28] M. Bagci, A. Abusaleh, D. Baumartz, G. Abrami, M. Konca, and A. Mehler, “Extending a parliamentary corpus with mps’ tweets: Automatic annotation and evaluation using multipartweet,” 2025. [Online]. Available: https://arxiv.org/abs/2512.11567 [29] R. Goyal, S. E. Kahou, V. Michalski, J. Materzy´ nska, S. Westphal, H. Kim, V. Haenel, I. Fruend, P. Yianilos, M. Mueller-Freitag, F. Hoppe, C. Thurau, I. Bax, and R. Memisevic, “The "something something" video database for learning and evaluating visual common sense,” 2017. [Online]. Available: https://arxiv.org/abs/1706.04261 [30] A. Singh, R. Hu, V. Goswami, G. Couairon, W. Galuba, M. Rohrbach, and D. Kiela, “Flava: A foundational language and vision alignment model,” 2022. [Online]. Available: https://arxiv.org/abs/2112.04482 
+
+APPENDIX 
+
+This appendix presents methodological and analytical details supporting the LLM based negation detection framework. It includes the structured prompt used to obtain negation and alignment annotations from Qwen2.5VL, along with an analysis of confidence scores across modalities. 
+
+A. Prompt Used for Political Negation Detection 
+
+The following system prompt was used to elicit structured negation and alignment annotations from the Qwen-VL 2.5 model. It is tailored for political discourse across text and video. Listing 1: Prompt for political negation detection  
+
+> 1
+
+You are an expert in political discourse analysis specializing in negation detection across media formats. Analyze the text and video to determine:  
+
+> 2
+
+1. Whether negation exists in EACH modality separately  
+
+> 3
+
+2. If negations align between text and video  
+
+> 4
+
+Inputs Provided:  
+
+> 5
+
+- Political text excerpt: [TEXT ADDED HERE]  
+
+> 6
+
+- Video :Attached  
+
+> 7
+
+Analysis Framework  
+
+> 8
+
+A. TEXT NEGATION VERIFICATION:  
+
+> 9
+
+[ ] Check for explicit negation markers:  
+
+> 10
+
+* Direct negatives (not, never, no)  
+
+> 11
+
+* Implicit denial terms (deny, reject, oppose)  
+
+> 12
+
+[ ] Identify political negation type:  
+
+> 13
+
+* Policy rejection  
+
+> 14
+
+* Factual contradiction  
+
+> 15
+
+* Rhetorical denial  
+
+> 16
+
+* Opposition framing  
+
+> 17
+
+[ ] Score confidence: 0-100  
+
+> 18
+
+B. VIDEO NEGATION VERIFICATION:  
+
+> 19
+
+[ ] Check for visual negation evidence:  
+
+> 20
+
+* Contradictory imagery (e.g., prosperity visuals during austerity claims)  
+
+> 21
+
+* Affective cues (disapproval gestures, head-shaking)  
+
+> 22
+
+* Contextual dissonance (incongruous setting/symbols)  
+
+> 23
+
+* Absence portrayal (missing expected elements)  
+
+> 24
+
+[ ] Classify visual negation type: 25 * Evidentiary contradiction  
+
+> 26
+
+* Emotional rejection  
+
+> 27
+
+* Symbolic opposition  
+
+> 28
+
+[ ] Score confidence: 0-100  
+
+> 29
+
+C. MODALITY ALIGNMENT ASSESSMENT:  
+
+> 30
+
+[ ] Determine negation correspondence:  
+
+> 31
+
+* FULL ALIGNMENT: Both modalities contain matching negation  
+
+> 32
+
+* PARTIAL ALIGNMENT: One modality negates what the other affirms  
+
+> 33
+
+* UNRELATED: No meaningful connection  
+
+> 34
+
+* SINGLE-MODALITY: Negation only present in one channel  
+
+> 35
+
+[ ] Identify political intent:  
+
+> 36
+
+* Reinforcement strategy  
+
+> 37
+
+* Doubt creation  
+
+> 38
+
+* Audience targeting  
+
+> 39
+
+Output Requirements, Strict JSON format:  
+
+> 40
+
+{"text_negation": {  
+
+> 41
+
+"exists": boolean, "type": "string", "confidence": integer, "key_phrases": ["string"] },  
+
+> 42
+
+"video_negation": {  
+
+> 43
+
+"exists": boolean, "type": "string",  
+
+> 44
+
+"confidence": integer, "visual_cues": ["string"] },  
+
+> 45
+
+"alignment": {  
+
+> 46
+
+"type": "FULL-ALIGNMENT / PARTIAL-ALIGNMENT / UNRELATED / SINGLE-MODALITY",  
+
+> 47
+
+"description": "string", "strategic_effect": " string" } }  
+
+> 48
+
+Political Analysis Focus  
+
+> 49
+
+- Prioritize policy/claim negation over general negativity  
+
+> 50
+
+- Note power dynamics in denial (e.g., institution vs individual)  
+
+> 51
+
+- Flag strategic ambiguity techniques  
+
+> 52
+
+- Identify visual framing of opposition  
+
+> 53
+
+Example:  
+
+> 54
+
+Text: "The administration claims economic growth"  
+
+> 55
+
+Video: Graphs showing declining GDP with expert head-shaking  
+
+> 56
+
+Output: {"text_negation": {"exists": false, ...}, " video_negation": {"exists": true, "type": " Evidentiary contradiction", ...}, "alignment": {"type": "SINGLE-MODALITY", ...} } 
+
+B. Negation Confidence Score 
+
+We present the distribution of confidence scores assigned by the LLM for its negation detections across text and video modalities. 70 80 90 
+
+−0.4
+
+−0.200.20.4Confidence 
+
+(a) Video-Negation Confidence 
+
+75 80 85 90 95 
+
+−0.4
+
+−0.2
+
+0
+
+0.2
+
+0.4
+
+Confidence 
+
+(b) Text-Negation Confidence 
+
+Figure 4: Overview of negation confidence across modalities. Table IX: Classification performance on media embeddings for negation detection.                                                                                                                                                                   
+
+> Taxonomy Type Model Accuracy Balanced Accuracy ROC AUC F1 Score Time Taken Naive Bayes GaussianNB 0.577 0.542 0.542 0.621 0.610 Naive Bayes BernoulliNB 0.570 0.537 0.537 0.616 0.710 Tree-Based DecisionTreeClassifier 0.704 0.538 0.538 0.709 48.307 Tree-Based ExtraTreesClassifier 0.816 0.523 0.523 0.745 10.851 Tree-Based ExtraTreeClassifier 0.698 0.513 0.513 0.699 0.570 Ensemble XGBClassifier 0.812 0.530 0.530 0.749 6.931 Ensemble BaggingClassifier 0.801 0.529 0.529 0.746 402.606 Ensemble RandomForestClassifier 0.815 0.525 0.525 0.746 56.116 Ensemble LGBMClassifier 0.814 0.520 0.520 0.742 2.040 Ensemble CalibratedClassifierCV 0.810 0.500 0.500 0.724 131.109 Ensemble AdaBoostClassifier 0.810 0.500 0.500 0.724 67.679 Nearest Neighbors NearestCentroid 0.581 0.537 0.537 0.624 0.564 Nearest Neighbors KNeighborsClassifier 0.786 0.523 0.523 0.739 0.598 Linear Models Perceptron 0.695 0.512 0.512 0.697 0.767 Linear Models LogisticRegression 0.745 0.512 0.512 0.719 0.687 Linear Models LinearSVC 0.743 0.507 0.507 0.717 31.834 Linear Models PassiveAggressiveClassifier 0.703 0.507 0.507 0.699 1.045 Linear Models SGDClassifier 0.727 0.504 0.504 0.709 3.869 Linear Models RidgeClassifier 0.773 0.503 0.503 0.723 0.699 Linear Models RidgeClassifierCV 0.774 0.502 0.502 0.723 3.892 Linear Models SVC 0.809 0.502 0.502 0.726 147.002 Discriminant Analysis QuadraticDiscriminantAnalysis 0.811 0.528 0.528 0.748 5.091 Discriminant Analysis LinearDiscriminantAnalysis 0.741 0.509 0.509 0.717 4.590 Semi-Supervised LabelSpreading 0.816 0.523 0.523 0.745 2.355 Semi-Supervised LabelPropagation 0.816 0.523 0.523 0.745 2.000 Baseline DummyClassifier 0.810 0.500 0.500 0.724 0.452
+
+C. Statistical Analysis of Negation Co-occurrence 
+
+To statistically validate the relationship between text and video negation observed in Table VI, we conducted a chi squared test of independence. The expected frequencies under the null hypothesis are 
+
+E11 = 675 × 372 3222 = 77 .93 , E12 = 675 × 2850 3222 = 597 .07 ,
+
+E21 = 2547 × 372 3222 = 294 .07 , E22 = 2547 × 2850 3222 = 2276 .82 .
+
+(4) The chi squared statistic is computed as 
+
+χ2 = ∑
+
+i, j
+
+(Oi j − Ei j )2
+
+Ei j 
+
+, (5) which yields 
+
+χ2 = 621 .465 + 81 .144 + 164 .691 + 21 .499 ≈ 888 .7. (6) The corresponding phi coefficient is given by 
+
+φ =
+
+r χ2
+
+N =
+
+r 888 .73222 ≈ 0.53 . (7) With one degree of freedom, this result yields p < 0.001 ,indicating a statistically significant association between text and video negation. The phi coefficient confirms a moderate to strong positive correlation. This appendix show the algorithms used for our baseline, the table IX represents the classifier taxonomy, and the results for the baseline. This appendix presents the complete PCA visualizations referenced in subsection IV-B of the main text. The parallel coordinate (Figure 5) plots below illustrate the first 50 principal components of video and text embeddings, colored by their negation labels. These visualizations reveal that the primary variance in embeddings is attributable to modality-specific features rather than negation signals, providing further insight into the classification challenges discussed in the main paper. PCA_0 
+
+> PCA_1
+> PCA_2
+> PCA_3
+> PCA_4
+> PCA_5
+> PCA_6
+> PCA_7
+> PCA_8
+> PCA_9
+> PCA_10
+> PCA_11
+> PCA_12
+> PCA_13
+> PCA_14
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Video PCA Components 0 14 
+
+Video Embeddings 
+
+Negative 
+
+Positive 
+
+> PCA_0
+> PCA_1
+> PCA_2
+> PCA_3
+> PCA_4
+> PCA_5
+> PCA_6
+> PCA_7
+> PCA_8
+> PCA_9
+> PCA_10
+> PCA_11
+> PCA_12
+> PCA_13
+> PCA_14
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Text PCA Components 0 14 
+
+Text Embeddings 
+
+Negative 
+
+Positive 
+
+> PCA_15
+> PCA_16
+> PCA_17
+> PCA_18
+> PCA_19
+> PCA_20
+> PCA_21
+> PCA_22
+> PCA_23
+> PCA_24
+> PCA_25
+> PCA_26
+> PCA_27
+> PCA_28
+> PCA_29
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Video PCA Components 15 29 
+
+> PCA_15
+> PCA_16
+> PCA_17
+> PCA_18
+> PCA_19
+> PCA_20
+> PCA_21
+> PCA_22
+> PCA_23
+> PCA_24
+> PCA_25
+> PCA_26
+> PCA_27
+> PCA_28
+> PCA_29
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Text PCA Components 15 29 
+
+> PCA_30
+> PCA_31
+> PCA_32
+> PCA_33
+> PCA_34
+> PCA_35
+> PCA_36
+> PCA_37
+> PCA_38
+> PCA_39
+> PCA_40
+> PCA_41
+> PCA_42
+> PCA_43
+> PCA_44
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Video PCA Components 30 44 
+
+> PCA_30
+> PCA_31
+> PCA_32
+> PCA_33
+> PCA_34
+> PCA_35
+> PCA_36
+> PCA_37
+> PCA_38
+> PCA_39
+> PCA_40
+> PCA_41
+> PCA_42
+> PCA_43
+> PCA_44
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Text PCA Components 30 44 
+
+> PCA_45
+> PCA_46
+> PCA_47
+> PCA_48
+> PCA_49
+> PCA_50
+> PCA_51
+> PCA_52
+> PCA_53
+> PCA_54
+> PCA_55
+> PCA_56
+> PCA_57
+> PCA_58
+> PCA_59
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Video PCA Components 45 59 
+
+> PCA_45
+> PCA_46
+> PCA_47
+> PCA_48
+> PCA_49
+> PCA_50
+> PCA_51
+> PCA_52
+> PCA_53
+> PCA_54
+> PCA_55
+> PCA_56
+> PCA_57
+> PCA_58
+> PCA_59
+
+PCA Component 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Negative (left)
+
+Text PCA Components 45 59 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Positive (right)
+
+Figure 5: Parallel Coordinates

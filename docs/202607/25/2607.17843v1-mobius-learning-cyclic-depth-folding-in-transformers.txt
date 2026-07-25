@@ -1,0 +1,247 @@
+Title: Mobius Learning: Cyclic Depth Folding in Transformers
+
+URL Source: https://arxiv.org/pdf/2607.17843v1
+
+Published Time: Tue, 21 Jul 2026 02:10:09 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+> Technical Report
+
+# Möbius Learning: Cyclic Depth Folding in Transformers 
+
+Version 1 (Preliminary Technical Report) 
+
+Tongtian Zhu 
+
+Zhejiang University 
+
+raiden@zju.edu.cn 1 2 6 10 15  
+
+> 3.24
+> 3.30
+> 3.36
+> 3.42
+> 3.48
+> 0.0059 lower 0.0083 lower
+
+Transformer block-sequence passes 𝐿 
+
+> Validation loss
+> Ordered Looped Learning
+> M¨ obius Learning
+
+Figure 1: Left: FineWeb validation loss after 2.5B training tokens for four-worker modded GPT-2 small (124M) runs trained with Muon. Ordered-loop training and Möbius Learning are compared at the same loop depth L, defined as the number of complete Transformer block-sequence passes. With 
+
+P = 4 block groups, each setting therefore performs K = 4 L block-group applications. At loop depths L = 6 , 10 , 15 , Möbius Learning achieves lower validation loss than ordered-loop training. 
+
+Right: conceptual illustration of cyclic depth folding. The colored bands denote depth roles, and the highlighted block group can serve at shallow and deep positions across cyclic orders. 
+
+Abstract 
+
+Transformer-based language models organize computation along an ordered depth axis, where shallow and deep blocks often develop distinct representational roles. We challenge the conventional view that these roles must remain tied to a block’s position in the ordered sequence. We introduce Möbius Learning, a training architecture based on cyclic depth folding, in which different data streams follow cyclically shifted block orders. The same block group is therefore applied early in the block sequence for some data streams and late for others, so it is optimized in both shallow and deep roles, a phenomenon we call depth-role superposition. Surprisingly, in four-worker experiments with a modded GPT-2 small (124M) model trained on 2.5B FineWeb tokens using Muon, Möbius Learning achieves lower validation loss than a fixed-order looped Transformer at larger numbers of Transformer block-sequence passes. This counterintuitive result shows that a block group need not remain confined to one fixed shallow or deep role within the block sequence and opens a new design space based on cyclic depth folding. Crucially, this structure makes Möbius Learning particularly well suited to memory-constrained distributed training: raw training data remain local, while each worker stores one block group rather than the complete Transformer block stack.  
+
+> © T. Zhu. arXiv:2607.17843v1 [cs.LG] 20 Jul 2026 MÖBIUS LEARNING
+
+1. Introduction 
+
+In Transformer-based language models, a block’s position determines the representational context in which it operates: shallow blocks transform states produced early in the sequence, whereas deep blocks transform states already shaped by many preceding transformations [ 14 , 21 ]. Layer-wise studies report corresponding functional differences: linguistic features, attention behavior, and feed-forward memories vary across depth, suggesting that shallow and deep blocks contribute differently as representations evolve through the network [ 1 , 6, 19 , 23 ]. This depth–function association makes training the same block group at shallow and deep positions in the block sequence a nontrivial optimization problem. Existing flexible-depth Transformers largely follow two strategies while retaining a common block order. Recurrent and cross-layer-sharing models reuse parameters across computational depth [ 2, 9, 16 ], whereas depth-reduction and token-adaptive methods vary the amount of computation at the model or token level [ 3, 15 ]. Among parameter-reuse approaches, fixed-order sharing schemes and recent looped language models repeatedly apply shared computation along recurrent depth, yet retain a model-wide prescribed block order [ 5 , 13 , 17 , 18 , 24 ]. We use loop depth to denote the number of complete Transformer block-sequence passes. Repeated passes therefore increase computational depth without changing a block group’s relative position within the shared order. 
+
+Question: Can the same Transformer block group be trained to serve both shallow and deep roles? 
+
+Möbius Learning opens this missing degree of freedom through cyclic depth folding. The Transformer is partitioned into block groups, and each worker introduces its local data at its own block group, fixing the cyclic starting point for that data stream. Different streams therefore traverse the same groups in cyclically shifted orders. The same block group is applied early in the sequence for some streams and late for others, so its parameters are optimized in both shallow and deep roles, a phenomenon we call depth-role superposition. We define a block group’s source-relative depth for a given data stream as its position within a pass, measured from the stream’s starting point, and formalize this construction in Section 2. We use Möbius parallelism to denote the distributed execution strategy induced by Möbius Learning. Figure 2 compares this strategy with replicated data parallelism and pipeline parallelism. Replicated data parallelism assigns each worker a full ordered model, whereas pipeline parallelism partitions the model across a fixed stage order [ 8 , 11 ]. In Möbius parallelism, each worker stores one block group and local data, while hidden states circulate through worker-indexed cyclic orders. Workers begin at different block groups, allowing the same group to serve at different depths. These worker-indexed cyclic orders also determine where each block group operates within the block sequence for each data stream. The central optimization question is whether learning signals from the resulting shallow and deep roles interfere. We test this question in four-worker experiments using a modded GPT-2 small (124M) model [ 14 ] trained on 2.5B FineWeb tokens [ 12 ]. We compare Möbius Learning with a fixed-order looped Transformer at the same loop depth, referring to this baseline as ordered-loop training. Surprisingly, Figure 1 shows that Möbius Learning achieves lower validation loss than ordered-loop training at loop depths of 6, 10, and 15 passes. LayerShuffle fine-tunes fixed-order pretrained Vision Transformers for robustness to shuffled block execution [ 4]. Möbius Learning instead trains cyclic orders throughout language-model pretraining, jointly optimizing the language-modeling objective as every block group serves shallow and deep roles; Appendix B.1 compares the methods across loop depths.  
+
+> 2MÖBIUS LEARNING
+
+Figure 2: Conceptual comparison of three forms of parallelism. Replicated data parallelism retains a full ordered model at each worker, while pipeline parallelism partitions the model under a fixed stage order. In Möbius parallelism, each worker stores one block group and begins the cycle there, allowing the same group to serve at different depths for data from different workers. Cyclic depth folding changes both how Transformer depth is represented and how Transformer blocks are distributed. Shallow and deep roles coexist within the same block parameters, removing the usual one-to-one association between parameter groups and depth roles. Compared with replicated data parallelism, each worker stores one block group rather than the complete Transformer block stack, reducing per-worker memory for Transformer block parameters and enabling training when the full stack does not fit on one device. Our contributions are: • Training architecture. We introduce Möbius Learning, a new training architecture that replaces the shared Transformer block order with worker-indexed cyclic orders. These orders make block depth depend on each data stream’s starting point, while assigning one block group to each worker reduces per-worker memory for Transformer block parameters relative to replicated data parallelism. • Depth-role superposition. We identify depth-role superposition: the same block parameters can be trained at shallow and deep source-relative positions, allowing them to serve both depth roles. A fixed source-relative depth for each block group is therefore not necessary for effective Transformer training. • Empirical result. We compare Möbius Learning and ordered-loop training under the same 2.5B-token budget and loop depth. At larger tested loop depths, training the same parameters across shallow and deep roles does not compromise validation performance: Möbius Learning even achieves lower validation loss than ordered-loop training at 6, 10, and 15 passes.  
+
+> 3MÖBIUS LEARNING
+
+2. Methodology 
+
+Möbius Learning assigns one Transformer block group to each worker. The worker at which a batch originates determines that batch’s cyclic starting point. The input embedding associated with that path is applied once, its hidden states circulate through the assigned block groups in worker-indexed cyclic order, and the corresponding prediction map is applied once at the end. Different originating workers therefore induce cyclic shifts of the same block groups. 
+
+2.1. Ordered and Looped Transformer Maps 
+
+Let X and Z denote token-sequence inputs and targets, H the hidden-state space, and G the vocabulary-logit space. Let P ≥ 1 block groups be indexed by ZP = {0, . . . , P − 1}, and let 
+
+⟨a⟩P denote the unique element of ZP congruent to a modulo P ; for example, ⟨− 1⟩P = P − 1. An ordered Transformer consists of an input embedding E : X → H , compatible block-group maps 
+
+Fi : H → H , and a prediction map R : H → G . We use (A ◦ B)( x) = A(B(x)) for function composition. One ordered Transformer block-sequence pass is 
+
+Ψ = FP −1 ◦ FP −2 ◦ · · · ◦ F0. (1) Thus, F0 is applied first and FP −1 last. For an integer L ≥ 1, ordered-loop training repeats this complete pass: 
+
+ΨL = Ψ ◦ · · · ◦ Ψ| {z } 
+
+> Ltimes
+
+, R ◦ ΨL ◦ E : X → G . (2) We call L the loop depth : the number of complete Transformer block-sequence passes. Across these passes, one block group is applied at each of K = LP successive positions. The input embedding and prediction map are each applied once and are not counted in L or K. Numbering the block-group positions from zero, Fi occurs at i + ℓP for ℓ = 0 , . . . , L − 1, independently of the worker from which a batch originates. The case L = 1 recovers the standard ordered stack. 
+
+2.2. Cyclic Depth Folding 
+
+Möbius Learning uses P workers indexed by ZP , with worker i owning block group Fi. For a batch originating at worker s, the index s is the originating-worker index . We denote by Es : X → H and 
+
+Rs : H → G the input embedding and prediction map invoked by the corresponding path. For a batch input xs ∈ X originating at worker s and any block-group application count K ≥ 1,initialize hs, 0 = Es(xs) and define 
+
+hs,t +1 = F⟨s+t⟩P (hs,t ), t = 0 , . . . , K − 1. (3) The recurrence applies the block groups in worker-indexed cyclic order. Equivalently, 
+
+Φs,K = F⟨s+K−1⟩P ◦ · · · ◦ F⟨s+1 ⟩P ◦ Fs, (4) and the resulting vocabulary logits are Rs(Φ s,K (Es(xs))) . Hence, Es and Rs are each applied exactly once, regardless of K.Although Equation (4) is well defined for arbitrary K, the subsequent analysis and all reported experiments use complete passes, for which K = LP . Let Ψs = Φ s,P denote one complete cyclic pass beginning at worker s. Periodicity of the worker-indexed cyclic order gives Φs,LP = Ψ Ls . In particular, Ψ0 = Ψ and Φ0,LP = Ψ L. For s̸ = 0 , Ψs is a cyclic shift of the ordered pass and generally differs from Ψ, since the block-group maps need not commute.  
+
+> 4MÖBIUS LEARNING
+
+Figure 3: Ordered-loop training and Möbius Learning for P = 4 . Left: every worker-local batch follows the fixed order F0, F 1, F 2, F 3 in each of L complete passes, and the resulting losses are averaged across workers. Right: the column indexed by originating worker s depicts that batch’s logical path, which begins at block group Fs and follows the worker-indexed cyclic order; the columns do not represent separate physical copies of the block groups. Along every path, the input embedding is applied once; after K = LP block-group applications, the corresponding prediction map produces vocabulary logits from which cross-entropy is computed. 
+
+2.3. Source-Relative Depth and Depth-Role Superposition 
+
+The cyclic shifts induced by different originating workers place the same block group at different positions within a pass. For a batch originating at worker s, let ds,i denote the source-relative depth 
+
+of Fi: the number of block groups applied before Fi within a pass. We use Ts,L (i) for the positions at which Fi appears in the resulting sequence of LP block-group applications, numbering the first position as zero. Since Fi is first reached when ⟨s + t⟩P = i and recurs every P applications thereafter, these quantities are 
+
+ds,i = ⟨i − s⟩P , Ts,L (i) = {ds,i + ℓP : ℓ = 0 , . . . , L − 1} . (5) For example, with P = 4 , a batch originating at worker s = 2 follows F2, F 3, F 0, F 1 within each pass. Hence, d2,0 = 2 , and for L = 3 , T2,3(0) = {2, 6, 10 }. For any fixed i, the map s 7 → ds,i 
+
+is a bijection on ZP : for any d ∈ ZP , its unique inverse is s = ⟨i − d⟩P . Consequently, as the originating-worker index ranges over ZP , every fixed block group Fi occupies each of the P within-pass source-relative depths exactly once. For a fixed originating worker, that role repeats across the 
+
+L passes at the positions in Ts,L (i).This behavior differs from ordered looping, where every worker-local batch encounters Fi at positions {i + ℓP : ℓ = 0 , . . . , L − 1}. Under cyclic depth folding, batches originating at different workers place the same Fi at every within-pass source-relative depth. The parameters of Fi are therefore trained across all P depth roles, a phenomenon we call depth-role superposition . 
+
+> 5MÖBIUS LEARNING
+
+2.4. Training and Evaluation Objectives 
+
+Let worker s draw an input–target pair (xs, z s) from its local data distribution Ds. Let CE : G ×Z → 
+
+R denote cross-entropy. The prediction maps R and Rs produce vocabulary logits; CE converts those logits and the target sequence into a scalar loss. For ordered-loop training, the input embedding, prediction map, and ordered block-group maps are shared across worker-local data distributions. Its objective is 
+
+min  
+
+> E,R, {Fi}P−1
+> i=0
+
+1
+
+P 
+
+> P−1
+
+X
+
+> s=0
+
+E(xs,z s)∼D s
+
+CE  R ΨL(E(xs))  , z s
+
+ . (6) For Möbius Learning, block-group maps remain assigned to their workers, while Es and Rs
+
+denote the maps invoked by each originating path. Let Θ collect the trainable parameters of the resulting model. Its objective at loop depth L is 
+
+min 
+
+> Θ
+
+1
+
+P 
+
+> P−1
+
+X
+
+> s=0
+
+E(xs,z s)∼D s [CE( Rs(Φ s,LP (Es(xs))) , z s)] . (7) Each originating worker s backpropagates a path-specific loss on a distinct local minibatch. With equal worker participation, Equation (7) is the resulting population objective; training does not require explicit averaging of these losses. Each block group Fi participates in every term at source-relative depth ds,i . Forward evaluation follows Equation (3), and backpropagation traverses the unrolled dependencies in reverse. Raw input–target pairs remain at their originating workers; hidden states and their gradients cross worker boundaries. Further implementation details appear in Appendix A. For evaluation, let Vs denote the held-out validation distribution at worker s, with all trained parameters held fixed. The ordered-loop criterion is the averaged loss in Equation (6) with Ds
+
+replaced by Vs. The corresponding Möbius Learning criterion is 
+
+LMöbius  
+
+> val
+
+(L) = 1
+
+P 
+
+> P−1
+
+X
+
+> s=0
+
+E(xs,z s)∼V s [CE( Rs(Φ s,LP (Es(xs))) , z s)] . (8) Evaluation performs explicit metric aggregation: after each of the P originating-worker paths completes L passes, Equation (8) averages their scalar losses to produce the reported validation loss. This aggregation assigns equal weight to all P cyclic starting points and reports performance across the complete set of block orders induced by Möbius Learning, rather than from a selected starting point. 
+
+3. Main Results 
+
+3.1. Comparison Across Loop Depths 
+
+We compare cyclic depth folding with ordered-loop training across loop depths L. All runs use four workers, the modded GPT-2 small (124M) architecture [ 14 ], and FineWeb [ 12 ]. Möbius Learning divides the Transformer block stack into four worker-resident groups. Following the Chinchilla token-to-parameter allocation for this model scale [ 7 ], we use a 2.5B-token budget; the Muon configuration, learning-rate schedule, and global batch are fixed across runs.  
+
+> 6MÖBIUS LEARNING
+
+Ordered-loop training repeats a fixed sequence of P = 4 block groups for L passes; Möbius Learning uses worker-indexed cyclic orders of the same groups. Each table row holds L fixed: both constructions use the same token budget, perform K = 4 L block-group applications along each input path, and apply the input embedding and prediction map once. Since K increases with L, the comparison is matched between methods within each row, not across loop depths. Both methods are evaluated on the same FineWeb validation data using an equally weighted mean over four losses, one per originating worker. For ordered-loop training, each loss is measured after the final Transformer block-sequence pass; for Möbius Learning, Equation (8) averages the path-specific losses after each path completes K block-group applications. Figure 1 and Table 1 show that Möbius Learning reaches lower validation loss at L = 6 , 10 , 15 .Table 1: FineWeb validation loss after 2.5B tokens for four-worker modded GPT-2 small (124M) runs. Each row fixes L and K = 4 L; ∆ is Möbius Learning loss minus ordered-loop loss, computed from the unrounded values, so negative values favor Möbius Learning.                         
+
+> LOrdered-loop loss KMöbius Learning loss ∆
+> 13.3042 43.4739 +0 .1697
+> 23.2890 83.3448 +0 .0557
+> 63.2564 24 3.2480 −0.0084
+> 10 3.2456 40 3.2397 −0.0059
+> 15 3.2420 60 3.2337 −0.0083
+
+Strikingly, at L = 6 , 10 , 15 , the same block parameters serve multiple source-relative depth roles while Möbius Learning attains lower validation loss than ordered-loop training under matched token budgets and block-group application counts. 
+
+4. Applications and Implications 
+
+Representation hierarchy. Layer-wise studies show that Transformer representations, attention behavior, and feed-forward functions vary across depth [ 1 , 6 , 19 , 23 ]. The result from Möbius Learning is consistent with these findings while testing a distinct architectural constraint: whether each block group must retain one fixed source-relative depth. Under cyclic depth folding, the same block parameters are trained on representations encountered at shallow and deep source-relative positions, producing depth-role superposition. At loop depths L = 6 , 10 , 15 , this construction achieves lower validation loss than ordered-loop training under the same 2.5B-token budget and loop depth. This result raises a mechanistic question: how can one shared block group support both depth roles, and to what extent can their associated representational functions be mixed within the same parameters? We hypothesize that conventional ordered training may leave some reusable capacity untapped by confining each parameter group to one source-relative depth; direct analyses of learned representations and parameter use are needed to test this capacity-utilization account. 
+
+Worker-local model ownership. Möbius Learning combines local data ownership with worker-local ownership of model capacity. Federated learning commonly keeps data local while giving each participant a full model replica [ 10 ]. Pipeline training partitions model capacity across workers, with data sent through a designated input stage. Split learning keeps raw examples local while exchanging activations, usually through fixed split points or stage roles [ 20 , 22 ]. In Möbius Learning, each  
+
+> 7MÖBIUS LEARNING
+
+worker forms batches from its own data and stores one block group. The resulting hidden states circulate through the block groups in cyclic order, allowing the workers to realize a deeper model collectively. This design opens a concrete path to collaborative training in which each worker trains from local data and contributes a locally held share of model capacity. 
+
+5. Next Version and Future Work 
+
+The next version will broaden the current four-worker scaling study. Future experiments will vary the worker count P and loop depth L, with K = LP block-group applications for L complete passes, while moving to larger models and longer training-token budgets. This study will characterize when cyclic depth folding achieves lower validation loss than ordered-loop training under the same token budget and loop depth, where the effect saturates, and how it changes with model scale. A complementary analysis will study how depth-role superposition appears in representations. In Möbius Learning, a block group is not fixed as either shallow or deep; it is repeatedly optimized in both roles as data streams encounter it at different positions in the cyclic order. The mechanism question is therefore broader than any single diagnostic: how do the same parameters organize representations when they must serve multiple positions along Transformer depth? This framing points toward a representation-level account of depth-role superposition and why it can improve training at larger loop depths. 
+
+Citation suggestions. We welcome pointers to directly relevant work on looped or recurrent Trans-formers, federated and split learning, and distributed model partitioning at raiden@zju.edu.cn .
+
+References 
+
+[1] Kevin Clark, Urvashi Khandelwal, Omer Levy, and Christopher D. Manning. What does BERT look at? an analysis of BERT’s attention, 2019. URL https://arxiv.org/abs/1906. 04341 .[2] Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob Uszkoreit, and Lukasz Kaiser. Uni-versal transformers, 2019. URL https://arxiv.org/abs/1807.03819 .[3] Angela Fan, Edouard Grave, and Armand Joulin. Reducing transformer depth on demand with structured dropout. In International Conference on Learning Representations , 2020. URL 
+
+https://openreview.net/forum?id=SylO2yStDr .[4] Matthias Freiberger, Peter Kun, Anders Sundnes Løvlie, and Sebastian Risi. Layershuffle: Enhancing robustness in vision transformers by randomizing layer execution order, 2024. URL 
+
+https://arxiv.org/abs/2407.04513 .[5] Jonas Geiping, Sean McLeish, Neel Jain, John Kirchenbauer, Siddharth Singh, Brian R. Bartoldson, Bhavya Kailkhura, Abhinav Bhatele, and Tom Goldstein. Scaling up test-time compute with latent reasoning: A recurrent depth approach, 2025. URL https: //arxiv.org/abs/2502.05171 .[6] Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer feed-forward layers are key-value memories, 2021. URL https://arxiv.org/abs/2012.14913 . 
+
+> 8MÖBIUS LEARNING
+
+[7] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Oriol Vinyals, Jack W. Rae, and Laurent Sifre. Training compute-optimal large language models. In Advances in Neural Information Processing Systems , volume 35, pages 30016–30030, 2022. doi: 10.52202/068431-2176. URL 
+
+https://doi.org/10.52202/068431-2176 .[8] Yanping Huang, Youlong Cheng, Ankur Bapna, Orhan Firat, Dehao Chen, Mia Xu Chen, HyoukJoong Lee, Jiquan Ngiam, Quoc V. Le, Yonghui Wu, and Zhifeng Chen. GPipe: Efficient training of giant neural networks using pipeline paral-lelism. In Advances in Neural Information Processing Systems , volume 32, pages 103–112, 2019. URL https://proceedings.neurips.cc/paper/2019/hash/ 093f65e080a295f8076b1c5722a46aa2-Abstract.html .[9] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, and Radu Soricut. ALBERT: A lite BERT for self-supervised learning of language representations, 2020. URL https://arxiv.org/abs/1909.11942 .[10] H. Brendan McMahan, Eider Moore, Daniel Ramage, Seth Hampson, and Blaise Agüera y Arcas. Communication-efficient learning of deep networks from decentralized data, 2017. URL https://arxiv.org/abs/1602.05629 .[11] Deepak Narayanan, Aaron Harlap, Amar Phanishayee, Vivek Seshadri, Nikhil R. Devanur, Gregory R. Ganger, Phillip B. Gibbons, and Matei Zaharia. PipeDream: Generalized pipeline parallelism for DNN training. In Proceedings of the 27th ACM Symposium on Operating Systems Principles , pages 1–15, 2019. doi: 10.1145/3341301.3359646. URL https://doi. org/10.1145/3341301.3359646 .[12] Guilherme Penedo, Hynek Kydlíˇ cek, Loubna Ben Allal, Anton Lozhkov, Margaret Mitchell, Colin Raffel, Leandro von Werra, and Thomas Wolf. The FineWeb datasets: Decanting the web for the finest text data at scale. In Advances in Neural Information Processing Systems , volume 37, pages 30811–30849, 2024. doi: 10.52202/079017-0970. URL https: //doi.org/10.52202/079017-0970 . Datasets and Benchmarks Track. [13] Hayden Prairie, Zachary Novack, Taylor Berg-Kirkpatrick, and Daniel Y. Fu. Parcae: Scaling laws for stable looped language models, 2026. URL https://arxiv.org/abs/2604. 12946 .[14] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners. OpenAI techni-cal report, 2019. URL https://cdn.openai.com/better-language-models/ language_models_are_unsupervised_multitask_learners.pdf .[15] David Raposo, Sam Ritter, Blake Richards, Timothy Lillicrap, Peter Conway Humphreys, and Adam Santoro. Mixture-of-depths: Dynamically allocating compute in transformer-based language models, 2024. URL https://arxiv.org/abs/2404.02258 . 
+
+> 9MÖBIUS LEARNING
+
+[16] Machel Reid, Edison Marrese-Taylor, and Yutaka Matsuo. Subformer: Exploring weight sharing for parameter efficiency in generative transformers, 2021. URL https://arxiv. org/abs/2101.00234 .[17] Nikunj Saunshi, Nishanth Dikkala, Zhiyuan Li, Sanjiv Kumar, and Sashank J. Reddi. Reasoning with latent thoughts: On the power of looped transformers, 2025. URL https://arxiv. org/abs/2502.17416 .[18] Sho Takase and Shun Kiyono. Lessons on parameter sharing across layers in transformers. In 
+
+Proceedings of the Fourth Workshop on Simple and Efficient Natural Language Processing (SustaiNLP) , pages 78–90, Toronto, Canada (Hybrid), July 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.sustainlp-1.5. URL https://aclanthology.org/ 2023.sustainlp-1.5/ .[19] Ian Tenney, Dipanjan Das, and Ellie Pavlick. BERT rediscovers the classical NLP pipeline, 2019. URL https://arxiv.org/abs/1905.05950 .[20] Chandra Thapa, M. A. P. Chamikara, Seyit Camtepe, and Lichao Sun. SplitFed: When federated learning meets split learning, 2022. URL https://arxiv.org/abs/2004.12088 .[21] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In 
+
+Advances in Neural Information Processing Systems , volume 30, pages 5998– 6008, 2017. URL https://proceedings.neurips.cc/paper/2017/hash/ 3f5ee243547dee91fbd053c1c4a845aa-Abstract.html .[22] Praneeth Vepakomma, Otkrist Gupta, Tristan Swedish, and Ramesh Raskar. Split learning for health: Distributed deep learning without sharing raw patient data, 2018. URL https: //arxiv.org/abs/1812.00564 .[23] Elena Voita, Rico Sennrich, and Ivan Titov. The bottom-up evolution of representations in the transformer: A study with machine translation and language modeling objectives, 2019. URL 
+
+https://arxiv.org/abs/1909.01380 .[24] Rui-Jie Zhu, Zixuan Wang, Kai Hua, Tianyu Zhang, Ziniu Li, et al. Scaling latent reasoning via looped language models, 2025. URL https://arxiv.org/abs/2510.25741 .
+
+Appendix A. Implementation Notes 
+
+The reported implementation follows the state recurrence in Equation (3) with P = 4 workers and assigns block group Fi to worker i. Forward computation sends hidden states through the block groups in worker-indexed cyclic order; gradients propagate backward through the same dependency graph. The corresponding prediction map is applied after K block-group applications, and validation averages the resulting path-specific losses. Decoder-block parameters remain on their assigned workers and are not synchronized across block groups; raw data remain at the originating workers while hidden states and gradients are communicated. The reported results use the Version 1 implementation described here. Additional implementation refinements are under evaluation and are excluded from the present claims.  
+
+> 10 MÖBIUS LEARNING
+
+Appendix B. Additional Related Work 
+
+B.1. Layer-Order Adaptation and Depth Sharing 
+
+LayerShuffle fine-tunes fixed-order pretrained Vision Transformers under randomly permuted block orders to improve robustness to execution-order perturbations and layer removal at inference [ 4 ]. Its results show that block outputs and predictive contributions can adapt to execution position, although this robustness is accompanied by lower accuracy under the original fixed order. The relation to Möbius Learning can be separated along three dimensions: 
+
+Training stage. LayerShuffle begins with blocks already optimized under one fixed order and then adapts them through fine-tuning. Möbius Learning instead imposes cyclic block orders throughout language-model pretraining, without a preceding fixed-order stage. It therefore addresses the more demanding joint problem of learning the language-modeling task while training the same block parameters in shallow and deep roles. 
+
+Effective depth. LayerShuffle applies each distinct block once within a randomly permuted forward pass. Möbius Learning repeatedly traverses the complete block sequence, reaching K = LP block-group applications along each input path and evaluating the construction across a broad range of loop depths. 
+
+Order structure and coverage. LayerShuffle samples arbitrary block permutations independently across minibatches. Möbius Learning uses the P deterministic cyclic shifts selected by the originating-worker index. Across these paths, every block group occupies every within-pass source-relative depth exactly once, yielding balanced supervision across depth roles. These differences lead to a distinct empirical question. LayerShuffle asks whether a pretrained model can remain functional under arbitrary order perturbations, whereas Möbius Learning asks whether balanced joint pretraining across depth roles can improve fixed-order looped training under matched token budgets and loop depths. The resulting evidence goes beyond order robustness: at the larger tested loop depths, Möbius Learning achieves lower validation loss than the matched ordered-loop baseline.

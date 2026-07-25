@@ -1,0 +1,880 @@
+Title: H^2SD: Hybrid Hindsight Self-Distillation
+
+URL Source: https://arxiv.org/pdf/2607.18955v2
+
+Published Time: Thu, 23 Jul 2026 00:56:47 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> 2026-7-23
+
+# H2SD: Hybrid Hindsight Self-Distillation 
+
+Qiye Cai* 1,2 , Yichuan Ma* 1,3 , Linyang Li 1,4 , Peiji Li 1,3 , Yongkang Chen 1, Qipeng Guo 1, Yicheng Zou 1,Xiaocheng Feng †2 and Bing Qin †2
+
+> 1
+
+Shanghai Artificial Intelligence Laboratory, 2Harbin Institute of Technology, 3Fudan University, 4The Chinese University of Hong Kong 
+
+Reinforcement learning with verifiable rewards (RLVR) provides reliable outcome supervision for language model reasoning, but a scalar trajectory reward offers limited token-level guidance. Existing On-policy self-distillation (OPSD) methods add a privileged teacher but typically assign it a fixed role: direct distribution matching may destabilize successful behavior, while magnitude-only modulation offers little corrective guidance after failure. We observe that successful and failed trajectories require different forms of hindsight supervision. A successful response already contains a valid student-generated reasoning path and can therefore serve as privileged context rather than being replaced by an external rationale. A failed response, however, requires corrective reference information. We introduce Hybrid Hindsight Self-Distillation ( H2SD ), which jointly adapts teacher context and update strategy to trajectory correctness. For successful trajectories, we construct the teacher context from the verified response and a rephrasing instruction, and use the teacher only to re-evaluate the original response tokens. This emphasizes essential deductions over redundant content and refines magnitude-based credit assignment without changing the reward direction. For failed trajectories, a verifier-confirmed reference hint provides corrective guidance through reverse-KL distillation. Controlled ablations show that the gains depend on outcome-conditioned routing and the rephrasing instruction. Experiments on challenging reasoning benchmarks show that H 2SD achieves the strongest overall performance among representative RLVR and self-distillation baselines, with stable optimization and a favorable accuracy-efficiency trade-off. 
+
+## 1. Introduction 
+
+Since the release of DeepSeek-R1 [ 3 ], reinforce-ment learning with verifiable rewards (RLVR), rep-resented by GRPO [ 12 ], has been widely adopted to enhance the reasoning abilities of large language mod-els (LLMs). Meanwhile, the field of agentic RL has also rapidly progressed, where models interact with environments and improve through feedback and reward signals [ 9,11 ]. By carefully designing environmental feedback and reward functions, general LLMs have achieved remarkable improvements in tool use, open-ended environment interaction, and other agentic tasks [ 15 ,20]. Despite these advances, RLVR algorithms usually obtain a single feedback signal from the environment and use it as a scalar outcome reward for optimization, which creates a bottleneck in credit assignment, since the reward provides limited information about which token is responsible for success or failure. On-policy distillation (OPD) offers a possible solution to this          
+
+> *Equal contribution. †Corresponding authors: Xiaocheng Feng (xcfeng@ir.hit.edu.cn) and Bing Qin (qinb@ir.hit.edu.cn). Sudoku
+> 6×6
+> Sudoku
+> 8×8
+> Calcudoku Arrow Maze
+> 0
+> 20
+> 40
+> 60
+> 80
+> pass@1 (%)
+> H²SD OPSD SRPO RLSD+hint RLSD Base LLM
+
+Figure 1: Overall performance comparison on repre-sentative logical reasoning benchmarks. H 2SD con-sistently delivers strong performance across diverse tasks. problem [ 10 , 16 ]. By introducing a stronger model as the teacher model and using the teacher’s token-level logits to supervise trajectories sampled by the student model, OPD provides denser supervision over the entire response. However, OPD relies on a stronger teacher model, arXiv:2607.18955v2 [cs.LG] 22 Jul 2026 H2SD: Hybrid Hindsight Self-Distillation 
+
+and the teacher and student models often need to share the same tokenizer. These requirements restrict its applicability in broader settings. To address this issue, on-policy self-distillation (OPSD) proposes an alternative paradigm [ 6, 13 , 21 ]. In OPSD, the same model is used as both the teacher and the student. The teacher model is provided with privileged infor-mation 𝑟 , and, conditioned on this information, pro-duces token-level supervision on trajectories sampled by the student. In this way, OPSD attempts to approx-imate the effect of OPD without actually requiring an external stronger teacher model. Although OPSD is effective, directly matching a teacher distribution conditioned on privileged infor-mation may cause training instability and privileged information leakage, as observed by RLSD [ 17 ]. RLSD mitigates these risks by using the teacher signal only to modulate token-level update magnitudes. SRPO further routes successful samples to GRPO and failed samples to self distillation [ 8]. However, this improved stability comes at the cost of weaker corrective super-vision. Unlike OPSD, which transfers the teacher’s fine-grained distributional preferences, RLSD mainly reweights the updates of tokens already generated by the student. Consequently, when the student follows an incorrect reasoning path, magnitude modulation alone may be insufficient to correct its underlying gen-eration distribution. To resolve this tension, we propose Hybrid Hind-sight Self Distillation (H 2SD), which assigns different roles to the teacher according to trajectory correct-ness. For successful trajectories, the reward already provides a reliable optimization direction. The teacher receives the student response confirmed as correct to-gether with a rephrasing instruction, and its probabil-ities on the original response tokens are used only to modulate the update magnitudes in RLSD. For failed trajectories, we condition the teacher on a reference hint and minimize the reverse KL divergence from the student to the teacher. This preserves the direction determined by the reward for successful trajectories while providing explicit distributional correction when the sampled reasoning fails. The quality of the teacher signal also depends on the privileged information it receives. We use a stronger language model to generate a reference hint for each problem, containing key intermediate reasoning steps and a final answer confirmed by the verifier. OPSD and H2SD use the same hints in our experiments, allowing us to compare how different objectives convert the same privileged information into learning signals. With these designs, H 2SD achieves the best overall performance on Sudoku, Calcudoku, and Arrow Maze among the evaluated methods, including GRPO, OPSD, RLSD, SDPO, and SRPO. These results show that rea-soning can be improved by using teacher guidance to refine credit assignment on successful trajectories and by using a teacher distribution conditioned on reference hints to correct failed trajectories. Our main contributions are summarized as follows: 
+
+• We identify a trade-off in on-policy self-distillation between distribution-level correction and stable token-level credit assignment. We fur-ther show that the appropriate supervision strat-egy depends on whether the student-generated trajectory is correct. 
+
+• We propose H2SD , a correctness-aware hy-brid self-distillation framework that applies magnitude-based supervision to correct trajecto-ries and distribution-level distillation to incorrect trajectories, combining the complementary ad-vantages of RLSD and OPSD. 
+
+• We conduct experiments on multiple challeng-ing reasoning benchmarks, where H2SD consis-tently outperforms representative RLVR, OPSD, and RLSD baselines while maintaining stable op-timization. 
+
+## 2. Related Work 
+
+Reinforcement Learning with Verifiable Rewards. 
+
+RLVR improves LLM reasoning by optimizing poli-cies with automatically verifiable outcome rewards. GRPO [ 12 ] estimates group-relative advantages from sampled trajectories without requiring an explicit value model, and subsequent methods such as DAPO and GSPO [ 19 , 22 ] further enhance training stability, efficiency, and credit assignment. 
+
+On-Policy Distillation. On-policy distillation [ 1, 2,10 ] mitigates the distribution shift problem of off-policy distillation by allowing the student model to generate its own trajectories and using a teacher model to evaluate these on-policy rollouts, providing dense token-level supervision. The advantage of on-policy distillation lies in its combination of on-policy exploration and dense supervision. However, such methods usually rely on an additional strong teacher, and logit-level distillation often requires the teacher and student to have compatible token spaces, which limits the choice of teacher models. 
+
+On-Policy Self-Distillation with Privileged Informa-tion. To reduce reliance on external teachers, recent studies have explored building self-teachers with priv-ileged information. OPSD [ 21 ] allows the same model to serve as both student and teacher, where the teacher branch receives privileged ground-truth solutions and guides the student through token-level distribution 
+
+> 2H2SD: Hybrid Hindsight Self-Distillation
+
+matching. SDPO [ 6] further broadens privileged in-formation by incorporating environment feedback or correct rollouts as teacher signals. SD-Zero [ 4] intro-duces a reviser to refine responses based on model out-puts and rewards. Other methods, such as OPCD [ 18 ]and GATES [ 14 ], extend privileged information be-yond final answers to include richer auxiliary signals such as context, experience, and evidence. 
+
+Stable Self-Distillation for RLVR. Directly fitting a privileged teacher may introduce information leakage and training instability. RLSD [ 17 ] addresses this is-sue by letting the environment reward determine the update direction while using the teacher only to modu-late token-level magnitudes. Related methods extend this reward-grounded formulation through entropy-aware confidence gating [ 7 ] and contrastive evidence reweighting [ 5], while SRPO [ 8] routes successful tra-jectories to GRPO and failed ones to self-distillation. 
+
+## 3. Preliminaries 
+
+Before introducing the proposed H 2SD method, we first describe the implementation strategies of GRPO, OPD, OPSD, and RLSD. Throughout this section, 𝑥 
+
+denotes a problem and 𝑦 = ( 𝑦 1, . . . , 𝑦 𝑇 ) denotes a model response. 
+
+3.1. GRPO 
+
+In the GRPO algorithm, given a question 𝑥 , GRPO samples 𝐺 responses from the old policy 𝜋 𝜃 old . We first sample 𝐺 responses {𝑦 (𝑖 )}𝐺 𝑖 =1 from the old policy, where 𝑦 (𝑖 ) = ( 𝑦 (𝑖 )1 , . . . , 𝑦 (𝑖 ) 
+
+> 𝑇 𝑖
+
+) and 𝑦 (𝑖 ) ∼ 𝜋 𝜃 old (· | 𝑥 ). A reward function is then used to assign a scalar reward to each response. We denote the reward of each re-sponse as 𝑅 (𝑥, 𝑦 (𝑖 )). For each sampled response 𝑦 (𝑖 ),GRPO computes a relative advantage within the cur-rent group: 
+
+𝐴 𝑖 = 𝑅 (𝑥, 𝑦 (𝑖 )) − 𝜇 𝜎 , (1) where 𝜇 denotes the mean reward of the current re-sponse group, and 𝜎 denotes the standard deviation of the rewards within the group. Then, for the token at position 𝑡 in the 𝑖 -th response, GRPO optimizes the LLM by maximizing a clipped surrogate objective. Specifically, we first define the probability ratio between the current policy and the old policy as 
+
+𝜌 𝑖,𝑡 (𝜃 ) = 𝜋 𝜃 (𝑦 (𝑖 ) 
+
+> 𝑡
+
+| 𝑥, 𝑦 (𝑖 )
+
+> <𝑡
+
+)
+
+𝜋 𝜃 old (𝑦 (𝑖 ) 
+
+> 𝑡
+
+| 𝑥, 𝑦 (𝑖 )
+
+> <𝑡
+
+) . (2) The token-level clipped surrogate objective is defined as 
+
+ℓ𝑖,𝑡 (𝜃 ) = min ( 𝜌 𝑖,𝑡 (𝜃 )𝐴 𝑖 , clip ( 𝜌 𝑖,𝑡 (𝜃 ), 1 − 𝜖, 1 + 𝜖 ) 𝐴 𝑖 ) .
+
+(3) Finally, the GRPO objective can be written as 
+
+𝒥 GRPO (𝜃 ) = 1
+
+𝐺 
+
+> 𝐺
+
+∑︁ 
+
+> 𝑖 =1
+
+1
+
+𝑇 𝑖 𝑇 𝑖 ∑︁ 
+
+> 𝑡 =1
+
+[ℓ𝑖,𝑡 (𝜃 ) − 𝛽𝐷 KL (𝜋 𝜃 ‖ 𝜋 ref )] .
+
+(4) In GRPO, all tokens within the same response are re-warded or penalized with the same magnitude, which is solely determined by the response-level relative ad-vantage 𝐴 𝑖 .
+
+3.2. OPD, OPSD, and RLSD 
+
+3.2.1. On-Policy Distillation and OPSD 
+
+As discussed above, GRPO assigns the same reward or penalty magnitude to all tokens within the same response. On-policy distillation (OPD) addresses this limitation by introducing a stronger model as the teacher model to provide more informative supervi-sion for the student model. Within the same trajectory, OPD assigns diverse training signals, thereby improv-ing the overall training performance. Formally, let 𝜋 𝑠 denote the student model and 𝜋 𝑡 
+
+denote the teacher model. Given a question 𝑥 , suppose that a trajectory 𝑦 = ( 𝑦 1, . . . , 𝑦 𝑇 ) is sampled from the student model: 
+
+𝑦 ∼ 𝜋 𝑠 (· | 𝑥 ). (5) At each token position 𝑡 , OPD uses the next-token distribution predicted by the teacher model as the supervision signal. To simplify notation, we define 
+
+𝑝 T 
+
+> 𝑡
+
+(·) = 𝜋 𝑡 (· | 𝑥, 𝑦 <𝑡 ), 𝑝 S 
+
+> 𝑡
+
+(·) = 𝜋 𝑠 (· | 𝑥, 𝑦 <𝑡 ). (6) The OPD objective is then written as 
+
+ℒOPD (𝜋 𝑠 ) = E𝑥,𝑦 [︃ 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+𝐷 KL (︀ 𝑝 T 
+
+> 𝑡
+
+‖ 𝑝 S
+
+> 𝑡
+
+)︀]︃ , (7) where the expectation is taken over 𝑥 ∼ 𝒟 and 
+
+𝑦 ∼ 𝜋 𝑠 (· | 𝑥 ). Compared with GRPO, which relies on a trajectory-level scalar reward provided by a rule-based reward function, OPD provides fine-grained supervision at each token position. However, a major limitation of OPD is that it re-quires a stronger teacher model 𝜋 𝑡 , which should also share the same vocabulary with the student model. This strict requirement restricts the practical appli-cability of OPD. To address this issue, on-policy self-distillation (OPSD) uses the same model as both the student and the teacher, thereby avoiding the depen-dence on an external stronger model. 
+
+> 3
+
+H2SD: Hybrid Hindsight Self-Distillation prompt x 
+
+...        
+
+> 𝐀 𝐀 :=𝐀 𝐀 (∙|𝐀 ,𝐀 ,𝐀 𝐀 )
+> 𝐀 𝐀 =“Rephrase the correct response ”
+
+𝐀 (𝐀 )
+
+𝐀 (1)
+
+𝐀 𝐀 𝐀 𝐀 = 𝐀 𝐀 (𝐀 𝐀 || 𝐀 𝐀 )       
+
+> ℎ=ℋ(𝐀 ):
+> 1. First resolve: ... 2.Then resolve: ...
+> Token-LevelGuidance
+> fill row 6with
+
+...     
+
+> fill row 6with
+
+...           
+
+> 𝐀 𝐀 :=𝐀 𝐀 (∙|𝐀 ,𝐀 )
+> 𝐀 𝐀 :=𝐀 𝐀 (∙|𝐀 ,𝐀 ,ℎ)
+> ExternalHint
+> Generator
+
+𝐀 (2)
+
+𝐀 (3)
+
+𝐀 (𝐀 −1)
+
+𝐀 (𝐀 −2)
+
+...               
+
+> Student
+> Policy𝐀 𝐀
+> Outcome-Conditioned Routing
+> ...
+> Token-LevelCredit
+> PT(t k)
+> 0.30.41.20.1
+> Token-LevelAdvantages
+> ...
+> TeacherPolicy
+> Successful path: Token-Level Credit Assignment
+> PS(t k)
+> Promote more Promote less
+> Failure path: Token-Level Guidance via Reverse KL
+> 𝐀 1𝐀 2𝐀 3𝐀 𝐀
+> TeacherPolicy
+> StudentPolicy
+> 1
+> 1
+> Â1,2 Â1,1 Â1,3 Â1,T1
+
+...   
+
+> Â2,2 Â2,1 Â2,3 Â2,T2
+
+...   
+
+> Âk,2 Âk,1 Âk,3 Âk,Tk
+
+... 
+
+Figure 2: Overview of H 2SD. The framework routes student-generated trajectories according to their correctness: successful trajectories receive fine-grained token-level credit assignment, while failed trajectories are corrected through hint-conditioned distributional guidance. To enable the teacher to induce a better policy than the student, OPSD provides the teacher with addi-tional privileged information. For example, given a question 𝑥 , a trajectory 𝑦 sampled by the student model, and privileged information 𝑟 , OPSD regards the model conditioned on both the question 𝑥 and the privileged feedback 𝑟 as the teacher, while the model conditioned only on 𝑥 is regarded as the student. We define 
+
+𝑝 T 
+
+> 𝑡,𝜃
+
+(·) = sg [ 𝜋 𝜃 (· | 𝑥, 𝑟, 𝑦 <𝑡 )] , 𝑝 S 
+
+> 𝑡,𝜃
+
+(·) = 𝜋 𝜃 (· | 𝑥, 𝑦 <𝑡 ).
+
+(8) Therefore, the OPSD objective can be written as 
+
+ℒOPSD (𝜃 ) = E𝑥,𝑦 [︃ 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+𝐷 KL (︀ 𝑝 T 
+
+> 𝑡,𝜃
+
+‖ 𝑝 S
+
+> 𝑡,𝜃
+
+)︀]︃ , (9) OPSD still provides differentiated training signals for different token positions within a single trajectory, thereby alleviating the sparsity of scalar rewards in RLVR. Meanwhile, since the teacher and the student are instantiated by the same model, OPSD significantly reduces the dependence of OPD on vocabulary consis-tency. 
+
+3.2.2. RLSD 
+
+However, RLSD points out that directly optimizing with OPSD may suffer from privileged information leakage. Since the teacher model is conditioned on privileged information, its logits may implicitly encode information that is unavailable during inference. As a result, the student model may gradually learn to rely on such privileged information, leading to perfor-mance degradation. To address this issue, RLSD reformulates the dis-tribution matching problem in OPSD as a token-level credit assignment problem. Specifically, for a trajec-tory 𝑦 = ( 𝑦 1, . . . , 𝑦 𝑇 ) sampled by the student model, RLSD computes the log-probability of each token un-der both the student context and the teacher context. The difference between the two log-probabilities is then used to measure the gain brought by the privi-leged information: 
+
+Δ𝑡 = sg (log 𝑃 𝑇 (𝑦 𝑡 ) − log 𝑃 𝑆 (𝑦 𝑡 )) , (10) where sg( ·) denotes the stop-gradient operation. This value measures how much the privileged information 
+
+𝑟 supports the current token. If Δ𝑡 > 0, the feedback 
+
+𝑟 assigns higher probability to this token under the teacher context; if Δ𝑡 < 0, the feedback 𝑟 provides less support for this token. RLSD then constructs a token-level weight accord-ing to the sign of the trajectory-level advantage 𝐴 :
+
+𝑤 𝑡 = exp (sign( 𝐴 ) · Δ𝑡 ) = (︂ 𝑃 𝑇 (𝑦 𝑡 )
+
+𝑃 𝑆 (𝑦 𝑡 ))︂ 
+
+> sign( 𝐴 )
+
+. (11) When 𝐴 > 0, the model more strongly reinforces tokens that are supported by the privileged informa-tion. When 𝐴 < 0, the model more strongly penalizes tokens that are contradicted by the privileged infor-mation. Finally, RLSD clips 𝑤 𝑡 to limit the influence of individual tokens on the update magnitude, thereby stabilizing training. The token-level advantage is then defined as ̂︀ 
+
+𝐴 𝑡 = 𝐴 [(1 − 𝜆 ) + 𝜆 clip ( 𝑤 𝑡 , 1 − 𝜖 𝑤 , 1 + 𝜖 𝑤 )] , (12) where 𝜆 controls the strength of self-distilled magni-tude modulation. RLSD replaces the trajectory-level 
+
+4H2SD: Hybrid Hindsight Self-Distillation 
+
+advantage 𝐴 in the GRPO objective with ̂︀ 𝐴 𝑡 while preserving its sign. Unlike OPSD, RLSD uses the teacher signal to re-distribute the strength of reward or penalty within the same trajectory. Therefore, RLSD can be viewed as a fine-grained credit assignment method based on privileged information, rather than a distribution dis-tillation method. Although RLSD effectively alleviates the issue of in-formation leakage, this design also weakens its ability to perform distribution learning. RLSD does not di-rectly learn the full output distribution of the teacher model; instead, it only uses token-wise probability differences to adjust the update magnitude. Conse-quently, the distributional structure contained in the teacher signal, including preferences over reasoning expressions and relative relations among candidate tokens, cannot be effectively transferred to the student model. This limitation is most evident for failed responses, where magnitude modulation alone cannot provide an explicit correction direction. 
+
+## 4. H2SD: Hybrid Hindsight Self-Distillation 
+
+4.1. Hint Design 
+
+In RLSD and OPSD, privileged information for gen-eral reasoning tasks is typically derived from the ground-truth answer or feedback provided by a rule-based function. However, for more complex reasoning tasks, such answer-level privileged information can be too coarse-grained to reveal specific reasoning errors, missing key steps, or potential directions for correc-tion. To provide more informative supervision, we in-troduce a stronger LLM as a hint generator. Given a problem 𝑥 , the hint generator produces a natural-language hint ℎ that provides useful information for solving the problem: 
+
+ℎ = ℋ(𝑥 ). (13) The generated hint is used as privileged information that is available only during training to construct a self-teacher. The stronger model does not directly serve as the teacher and does not need to share the same vocabulary with the student model. It is only responsible for generating the natural-language hint. The actual teacher distribution is still produced by the current model conditioned on the hint: 
+
+𝜋 𝑇 (· | 𝑥, ℎ, 𝑦 <𝑡 ) = 𝜋 𝜃 (· | 𝑥, ℎ, 𝑦 <𝑡 ),𝜋 𝑆 (· | 𝑥, 𝑦 <𝑡 ) = 𝜋 𝜃 (· | 𝑥, 𝑦 <𝑡 ). (14) 
+
+4.2. Hybrid Self-Distillation 
+
+A straightforward approach is to directly match the student distribution to the teacher distribution condi-tioned on the hint, as in OPSD. Although this provides supervision for the reasoning process, full distribu-tion matching may expose the student to privileged answer information at every token and cause informa-tion leakage. RLSD avoids direct matching by using the teacher only to rescale updates determined by the reward. However, for failed trajectories, it only changes the strength with which sampled errors are penalized and does not indicate which alternatives should be preferred. We therefore propose Hybrid Hindsight Self-Distillation (H 2SD), which selects the distillation strat-egy according to trajectory correctness. For successful trajectories, the positive reward already provides a re-liable optimization direction. The teacher receives the student response verified as correct together with an instruction to rephrase it, and its probabilities on the original response tokens are used to compute the mag-nitude weights in RLSD. This refines credit assignment across tokens without directly matching the teacher distribution or changing the direction determined by the reward. For failed trajectories, the sampled reasoning path is unreliable. Although a negative reward discourages the sampled actions, it provides limited guidance on how they should be corrected. We therefore use the teacher distribution conditioned on the hint as correc-tive guidance and minimize the reverse KL divergence from the student to the teacher: 
+
+ℒRKL = 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+𝐷 KL (︁ 𝑝 𝑆 𝑡,𝜃 ‖ sg[ 𝑝 𝑇,ℎ 𝑡,𝜃 ])︁ , (15) where 𝑝 𝑆 𝑡,𝜃 = 𝜋 𝜃 (· | 𝑥, 𝑦 <𝑡 ) and 𝑝 𝑇,ℎ 𝑡,𝜃 = 𝜋 𝜃 (· | 𝑥, ℎ, 𝑦 <𝑡 ).The operator sg[ ·] blocks gradients through the teacher distribution. Let 𝑚 = 1[𝑅 (𝑥, 𝑦 ) = 1] denote trajectory correct-ness. The overall objective is 
+
+ℒH2SD = E𝑥,𝑦 [𝑚 ℒRLSD + 𝛾 (1 − 𝑚 )ℒRKL ] , (16) where ℒRLSD is the loss form of the RLSD objective computed using the teacher prompted to rephrase, and 𝛾 controls the strength of corrective distillation on failed trajectories. Thus, H 2SD refines credit as-signment for successful trajectories and provides di-rectional correction for failed trajectories. 
+
+> 5H2SD: Hybrid Hindsight Self-Distillation
+
+Method Sudoku Calcudoku Arrow Maze Overall 6×6 8×8 5×5 6×6 Avg. 6×6 7×7 8×8 9×9 10 ×10 Avg. Base LLM 24.50 14.00 59.00 11.33 35.00 32.00 17.50 16.00 6.00 6.50 15.60 22.28 GRPO 26.25 16.75 66.33 13.67 40.00 34.50 16.00 14.00 7.50 6.50 15.70 24.68 SDPO 22.25 2.50 26.00 0.33 13.17 28.00 21.00 17.00 8.00 5.50 15.90 13.46 RLSD 27.75 15.25 66.67 15.33 41.00 34.00 18.00 16.00 5.00 4.00 15.40 24.85 OPSD 35.25 16.75 52.00 9.67 30.83 29.50 15.00 11.00 3.50 7.00 13.20 24.01 SRPO 28.25 15.50 63.00 14.00 38.50 28.00 16.50 12.50 5.50 6.50 13.80 24.01 RLSD+hint 27.25 15.00 66.33 15.33 40.83 34.00 17.00 15.00 7.00 6.00 15.80 24.72 
+
+H2SD 76.50 57.25 73.30 14.67 44.00 52.00 29.50 21.00 9.00 9.50 24.20 50.49 
+
+Table 1: Validation accuracy (%) on Sudoku, Calcudoku, and Arrow Maze benchmarks. Overall averages the two Sudoku results, the Calcudoku average, and the Arrow Maze average. Bold and underlined values indicate the best and second-best results, respectively. Tied results share the same formatting. 
+
+## 5. Experiments 
+
+5.1. Models and Benchmarks 
+
+We use Qwen3-30B-A3B-Instruct-2507 as the base model for all experiments. We evaluate our method on three representative logical reasoning benchmarks: Sudoku, Arrow Maze, and Calcudoku. Specifically, Sudoku requires filling 6 ×6 and 8 ×8grids with digits such that no digit is repeated within each row, column, or sub-grid (2 ×3 or 2 ×4). Ar-row Maze requires assigning one of eight directional arrows to each empty cell such that the ray length starting from every numbered cell matches the cor-responding value, while ensuring that all cells are covered by at least one ray. Calcudoku extends tra-ditional grid-based constraint solving by introducing region-level arithmetic constraints, where numbers within each region must satisfy a specified operation and target value. 
+
+5.2. Implementation Details 
+
+For each training problem, Kimi-K2.6 generates a ref-erence rationale (hint) containing key intermediate steps and a verifier-confirmed final answer. OPSD and H2SD use identical hints, while RLSD+hint replaces RLSD’s answer-only privileged information with the same hints, isolating the effect of how the privileged context is used. Following their original settings, SDPO and SRPO use verified same-batch correct re-sponses as feedback; SRPO routes correct trajectories to GRPO and failed ones with feedback to entropy-weighted SDPO. We implement all methods in VERL with SGLang. To reduce the substantial memory overhead of full-vocabulary distillation for OPSD on long-chain reason-ing tasks, we retain exact probabilities for the student’s 7 9 11 13 15 
+
+> Average Generated Tokens per Question (×10 3)
+> 20
+> 40
+> 60
+> 80
+> Accuracy (%)
+> Base LLM
+> GRPO
+> SDPO
+> RLSD
+> OPSD
+> SRPO
+> RLSD+hint
+> H²SD
+
+Figure 3: Accuracy–generation cost trade-off on Sudoku-6 ×6. Points toward the upper-left indicate better efficiency. H 2SD achieves the highest pass@1 with the fewest generated tokens. top-100 tokens and merge the remaining mass into a tail bucket. Both SDPO and the distillation branch of SRPO use generalized Jensen–Shannon divergence with 𝛼 = 0 .5. Training uses four nodes, each with eight NVIDIA H200 140GB GPUs. 
+
+5.3. Main Results 
+
+Table 1 shows that H 2SD achieves the strongest overall performance across the four benchmarks. Its advan-tage is particularly pronounced on Sudoku. Since OPSD, RLSD+hint, and H 2SD use identical privileged hints, their performance differences suggest that the gains arise primarily from how the privileged infor-mation is converted into learning signals rather than from the information itself. H2SD also achieves the highest average performance on Calcudoku and consistently ranks first across all 
+
+> 6H2SD: Hybrid Hindsight Self-Distillation
+
+Strategy Sudoku Calcudoku Arrow Maze 6×6 8×8 Avg. Avg. 
+
+Magnitude Only 60.00 55.50 43.17 15.60 Reverse-KL Only 60.50 38.50 28.67 18.50 Reversed Routing 17.00 9.75 2.83 6.40 H2SD 76.50 57.25 44.00 24.20 Table 2: Accuracy (%) under different routing strate-gies. Calcudoku and Arrow Maze report averages across grid sizes. The “Only” variants apply one up-date to all trajectories, while Reversed Routing swaps H2SD’s success/failure assignments. Arrow Maze sizes. Its strong results on the held-out Arrow Maze-8 ×8 and Arrow Maze-10 ×10 settings fur-ther demonstrate that the learned reasoning improve-ments generalize to unseen puzzle sizes. Moreover, although SRPO similarly routes trajectories according to correctness, H 2SD consistently outperforms it; the controlled ablation in Table 2 further examines the effect of assigning different update rules to successful and failed trajectories. Notably, SDPO underperforms the Base LLM overall and degrades sharply on the harder Sudoku and Calcu-doku settings. We hypothesize that directly matching sibling-conditioned distributions over long reasoning trajectories may introduce misaligned token-level su-pervision, suppressing necessary reasoning steps and producing incomplete responses. Figure 3 further shows that the gains of H 2SD do not rely on longer responses. It achieves the highest accuracy with the lowest average generation cost, in-dicating that its improvements primarily come from more effective use of the available learning signals. 
+
+5.4. Does Outcome-Conditioned Routing Matter? 
+
+Table 2 evaluates alternative routing strategies across all three benchmarks. H 2SD consistently outperforms the variants that uniformly apply magnitude modula-tion or reverse-KL distillation. In contrast, reversing the routing assignment reduces performance below the Base LLM in every reported setting. As shown in Figure 4, Reversed Routing also drives the actor entropy rapidly toward zero on both Sudoku sizes, indicating an early collapse of policy exploration. These results support the outcome-conditioned de-sign of H 2SD. For successful trajectories already vali-dated by the reward, preserving the policy-gradient direction while refining token-level credit assignment is sufficient. Failed trajectories instead benefit from the directional correction provided by the teacher dis-0 200 400 600     
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Actor entropy (nats)
+> (a)
+> Sudoku-6×6
+> 0200 400 600
+> (b)
+> Sudoku-8×8
+> Rollout Step
+> Hybrid(H²SD) Reversed routing
+
+Figure 4: Actor-entropy dynamics under H 2SD and Re-versed Routing on Sudoku. Reversed Routing rapidly collapses toward zero entropy. tribution. Assigning these signals according to trajec-tory correctness therefore improves accuracy while preserving policy diversity. 
+
+5.5. Which Privileged Context Is Useful? 
+
+In the main experiments of H 2SD, we use hints gen-erated by an external hint generator as privileged information for the teacher policy. We further investi-gate the effectiveness of different types of privileged information in Table 3. Specifically, we keep the H 2SD training recipe fixed and compare the following four types of privileged information: (1) Programmatic feedback , which provides fine-grained error feedback generated by a task-specific verifier based on the differ-ences between the student response and the ground-truth solution; (2) Ground truth , which contains only the correct final answer without any intermediate rea-soning; (3) Sibling solution , which uses a verified correct response sampled from multiple rollouts of the same problem as teacher guidance; and (4) Hint ,which is a reference solution generated by an exter-nal strong model and contains both key intermediate reasoning steps and the final answer. As shown in Table 3, ground-truth answers and programmatic verifier feedback provide only limited improvements. In contrast, privileged contexts con-taining richer process-level information lead to sub-stantially larger gains. In particular, the sibling solu-tion achieves accuracies of 61.75% and 48.50% on Sudoku-6 ×6 and Sudoku-8 ×8, respectively, and an average accuracy of 19.60% on Arrow Maze. While the The hint performs best in all three settings, reach-ing 76.50%, 57.25%, and 24.20% on Sudoku 6 ×6, Sudoku 8 ×8, and Arrow Maze, respectively. These results suggest that, for complex reasoning tasks, fine-grained process-level privileged information can pro-vide more informative and directional corrective sig-nals for failed trajectories.           
+
+> 7H2SD: Hybrid Hindsight Self-Distillation 075 150 225
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Actor entropy (nats)  (a)
+> Magnitude Only
+> 075 150 225
+> (b)
+> Reverse-KL Only
+> 075 150 225
+> (c)
+> H²SD
+> Rollout Step
+> No rephrase Rephrase
+
+Figure 5: Actor entropy with and without successful-trajectory rephrasing on Sudoku-6 ×6. Rephrasing sharply reduces entropy under Reverse-KL Only, but not under Magnitude Only or H 2SD. 
+
+Context Sudoku Arrow Maze 6×6 8×8 Avg. 
+
+Base LLM 24.50 14.00 15.60 Programmatic feedback 25.50 14.25 12.00 Ground truth 27.50 15.00 16.40 Sibling solution 61.75 48.50 19.60 Hint 76.50 57.25 24.20 Table 3: Validation accuracy (%) under different priv-ileged contexts. The Arrow Maze column reports the average across the five evaluated grid sizes. Boldface indicates the best result in each column. Update Strategy Sudoku-6 ×6 Sudoku-8 ×8(NR / R) (NR / R) Magnitude Only 36.25 / 60.00 23.50 / 55.50 
+
+Reverse-KL Only 63.00 / 60.50 42.00 / 38.50 H2SD 68.50 / 76.50 51.50 / 57.25 Table 4: Effect of successful-trajectory rephrasing on accuracy (%). NR and R denote training without and with rephrasing, respectively. Boldface indicates the better result within each pair. 
+
+5.6. When Does Rephrasing Help? 
+
+In H 2SD, successful trajectories are routed to the Mag-nitude Only update, and the teacher receives the student response verified as correct together with a rephrasing instruction, and the resulting distribution is used for magnitude modulation. Table 4 examines how this design interacts with different update strategies. Rephrasing improves Magnitude Only by 23.75 and 32.00 percentage points on Sudoku-6 ×6 and Sudoku-8×8, respectively, and improves H 2SD by 8.00 and 5.75 points. In contrast, it reduces the performance of Reverse-KL Only by 2.50 and 3.50 points. This interaction suggests that rephrasing is most ef-fective when the teacher signal is used to refine token-level credit rather than directly determine the target distribution. Tasks such as Calcudoku may admit mul-tiple valid solutions, so an externally generated refer-ence rationale may follow a different reasoning path from the student’s correct trajectory. Rephrasing the student’s own response preserves its valid reasoning path while removing redundant or irrelevant content. Under magnitude modulation, the resulting teacher signal emphasizes tokens that contribute to the correct solution without substantially changing the original policy distribution. Direct reverse-KL matching, however, may overcon-strain an already correct trajectory by forcing it toward the rephrased teacher distribution. Figure 5 supports this interpretation: adding rephrasing to Reverse-KL Only causes actor entropy to decrease sharply, indicat-ing a substantial loss of exploration, whereas Magni-tude Only maintains relatively stable entropy. H 2SD largely preserves this stability by applying magnitude modulation to successful trajectories while reserving teacher-guided distribution alignment for failed ones. 
+
+## 6. Conclusion 
+
+We introduced H 2SD, a hybrid self-distillation frame-work that provides token-level credit assignment for correct trajectories and corrective distributional guid-ance for incorrect ones. Across Sudoku, Calcudoku, and Arrow Maze, H 2SD achieves the best overall per-formance among the evaluated methods and gener-alizes to unseen puzzle sizes. Ablations show that outcome-based routing, informative reasoning hints, and successful-response rephrasing jointly drive these gains. 
+
+> 8H2SD: Hybrid Hindsight Self-Distillation
+
+## References 
+
+[1] Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos Garea, Matthieu Geist, and Olivier Bachem. On-policy distillation of language models: Learning from self-generated mistakes. In International Confer-ence on Learning Representations , volume 2024, pages 21246–21263, 2024. 2 [2] Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang. Minillm: Knowledge distillation of large language models. In International Conference on Learning Representations , volume 2024, pages 32694–32717, 2024. 2 [3] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. 1 [4] Yinghui He, Simran Kaur, Adithya Bhaskar, Yongjin Yang, Jiarui Liu, Narutatsu Ri, Liam Fowl, Abhishek Panigrahi, Danqi Chen, and San-jeev Arora. Self-distillation zero: Self-revision turns binary rewards into dense supervision. 
+
+arXiv preprint arXiv:2604.12002 , 2026. 2 [5] Ahmed Heakl, Abdelrahman M Shaker, Youssef Mohamed, Rania Elbadry, Omar Fetouh, Fa-had Shahbaz Khan, and Salman Khan. Cepo: Rlvr self-distillation using contrastive evi-dence policy optimization. arXiv preprint arXiv:2605.19436 , 2026. 2 [6] Jonas Hübotter, Frederike Lübeck, Lejs Behric, Anton Baumann, Marco Bagatella, Daniel Marta, Ido Hakimi, Idan Shenfeld, Thomas Kleine Buen-ing, Carlos Guestrin, et al. Reinforcement learning via self-distillation. arXiv preprint arXiv:2601.20802 , 2026. 1, 2 [7] Junlong Ke, Zichen Wen, Weijia Li, Conghui He, and Linfeng Zhang. Respecting self-uncertainty in on-policy self-distillation for efficient llm rea-soning. arXiv preprint arXiv:2605.13255 , 2026. 2[8] Gengsheng Li, Tianyu Yang, Junfeng Fang, Mingyang Song, Mao Zheng, Haiyun Guo, Dan Zhang, Jinqiao Wang, and Tat-Seng Chua. Uni-fying group-relative and self-distillation policy optimization via sample routing. arXiv preprint arXiv:2604.02288 , 2026. 1, 2 [9] Xuefeng Li, Haoyang Zou, and Pengfei Liu. Torl: Scaling tool-integrated rl. arXiv preprint arXiv:2503.23383 , 2025. 1 [10] Kevin Lu and Thinking Machines Lab. On-policy distillation. Think-ing Machines Lab: Connectionism , 2025. https://thinkingmachines.ai/blog/on-policy-distillation. 1, 2 [11] Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-Tur, Gokhan Tur, and Heng Ji. Toolrl: Reward is all tool learning needs. Advances in Neural Information Processing Systems , 38:105523–105553, 2026. 1[12] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemat-ical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. 1, 2 [13] Idan Shenfeld, Mehul Damani, Jonas Hübotter, and Pulkit Agrawal. Self-distillation enables con-tinual learning. arXiv preprint arXiv:2601.19897 ,2026. 1 [14] Alex Stein, Furong Huang, and Tom Goldstein. Gates: Self-distillation under privileged con-text with consensus gating. arXiv preprint arXiv:2602.20574 , 2026. 2 [15] Kimi Team, Tongtong Bai, Yifan Bai, Yiping Bao, SH Cai, Yuan Cao, Y Charles, HS Che, Cheng Chen, Guanduo Chen, et al. Kimi k2.5: Visual agentic intelligence. arXiv preprint arXiv:2602.02276 , 2026. 1 [16] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. 1 [17] Chenxu Yang, Chuanyu Qin, Qingyi Si, Minghui Chen, Naibin Gu, Dingyu Yao, Zheng Lin, Weip-ing Wang, Jiaqi Wang, and Nan Duan. Self-distilled rlvr. arXiv preprint arXiv:2604.03128 ,2026. 1, 2 [18] Tianzhu Ye, Li Dong, Xun Wu, Shaohan Huang, and Furu Wei. On-policy context distilla-tion for language models. arXiv preprint arXiv:2602.12275 , 2026. 2 [19] Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al. Dapo: An open-source llm reinforcement learn-ing system at scale. Advances in Neural Infor-mation Processing Systems , 38:113222–113244, 2026. 2 
+
+> 9H2SD: Hybrid Hindsight Self-Distillation
+
+[20] Aohan Zeng, Xin Lv, Zhenyu Hou, Zhengxiao Du, Qinkai Zheng, Bin Chen, Da Yin, Chendi Ge, Chenghua Huang, Chengxing Xie, et al. Glm-5: from vibe coding to agentic engineering. arXiv preprint arXiv:2602.15763 , 2026. 1 [21] Siyan Zhao, Zhihui Xie, Mengchen Liu, Jing Huang, Guan Pang, Feiyu Chen, and Aditya Grover. Self-distilled reasoner: On-policy self-distillation for large language models. arXiv preprint arXiv:2601.18734 , 2026. 1, 2 [22] Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao, Kai Dang, Yuqiong Liu, Rui Men, An Yang, et al. Group sequence policy optimization. arXiv preprint arXiv:2507.18071 , 2025. 2 
+
+> 10
+
+H2SD: Hybrid Hindsight Self-Distillation 
+
+## A. Implementation Details 
+
+A.1. Technical Setup 
+
+All experiments use Qwen3-30B-A3B-Instruct-2507 as the base model and are implemented using VERL with SGLang as the rollout engine. We perform full-parameter training with Fully Sharded Data Parallel (FSDP) on NVIDIA H200 GPUs. GJSD and IS denote generalized Jensen–Shannon divergence and impor-tance sampling, respectively. 
+
+A.2. Method-Specific Hyperparameters 
+
+The following tables report the hyperparameters used for each method. 
+
+Parameter GRPO Batching 
+
+Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+
+Training and Loss 
+
+Learning rate 1 × 10 −6
+
+Gradient clip norm 1.0 Training objective Clipped policy gradient PPO clip (low/high) 0.20 /0.28 
+
+Table 5: Hyperparameters used for GRPO. 
+
+Parameter SDPO Batching 
+
+Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+
+Training 
+
+Learning rate 1 × 10 −5
+
+Gradient clip norm 1.0 
+
+SDPO Loss 
+
+Feedback Verified-correct sibling Distillation divergence GJSD, 𝛼 = 0 .5
+
+Top-𝐾 distillation 100 Teacher EMA rate 0.05 Rollout IS clip 2.0 
+
+Table 6: Hyperparameters used for SDPO. No distil-lation target is constructed when a verified-correct sibling is unavailable. 
+
+Parameter SRPO Batching 
+
+Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+
+Training 
+
+Learning rate 5 × 10 −6
+
+Gradient clip norm 1.0 
+
+SRPO Loss 
+
+Successful update Clipped policy gradient Failed update GJSD Top-𝐾 distillation 100 Rollout IS clip 2.0 Teacher EMA rate 0.05 
+
+Table 7: Hyperparameters used for SRPO. The policy-gradient fallback is used when no verified-correct sib-ling is available. 
+
+Parameter RLSD Batching 
+
+Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+
+Training 
+
+Learning rate 1 × 10 −6
+
+Gradient clip norm 1.0 
+
+RLSD Loss 
+
+Teacher update Frozen Teacher context Verified final answer Training objective RLSD magnitude modulation Magnitude 𝜆 / threshold 𝜖 𝑤 1.0/0.2
+
+Table 8: Hyperparameters used for RLSD. 
+
+Parameter RLSD+Hint Batching 
+
+Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+
+Training 
+
+Learning rate 1 × 10 −6
+
+Gradient clip norm 1.0 
+
+RLSD+Hint Loss 
+
+Teacher update Frozen Teacher context Offline Kimi-K2.6 hint Training objective RLSD magnitude modulation Magnitude 𝜆 / threshold 𝜖 𝑤 1.0/0.2
+
+Table 9: Hyperparameters used for RLSD+Hint. 
+
+11 H2SD: Hybrid Hindsight Self-Distillation                 
+
+> Parameter OPSD Batching
+> Question batch size 𝐵 8Rollouts per prompt 𝐺 1
+> Training
+> Learning rate 5×10 −6
+> Gradient clip norm 0.1
+> OPSD Loss
+> Teacher update Frozen Teacher context Offline Kimi-K2.6 hint Distillation divergence Forward KL KL coefficient 1.0 Top-𝐾 distillation 100 Pointwise KL clip 0.05
+
+Table 10: Hyperparameters used for OPSD.                 
+
+> Parameter H2SD Batching
+> Question batch size 𝐵 8Rollouts per prompt 𝐺 8
+> Training
+> Learning rate 1×10 −5
+> Gradient clip norm 1.0
+> H2SD Loss
+> Teacher update Frozen Magnitude 𝜆 / threshold 𝜖 𝑤 1.0/0.2
+> Top-𝐾 distillation 100
+
+Table 11: Hyperparameters used for H 2SD. 
+
+A.3. Offline Hint Generation 
+
+Reference hints used by RLSD+Hint, OPSD, and the failed-trajectory branch of H 2SD are generated offline using Kimi-K2.6. The generation configuration is sum-marized in Table 12. Kimi-K2.6 is not queried during policy optimization.      
+
+> Parameter Hint Generation Generation
+> Generator Kimi-K2.6 Temperature 0.1 Maximum generation length 65,536 tokens Maximum attempts per problem 5
+
+Table 12: Offline reference-hint generation settings. 
+
+## B. Representative Hint Examples 
+
+For each training problem, Kimi-K2.6 generates an offline natural-language hint containing key interme-diate deductions and a final solution. We retain a hint only when its final answer is accepted by the corre-sponding task-specific verifier. During training, the hint is provided only as privileged context to the self-teacher and is unavailable to the student at inference time. Tables 13–15 present one representative hint from each benchmark. To improve readability, we omit several consecutive intermediate deductions and mark each omission explicitly, while preserving the original verified final answer. 
+
+12 H2SD: Hybrid Hindsight Self-Distillation 
+
+Problem Verifier-Accepted Hint (Abridged) Sudoku-6 × 6
+
+· 1 6 2 · ·· · 2 · 1 3
+
+· · · · · ·· · 1 · 4 65 · · · 6 11 6 · 3 · 5
+
+The puzzle can be solved by standard elimination using row, column, and 2 × 3
+
+block constraints. 
+
+Key deductions: (1) Row 1 gives (1 , 5) = 5 , (1 , 6) = 4 , and (1 , 1) = 3 . (2) Column 1 and the upper-left block force (2 , 1) = 4 ; row 2 then gives (2 , 2) = 5 
+
+and (2 , 4) = 6 . (3) Column 4 and the lower-middle block force (5 , 4) = 4 ; row 5 then gives (5 , 3) = 3 and (5 , 2) = 2 .
+
+[Several intermediate deductions are omitted.] 
+
+Final solution: 3 1 6 2 5 44 5 2 6 1 36 4 5 1 3 22 3 1 5 4 65 2 3 4 6 11 6 4 3 2 5
+
+Table 13: A representative verifier-accepted hint for Sudoku-6 × 6.
+
+Problem Verifier-Accepted Hint (Abridged) Calcudoku-5 × 5
+
+Selected cage constraints: 
+
+(3 , 3) , (4 , 1) , (4 , 2) , (4 , 3) : 30 ×
+
+(3 , 5) , (4 , 5) , (5 , 5) : 12+ (5 , 1) , (5 , 2) , (5 , 3) , (5 , 4) : 11+ (1 , 4) , (2 , 4) , (3 , 4) , (4 , 4) : 13+ (1 , 3) , (2 , 3) : 4 ÷
+
+Key deductions: (1) The 4÷ cage forces (1 , 3) and (2 , 3) to contain {1, 4}.(2) The 11+ cage in row 5 forces its four cells to contain {1, 2, 3, 5},yielding (5 , 5) = 4 . (3) The 12+ cage then forces (3 , 5) and (4 , 5) to contain {3, 5}. (4) The 13+ cage forces its four cells to contain {1, 3, 4, 5}.Column 4 therefore gives (5 , 4) = 2 , and the 30 × cage implies (4 , 4) = 4 .
+
+[Additional row, column, and cage deductions are omitted.] 
+
+Final solution: 5 4 1 3 22 3 4 5 14 2 5 1 33 1 2 4 51 5 3 2 4
+
+Table 14: A representative verifier-accepted hint for Calcudoku-5 × 5.
+
+Problem Verifier-Accepted Hint (Abridged) Arrow Maze-6 × 61 𝑋 3 ↑ 1 𝑋 𝑋 𝑋 ↓ 1 ← 11 ↖ ↓ 1 𝑋 1
+
+𝑋 ← 3 ↓ 𝑋 1
+
+← 1 ← 1 𝑋 1
+
+← 1 ← 1 ← 1
+
+Key deductions: (1) (0 , 5) = →: the numbered cell at (0 , 4) has no other available direction, so its single arrow points right. (2) (0 , 1) = ←: the 3 at 
+
+(0 , 2) already has a downward ray of length two and therefore requires one additional arrow. (3) (1 , 1) = ↘: the 1 at (0 , 0) cannot extend to the right because (0 , 1) has already been assigned to the ray originating from (0 , 2) .
+
+[Additional deductions and the final constraint check are omitted.] 
+
+Final solution: 1 ← 3 ↑ 1 →↑ ↘ ↓ 1 ← 11 ↖ ↓ 1 ← 1
+
+← ← 3 ↓ ← 1
+
+← 1 ← 1 ← 1
+
+← 1 ← 1 ← 1
+
+Table 15: A representative verifier-accepted hint for Arrow Maze-6 × 6.
+
+> 13
+
+H2SD: Hybrid Hindsight Self-Distillation 
+
+## C. Prompt Templates 
+
+C.1. Hint Generation 
+
+To construct the privileged context used for failed tra-jectories, we employ Kimi-K2.6 to generate a reference rationale for each training problem. The generated ra-tionale contains the solution process and final answer, which are enclosed within <hint>...</hint> tags. The exact prompt template used for Sudoku-6 ×6 is shown below. 
+
+System Prompt for Sudoku-6 ×6 Hint Generation 
+
+You are an expert Sudoku solver. You will solve the given Sudoku puzzle from beginning, and summaries the whole standard reasoning process and the answer in the end, wrapped exactly in <hint></hint> tags: 
+
+<hint> ... </hint> 
+
+The corresponding user prompt contains only the original problem. Here, {prompt} denotes the com-plete Sudoku problem presented to the hint generator. 
+
+User Prompt for Sudoku-6 ×6 Hint Generation 
+
+{prompt} 
+
+C.2. Successful-Trajectory Rephrasing 
+
+For successful trajectories, we instruct the self-teacher to rephrase the verifier-confirmed student response while preserving its valid reasoning process and final answer. Below, we present the exact prompt template used for Sudoku-6 ×6. 
+
+System Prompt for Sudoku-6 ×6 Rephrasing 
+
+You are a paraphraser for 6x6 Sudoku solution attempts. Rewrite the input in different words while preserving the same Sudoku-solving flow: checking fixed clues, applying row, column, and box constraints, placing digits, and reaching the final completed solution string. Keep the useful reasoning steps that are necessary to understand how the puzzle is solved, but you may simplify or trim failed guesses, repeated checks, and minor self-reflections that do not materially contribute to the solution. Preserve the original meaning, conclusions, puzzle facts, digit placements, row/column/box references, and candidate eliminations. Do not change any Sudoku clue, digit, or coordinate. 
+
+CRITICAL—the final answer block must be byte-for-byte identical to the input: 
+
+• The input ends with exactly one 
+
+<answer>...</answer> tag containing a 36-character Sudoku solution string with no spaces, no newlines, and no separators between digits. 
+
+• Copy the entire <answer>...</answer> block 
+
+verbatim from the input to your output. Do not rewrite, reformat, re-space, summarize, paraphrase, or “clean up” the contents inside the tag. Do not insert any whitespace, line breaks, commas, dashes, dots, or quotes inside the tag. Do not change the tag spelling or casing. 
+
+• The 36-character string inside 
+
+<answer>...</answer> must remain exactly 36 characters, with exactly the same digits in exactly the same order. 
+
+• Place the <answer>...</answer> block at the very end of your output, on its own, with nothing after it. 
+
+• If the input does not contain a well-formed 
+
+<answer>...</answer> block, still produce your output ending with a single <answer>...</answer> 
+
+block whose contents are copied verbatim from whatever final answer string the input provided, without any modification. Do not turn the response into answer-only or summary-only form. The rewritten text should still read like a Sudoku solution process leading up to the final 
+
+<answer>...</answer> tag, not just a conclusion. Output only the paraphrased text, ending with the unchanged <answer>...</answer> block. 
+
+The corresponding user prompt combines the orig-inal problem with the verifier-confirmed student re-sponse. Here, {prompt} denotes the original prob-lem, and {first_response} denotes the successful trajectory generated by the student. 
+
+User Prompt for Sudoku-6 ×6 Rephrasing 
+
+{prompt} 
+
+Text to rephrase: 
+
+{first_response} 
+
+14 H2SD: Hybrid Hindsight Self-Distillation 
+
+## D. Actor Entropy and Exploration 
+
+To further examine how different update strategies affect exploration, we track actor entropy through-out training. Actor entropy measures the uncertainty of the model’s next-token distribution and serves as a diagnostic proxy for exploration and output diver-sity. In all figures, the lighter curves show the original measurements, while the darker curves show the cor-responding smoothed trends. 
+
+Effect of update routing. Figure 6 reveals a consis-tent distinction among the four update strategies. Mag-nitude Only maintains relatively stable actor entropy across all tasks, indicating that magnitude modulation provides a mild learning signal that largely preserves the diversity of the policy. By contrast, Reverse-KL Only produces a clear entropy reduction, consistent with the stronger concentration pressure introduced by direct distribution alignment. The effect becomes more severe under Reversed Routing, which applies reverse-KL distillation to successful trajectories and magnitude modulation to failed trajectories. Its en-tropy rapidly approaches zero within the observed training prefix, indicating an early collapse of explo-ration and a substantial loss of output diversity. H2SD maintains actor entropy close to that of Mag-nitude Only throughout training and avoids the rapid collapse observed under Reversed Routing. This result suggests that the benefit does not arise merely from combining two update objectives, but from assigning them according to trajectory correctness. Successful trajectories retain the reward determined optimiza-tion direction and use the teacher only for token-level credit assignment, while failed trajectories receive directional correction through reverse-KL distillation. This routing allows H 2SD to introduce stronger teacher guidance where it is needed without substantially re-stricting exploration over the full policy. 0 40 80 120                 
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4 (a)
+> Sudoku-6×6
+> 080 160 240
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4 (b)
+> Sudoku-8×8
+> 030 60 90
+> 0.0
+> 0.1
+> 0.2
+> 0.3 (c)
+> Calcudoku
+> 030 60 90
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5 (d)
+> Arrow Maze
+> Actor entropy (nats)
+> Rollout Step
+> Magnitude Only Reverse-KL Only Reversed Routing H²SD
+
+Figure 6: Actor entropy under different update strategies across Sudoku, Calcudoku, and Arrow Maze. Mag-nitude Only and H 2SD maintain relatively stable entropy, whereas Reverse-KL Only produces a substantial reduction. Reversed Routing rapidly drives entropy toward zero across all tasks. 
+
+Interaction with rephrasing. Figure 7 shows that the effect of rephrasing depends strongly on how the resulting teacher signal is incorporated. Under Magnitude Only, rephrasing maintains comparable or slightly higher actor entropy across all tasks. In this setting, the teacher changes the relative update magnitude of response tokens without replacing the policy gradient direction, allowing the model to refine successful reasoning while retaining its exploration capability. The behavior is markedly different under Reverse-KL Only. When rephrasing is combined with direct reverse-KL distillation, actor entropy decreases sharply on every task, whereas the corresponding runs without rephrasing remain more stable. This interaction sug-gests that directly fitting the policy to the distribution induced by a rephrased response can impose overly 
+
+> 15
+
+H2SD: Hybrid Hindsight Self-Distillation 
+
+strong concentration pressure, reducing the diversity of the policy and limiting continued exploration. 0 75 150 225                                            
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Actor entropy (nats)  (a)
+> Magnitude Only
+> 075 150 225
+> (b)
+> Reverse-KL Only
+> 075 150 225
+> (c)
+> H²SD
+> Rollout Step
+> No rephrase Rephrase 075 150 225
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Actor entropy (nats)  (a)
+> Magnitude Only
+> 075 150 225
+> (b)
+> Reverse-KL Only
+> 075 150 225
+> (c)
+> H²SD
+> Rollout Step
+> No rephrase Rephrase 025 50 75 100
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> Actor entropy (nats)  (a)
+> Magnitude Only
+> 025 50 75 100
+> (b)
+> Reverse-KL Only
+> 025 50 75 100
+> (c)
+> H²SD
+> Rollout Step
+> No rephrase Rephrase 025 50 75 100
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Actor entropy (nats)  (a)
+> Magnitude Only
+> 025 50 75 100
+> (b)
+> Reverse-KL Only
+> 025 50 75 100
+> (c)
+> H²SD
+> Rollout Step
+> No rephrase Rephrase
+
+Figure 7: Interaction between rephrasing and update strategy on Sudoku-6 × 6 (top left), Sudoku-8 × 8 (top right), Calcudoku (bottom left), and Arrow Maze (bottom right). Rephrasing substantially reduces actor entropy under Reverse-KL Only, whereas Magnitude Only and H 2SD maintain relatively stable entropy. In H 2SD, the entropy curves with and without rephrasing remain closely aligned and stable through-out training. H 2SD applies rephrasing to successful trajectories through magnitude modulation, while re-serving reverse-KL distillation for failed trajectories conditioned on the offline hint. Consequently, rephras-ing improves token-level credit assignment without causing the broad entropy reduction observed when it is combined uniformly with reverse-KL updates. To-gether with the accuracy results, these observations indicate that H 2SD achieves a more favorable balance between teacher guidance and policy exploration. 
+
+16 H2SD: Hybrid Hindsight Self-Distillation 
+
+## E. Detailed Analysis of Generation Effi-ciency 
+
+Figure 8 extends the generation-efficiency analysis in the main paper from Sudoku-6×6 to all four evaluation settings. We measure generation cost by the average number of output tokens per question. Points closer to the upper-left corner indicate a more favorable combi-nation of accuracy and generation cost. Across the four settings, response length and accuracy do not exhibit a simple monotonic relationship. Several methods gen-erate longer responses without achieving higher ac-curacy, while the method with the shortest responses is not always the most accurate. H 2SD consistently lies on or near the Pareto frontier, indicating that its performance gains cannot be attributed to a larger generation budget. 7 9 11 13 15            
+
+> Average Generated Tokens per Question (×10 3)
+> 20
+> 40
+> 60
+> 80
+> Accuracy (%)
+> Base LLM
+> GRPO
+> SDPO
+> RLSD
+> OPSD
+> SRPO
+> RLSD+hint
+> H²SD 810 12 14
+> Average Generated Tokens per Question (×10 3)
+> 0
+> 20
+> 40
+> 60
+> Accuracy (%)
+> Base LLM
+> GRPO
+> SDPO
+> RLSD
+> OPSD
+> SRPO
+> RLSD+hint
+> H²SD 12 14 16 18 20 22
+> Average Generated Tokens per Question (×10 3)
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> Accuracy (%)
+> Base LLM
+> GRPO
+> SDPO
+> RLSD
+> OPSD
+> SRPO
+> RLSD+hint
+> H²SD 12 13 14 15
+> Average Generated Tokens per Question (×10 3)
+> 10
+> 15
+> 20
+> 25
+> Accuracy (%)
+> Base LLM
+> GRPO
+> SDPO
+> RLSD
+> OPSD
+> SRPO
+> RLSD+hint
+> H²SD
+
+Figure 8: Accuracy and generation cost across four evaluation settings. The panels show Sudoku-6 × 6 (top left), Sudoku-8 × 8 (top right), Calcudoku (bottom left), and Arrow Maze (bottom right). Points closer to the upper-left represent a more favorable accuracy–efficiency trade-off. The Calcudoku panel additionally decomposes average output length according to trajectory correctness. Figure 8 shows that H 2SD achieves a consistently favorable trade-off between accuracy and response length across the four evaluation settings. It obtains the strongest accuracy on the Sudoku and Calcud-oku tasks and remains competitive with the strongest baseline on Arrow Maze, while producing shorter re-sponses than most competing methods. In contrast, although SDPO occasionally generates shorter out-puts, its substantially lower accuracy indicates that short responses may result from incomplete or prema-turely terminated reasoning rather than genuine gen-eration efficiency. Therefore, response length should be considered jointly with task accuracy rather than interpreted as an independent measure of reasoning quality. To better understand this trade-off, we decompose the average response length according to prediction correctness. Let 𝑎 ∈ [0 , 1] denote accuracy, and let 
+
+¯𝐿 correct and ¯𝐿 incorrect denote the conditional mean lengths of correct and incorrect responses. The overall 
+
+17 H2SD: Hybrid Hindsight Self-Distillation 
+
+mean length is given by 
+
+¯𝐿 = 𝑎 ¯𝐿 correct + (1 − 𝑎 ) ¯𝐿 incorrect . (17) The Calcudoku decomposition in Figure 8 shows that incorrect responses are substantially longer than cor-rect responses for all evaluated methods. Thus, a method can reduce its overall generation cost through two complementary effects: increasing the proportion of shorter successful trajectories and reducing unnec-essary continuation within both correct and incorrect trajectories. H2SD benefits from both effects. Its higher accu-racy reduces the contribution of long failed trajecto-ries to the overall generation cost, while its correct responses are also among the shortest in the compar-ison. Moreover, its failed responses are considerably shorter than those generated by several reward-based and magnitude-modulation baselines. This pattern is consistent with the design of H 2SD: rephrasing en-courages successful trajectories to preserve useful de-ductions while removing redundant checks, whereas hint-conditioned reverse-KL distillation provides failed trajectories with a more direct corrective signal before they develop into excessively long and unproductive reasoning paths. Overall, these results indicate that H 2SD improves the composition and efficiency of its reasoning trajec-tories rather than merely shortening model outputs. It reaches valid solutions more frequently, maintains concise successful trajectories, and limits unnecessary continuation following incorrect reasoning. Since re-sponse length is only a proxy for inference cost, we interpret these results as evidence of improved gener-ation efficiency rather than a direct causal benefit of shorter reasoning. 
+
+## F. Limitations 
+
+Dependence on verified external hints. H2SD relies on verifier-confirmed natural-language hints to con-struct privileged context for unsuccessful trajectories. In our experiments, these hints are generated offline by Kimi-K2.6, and only hints whose final answers pass the task-specific verifier are retained. Although the external model provides neither distillation logits nor online supervision and is not queried during policy optimization or inference, the current pipeline still depends on access to a sufficiently capable model that can solve the target problems. This requirement intro-duces additional preprocessing cost and may limit the applicability of H 2SD when reliable external solutions or deterministic verifiers are unavailable. Moreover, filtering out problems for which no valid hint can be generated may reduce training-data coverage. Fu-ture work could reduce this dependency by construct-ing hints through self-generated candidate solutions, verifier-guided search, retrieval, or an iteratively im-proved policy. 
+
+Evaluation at a single model scale. Our ex-periments are conducted exclusively with Qwen3-30B-A3B-Instruct-2507. In preliminary experiments, smaller base models achieved very low initial success rates on the challenging reasoning tasks considered in this work. Such a cold-start setting provides few veri-fied successful trajectories and makes training behav-ior and comparisons between methods less stable. We therefore use the 30B-scale instruction-tuned model to ensure a meaningful initial capability level. Eval-uating H 2SD across a broader range of model scales is an important direction for future work. Promising approaches include curriculum learning from easier instances, supervised warm-starting, adaptive prob-lem sampling, and distilling the resulting reasoning capability into smaller models.
