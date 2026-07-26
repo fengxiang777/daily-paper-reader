@@ -6,40 +6,40 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-25
-- 运行时间：2026-07-25 21:26:38 UTC
+- 最新运行日期：2026-07-26
+- 运行时间：2026-07-26 20:56:05 UTC
 - 运行状态：成功
 - 本次总论文数：6
-- 精读区：4
-- 速读区：2
+- 精读区：3
+- 速读区：3
 
 ### 今日简报（AI）
-今天精读的两篇9分论文揭示了Transformer训练新范式：莫比乌斯式循环深度折叠让模型在推理时动态复用层，以及混合后见之明自蒸馏将未来的好决策蒸馏回当下。  
-值得重点关注“深度折叠”与“后见自蒸馏”如何颠覆传统静态深度，实现推理效率与智能的双重飞跃。  
-建议优先复现Mobius Learning的折叠策略，或尝试将H²SD的自蒸馏思路迁移到你的序列模型中，低成本提升决策质量。
-- 详情：[/202607/25/README](/202607/25/README)
+今日精读了两篇9.0高分论文：一篇给GUI智能体装上了“进化记忆”以理解界面状态变迁，另一篇用长度约束引导空间推理强化学习；速读则覆盖了LLM稀疏推理、预测式视觉导航和高维空间的时间迁移性。  
+最值得关注的方向是“智能体的长程状态理解与空间推理”——EvoGUI用演化视角提升GUI交互，LenGuard让模型学会“走一步看三步”。  
+日常读者不妨先看EvoGUI的界面演化测试思路，再思考如何把“先预判再行动”的范式用到自己的智能助手设计里。
+- 详情：[/202607/26/README](/202607/26/README)
 
 ### 精读区论文标签
-1. [Mobius Learning: Cyclic Depth Folding in Transformers](/202607/25/2607.17843v1-mobius-learning-cyclic-depth-folding-in-transformers)  
+1. [EvoGUI: An Evolution-Aware Benchmark for GUI State-Transition Understanding](/202607/26/2607.17050v1-evogui-an-evolution-aware-benchmark-for-gui-state-transition-understanding)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：循环深度折叠的Transformer训练架构
-2. [H$^2$SD: Hybrid Hindsight Self-Distillation](/202607/25/2607.18955v2-h2sd-hybrid-hindsight-self-distillation)  
+   evidence：通过视觉问答探针评估GUI智能体状态转换理解的基准
+2. [LenGuard-GPC: Length Guarding with Guided-Prompt Consistency for Spatial Reasoning Reinforce Learning](/202607/26/2607.17243v1-lenguard-gpc-length-guarding-with-guided-prompt-consistency-for-spatial-reasoning-reinforce-learning)  
    标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：使用可验证奖励的强化学习训练语言模型推理，提出混合事后自蒸馏
-3. [PRO-LONG: Programmatic Memory Enables Long-Horizon Reasoning](/202607/25/2607.20064v2-pro-long-programmatic-memory-enables-long-horizon-reasoning)  
-   标签：评分：9.0/10、query:rl-mm-llm-ag
-   evidence：PRO-LONG：通过程序化内存为大模型智能体提供长时任务的高效上下文管理
-4. [FedAgentKE: Federated Semantic Knowledge Evolution for Heterogeneous Agents](/202607/25/2607.21361v1-fedagentke-federated-semantic-knowledge-evolution-for-heterogeneous-agents)  
+   evidence：视觉语言模型空间推理的密集奖励强化学习
+3. [ArbiGraph: Arbitrarily Scalable Verifiable Task Graphs for Evaluating Context Management](/202607/26/2607.20764v1-arbigraph-arbitrarily-scalable-verifiable-task-graphs-for-evaluating-context-management)  
    标签：评分：8.0/10、query:rl-mm-llm-ag
-   evidence：联邦框架使分布式异构LLM智能体协作演化可迁移的推理抽象
+   evidence：基准测试语言智能体在长推理中的上下文管理能力，直接评估长上下文处理。
 
 ### 速读区论文标签
-1. [X$^3$-OPD: Distilling Reasoning into Large Audio-Language Models via On-Policy Alignment](/202607/25/2607.21550v1-x3-opd-distilling-reasoning-into-large-audio-language-models-via-on-policy-alignment)  
+1. [Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs](/202607/26/2607.21291v1-adaptive-depth-sparse-framework-similarity-driven-resource-allocation-for-pre-trained-llms)  
    标签：评分：7.0/10、query:rl-mm-llm-ag
-   evidence：使用策略蒸馏（强化学习对齐）将推理能力从文本大模型迁移到音频-语言模型
-2. [Learning to Detect Cross-Modal Negation: An Analysis of Latent Representations and an Attention-Based Solution](/202607/25/2607.17712v1-learning-to-detect-cross-modal-negation-an-analysis-of-latent-representations-and-an-attention-based-solution)  
+   evidence：基于余弦相似度跳过层，将预训练大语言模型转化为深度稀疏模型以降低推理成本
+2. [Anticipate Before Acting: Future-State-Conditioned Vision-Language Navigation](/202607/26/2607.18042v2-anticipate-before-acting-future-state-conditioned-vision-language-navigation)  
    标签：评分：6.0/10、query:rl-mm-llm-ag
-   evidence：面向视觉语言模型的跨模态注意力架构
+   evidence：视觉语言导航智能体的未来状态条件策略
+3. [The Blessing of Dimensionality: How Near-Orthogonality in High-Dimensional Spaces Explains Temporal Portability](/202607/26/2607.20301v1-the-blessing-of-dimensionality-how-near-orthogonality-in-high-dimensional-spaces-explains-temporal-portability)  
+   标签：评分：6.0/10、query:rl-mm-llm-ag
+   evidence：LoRA在LLM持续预训练跨版本可移植性的理论分析
 
 
 <div class="dpr-home-promo-card">

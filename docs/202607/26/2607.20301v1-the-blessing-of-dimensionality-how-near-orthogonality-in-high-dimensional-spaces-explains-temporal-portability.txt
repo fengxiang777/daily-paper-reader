@@ -1,0 +1,2215 @@
+Title: The Blessing of Dimensionality: How Near-Orthogonality in High-Dimensional Spaces Explains Temporal Portability
+
+URL Source: https://arxiv.org/pdf/2607.20301v1
+
+Published Time: Thu, 23 Jul 2026 01:15:53 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+The Blessing of Dimensionality 
+
+# The Blessing of Dimensionality: How Near-Orthogonality in High-Dimensional Spaces Explains Temporal Portability 
+
+Abigail Woodring ajwoodri@ncsu.edu 
+
+Department of Electrical and Computer Engineering NC State University, Raleigh, NC 27606, USA 
+
+Adrian Chan adrian27513@gmail.com 
+
+Independent Researcher 
+
+Rana Muhammad Shahroz Khan shahroz@cs.unc.edu 
+
+Department of Computer Science University of North Carolina at Chapel Hill, Chapel Hill, NC 27599, USA 
+
+Sukwon Yun swyun@cs.unc.edu 
+
+Department of Computer Science University of North Carolina at Chapel Hill, Chapel Hill, NC 27599, USA 
+
+Chau-Wai Wong chauwai.wong@ncsu.edu 
+
+Department of Electrical and Computer Engineering NC State University, Raleigh, NC 27606, USA 
+
+Tianlong Chen tianlong@cs.unc.edu 
+
+Department of Computer Science University of North Carolina at Chapel Hill, Chapel Hill, NC 27599, USA 
+
+Abstract 
+
+Fine-tuning has been widely used to adapt large language models (LLMs) for domain-specific tasks. Parameter efficient fine-tuning (PEFT) methods such as low-rank adapta-tion (LoRA) are frequently used to reduce computational costs. PortLLM is a training-free and data-free scheme used to adapt LLMs after continual pretraining. Although the ini-tial PortLLM results show that LoRA patches exhibit short-term temporal portability, the long-term performance of PortLLM across several updates of continual pretraining remains underexplored. Furthermore, the intriguing effectiveness of PortLLM is not well under-stood from a theoretical standpoint. We address these two open questions by (1) perform-ing an extensive empirical study of the long-term temporal portability of PortLLM patches across 10 continual pretraining steps using base models Mistral, Gemma, and Qwen; and (2) offering two theoretical analyses to explain our observation that the simple PortLLM method achieves competitive performance. We find empirically that the portability per-sists across longer time duration, indicating that repeated fine-tuning is not required when the base model is periodically updated. We find theoretically that near-orthogonality of high-dimensional vectors is a key justification for temporal portability. Our analyses also demonstrate a geometric perspective of the loss landscape in facilitating the theoretical comparison of different adaptation options. 
+
+Keywords: Continual pretraining, downstream fine-tuning, loss landscape, low-rank adaptation, orthogonality 1arXiv:2607.20301v1 [cs.LG] 22 Jul 2026 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+1 Introduction 
+
+The remarkable success and rapid growth of large language models (LLMs) is facilitated by a two-stage process of pretraining and fine-tuning (Radford et al., 2018). A model first learns general knowledge and language understanding via unsupervised pretraining on a huge corpus of general data. The model then excels at domain-specific tasks through supervised downstream fine-tuning on a smaller, more targeted data set. AI companies devote massive compute budgets to pretraining large models. These pretrained models are often fine-tuned by downstream developers with more constrained compute resources. Because of the scale of LLMs, direction fine-tuning of all parameters of the base model can be infeasible for resource-constrained downstream developers. To ad-dress this problem, parameter efficient fine-tuning (PEFT) methods, i.e., methods to reduce the number of trainable parameters during the fine-tuning stage, have been proposed (Han et al., 2024). Low-rank adaptation (LoRA), a widely used PEFT method, achieves this goal by restricting the rank of the update matrices (Hu et al., 2022). These rank-restricted update matrices are collectively referred to as a LoRA patch. A challenge for the use of a LoRA patch occurs when the base model is continually pretrained. Continual pretraining is a process by which an initial base model is updated with new information that was not provided during the initial pretraining phase (Gogoulou et al., 2024; Jiang et al., 2024). While continual pretraining is generally performed by companies with substantial compute resources, downstream fine-tuning may be performed by smaller companies with limited resources. Re-training a new LoRA patch after each step of continual pretraining can be computationally expensive in such scenarios. Retraining may also be infeasible in proprietary domains where the downstream developer has only temporary access to private data, e.g., medical domains (Smaji´ c et al., 2023). To address this problem, Khan et al. (2025) propose PortLLM, a method in which a LoRA patch fine-tuned on the initial pretrained base model is applied directly to the updated base model after continual pretraining without additional fine-tuning. They show that LoRA patches exhibit impressive temporal portability. However, their analysis focuses on short-term temporal portability, including only one time step of continual pretraining for most experiments and including at most 4 time steps. To address the practical scenario of repeated updates to the base model, we study the long-term performance of PortLLM. We find empirically that the intriguing tempo-ral portability of LoRA patches observed in Khan et al. (2025) persists throughout our observation span of 10 time steps and is consistent across three base models and three repetitions. To better understand these surprising results, we propose two methods for the-oretical analysis leveraging (1) a 1-D slice of the loss landscape, and (2) iterative relations connected by consecutive continual pretraining steps. Although we apply these methods specifically to the PortLLM scenario, they remain applicable in broader use cases such as CAR-LoRA (Khan et al., 2026) and other LoRA variants. Focusing on the PortLLM exam-ple, our analysis considers three possible deployment strategies: [I. Baseline] no patching ,the base model with no adapter; [II. Case Under Investigation] PortLLM patching , the base model with the PortLLM patch that was fine-tuned on the initial base model;and [III. Oracle] stepwise fine-tuning , the base model with the stepwise fine-tuning patch that was 
+
+> 2
+
+The Blessing of Dimensionality 
+
+trained on the updated base model after continual pretraining. We organize our explo-ration of temporal portability into three research questions (RQs), illustrated in Figure 1: …… t
+
+𝜃 ௜Continual 
+
+> Pretraining
+
+𝜃 ଴ 𝜃 ଵ    
+
+> Downstream
+> Fine-tuning
+> Δ𝜃 ଴Δ𝜃 ଵΔ𝜃 ௜
+> SWFT
+> Δ𝜃 ଴Δ𝜃 ଴Δ𝜃 ଴
+> PortLLM
+> 𝟎
+> (no patch)
+> 𝟎
+> (no patch)
+> 𝟎
+> (no patch)
+> No patch
+> Base LLM
+> Model
+> Params 𝜃 ௜
+> LoRA
+> Patch
+> Δ𝜃 ௜
+> RQ1
+> RQ2
+> RQ3
+> PortLLM
+> Patch
+> Δ𝜃 ଴
+
+Figure 1: Comparison of three possible patch-ing strategies represented by the three rows of patches: (bottom) stepwise fine-tuning (SWFT) fine-tunes a new patch ∆θi at each time step, (middle) PortLLM re-tains ∆ θ0 trained at time step 0, and (top) no patching uses the un-adapted base model. 
+
+RQ1: Cost of PortLLM compared to step-wise fine-tuning. To aid in relatively high-resource scenarios, we ask the research ques-tion: is there a substantial performance gain of using stepwise fine-tuning instead of the PortLLM method? In this sce-nario, the downstream developer has re-sources for stepwise fine-tuning. If stepwise fine-tuning will substantially outperform PortLLM, they will fine-tune a new patch at each time step. If there is no substantial difference, they will employ PortLLM. As shown in Figure 1, RQ1 compares stepwise fine-tuning (SWFT) in the bottom row of patches to PortLLM in the middle row. 
+
+RQ2: Benefit of PortLLM compared to no patching. To offer insight in low-resource scenarios, we ask the research question: is there a substantial performance gain of us-ing the PortLLM method instead of no patching? In this scenario, the downstream developer cannot feasibly perform stepwise fine-tuning. If PortLLM substantially outper-forms no patching performance, they will use PortLLM. Otherwise, no patching will be used. In Figure 1, RQ2 compares PortLLM performance to no patching. 
+
+RQ3: Variation in PortLLM performance compared to initial performance. To facilitate planning in general scenarios, we ask the research question: can the PortLLM method ap-proximately maintain the t = 0 performance? In this scenario, the downstream developer is satisfied with patching performance at t = 0. If PortLLM can maintain that performance, they will employ PortLLM. If there is a substantial drop, they may choose to employ step-wise fine-tuning or to plan for a drop in performance. RQ3 compares PortLLM performance at different time steps, as illustrated in Figure 1. Our contributions are as follows: 1. We perform a large-scale study of long-term temporal portability across ten time steps, three base model architectures, and three repetitions. We find that LoRA patches exhibit remarkable temporal portability over repeated base model updates, different base model architectures, and multiple repetitions (Section 3.2). Our study offers the first substantial comparison of PortLLM and stepwise fine-tuning (RQ1). 1
+
+> 1. Khan et al. (2025) preliminarily addressed this question with a limited scope of one time step, one base model, and one repetition in Table 2 of their work.
+
+3Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+2. We propose a method to mathematically compare performance of two patching strategies based on a 1-D slice of the fine-tuning loss landscape (Section 4.2). This method lever-ages geometric intuition to guide analysis and reveals that the difference in performance between two patching strategies can be compactly written as a single inner product. 3. We propose an additional method to analyze temporal portability harnessing the iterative relationship of continual pretraining optimization steps (Section 4.3). This provides a more fine-grained analysis result for RQ3, the change of PortLLM performance across time steps, by exploiting the relationship between fine-tuning and pretraining gradients. 4. We find that near-orthogonality of high-dimensional vectors is a root cause of temporal portability. This is a shared conclusion of both of our analysis methods. 
+
+2 Related Work 
+
+Continual pretraining of LLMs. Continual pretraining for LLMs is a process by which LLMs are updated with new data that was not learned during the initial pretraining phase. This process has been used to incorporate knowledge of different languages (Gogoulou et al., 2024) and different domains (Yıldız et al., 2024). Other works have considered using continual pretraining to provide new temporal information as old information becomes outdated (Jiang et al., 2024). Our study of long-term temporal portability across several time steps focuses on the latter case of updating temporal information, which is expected to involve repeated updates as old information continues to become outdated. The goal of such continual pretraining is to retain general information that remains relevant while updating old information and incorporating new knowledge (Jang et al., 2022). 
+
+Parameter efficient fine-tuning. Full fine-tuning on all model parameters is prohibitively expensive in resource-constrained scenarios even for smaller-scale LLMs. Parameter efficient fine-tuning (PEFT) (Han et al., 2024) refers to a class of methods used to adapt models for downstream tasks while reducing the number of trainable parameters. Some PEFT methods, e.g., Houlsby et al. (2019), insert light-weight modules with trainable parameters to the existing model architecture while freezing base model parameters. Other methods select a subset of base model parameters to fine-tune, e.g., Guo et al. (2021) and Sung et al. (2021). A third approach is prefix tuning (Li and Liang, 2021), which prepends a learnable prefix token sequence to each input sequence. Low-rank adaptation (LoRA, Hu et al., 2022) is a widely-used PEFT method which is of particular interest to our work. The LoRA method adapts the base model with a LoRA patch comprised of a rank-restricted update for each weight matrix. Specifically, an update ∆W for a fully connected layer or projection matrix W ∈ Rk×d is restricted to be low-rank, i.e., ∆ W = BA , where B ∈ Rk×r and A ∈ Rr×d contain learnable parameters, d and k are the input and output dimensions, and the rank r ≪ min( k, d ) is a hyperparameter. This more restrictive parameterization of the update ∆ W drastically reduces training complexity from quadratic to linear. The impact of LoRA is evidenced by its many variants. Weight-decomposed low-rank adaptation (DoRA) decomposes the LoRA patch into magnitude and direction components which are optimized separately (Liu et al., 2024). LoRA+ (Hayou et al., 2024) proposes training LoRA patches with different learning rates for A and B
+
+> 4The Blessing of Dimensionality
+
+matrices. QLoRA (Dettmers et al., 2023) suggests training LoRA adapters on a quantized base model to reduce memory cost. 
+
+Training-free methods and data-free methods. Training-free methods, i.e., methods to adapt a model for a new task or equip a model for a new capability without training, may be motivated by limited access to computational resources, monetary costs of obtaining com-putational resources, or logistical costs of initializing and monitoring training. Training-free methods have been proposed for various downstream applications. Zhang et al. (2025) pro-pose a training-free method to integrate representations from non-text-based foundation models with text-based LLMs. Ma et al. (2025) introduce a training-free method to steer the style of LLM-generated text without substantially changing the semantic meaning of the text output. Xiao et al. (2024) adapt LLMs trained on short text sequences to be capable of processing longer sequences without additional training. Mijar et al. (2025) propose a training-free method to reuse a LoRA patch fine-tuned on an initial base model on a pruned version of the base model. Data-free methods are often motivated by limited access to private data in domains such as medicine or finance. Shukla et al. (2026) propose a data-free, training-free method to jointly use a set of LoRA patches. Focusing on the problem of private data, Deng et al. (2025) develop a method to fine-tune a pretrained LLM based on access to a smaller model fine-tuned on the private data without access to the private data itself. Das et al. (2025) seek to recover performance of a model that was degraded during quantization or datatype casting without access to the data set that was originally used to train the model. PortLLM (Khan et al., 2025) is a training-free and data-free method for adapting a new continually pretrained model given an old LoRA patch downstream fine-tuned on the initial base model. Surprisingly, the authors show that simply applying the unchanged LoRA patch trained on the initial base model to the continually pretrained base model achieves competitive performance. Influenced by PortLLM, Khan et al. (2026) propose CAR-LoRA as a method for training an initial patch on the initial base model so that it will be robust to future continual pretraining and remains effective under different compression schemes. While the former discovers temporal robustness, the later emphasizes robustness to quantization. While Khan et al. (2025) and Khan et al. (2026) focus on one time step of continual pretraining and include at most four time steps without statistical tests, our work ex-plores long-term temporal portability by testing ten time steps of continual pretraining on Fineweb (Penedo et al., 2024) data and eight time steps on Cosmopedia (Ben Allal et al., 2024) data with three repetitions to offer statistical significance. Both works offer brief the-oretical analysis based on distance in parameter space, 2 and this work is introducing a full theoretical treatment with more detailed analysis based on properties of the loss landscape in a region around the pretrained models. Even though our work focuses on the PortLLM scenario, our analysis techniques could be applied to more general cases, e.g., CAR-LoRA or other LoRA variants. 
+
+> 2. This focus on distance in parameter space uses the assumption that the loss function is Lipschitz—if the function is not Lipschitz, a small change in parameters may cause a large change in loss. This assumption is implicit in PortLLM and explicit in CAR-LoRA.
+> 5
+
+Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+3 Motivating Experimental Study of Long-Term Temporal Portability 
+
+We empirically study the long-term performance of PortLLM, motivating analysis in Sec-tion 4. We describe our experimental setup in Section 3.1 and present results in Section 3.2. 
+
+3.1 Experimental Setup 
+
+We describe base models, pretraining data sets, and fine-tuning data sets and benchmarks. More training details and hyperparameters are outlined in Appendix E. 
+
+Base models. To empirically assess long-term (4+) temporal portability of PortLLM patches across different model architectures and scales, we perform 10 time steps of continual pre-training on Mistral-7B-v0.1 (Jiang et al., 2023) and Gemma3-12B (Gemma Team, 2025). Due to compute resource constraints, we follow the prior works Khan et al. (2025, 2026) and approximate full pretraining by training relatively high rank LoRA patches (using r = 64 for Mistral-7B-v0.1 and r = 128 for Gemma3-12B) and merging them to the base model. We confirm that PortLLM remains comparable to stepwise fine-tuning and outperforms no patching under full pretraining by running full pretraining on all parameters of a smaller model, namely, Qwen2-0.5B (Yang et al., 2024). 3
+
+Continual pretraining data sets. We aim to perform continual pretraining that continually updates outdated information given new temporal knowledge. To accomplish this, we con-tinually pretrain on 10 consecutive temporal chunks for Fineweb (Penedo et al., 2024), a corpus of filtered English web data. Each chunk for Mistral-7B and Gemma3-12B consists of 50M tokens. For Qwen2-0.5B, we use 200M tokens per chunk. To investigate temporal portability under temporally heterogeneous pretraining data, we continually pretrain Mis-tral 4 on eight sections of Cosmopedia (Ben Allal et al., 2024), where each section comprises a time step. Cosmopedia consists of eight splits of synthetic data generated from different seed data including web data ( web samples v1 and web samples v2 splits), course out-lines ( stanford , openstax , and khanacademy splits), general questions ( stories split), WikiHow article titles ( wikihow split), and mathematical texts ( auto math text split). 5
+
+Downstream datasets and benchmarks. We test temporal portability of PortLLM patches with four downstream benchmarks targeting commonsense reasoning [WinoGrande (Sak-aguchi et al., 2021)], reading comprehension [BoolQ (Clark et al., 2019)], and science knowl-edge and reasoning [ARC-Easy and ARC-Challenge (Clark et al., 2018)]. We also use ad-ditional benchmarks when Mistral is used as the base model. These benchmarks include GSM8k (Cobbe et al., 2021) for mathematical reasoning and two GLUE benchmarks (Wang et al., 2019), namely, MNLI (Williams et al., 2018) on recognizing textual entailment and SST2 (Socher et al., 2013) on sentiment analysis. For most benchmarks, we train using the publicly available training split of the relevant data set. Patches for the GSM8k benchmark are trained using MetaMath (Yu et al., 2023). To test PortLLM and stepwise fine-tuning 
+
+> 3. We find that, when stepwise fine-tuning performance degrades, PortLLM performance mirrors that degradation. This highlights the importance of careful pretraining so that fine-tuning remains effective. 4. We validate the generality of our results by considering three base models and two pretraining data sets. Due to computational constraints, we cannot test all permutations. Instead, we test all base models with Fineweb pretraining data and both pretraining data sets on one base model, namely, Mistral. 5. Similar to Fineweb, we restrict each time step to train on at most 50M tokens.
+
+6The Blessing of Dimensionality No patching    
+
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning 0510
+> Time step, t
+> 0.74
+> 0.77
+> 0.80
+> 0.83
+> 0.11
+
+(a) 0 5 10   
+
+> Time step, t
+> 0.83
+> 0.85
+> 0.87
+> 0.89
+> 0.07
+
+(b) 0 5 10   
+
+> Time step, t
+> 0.79
+> 0.81
+> 0.82
+> 0.83
+> 0.04
+
+(c) 0 5 10   
+
+> Time step, t
+> 0.49
+> 0.50
+> 0.52
+> 0.54
+> 0.06
+
+(d) 
+
+Figure 2: Temporal portability results for continually pretraining Mistral-7B-v0.1 on Fineweb data and downstream fine-tuning on (a) WinoGrande, (b) BoolQ, (c) ARC-Easy, and (d) ARC-Challenge. Average performance across 3 repetitions for PortLLM patching, stepwise fine-tuning, and no patching performance are shown, with the error bars indicating the 95% confidence interval. It can be ob-served that (RQ1) the cost of using PortLLM compared to stepwise fine-tuning is almost negligible given the overlapping solid blue and dotted green curves, (RQ2) the benefit of using PortLLM instead of no patching is substantial as shown by the black arrows, and (RQ3) the delta in PortLLM performance across time steps is small given the almost flat solid blue curves. performance, we train PortLLM patches on the initial base model at time step 0 and step-wise fine-tuning patches on continually pretrained base models at time steps t > 0. To reduce computation expense, we periodically retrain stepwise fine-tuning patches at even time steps and consequently show evaluation results at even time steps. Each patch is trained with a LoRA rank of r = 8. 
+
+3.2 Experimental Results 
+
+Temporal portability results for Mistral-7B pretrained on Fineweb are shown in Figure 2. Additional experimental results are shown in Appendix F. First, PortLLM performance (blue solid curves) and stepwise fine-tuning performance (green dotted curves) are compa-rable, with a slight difference only for ARC-Easy. Second, PortLLM clearly outperforms the base model (red dashed curves), with 11, 7, 4, or 6 percentage points gains for the four benchmarks at t = 10. Third, performance is approximately constant across time steps, with mild degradation only for ARC-Challenge. To justify the approximately constant claim, we perform a statistical test considering an intercept model as the null hypothesis and a linear model as the alternative hypothesis and report results in Table 1. We find statistically significant evidence ( p ≤ 0.05) for a linear trend in only 3 out of 12 cases, indicating that the change across time steps is not substantial. Furthermore, the estimated slope is at most on the order of 10 −3.These results directly address our three research questions. Specifically, there is not a substantial cost of using PortLLM instead of stepwise fine-tuning, answering RQ1; there is a substantial benefit of using PortLLM instead of no patching, answering RQ2; and the variation in PortLLM performance across time steps is small, answering RQ3. The 4-step temporal portability preliminarily observed in Khan et al. (2025) persists across 10 time steps. Additionally, we find that PortLLM performance is comparable to stepwise fine-
+
+7Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+tuning—a comparison that was only briefly considered in Khan et al. (2025). We offer theoretical analysis for these results in Section 4. 
+
+4 Proposed Theoretical Analyses of Temporal Portability 
+
+Repetition Slope 
+
+(×10 −4)WinoGrande #1 4.85 #2 8.12** #3 4.74 BoolQ #1 3.32 #2 −2.62 #3 −4.63* ARC-Easy #1 0.90 #2 −1.14 #3 −0.48 ARC-Challenge #1 −4.39 #2 −5.85 #3 −11 .95*     
+
+> *p≤0.05, ** p≤0.01
+
+Table 1: Statistical results for PortLLM per-formance. We propose two approaches for theoretical analysis to explain the empirical results observed in Section 3. Our first method of analysis, outlined in Section 4.2, uses the geometry of the loss landscape to guide comparison of three patching strate-gies. Specifically, we leverage a 1-D slice of the loss landscape between pairs of patches to characterize the difference in per-formance. Our second method of analysis, described in Sec-tion 4.3, exploits the iterative relationship between continual pretraining optimization steps to characterize the difference in PortLLM performance across time steps. 
+
+4.1 Notation and Definitions 
+
+We introduce notation and definitions to facilitate mathemat-ical analysis of temporal portability. Let θ ∈ RN be a column vector of all parameters for a base model of size N , where N
+
+is on the order of billions for LLMs. We define expanded vec-torized LoRA patch parameters trained on base model θt as ∆θt ∈ RN . Similarly, we denote unexpanded vectorized LoRA patch parameters trained on θt as ϕt ∈ Rn, where n ≪ N
+
+is the number of LoRA trainable parameters on the order of millions in our work. 6
+
+Let Lpt : RN → R be a pretraining testing loss for a model 
+
+θ, defined as the expectation averaged over pretraining testing data Dpt , namely, Lpt (θ) = Ex∼D pt [lce (x, θ )], where x ∈ X is a random dummy testing ex-ample and lce : X × RN → R is per-example cross-entropy loss. In contrast, let Lft : RN → R
+
+be a downstream testing loss defined as the expectation averaged over fine-tuning testing data Dft associated with a domain-specific task, namely, Lft (θ) = Ex∼D ft [lce (x, θ )]. We further define ℓθ (ϕ) = Lft 
+
+ θ + ∆ θ to be the downstream testing loss function applied to unexpanded patch parameters on base model θ, where ∆ θ ∈ RN and ϕ ∈ Rn are corre-sponding expanded and unexpanded parameter vectors for the same patch given the base model θ. This definition allows analysis in lower-dimensional space. To analyze RQ1, we quantify the cost/penalty of employing PortLLM with reference to stepwise fine-tuning as the difference in fine-tuning loss between the PortLLM-adapted model θt + ∆ θ0 and the stepwise fine-tuning-adapted model θt + ∆ θt:
+
+CPortLLM (t) = Lft 
+
+ θt + ∆ θ0
+
+ − Lft 
+
+ θt + ∆ θt
+
+ = ℓθt (ϕ0) − ℓθt (ϕt). (1)          
+
+> 6. See Appendix A.1 for a more thorough explanation of the connection between ∆ θand ϕ. In short, ∆ θ
+> is obtained by vectorizing the LoRA matrices Aand Bseparately, while ϕis obtained by vectorizing the
+> BA matrix product.
+
+8The Blessing of Dimensionality 
+
+To address RQ2, we define the benefit of using PortLLM instead of no patching as the difference in loss on the base model θt and the PortLLM-adapted model θt + ∆ θ0:
+
+BPortLLM (t) = Lft 
+
+ θt
+
+ − Lft 
+
+ θt + ∆ θ0
+
+ = ℓθt (0) − ℓθt (ϕ0). (2) Analysis for RQ3 is aided by the following definition, which describes the variation in PortLLM performance at time step 0, θ0 + ∆ θ0, and time step t > 0, θt + ∆ θ0:
+
+VPortLLM (t) = Lft 
+
+ θ0 + ∆ θ0
+
+ − Lft 
+
+ θt + ∆ θ0
+
+ = ℓθ0 (ϕ0) − ℓθt (ϕ0). (3) 
+
+4.2 Analysis via 1-D Slice of Loss Landscape 
+
+We analyze the difference in performance across patching strategies via a 1-D slice in the loss landscape. We outline this method by providing three examples corresponding to our three research questions. Because derivations for RQ1, RQ2, and RQ3 are similar, we present a full derivation and result for RQ1 and summarize only the results for RQ2 and RQ3 in the main text. Full derivations for RQ2 and RQ3 are provided in Appendix A. Before presenting analysis and results for our research questions, we present an idea that helps interpret our results. For each research question, we find that the relevant metric can be compactly written as a single inner product. Although the three research questions appear unrelated, we find that their corresponding inner products have a shared form, which we call a displaced-gradient–displacement product . Consider a function f : RP → R and a reference input x0 ∈ RP . Let ∆ x ∈ RP be a displacement direction. We use γ∆x with scale 
+
+γ > 0 to control the norm of the displacement and assume without loss of generality that 
+
+∥∆x∥2 = 1. Define the displaced-gradient–displacement product as 
+
+F (γ∆x) = ⟨∇ f (x0 + γ∆x), γ ∆x⟩, (4) or the inner product of the displacement γ∆x and the gradient evaluated at the reference input x0 displaced by γ∆x. In many cases for our analysis, the reference input x0 is a proxy for a local minimum. Based on intuition for 3-D space, one may expect that the displaced-gradient–displacement product F (γ∆x) is large because the gradient ∇f (x0 +
+
+γ∆x) points in the direction ∆ x away from the optimal point x0 and hence is aligned with the displacement. We find that more fine-grained analysis is needed in high-dimensional spaces. In Appendix C, we derive the following Lemma. 
+
+Lemma 1 The displaced-gradient–displacement product F (γ∆x) = ⟨∇ f (x0 + γ∆x), γ ∆x⟩
+
+for a function f : RP → R, where x0 is a reference point, ∆x is a unit norm displacement direction, and γ is a displacement magnitude, is upper-bounded as 
+
+F (γ∆x) ≤ γ⟨∇ f (x0), ∆x⟩ + γ2σmax (x0 + β′γ∆x) (5) 
+
+where σmax (x) = ∥∇ 2f (x)∥2 is the spectral norm of the Hessian and β′ ∈ [0 , 1] is fixed but unknown. 
+
+From this upper bound, we find two metrics that aid our analysis of our three research questions. First, the alignment ⟨∇ f (x0), ∆x⟩ of the gradient at the reference input x0 with the displacement ∆ x characterizes the first term of the upper bound. If the displacement 
+
+> 9
+
+Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+is approximately orthogonal to the gradient at the reference input, the alignment is small. Second, the sharpness σmax (x0 +β′γ∆x) of the loss landscape characterizes the second term. If the loss landscape is flat around the reference input, the sharpness is small. We discuss these two metrics for each of our three research questions in Remarks 3, 7, and 9. 
+
+Analysis for CPortLLM (RQ1). We demonstrate the method of using a 1-D slice of the loss landscape to compare batching strategies by applying it to compare the PortLLM patch 
+
+ϕ0 to the stepwise fine-tuning patch ϕt. Geometric interpretations for this analysis are depicted in Figure 3. The key insight is to consider the two patches in n-dimensional space, as shown in the left side of Figure 3, and to focus on the 1-dimensional line segment connecting the two patches, as shown in the right side of Figure 3. We define the scalar function gc : R → R as the downstream fine-tuning loss on a 1-D slice in n-dimensional space between the PortLLM patch ϕ0 (case under investigation) and the stepwise fine-tuned patch 
+
+ϕt (the oracle), plotted as a solid blue arrows in Figure 3. Specifically, for a fixed time step 
+
+t > 0, 
+
+gc(α) = ℓθt
+
+ αϕ 0 + (1 − α)ϕt
+
+ (6) where α ∈ R but the interval α ∈ [0 , 1] between the two patches is of primary interest. With this definition, gc(0) = ℓθt (ϕt) degenerates to the stepwise fine-tuning performance, 
+
+gc(1) = ℓθt (ϕ0) degenerates to the PortLLM performance, hence (1) can be rewritten as 
+
+CPortLLM (t) = gc(1) − gc(0). Taylor’s theorem gives that, for some α′ ∈ [0 , 1], 
+
+gc(1) = gc(0) + (1 − 0) g′
+
+> c
+
+(α′) (7) where the derivative is taken with respect to α.7 This gives that CPortLLM (t) = gc(1) −
+
+gc(0) = g′
+
+> c
+
+(α′). This equality is demonstrated by the filled circle on the red dashed curve 
+
+g′
+
+> c
+
+(α) corresponding to α′ in Figure 3. Further insight can be achieved by considering this result in n-dimensional space. By the chain rule, this derivative can be written as 
+
+g′
+
+> c
+
+(α) = ddα ℓθt
+
+ αϕ 0 + (1 − α)ϕt
+
+ = ⟨∇ ϕ ℓθt (ϕ(α)), ∆(ft)  
+
+> t
+
+⟩ (8a) where ϕ(α) = αϕ 0 + (1 − α)ϕt is a point on the 1-D slice parameterized by α, ∆ (ft)  
+
+> t
+
+= ϕ0 − ϕt
+
+is the difference between the two fine-tuned patches, and the superscript (ft) refers to the fine-tuning update. This leads to the following Lemma 2: 
+
+Lemma 2 There exists an α′ ∈ [0 , 1] such that CPortLLM (t) = ⟨∇ ϕ ℓθt (ϕ(α′)), ∆(ft ) 
+
+> t
+
+⟩ where 
+
+ϕ(α) = αϕ 0 +(1 −α)ϕt is a point on the 1-D slice between the two patches and ∆(ft ) 
+
+> t
+
+= ϕ0 −ϕt
+
+is the difference between the two patches. 
+
+Remark 3 The inner product in 2 can be written as a displaced-gradient–displacement product as ⟨∇ ϕ ℓθt (ϕ(α)), ∆(ft ) 
+
+> t
+
+⟩ = ⟨∇ ϕ ℓθt (ϕt + α∆(ft ) 
+
+> t
+
+), ∆(ft ) 
+
+> t
+
+⟩. Using the two metrics derived from Lemma 1, we find that the alignment and sharpness are both small, indicating that the displaced-gradient–displacement product is small. First, the gradient ∇ϕ ℓθt (ϕt) of the                                    
+
+> 7. Note that, if the function is quadratic, then α′= 0 .5. If gc(α) = aα 2+bα +c, then gc(1) = a+b+c
+> and gc(0) = cso that gc(1) −gc(0) = a+b. Setting g′
+> c(α′) = 2 aα ′+b=gc(1) −gc(0) = a+b, we find that α′= 0 .5.
+
+10 The Blessing of Dimensionality 𝑔′ ௖(𝛼 )
+
+𝛼 
+
+> 𝑔 ௖(𝛼 )
+> 𝜖
+> 1-D slice of downstream testing loss
+
+𝛼′ 
+
+𝜙 ଴
+
+𝜙 ௧  
+
+> Unexpanded LoRA
+> parameter space
+> 𝜙 (ఈᇲ)
+> ∇థℓఏ೟(𝜙 (ఈᇲ))
+> 𝐶 ௉௢௥௧௅௅ெ (𝑡 )
+> −𝜖
+> 01
+
+𝜙 ௧ 𝜙 ଴
+
+Δ௧   
+
+> ୤୲
+> For a small cost, want:
+> (1) ∇థℓఏ೟(𝜙 (ఈᇲ)) ⊥ Δ ௧
+> ୤୲ and/or
+> (2) One norm is small
+
+Figure 3: Geometric interpretation for analyzing the cost of employing PortLLM instead of stepwise fine-tuning, CPortLLM (t). The PortLLM patch ϕ0 and the stepwise fine-tuned patch ϕt are shown as blue arrows in unexpanded LoRA parameter space on the left. The downstream testing loss on a 1-D slice between the two patches is shown on the right. The loss, shown as a blue solid line, is approximately constant so that the derivative, shown as a red dashed line, has magnitude bounded by ϵ.
+
+α′ is the point on the 1-D slice at which the derivative exactly predicts the cost, 
+
+CPortLLM (t). α′ on the 1-D slice corresponds to ϕ(α′) in parameter space. 
+
+fine-tuning loss at the reference input ϕt is largely unrelated to the displacement direction 
+
+∆(ft ) 
+
+> t
+
+/∥∆(ft ) 
+
+> t
+
+∥2 where ∆(ft ) 
+
+> t
+
+= ϕ0 − ϕt, indicating that the two are approximately orthogonal and that their alignment is small. Second, the results in Appendix G indicate that the loss landscape is flat in a region around ϕt with a radius at least ∥∆(ft )∥2 so that the sharpness 
+
+σmax (ϕt + β′α∆(ft ) 
+
+> t
+
+) is small. 
+
+From Lemma 2, we arrive a Theorem 4. 
+
+Theorem 4 Let ϵ = max α∈[0 ,1] |⟨∇ ϕ ℓθt (ϕ(α)), ∆(ft ) 
+
+> t
+
+⟩| be the maximum derivative magnitude on the 1-D slice between the PortLLM patch and the stepwise fine-tuned patch where ϕ(α) =
+
+αϕ 0 + (1 − α)ϕt is a point on the 1-D slice and ∆(ft ) 
+
+> t
+
+= ϕ0 − ϕt is the difference between the two patches. Then the cost of using PortLLM instead of stepwise fine-tuning is bounded as 
+
+|CPortLLM (t)| ≤ ϵ.
+
+Proof: By Lemma 2, there exists an α′ ∈ [0 , 1] such that ⟨∇ ϕ ℓθt (ϕ(α′)), ∆(ft)  
+
+> t
+
+⟩ exactly predicts the cost. Taking the maximum over α ∈ [0 , 1] upper bounds the cost. The following limitation should be remembered when invoking Theorem 4. 
+
+Remark 5 While the expression in Lemma 2 is exact, the bound in Theorem 4 may be loose. It is possible that ∃α′′ such that |⟨∇ ϕ ℓθt (ϕ(α′′ )), ∆(ft ) 
+
+> t
+
+⟩| is large, making ϵ large. However, if 
+
+α′ is such that |⟨∇ ϕ ℓθt (ϕ(α′)), ∆(ft ) 
+
+> t
+
+⟩| ≪ |⟨∇ ϕ ℓθt (ϕ(α′′ )), ∆(ft ) 
+
+> t
+
+⟩| , the cost may still be small. 
+
+We empirically find that ϵ is small for most benchmarks in Figure 4. WinoGrande is an example of Remark 5 where ϵ overestimates CPortLLM . Remark 5 arises because α′ ∈ [0 , 1] is unknown. We leave it for future work to estimate a smaller range for α′ to mitigate this limitation. We also find that |⟨∇ ϕ ℓθt (ϕ(α′)), ∆(ft)  
+
+> t
+
+⟩| ≪ ∥∇ ϕ ℓθt (ϕ(α′))∥∥ ∆(ft)  
+
+> t
+
+∥, indicating that near-orthogonality, not just small norms, causes ϵ and CPortLLM to be small. 
+
+11 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+Results for BPortLLM (RQ2). Here, we are interested in comparing the PortLLM perfor-mance Lft 
+
+ θt + ∆ θ0
+
+ to the base model performance Lft 
+
+ θt
+
+, as quantified in BPortLLM (t)defined in (2). The following Lemma is derived in Appendix A.2. 
+
+Lemma 6 There exists an α′ ∈ [0 , 1] such that the benefit of using PortLLM patching instead of no patching is given by BPortLLM (t) = −⟨∇ ϕ ℓθt ((1 − α′)ϕ0), ϕ 0⟩.
+
+Remark 7 The inner product in Lemma 6 can be rewritten as −⟨∇ ϕ ℓθt ((1 − α)ϕ0), ϕ 0⟩ =
+
+⟨∇ ϕ ℓθt (ϕ0 − αϕ 0), −ϕ0⟩ in the form of a displaced-gradient–displacement product. The key observation here, which explains why BPortLLM is large while CPortLLM and VPortLLM are small, is that (1 − α)ϕ0 for α ≤ 0 ≤ 1 roughly traces optimization path from 0 to ϕ0. If ℓθ0
+
+and ℓθt have similar shapes, the loss landscape on the optimization path ℓθt ((1 − α)ϕ0) is steep, implying that the spectral norm σmax (ϕ0 − β′αϕ 0) is large, except when β′α ≈ 0. This steepness is empirically confirmed in the bottom row of Figure 4. Hence, the second metric from Lemma 1, the sharpness, is large so that the displaced-gradient–displacement product may be large. Results for VPortLLM (RQ3). We compare PortLLM performance at time t > 0 to perfor-mance at t = 0. This difference is quantified by VPortLLM (t) defined in (3). We present the following Lemma, which is derived in Appendix A.3. 
+
+Lemma 8 There exists an α′ ∈ [0 , 1] such that the change in PortLLM performance at time step t is given by VPortLLM (t) = ⟨∇ θ Lft 
+
+ θ(α′), ∆(pt ) 
+
+> t
+
+⟩ where θ(α) = αθ 0 + (1 − α)θt + ∆ θ0
+
+is a point on the 1-D slice between the continually pretrained base model θt and the initial base model θ0 and ∆(pt ) 
+
+> t
+
+= θ0 − θt is the pretraining update. 
+
+If the pretraining and fine-tuning distributions are sufficiently different so that the pretrain-ing update is approximately orthogonal to the fine-tuning gradient, the change in PortLLM performance will be very small. The displaced-gradient–displacement product form can be used to further characterize the inner product. 
+
+Remark 9 The inner product in Lemma 8 can be written as a displaced-gradient–displacement product as ⟨∇ θ Lft (θ(α)), ∆(pt ) 
+
+> t
+
+⟩ = ⟨∇ θ Lft (θt + ∆ θ0 + α∆(pt ) 
+
+> t
+
+), ∆(pt ) 
+
+> t
+
+⟩. We consider the two metrics derived from Lemma 1. First, because the pretraining and fine-tuning tasks are not strongly related, the displacement direction ∆(pt ) 
+
+> t
+
+/∥∆(pt ) 
+
+> t
+
+∥2, or the direction of the pretrain-ing update, is expected to be approximately orthogonal to the fine-tuning gradient so that the alignment is small. Second, the loss landscape is plausibly flat around the reference θt +∆ θ0,which is a fine-tuned model, so that the sharpness is small. These observation explain why we observe small variation in PortLLM performance VPortLLM in Section 3.2. 
+
+We present a theorem similar to Theorem 4 as follows: 
+
+Theorem 10 Let ϵ = max α∈[0 ,1] |⟨∇ θ Lft 
+
+ θ(α), ∆(pt ) 
+
+> t
+
+⟩| be the maximum derivative magni-tude on the 1-D slice between the continually pretrained base model θt and the initial base model θ0 where θ(α) = αθ 0 + (1 − α)θt + ∆ θ0 is a point on the 1-D slice and ∆(pt ) 
+
+> t
+
+= θ0 − θt
+
+is the pretraining update. Then the change in performance is bounded as |VPortLLM (t)| ≤ ϵ.
+
+12 The Blessing of Dimensionality gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )0.00 0.25 0.50 0.75 1.00    
+
+> 0
+> 1
+> 2CPortLLM = 1.33 × 10 1
+> = 1.2848
+> 200
+> 400
+> 600
+> Norm Product
+
+(a) 0.00 0.25 0.50 0.75 1.00    
+
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> CPortLLM = 1.40 × 10 3
+> = 0.0356
+> 50
+> 60
+> 70
+> Norm Product
+
+(b) 0.00 0.25 0.50 0.75 1.00      
+
+> 0.00
+> 0.02
+> 0.04 CPortLLM =5.11 × 10 4
+> = 0.0125
+> 30
+> 40
+> 50
+> Norm Product
+
+(c) 0.00 0.25 0.50 0.75 1.00      
+
+> 0.00
+> 0.05
+> CPortLLM =3.68 × 10 3
+> = 0.0305 40
+> 50
+> Norm Product
+
+(d) gb( )
+
+> t
+
+((1 ) 0) | 0 
+
+> dd
+
+gb( )gb( )
+
+> t
+
+((1 ) 0) | 0 
+
+> dd
+
+gb( )gb( )
+
+> t
+
+((1 ) 0) | 0 
+
+> dd
+
+gb( )0.00 0.25 0.50 0.75 1.00  
+
+> 0
+> 2
+> 4
+> BPortLLM = 1.69
+> 0
+> 200
+> 400
+> Norm Product
+
+(e) 0.00 0.25 0.50 0.75 1.00   
+
+> 0
+> 5
+> 10
+> 15
+> BPortLLM = 4.8
+> 0
+> 200
+> 400
+> Norm Product
+
+(f) 0.00 0.25 0.50 0.75 1.00   
+
+> 0
+> 2
+> 4
+> BPortLLM = 1.2
+> 0
+> 50
+> 100
+> 150
+> Norm Product
+
+(g) 0.00 0.25 0.50 0.75 1.00   
+
+> 0
+> 2
+> 4
+> BPortLLM = 0.92
+> 0
+> 50
+> 100
+> 150
+> Norm Product
+
+(h) 
+
+Figure 4: Empirical results for cost (top row) and benefit (bottom row) metrics on 1-D slice for t = 2. We shown (a) and (e) WinoGrande (b) and (f) BoolQ (c) and (g) ARC-Easy and (d) and (h) ARC-Challenge. The derivative g′
+
+c(α) is small in most cases, indicating that the cost of using PortLLM instead of stepwise fine-tuning is small. The derivative g′
+
+c(α) = ⟨∇ ϕ ℓθt (ϕ(α)), ∆(ft) 
+
+t ⟩ is much smaller than the norm product ∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft) 
+
+t ∥, indicating that the two vectors are nearly orthogonal. The derivative g′
+
+b(α) is large for 0 .5 < α < 1, explaining why PortLLM substantially outperforms no patching. While our analysis above focuses on the PortLLM scenario, it is not limited to this scenario. Our analysis method, namely, defining a scalar function to characterize a 1-D slice of the fine-tuning loss landscape, can be used to compare performance of two arbitrary LoRA patches on a given task with an associated loss function. In Figure 4 and Appendix G, we empirically plot the 1-D slices of the loss landscape associated with the cost CPortLLM and the benefit BPortLLM based on (8) and (15) for Mistral pretrained on Fineweb and fine-tuned on WinoGrande, BoolQ, ARC-Easy, and ARC-Challenge. 8 In the top row of Figure 4, the loss curve gc(α) is flat so that the derivative 
+
+gc(α) is small for most benchmarks. This observation of flatness in the loss landscape around fine-tuned models aligns with Chen et al. (2025), who argue that the loss landscape of LLMs exhibits basin-like structures. The results for WinoGrande demonstrate Remark 5, which notes that Theorem 4 can overestimate the cost CPortLLM . While the derivative g′
+
+c(α) is large at points so that ϵ is large, the change in loss is not dramatic so that CPortLLM is not too large. In the bottom row of Figure 4, gb(α) defined in (13) of Appendix A.2 is analogous to gc(α) for the benefit metric BPortLLM (t). As predicted in Remark 7, the derivative g′
+
+b(α)is large for 0 .5 < α < 1. 
+
+8. Compute constraints prevent us from calculating the derivative of the 1-D slice for the variation metric 
+
+VPortLLM , which would require calculating gradients in base model parameter space. We offer additional theoretical analysis of VPortLLM in Section 4.3. 
+
+13 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+4.3 Analysis Based on Continual Pretraining Optimization Steps 
+
+We further leverage information about the continual pretraining process to provide a more informative bound on the variation in fine-tuning performance VPortLLM (t) as the base model is continually pretrained. The goal is to compare LoRA-adapted performance for a fixed LoRA patch ∆ θ on the initial base model Lft (θ0 + ∆ θ) to LoRA-adapted performance on the continually pretrained base mode Lft (θt + ∆ θ). We achieve this comparison by starting at the initial base model and considering how each iteration of continual pretraining affects downstream fine-tuning loss. We apply this analysis to a PortLLM patch ∆ θ0, but it could be applied in other scenarios, i.e., LoRA variants. To aid this analysis, we formalize the notion of approximate orthogonality. Quasi-orthogonality as a relaxation of strict orthogonality has been defined in various fields with re-spect to different mathematical objects, e.g., quasi-orthogonal random fields (M´ oricz, 1989), quasi-orthogonal families of binary sequences (Yang et al., 2000), and quasi-orthogonal polynomials (Chihara, 1957). Following Svozil (2026) and Kainen and Kurkov´ a (2020), we defined ϵ-quasi-orthogonality with respect to vectors as follows: 
+
+Definition 11 Let a, b ∈ Rn be two n-dimensional real vectors. a and b are ϵ-quasi-orthogonal for ϵ ∈ (0 , 1) if the magnitude of their cosine similarity is upper-bounded by ϵ,namely, 9 |⟨ a, b⟩| /(∥a∥2∥b∥2) ≤ ϵ. 
+
+We state our assumptions for this analysis below. 
+
+Assumption 1 There exists an ϵorth ≥ 0 such that the pretraining gradient ∇Lpt (θ) and the PortLLM-adapted fine-tuning gradient ∇Lft (θ + ∆ θ0) are ϵorth -quasi-orthogonal ∀θ ∈ RN .
+
+While this assumption may appear strong, we argue that it holds for a small ϵorth in most practical scenarios. The traits of high-dimensional space are such that independent random vectors in high-dimensional space are (approximately) orthogonal. See Appendix D for more detailed discussion and Table 2 for numeric examples. If the pretraining and fine-tuning gradients are conditionally independent conditioned on the initial base model θ0, then the gradients are likewise approximately orthogonal. An additional assumption describes how continual pretraining updates are obtained. 
+
+Assumption 2 For each time step t > 0, the model θt is obtained with I iterations of standard gradient descent starting from the model θt−1. Each iteration uses learning rate η.At each iteration i, when training θt, let the model be denoted as θ(i) 
+
+> t
+
+.
+
+While we assume standard gradient descent for simplicity, our proof would hold in more general cases. Our proof depends only on the norm of the update ∥θ(i) 
+
+> t
+
+− θ(i−1)  
+
+> t
+
+∥2 being small, but not on the exact value of model parameters at each iteration. Assumptions 3 and 5 ensure that this norm is small. 
+
+Assumption 3 The continual pretraining process is stable such that the gradient norm at each iterate is bounded as ∥∇ Lpt 
+
+ θ(i)
+
+> t
+
+∥2 ≤ ℓpt for all i ∈ { 0, 1, . . . , I }.10     
+
+> 9. In Svozil (2026) and Kainen and Kurkov´ a (2020), the definition of quasi-orthogonality is restricted to unit norm vectors. We extend the definition to allow any nonzero real vectors a,b∈Rn.10. This assumption explains why our analysis applies to continual pretraining but not to repeated random perturbations of base model parameters. Repeated random perturbations are likely to move the model to a sharp place in the loss landscape where gradients are large.
+
+14 The Blessing of Dimensionality 
+
+This assumption, essentially claiming that gradient explosion does not occur, is a more realistic alternative to assuming global Lipschitzness. Intuitively, we expect that the models obtained through continual pretraining are reason-ably conditioned for the downstream task such that initial performance before fine-tuning is not catastrophically bad. 11 Based on this idea and an assumption that the fine-tuning loss function is well-behaved, 12 we conjecture that the fine-tuning gradients are bounded in a region around the pretrained models. 
+
+Assumption 4 The pretrained models are reasonably conditioned for the downstream task such that the fine-tuning gradient norm is bounded in a neighborhood around the pretraining iterates. Namely, 
+
+max  
+
+> θ∈R
+
+∥∇ Lft (θ)∥2 = ℓft (9) 
+
+where R = {x ∈ RN : ∃i ∈ { 1, 2, . . . , I } such that ∥x − θ(i) 
+
+> t
+
+∥2 ≤ d}. Further, we assume that the PortLLM patch norm is bounded as ∥∆θ0∥2 ≤ d.
+
+This, of course, is not to claim that the model performs well on the downstream task before fine-tuning. Rather, we claim that the pretrained models provide a well-conditioned starting point for fine-tuning. 
+
+Assumption 5 The distance between iterates ∥θ(i) 
+
+> t
+
+− θ(i−1)  
+
+> t
+
+∥2 = ∥ − η∇Lpt (θ(i−1)  
+
+> t
+
+)∥2 ≤
+
+ηℓ pt is sufficiently small so that a first order Taylor series approximation is sufficient to approximate the PortLLM-adapted fine-tuning loss at the next iteration with a small error 
+
+R2, specifically, 
+
+Lft 
+
+ θ(i) 
+
+> t
+
++ ∆ θ0
+
+ = Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0
+
+ + ⟨∇ Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0
+
+, −η∇Lpt 
+
+ θ(i−1) 
+
+> t
+
+⟩ + R2, |R2| ≤ ϵη
+
+(10) 
+
+where R2 is the error of neglecting higher-order terms and ϵη is a bound on the error. 
+
+See Remark 16 in Appendix B for a characterization of ϵη where we find that it is on the order of 12 η2e2ℓ2pt 
+
+PNj=1 σj , where e ≪ 1 is a quasi-orthogonality constant and {σj }Nj=1 are singular values of the fine-tuning Hessian. We prove the following theorem in Appendix B. 
+
+Theorem 12 Let Assumptions 1–5 hold. Then the magnitude of the difference |VPortLLM (t)|
+
+between PortLLM performance at time stem t and time step 0 is bounded as 
+
+|VPortLLM (t)| = |Lft 
+
+ θt + ∆ θ0
+
+ − Lft 
+
+ θ0 + ∆ θ0
+
+| ≤ It (ηϵ orth ℓpt ℓft + ϵη) (11) 
+
+where η is the learning rate during continual pretraining, I is the number of gradient descent iterations, ϵorth is the orthogonality constant in Assumption 1, ϵη defined in Assumption 5   
+
+> 11. The idea that pretraining conditions the model for fine-tuning is supported by Sun and Dredze (2025), who show that, depending on the downstream task, pretraining may either (1) improve base model performance on the downstream task or (2) adjust the base model such that fine-tuning is more effective on the downstream task. 12. The claim that the fine-tuning loss function is well-behaved is supported by Das and Dutta (2026), who show that cross-entropy loss on a transformer model with GELU activation is infinitely differentiable. Their larger proof depends on use of L2regularization, but their claim about infinite differentiability does not depend on this regularization.
+
+15 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+is the error due to using a first order Taylor series approximation, ℓpt is the pretraining stability constant defined in Assumption 3, and ℓft is the bound on fine-tuning gradients from Assumption 4. 
+
+Some remarks on Theorem 12 are instructive. 
+
+Remark 13 Assumptions 1–5 do not specify the LoRA fine-tuning algorithm. Hence, our analysis is applicable to LoRA variants, e.g., CAR-LoRA (Khan et al., 2026). 
+
+Remark 14 We assume standard gradient descent in Assumption 2 for simplicity, but this could be generalized to include more practical training algorithms. If the updates at each iteration i are perturbed by an error vector ξi−1 so that θ(i) 
+
+> t
+
+− θ(i−1)  
+
+> t
+
+= −η ˜∇Lpt (θ(i−1)  
+
+> t
+
+) = 
+
+−η(∇Lpt (θ(i−1)  
+
+> t
+
+) + ξi−1), then both ∇Lpt (θ(i−1)  
+
+> t
+
+) and ξi−1 are approximately orthogonal to 
+
+∇Lft (θ(i−1)  
+
+> t
+
++ ∆ θ0) due to the traits of high-dimensional spaces. Results similar to Theo-rem 12 could be obtained using the same proof techniques. 
+
+Remark 15 Gradient clipping, which is common in practical scenarios, could replace As-sumption 3 on pretraining stability to bound the distance between iterates. 
+
+5 Discussion 
+
+Near-zero inner products of high-dimensional vectors appear repeatedly in core steps of our theoretical analyses, revealing that traits of high-dimensional spaces improve temporal portability. In Section 4.2 that presents analysis based on a 1-D slice of the loss landscape, the cost CPortLLM of PortLLM compared to stepwise fine-tuning, the benefit BPortLLM of PortLLM compared to no patching, and the variation VPortLLM of PortLLM performance across time steps can each be written as a single inner product. For CPortLLM and VPortLLM ,these inner products are small because their corresponding vectors are approximately or-thogonal. Furthermore, the first term γ⟨∇ f (x0), ∆x⟩ in the upper bound in Lemma 1 for displaced-gradient–displacement products is an inner product. In Section 4.3 that leverages the relationships between pretraining optimization steps to characterize RQ3, our results depend on Assumption 1 that the pretraining and fine-tuning gradients are approximately orthogonal to bound their inner product. These cases demonstrate that near-orthogonality is a key justification for temporal portability. Future work may consider how the mathe-matical device of near-orthogonality may be generally applicable to other other scenarios, e.g., improving analysis of fine-tuning strategies or considering how different LoRA patches for different tasks can be jointly used. 
+
+6 Conclusion 
+
+We have shown that the temporal portability of LoRA patches observed in Khan et al. (2025) extends across our observation span of 10 time steps. The PortLLM method per-forms similarly to stepwise fine-tuned patches trained at the time step of interest (RQ1), is able to substantially outperform no patching (RQ2), and approximately maintains t = 0 performance (RQ3). We have provided two theoretical analysis methods to explain this sur-prising results. These methods reveal that near-orthogonality in high-dimensional spaces 
+
+> 16 The Blessing of Dimensionality
+
+explains temporal portability. In this scenario, the “curse” of dimensionality is actually a blessing. 
+
+Appendix A. Analysis for 1-D Slice of Loss Landscape 
+
+A.1 Formalized Definitions 
+
+We begin with more formal definitions for the expanded and unexpanded vectorized LoRA patch parameters and the associated loss functions, which were introduced in Section 4.1. Let θ ∈ RN be the parameters for a model of size N . Assume the model contains m weight matrices, given by the ordered tuple ( Wi)mi=1 . In the LoRA paradigm (Hu et al., 2022), associated with each Wi ∈ Rdi×ki are A ∈ Rr×ki and B ∈ Rdi×r so that the weight Wi is updated as Wi + BiAi, where r is the LoRA rank. A LoRA patch can be described by the ordered tuple of ordered pairs (( Ai, B i)) mi=1 . Denoting the vectorizing operation as vec( ·), the following vectors can be defined as concatenations of vectorized LoRA matrices 
+
+ϕ = [vec( B1), vec( A1), . . . , vec( Bm), vec( Am)] (12a) ∆θ = [vec( B1A1), . . . , vec( BmAm)] . (12b) Here, ϕ ∈ Rn is the unexpanded patch parameters, where n = r Pmi=1 (di + ki) is the number of LoRA trainable parameters. ∆ θ ∈ Vr ⊂ RN is the expanded LoRA parameters, where 
+
+Vr = {[vec( B1A1), . . . , vec( BmAm)] : Bi ∈ Rdi×r, A ∈ Rr×ki } is a subset of RN subject to LoRA rank restrictions. Let base model parameters at continual pretraining time step t be denoted as θt. Similarly, patches trained on θt are denoted as ϕt and ∆ θt for unexpanded and expanded patch parameters, respectively. The loss on the base model at time t is given by Lft (θt) and the loss on the stepwise fine-tuned model is given by Lft (θt + ∆ θt), where Lft is the downstream fine-tuning loss defined in Section 4.1. Let ℓθ : Rn → R be the downstream testing loss function applied to unexpanded patch parameters on base model θ. Specifically, for an ordered tuple of LoRA patch parameters (( Ai, B i)) mi=1 with ϕ = [vec( B1), vec( A1), . . . , vec( Bm), vec( Am)] as the unexpanded vectorized patch and ∆ θ = [vec( B1A1), . . . , vec( BmAm)] as the expanded patch, we define ℓθ (ϕ) = Lft (θ + ∆ θ). 
+
+A.2 Analysis for BPortLLM (RQ2). 
+
+Here we derive the results presented in Section 4.2 for RQ2. We are interested in comparing the PortLLM performance Lft (θt + ∆ θ0) to the base model performance Lft (θt) at an arbi-trary fixed time step t > 0. This scenario is depicted in Figure 5. In contrast to analysis for RQ1 in Section 4.2, where we compare two LoRA patches ϕ0 and ϕt, here we are interested in comparing the PortLLM patch ϕ0 to the base model, which can be represented by the all-zero patch 0 ∈ Rn. Define the loss on a 1-D slice between the unexpanded PortLLM patch parameters ϕ0 and the all-zero patch 0 as 
+
+gb(α) = ℓθt
+
+ (1 − α)ϕ0
+
+ (13) for α ∈ R, but α ∈ [0 , 1] is most meaningful. In Figure 5, gb(α) is shown as a blue solid line and its derivative is shown as a red dashed line. Note that gb(1) = ℓθt (0) de-scribes base model performance and gb(0) = ℓθt (ϕ0) describes PortLLM performance so 
+
+> 17
+
+Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+that BPortLLM (t) = gb(1) − gb(0) from (2). Taylor’s theorem gives that, for some α′ ∈ [0 , 1] 
+
+gb(1) = gb(0) + (1 − 0) g′
+
+> b
+
+(α′) (14) so that gb(1) − gb(0) = BPortLLM (t) = g′
+
+> b
+
+(α′). The derivative can be written as 
+
+g′
+
+> b
+
+(α) = ddα ℓθt
+
+ (1 − α)ϕ0
+
+ = ∇ϕ ℓθt
+
+ (1 − α)ϕ0
+
+⊤ ddα 
+
+ (1 − α)ϕ0
+
+ (15a) = −⟨∇ ϕ ℓθt ((1 − α)ϕ0), ϕ 0⟩ (15b) From this, the benefit is given by BPortLLM (t) = −⟨∇ ϕ ℓθt ((1 − α)ϕ0), ϕ 0⟩ for a fixed but unknown α′ ∈ [0 , 1]. This proves Lemma 6. 
+
+A.3 Analysis for VPortLLM (RQ3). 
+
+Now we derive the results presented in Section 4.2 related to RQ3. We are interested in comparing PortLLM performance at time t > 0 to performance at t = 0. In this case, pretraining updates must be considered, so the 1-D slice has to be defined in N -dimensional space in terms of expanded parameters. This case is shown in Figure 6, where expanded parameter space is depicted on the left. Define the function 
+
+gv(α) = Lft (αθ 0 + (1 − α)θt + ∆ θ0), (16) where α ∈ R but α ∈ [0 , 1] is most meaningful so that gv(0) = Lft (θt + ∆ θ0) is the PortLLM performance at time step t and gv(1) = Lft (θ0 + ∆ θ0) is the PortLLM performance at time step 0. Then (3) can be rewritten as VPortLLM (t) = gv(1) − gv(0). By Taylor’s theorem, 
+
+gv(1) = gv(0) + (1 − 0) g′
+
+> v
+
+(α′) (17) for some α′ ∈ [0 , 1]. This gives that VPortLLM (t) = gv(1) −gv(0) = g′
+
+> v
+
+(α′) for some α′ ∈ [0 , 1]. This equality for an example α′ is shown in the left side of Figure 6. To simplify notation, define θ(α) = αθ 0 + (1 − α)θt + ∆ θ0 as a point on the line between the models. Using the chain rule, the derivative can be written as 
+
+ddα gv(α) = ddα Lft (θ(α)) = ∇θ Lft (θ(α))⊤ ddα (αθ 0 + (1 − α)θt + ∆ θ0) (18a) = ⟨∇ θ Lft (θ(α)), ∆(pt)  
+
+> t
+
+⟩ (18b) where ∆ (pt)  
+
+> t
+
+= θ0 −θt represents the pretraining update and the superscript (pt) abbreviates “pretraining.” Now the variation in PortLLM performance across time steps is given by 
+
+VPortLLM (t) = ⟨∇ θ Lft (θ(α′)), ∆(pt)  
+
+> t
+
+⟩, which proves Lemma 8. 
+
+Appendix B. Analysis Based on Pretraining Optimization Steps 
+
+B.1 Characterization of ϵη
+
+While ϵη could be bounded by the largest singular value of the fine-tuning Hessian matrix, we argue that the largest singular value will not be activated by the pretraining gradient in most cases. Instead of this potentially loose bound, we offer the following tighter characterization. 
+
+18 The Blessing of Dimensionality 𝜙 ଴      
+
+> Unexpanded LoRA parameter
+> space
+> 1 − 𝛼 ᇱ𝜙 ଴
+> ∇థℓఏ೟(1 − 𝛼 ᇱ𝜙 ଴)
+> 𝑔′ ௕(𝛼 )
+
+𝛼 
+
+> 𝑔 ௕(𝛼 )
+> 1-D slice of downstream testing loss
+
+𝛼′  
+
+> 𝐵 ௉௢௥௧௅௅ெ (𝑡 )
+> 01
+
+𝟎 𝜙 ଴
+
+Figure 5: Illustration of analysis for the benefit of employing PortLLM instead of no patch-ing, BPortLLM (t). The PortLLM patch ϕ0 is shown as blue arrows in unexpanded LoRA parameter space on the left. The downstream testing loss on a 1-D slice between the PortLLM patch and no patching is shown on the right. The loss is shown as a blue solid line while the derivative of the loss is shown as a red dashed line. The derivative is small for α ≈ 0 and large for α ≈ 0.5. α′ is the point on the 1-D slice at which the derivative exactly predicts the benefit, BPortLLM (t). α′
+
+on the 1-D slice corresponds to (1 − α′)ϕ0 in parameter space. If, as depicted, the gradient points roughly opposite to ϕ0, the benefit is positive. 𝜖 
+
+> −𝜖
+> 𝑔′ ௩(𝛼 )
+
+𝛼 
+
+> 𝑔 ௩(𝛼 )
+> 1-D slice of downstream testing loss
+
+𝛼′ 
+
+𝜃 ଴ + Δ 𝜃 ଴
+
+𝜃 ௧ + Δ 𝜃 ଴ 
+
+> Expanded LoRA parameter space
+> 𝜃 (ఈᇲ)
+> ∇ఏ𝐿 (𝜃 (ఈᇲ))
+> 𝑉 ௉௢௥௧௅௅ெ (𝑡 )
+
+Δ௧  
+
+> ୮୲
+> For a small variation, want:
+> (1) ∇ఏ𝐿 (𝜃 (ఈᇲ)) ⊥ Δ ௧
+> ୮୲ and/or
+> (2) One norm is small
+
+𝜃 ௧ + Δ 𝜃 ଴ 𝜃 ଴ + Δ 𝜃 ଴ 
+
+> 01
+
+Figure 6: Geometric interpretation for the variation of PortLLM performance, VPortLLM (t). The initial PortLLM parameters θ0 + ∆ θ0 and the PortLLM parameters at time 
+
+t > 0, θt + ∆ θ0 are shown as blue arrows in expanded LoRA parameter space on the left. The downstream testing loss on a 1-D slice between the two parameters is shown on the right. The loss, shown as a blue solid line, is approximately constant so that the derivative, shown as a red dashed line, has magnitude bounded by 
+
+ϵ. α′ is the point on the 1-D slice at which the derivative exactly predicts the variation, VPortLLM (t). α′ on the 1-D slice corresponds to θ(α′) in parameter space. If, as depicted, the gradient ∇θ Lft 
+
+ θ(α′), is approximately orthogonal to the error between the two patches, the variation VPortLLM (t), is small. 
+
+19 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+Remark 16 By Taylor’s theorem, ∃α′ ∈ [0 , 1] such that 
+
+R2 = 12 η2∇Lpt (θ(i−1)  
+
+> t
+
+)⊤∇2Lft 
+
+ θ(i−1)  
+
+> t
+
+− α′η∇Lpt (θ(i−1)  
+
+> t
+
+) + ∆ θ0
+
+∇Lpt (θ(i−1)  
+
+> t
+
+) (19) 
+
+where ∇2Lft (·) denotes the Hessian of the fine-tuning loss with respect to base model parame-ters θ. We can further characterize this error by considering singular value decomposition of the Hessian. Specifically, consider the singular value decomposition for a fixed but arbitrary iteration i ∈ { 1, 2, . . . , I }:
+
+∇2Lft 
+
+ θ(i−1)  
+
+> t
+
+− α′η∇Lpt (θ(i−1)  
+
+> t
+
+) + ∆ θ0
+
+ = U ΣV ⊤ =
+
+> N
+
+X
+
+> j=1
+
+σj uj v⊤ 
+
+> j
+
+. (20) 
+
+The second order error can be analyzed as 
+
+R2 = 12 η2∇Lpt (θ(i−1)  
+
+> t
+
+)⊤h NX
+
+> j=1
+
+σj uj v⊤
+
+> j
+
+i
+
+∇Lpt (θ(i−1)  
+
+> t
+
+)= 12 η2
+
+> N
+
+X
+
+> j=1
+
+σj ∇Lpt (θ(i−1)  
+
+> t
+
+)⊤uj v⊤ 
+
+> j
+
+∇Lpt (θ(i−1)  
+
+> t
+
+)
+
+= 12 η2
+
+> N
+
+X
+
+> j=1
+
+σj ⟨∇ Lpt (θ(i−1)  
+
+> t
+
+), u j ⟩⟨ vj , ∇Lpt (θ(i−1)  
+
+> t
+
+)⟩
+
+(21) 
+
+If the pretraining and fine-tuning tasks are largely unrelated, then, in high dimensional space, we expect that the pretraining gradient and the singular values of the fine-tuning Hessian are approximately orthogonal. If this expectation holds so that the pretraining gradient 
+
+∇Lpt (θ(i−1)  
+
+> t
+
+) is e-quasi-orthogonal to each singular value in {u1, u 2, . . . , u N , v 1, v 2, . . . , v N }
+
+then the R2 error can be bounded as 
+
+R2 = 12 η2
+
+> N
+
+X
+
+> j=1
+
+σj ⟨∇ Lpt (θ(i−1)  
+
+> t
+
+), u j ⟩⟨ vj , ∇Lpt (θ(i−1)  
+
+> t
+
+)⟩ ≤ 12 η2e2ℓ2
+
+> pt
+> N
+
+X
+
+> j=1
+
+σj . (22) 
+
+Given the definition of ϵη in Assumption 5, the quantity 12 η2e2ℓ2
+
+> pt
+
+PNj=1 σj characterizes the order of magnitude of ϵη. While the sum of singular values may be quite large, both η2 and 
+
+e2 are expected to be very small. If e = O [PNj=1 σj ]−1/2, then ϵη = O(η2ℓ2
+
+> pt
+
+) so that the error decreases quadratically with the learning rate. 
+
+B.2 Proof of Theorem 12 
+
+We prove Theorem 12 presented in Section 4.3. Let Assumptions 1–5 hold. As in Assumption 2, let the base model θt be continually pretrained from θt−1 as follows. Set θ(0)  
+
+> t
+
+= θt−1. For each iteration i ∈ { 1, 2, . . . , I }, let the model be updated as 
+
+θ(i) 
+
+> t
+
+= θ(i−1)  
+
+> t
+
+− η∇Lpt (θ(i−1)  
+
+> t
+
+) (23) 
+
+20 The Blessing of Dimensionality 
+
+where η is the learning rate. For each iteration i ∈ { 1, 2, . . . , I },
+
+Lft 
+
+ θ(i) 
+
+> t
+
++ ∆ θ0
+
+ = Lft 
+
+ θ(i−1)  
+
+> t
+
+− η∇Lpt (θ(i−1)  
+
+> t
+
+) + ∆ θ0
+
+ (24a) = Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0) + ⟨∇ Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0
+
+, −η∇Lpt (θ(i−1)  
+
+> t
+
+⟩ + R2 (24b) 
+
+≤ Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0) + ϵorth η∥∇ Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0
+
+∥2∥∇ Lpt (θ(i−1)  
+
+> t
+
+∥2 + ϵη, (24c) where the equality is a first order Taylor series approximation with error R2 and the inequal-ity follows from Assumption 5 which bounds R2 and Assumption 1 which bounds the cosine similarity of the gradients. Further, we use Assumptions 3 and 4 to bound the gradients as follows: 
+
+Lft 
+
+ θ(i) 
+
+> t
+
++ ∆ θ0
+
+ ≤ Lft 
+
+ θ(i−1)  
+
+> t
+
++ ∆ θ0) + ηϵ orth ℓpt ℓft + ϵη (25) Repeating I times, 
+
+Lft 
+
+ θ(I) 
+
+> t
+
++ ∆ θ0
+
+ = Lft 
+
+ θt + ∆ θ0
+
+ (26a) 
+
+≤ Lft 
+
+ θ(0)  
+
+> t
+
++ ∆ θ0
+
+ + I(ηϵ orth ℓpt ℓft + ϵη) = Lft 
+
+ θt−1 + ∆ θ0
+
+ + I(ηϵ orth ℓpt ℓft + ϵη) (26b) so that the difference in PortLLM loss |Lft 
+
+ θt + ∆ θ0
+
+ − Lft 
+
+ θt−1 + ∆ θ0
+
+| is bounded as 
+
+|Lft 
+
+ θt + ∆ θ0
+
+ − Lft 
+
+ θt−1 + ∆ θ0
+
+| ≤ I(ηϵ orth ℓpt ℓft + ϵη). (27) Repeating t times and applying the triangular inequality, we find that 
+
+|Lft 
+
+ θt + ∆ θ0
+
+ − Lft 
+
+ θ0 + ∆ θ0
+
+| ≤ It (ηϵ orth ℓpt ℓft + ϵη). (28) This completes the proof of Theorem 12. 
+
+Appendix C. Analysis of Displacement-Gradient-Displacement Products 
+
+We derive Lemma 1 from Section 4.2. By Taylor’s theorem, there exists a β′ ∈ [0 , 1] such that ∇f (x0 + γ∆x) = ∇f (x0) + γ∇2f (x0 + β′γ∆x)∆ x where ∇2f denotes the Hessian matrix so that 
+
+F (γ∆x) = ⟨∇ f (x0) + γ∇2f (x0 + β′γ∆x)∆ x, γ ∆x⟩ (29a) = ⟨∇ f (x0), γ ∆x⟩ + ⟨γ∇2f (x0 + β′γ∆x)∆ x, γ ∆x⟩ (29b) = γ⟨∇ f (x0), ∆x⟩
+
+| {z }
+
+> T1
+
++ γ2∆x⊤∇2f (x0 + β′γ∆x)∆ x
+
+| {z }
+
+> T2
+
+. (29c) Note that T2 can be bounded by the spectral norm of the Hessian as 
+
+F (γ∆x) ≤ γ⟨∇ f (x0), ∆x⟩ + γ2σmax (x0 + β′γ∆x), (30) where σmax (x) = ∥∇ 2f (x)∥2 is the spectral norm. This result is Lemma 1 in Section 4.2. 
+
+21 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+M std 
+
+ ⟨a,b⟩∥a∥2∥b∥2
+
+
+
+std( ⟨a, b⟩)10 3 3.2 × 10 −2 3.2 × 10 1
+
+10 4 1.0 × 10 −2 4.8 × 10 −1
+
+10 5 3.2 × 10 −3 1.7 × 10 0
+
+10 6 1.0 × 10 −3 1.0 × 10 3
+
+10 7 3.2 × 10 −4 3.2 × 10 3
+
+10 8 9.9 × 10 −5 9.9 × 10 3
+
+10 9 3.2 × 10 −5 3.2 × 10 4
+
+Table 2: Inner product and cosine similarity for random vectors a, b ∈ RM whose coordi-nates are independently drawn from a standard normal distribution. Model Data set Batch size LR L2 Dropout Epochs Mistral-7B Fineweb 90 3 × 10 −5 0.01 0.1 2Mistral-7B Cosmopedia 90 3 × 10 −5 0.01 0.1 2Gemma-12B Fineweb 130 3 × 10 −5 0.01 0.1 2Qwen2-0.5B Fineweb 64 1 × 10 −5 0.1 0 1Table 3: Hyperparameter selections for pretraining. LR refers to learning rate and L2 refers to L2 weight decay regularization. 
+
+Appendix D. Quasi-orthogonality in High Dimensional Spaces 
+
+We discuss a trait of high-dimensional spaces, specifically, that independent random vectors in high-dimensional spaces are approximately orthogonal. This idea is important because it explains why ϵorth is small in Assumption 1 and ϵη is small in Remark 16. Table 2 gives simulation results for random vectors independently drawn from a standard normal distribu-tion. For each vector dimension M , 10 4 pairs of white Gaussian vectors are used to calculate inner product and cosine similarity values. We report the standard deviation around the zero mean. The standard deviation of the cosine similarity decreases with increasing vector dimension so that each cosine similarity is close to zero with high probability. In contrast, the inner product standard deviations increase with increasing dimension. These trends motivate our concern to bound the norms of the vectors of interest in Assumption 3 and 4 as well as their cosine similarity. 
+
+Appendix E. Training Details 
+
+We use LoRA rank r = 64 to approximate Mistral-7B pretraining and rank r = 128 to approximate Gemma3-12B pretraining. We run full pretraining on Qwen2-0.5B. All fine-tuning uses LoRA r = 8. In each case, we follow standard practice and use LoRA α as 
+
+α = 2 r. For pretraining, we use a maximum token length per example as 2048 tokens. While pretraining, we use gradient clipping with threshold 1 .0. We run pretraining on two 
+
+> 22
+
+The Blessing of Dimensionality 
+
+Data set Batch size Max length LR Epochs WinoGrande 64 128 5 × 10 −5 2BoolQ 32 256 5 × 10 −5 2ARC-Easy 32 256 5 × 10 −5 2ARC-Challenge 32 256 5 × 10 −5 2MetaMath 50 700 5 × 10 −5 1MNLI 120 256 5 × 10 −5 2SST2 120 256 5 × 10 −5 2Table 4: Hyperparameter selections for fine-tuning. Max length refers to the maximum sequence length (in tokens) allowed per example. LR refers to learning rate. 
+
+t Dump Time period 1 CC-MAIN-2023-50 November/December 2023 2 CC-MAIN-2024-10 February/March 2024 3 CC-MAIN-2024-18 April 2024 4 CC-MAIN-2024-26 June 2024 5 CC-MAIN-2024-33 August 2024 6 CC-MAIN-2024-42 October 2024 7 CC-MAIN-2024-51 December 2024 8 CC-MAIN-2025-08 February 2025 9 CC-MAIN-2025-18 April 2025 10 CC-MAIN-2025-26 June 2025 Table 5: Fineweb division into temporal chunks for continual pretraining time steps. NVIDIA H200 cards and fine-tuning on one NVIDIA H200 card. 13 Hyperparameters for pretraining and fine-tuning are shown in Tables 3 and 4, respectively. All training used the Axolotl (Axolotl maintainers and contributors, 2023) framework. We run evaluations using the Language Model Evaluation Harness (Gao et al., 2024). For fine-tuning, we select the best checkpoint based on a validation split. We used the publicly available train, validation, and test splits for ARC-Easy and ARC-Challenge. For WinoGrande, BoolQ, MNLI and SST2, we use 90% of the training split for training, 10% of the training split for validation, and the validation split for testing. The MetaMath data set (which we used to train patches for GSM8k evaluations) is very large. We used 2.5% for validation and restricted training to 3000 steps, which is about 39% of the data set. For pretraining, we do not use a validation split and always select the last checkpoint. We report the temporal division of Fineweb pretraining data sets for each time step in Table 5. We use the “dump” column for temporal information about data samples. For Cosmopedia, we used each data subset for a different pretraining time step in the fol-                                           
+
+> 13. Pretraining took approximately 2-3 hours per time step. Fine-tuning each patch took approxi-mately 2hours per patch for MetaMath and MNLI and less than 1hour per patch for other benchmarks. Cumulatively, our experiments required 3 base models ×3 repetitions ×10 time steps = 90 continual pretraining updates for Fineweb and 1 base models ×3 repetitions ×8 time steps =24 continual pretraining updates for Cosmopedia.
+
+23 Woodring, Chan, Khan, Yun, Wong, and Chen No patching    
+
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning 0510
+> Time step, t
+> 0.46
+> 0.51
+> 0.56
+> 0.61
+> 0.14
+
+(a) 0 5 10    
+
+> Time step, t
+> 0.56
+> 0.66
+> 0.76
+> 0.86 0.25
+
+(b) 0 5 10    
+
+> Time step, t
+> 0.11
+> 0.26
+> 0.41
+> 0.56 0.53
+
+(c) 
+
+Figure 7: Temporal portability results for Mistral-7B-v0.1 pretrained on Fineweb (Penedo et al., 2024) and downstream fine-tuned on additional benchmarks. Testing re-sults are shown for (a) MNLI (b) SST2 and (c) GSM8k. For each benchmark, reported results are a sample average across 3 repetitions. The error bars shown 95% confidence interval. lowing order: auto math text , wikihow , openstax , stanford , stories , web samples v1 ,
+
+web samples v2 , khanacademy . We used 50M tokens from each split except khanacademy. For that split, we used all of the available 21M tokens. A potential problem during continual pretraining is the stability gap (Guo et al., 2024), or the observation that base model performance may drop sharply at the beginning of continual pretraining and then slowly recover. To mitigate this problem, we follow two suggestions from Guo et al. (2024), namely (1) train on a smaller corpus for multiple epochs and (2) select the smaller corpus as a high-quality subset of the available data. Specifically, we train for two epochs and filter data quality utilizing the “language score” column of the Fineweb data set. We select only training examples with a language score ≥ 0.9. 
+
+Appendix F. Additional Experimental Results 
+
+We present additional results on temporal portability. Overall, we find that, when base model performance and stepwise fine-tuning performance are approximately constant across time steps, PortLLM performance is also approximately constant. If base model perfor-mance or stepwise fine-tuning performance exhibit gradual degradation, PortLLM may mirror that degradation. These results highlight the importance of robust continual pre-training to maintain downstream performance. 
+
+F.1 Additional Benchmarks for Mistral Pretrained on Fineweb 
+
+Figure 7 shows temporal portability results for additional benchmarks after pretraining Mistral-7B on Fineweb data. Specifically, we test GSM8k (Cobbe et al., 2021) for math-ematical reasoning, MNLI (Williams et al., 2018) for recognizing textual entailment, and SST2 (Socher et al., 2013) for sentiment analysis. Patches for GSM8k are trained using MetaMath (Yu et al., 2023) data, while MNLI and SST2 use the publicly available train-ing splits. These results largely mirror those presented in Section 3.2. Namely, PortLLM performance is comparable to stepwise fine-tuning (RQ1), better than no patching (RQ2), and roughly constant across time steps (RQ3). 
+
+24 The Blessing of Dimensionality No patching    
+
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning 0510
+> Time step, t
+> 0.75
+> 0.78
+> 0.81
+> 0.84
+> 0.11
+
+(a) 0 5 10   
+
+> Time step, t
+> 0.85
+> 0.86
+> 0.88
+> 0.90
+> 0.05
+
+(b) 0 5 10   
+
+> Time step, t
+> 0.86 0.86
+> 0.87 0.87
+> 0.01
+
+(c) 0 5 10   
+
+> Time step, t
+> 0.60
+> 0.61
+> 0.62
+> 0.64
+> 0.02
+
+(d) 
+
+Figure 8: Temporal portability results for continually pretraining Gemma3-12B on Fineweb data and downstream fine-tuning on (a) WinoGrande, (b) BoolQ, (c) ARC-Easy, and (d) ARC-Challenge. Average performance across 3 repetitions for PortLLM patching, stepwise fine-tuning, and no patching performance are shown. The error bars indicate the 95% confidence interval. No patching     
+
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning 0510
+> Time step, t
+> 0.57
+> 0.58
+> 0.60
+> 0.61 0.05
+
+(a) 0 5 10   
+
+> Time step, t
+> 0.61
+> 0.65
+> 0.69
+> 0.73
+> 0.06
+
+(b) 0 5 10    
+
+> Time step, t
+> 0.55
+> 0.57
+> 0.58
+> 0.60 0.01
+
+(c) 0 5 10   
+
+> Time step, t
+> 0.24
+> 0.25
+> 0.26 0.26
+> -0.01
+
+(d) 
+
+Figure 9: Temporal portability results for continually pretraining Qwen2-0.5B on Fineweb data and downstream fine-tuning on (a) WinoGrande, (b) BoolQ, (c) ARC-Easy, and (d) ARC-Challenge. Average performance across 3 repetitions for PortLLM patching, stepwise fine-tuning, and no patching performance are shown. The error bars indicate the 95% confidence interval. 
+
+F.2 Gemma3-12B Pretrained on Fineweb 
+
+Temporal portability results for pretraining Gemma3-12B on Fineweb data are shown in Figure 8. Temporal trends on WinoGrande and BoolQ are similar to those of Mistral-7B in Section 3.2. On ARC-Easy and ARC-Challenge, PortLLM performance degrades mildly across time steps but continues to outperform no patching performance. This mild degradation mirrors a degradation in base model performance, indicating that PortLLM performance may be affected by changes in base model performance. 
+
+F.3 Qwen2-0.5B Pretrained on Fineweb 
+
+Results for pretraining Qwen2-0.5B on Fineweb are shown in Figure 9. The near ran-dom guessing performance on ARC-Challenge indicates that 0 .5B scale models are not well-equipped for the ARC-Challenge benchmark. The other three benchmarks are more informative. PortLLM is comparable to stepwise fine-tuning on WinoGrande, slightly un-derperforms stepwise fine-tuning on BoolQ, and slightly outperforms stepwise fine-tuning on ARC-Easy. PortLLM outperforms the base model for all three benchmarks. PortLLM and stepwise fine-tuning exhibit similar trends across time steps: performance remains 
+
+25 Woodring, Chan, Khan, Yun, Wong, and Chen No patching    
+
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning No patching
+> PortLLM patching
+> Stepwise fine-tuning 048
+> Time step, t
+> 0.71
+> 0.75
+> 0.78
+> 0.82
+> 0.11
+
+(a) 0 4 8   
+
+> Time step, t
+> 0.84
+> 0.86
+> 0.87
+> 0.89 0.03
+
+(b) 0 4 8   
+
+> Time step, t
+> 0.77
+> 0.79
+> 0.81
+> 0.83 0.04
+
+(c) 0 4 8   
+
+> Time step, t
+> 0.46
+> 0.49
+> 0.52
+> 0.55 0.07
+
+(d) 
+
+Figure 10: Temporal portability results for continually pretraining Mistral-7B-v0.1 on Cos-mopedia data and downstream fine-tuning on (a) WinoGrande, (b) BoolQ, (c) ARC-Easy, and (d) ARC-Challenge. Average performance across 3 repetitions is plotted. The error bars indicate the 95% confidence interval. approximately constant on WinoGrande, and degrades slightly on BoolQ and ARC-Easy. This indicates that, if continual pretraining moves the model to a place where stepwise fine-tuning is less effective, PortLLM performance may also be affected. 
+
+F.4 Mistral-7B Pretrained on Cosmopedia 
+
+Temporal portability results for continually pretraining Mistral-7B on Cosmopedia data are shown in Figure 10. On WinoGrande and BoolQ, PortLLM and stepwise fine-tuning are comparable to each other and maintain approximately constant performance across time steps. On ARC-Easy and ARC-Challenge, they exhibit non-monotonic variation in perfor-mance across time steps. This variation mirrors variation in base model performance. We hypothesize that this occurs because of the heterogeneity of Cosmopedia data across time steps. This indicates that, when continual pretraining changes base model performance, that variation may be reflected in PortLLM performance. 
+
+Appendix G. Empirical Results for 1-D Slice of Loss Landscape 
+
+Here we provide all results for empirically plotting the 1-D slice of the loss landscape for cost (RQ1) and benefit (RQ2) for Mistral-7B pretrained on Fineweb data in Figures 11– 18. When available, we estimate the true loss using 2000 testing examples (BoolQ and ARC-Easy). Otherwise, we use the entire available testing split (approximately 1270 ex-amples for WinoGrande and approximately 1170 examples for ARC-Challenge). In each case, we show error bars for the 95% confidence interval. Note that the norm product, 
+
+∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft)  
+
+> t
+
+∥, is much larger than the inner product g′
+
+> c
+
+(α) = ⟨∇ ϕ ℓθt (ϕ(α)), ∆(ft)  
+
+> t
+
+⟩,indicating that it is approximate orthogonality, not small vector norms, that explains the small magnitude of g′
+
+> c
+
+(α). To better understand these results about the loss landscape, we also plot the loss in a random direction starting at the stepwise fine-tuning patch for t = 2. 14 The random direction ξ′ ∼ Norm(0 , I ) is rescaled as ξ = ξ′ · ∥ ∆(ft) ∥/∥ξ′∥ so that is norm equals the distance between the stepwise fine-tuning patch and the PortLLM patch. We plot gn(α) =        
+
+> 14. We select one time step noting that results follow the same pattern for each t∈ { 2,4,6,8,10 }in Fig-ures 11–18.
+
+26 The Blessing of Dimensionality 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 250
+> 500
+> 750
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 200
+> 400
+> 600
+> Norm Product
+
+t=4 (b) gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 250
+> 500
+> 750
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 250
+> 500
+> 750
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 250
+> 500
+> 750
+> Norm Product
+
+t=10 (e) 
+
+Figure 11: WinoGrande empirical results for RQ1. The plots include the loss for down-stream testing data gc(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft) 
+
+t ∥ (dotted blue line). We show t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 250
+> 500
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 250
+> 500
+> Norm Product
+
+t=4 (b) gb( )         
+
+> t((1 )0) | 0
+> ddgb()0.00 0.25 0.50 0.75 1.00
+> 0
+> 2
+> 4
+> 0
+> 250
+> 500
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 250
+> 500
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 250
+> 500
+> Norm Product
+
+t=10 (e) 
+
+Figure 12: WinoGrande empirical results for RQ2. The plots include the loss for down-stream testing data gb(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt ((1 − α)ϕ0)∥∥ ϕ0∥ (dotted blue line). We show t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 
+
+27 Woodring, Chan, Khan, Yun, Wong, and Chen 0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 0.1
+> 50
+> 60
+> 70
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 0.1
+> 60
+> 80
+> Norm Product
+
+t=4 (b) gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 0.1
+> 50
+> 60
+> 70
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 0.1
+> 50
+> 60
+> 70
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 0.1
+> 50
+> 60
+> 70
+> Norm Product
+
+t=10 (e) 
+
+Figure 13: BoolQ empirical results for RQ1. The plots include the loss for downstream testing data gc(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft) 
+
+t ∥ (dotted blue line). We show 
+
+t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 10
+> 0
+> 250
+> 500
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 10
+> 0
+> 250
+> 500
+> Norm Product
+
+t=4 (b) gb( )         
+
+> t((1 )0) | 0
+> ddgb()0.00 0.25 0.50 0.75 1.00
+> 0
+> 10
+> 20
+> 0
+> 250
+> 500
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 10
+> 0
+> 250
+> 500
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 10
+> 0
+> 250
+> 500
+> Norm Product
+
+t=10 (e) 
+
+Figure 14: BoolQ empirical results for RQ2. The plots include the loss for downstream testing data gb(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt ((1 −α)ϕ0)∥∥ ϕ0∥ (dotted blue line). We show 
+
+t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 
+
+28 The Blessing of Dimensionality 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 60
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 60
+> Norm Product
+
+t=4 (b) gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 60
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 60
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 30
+> 40
+> 50
+> Norm Product
+
+t=10 (e) 
+
+Figure 15: ARC-Easy empirical results for RQ1. The plots include the loss for downstream testing data gc(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft) 
+
+t ∥ (dotted blue line). We show 
+
+t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=4 (b) gb( )         
+
+> t((1 )0) | 0
+> ddgb()0.00 0.25 0.50 0.75 1.00
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.0
+> 2.5
+> 5.0
+> 0
+> 100
+> Norm Product
+
+t=10 (e) 
+
+Figure 16: ARC-Easy empirical results for RQ2. The plots include the loss for downstream testing data gb(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt ((1 −α)ϕ0)∥∥ ϕ0∥ (dotted blue line). We show 
+
+t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 
+
+29 Woodring, Chan, Khan, Yun, Wong, and Chen 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 50
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 30
+> 40
+> 50
+> Norm Product
+
+t=4 (b) gc( )
+
+> t
+
+( ( )) (ft)  
+
+> t
+> dd
+
+gc( )0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 50
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 50
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0.00
+> 0.05
+> 40
+> 50
+> Norm Product
+
+t=10 (e) 
+
+Figure 17: ARC-Challenge empirical results for RQ1. The plots include the loss for down-stream testing data gc(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt (ϕ(α))∥∥ ∆(ft) 
+
+t ∥ (dotted blue line). We show t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=2 
+
+(a) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=4 (b) gb( )         
+
+> t((1 )0) | 0
+> ddgb()0.00 0.25 0.50 0.75 1.00
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=6 
+
+(c) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=8 (d) 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 0
+> 100
+> Norm Product
+
+t=10 (e) 
+
+Figure 18: ARC-Challenge empirical results for RQ2. The plots include the loss for down-stream testing data gb(α) on a 1-D slice between the PortLLM patch and the stepwise fine-tuning patch (dashed green line), the derivative of the 1-D slice (solid red line), and the norm product ∥∇ ϕ ℓθt ((1 − α)ϕ0)∥∥ ϕ0∥ (dotted blue line). We show t ∈ { 2, 4, 6, 8, 10 } and three repetitions on each plot. 
+
+30 The Blessing of Dimensionality 0.00 0.25 0.50 0.75 1.00 
+
+> 0
+> 2
+> 4
+> 500
+> 1000
+> 1500
+> Norm Product WinoGrande
+
+(a) 0.00 0.25 0.50 0.75 1.00  
+
+> 0.0
+> 0.1
+> 0.2
+> 50
+> 100
+> 150
+> Norm Product BoolQ
+
+(b) gn( )          
+
+> t(t+)(ft)
+> t
+> ddgn()0.00 0.25 0.50 0.75 1.00
+> 0.0
+> 0.1
+> 50
+> 100
+> 150
+> Norm Product ARC Easy
+
+(c) 0.00 0.25 0.50 0.75 1.00  
+
+> 0.0
+> 0.1
+> 0.2
+> 50
+> 100
+> Norm Product ARC Challenge
+
+(d) 0.00 0.25 0.50 0.75 1.00  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 250
+> 500
+> 750
+> Norm Product BoolQ
+
+(e) 
+
+Figure 19: 1-D slice of the loss landscape in a random direction. We select the direction as a Gaussian random vector and rescale it to have a norm equal to the distance between the PortLLM and stepwise fine-tuning tasks. Results are for t = 2 and (a) WinoGrande, (b) BoolQ, (c) ARC-Easy, and (d) ARC-Challenge. Three repetitions are shown for each plot. We also show 10 random direction for BoolQ for a fixed training repetition in (e). 
+
+ℓθt (ϕt + αξ ) as a 1-D slice in the loss landscape in a random direction starting at ϕt. We find that the loss is approximately constant for α ≤ 0.9 increases slightly for α > 0.9. This indicates that the stepwise fine-tuning patch ϕt is in a flat region of the loss landscape. To increase confidence that the plotted directions are characteristic, we plot 10 random direction for BoolQ for a fixed training repetition in Figure 19(e). 
+
+31 Woodring, Chan, Khan, Yun, Wong, and Chen 
+
+References 
+
+Axolotl maintainers and contributors. Axolotl: Open source LLM post-training, 2023. L. Ben Allal, A. Lozhkov, G. Penedo, T. Wolf, and L. von Werra. Cosmopedia, 2024. H. Chen, Y. Dong, Z. Wei, Y. Huang, Y. Zhang, H. Su, and J. Zhu. Unveiling the basin-like loss landscape in large language models. arXiv preprint arXiv:2505.17646 , 2025. T. S. Chihara. On quasi-orthogonal polynomials. American Mathematical Society , 8, 1957. C. Clark, K. Lee, M.-W. Chang, T. Kwiatkowski, M. Collins, and K. Toutanova. BoolQ: Exploring the surprising difficulty of natural yes/no questions. In NAACL , 2019. P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. Tafjord. Think you have solved question answering? Try ARC, the AI2 reasoning challenge. 
+
+arXiv:1803.05457v1 , 2018. K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 , 2021. A. Das and S. Dutta. Weight-decay turns transformer loss landscapes Villani: Functional-analytic foundations for optimization and generalization. arXiv preprint arXiv:2605.06599 , 2026. D. Das, R. Patwari, and A. Sirasao. Recover-LoRA: Data-free accuracy recovery of degraded language models via low-rank adaptation. In Conference on Empirical Methods in Natural Language Processing: Industry Track . Association for Computational Linguistics, 2025. doi: 10.18653/v1/2025.emnlp-industry.164. Y. Deng, Z. Qiao, Y. Zhang, Z. Ma, Y. Liu, and J. Ren. CrossLM: A data-free collaborative fine-tuning framework for large and small language models. In Association for Computing Machinery , MobiSys ’25, 2025. doi: 10.1145/3711875.3729128. T. Dettmers, A. Pagnoni, A. Holtzman, and L. Zettlemoyer. QLoRA: Efficient finetuning of quantized llms. In Neural Information Processing Systems , volume 36, 2023. L. Gao, J. Tow, B. Abbasi, S. Biderman, S. Black, A. DiPofi, C. Foster, L. Golding, J. Hsu, A. Le Noac’h, H. Li, K. McDonell, N. Muennighoff, C. Ociepa, J. Phang, L. Reynolds, H. Schoelkopf, A. Skowron, L. Sutawika, E. Tang, A. Thite, B. Wang, K. Wang, and A. Zou. The language model evaluation harness, 2024. Gemma Team. Gemma 3, 2025. E. Gogoulou, T. Lesort, M. Boman, and J. Nivre. Continual learning under language shift. In International Conference on Text, Speech, and Dialogue , pages 71–84. Springer, 2024. D. Guo, A. Rush, and Y. Kim. Parameter-efficient transfer learning with diff pruning. In 
+
+Association for Computational Linguistics and International Joint Conference on Natural Language Processing , 2021. doi: 10.18653/v1/2021.acl-long.378. 
+
+> 32 The Blessing of Dimensionality
+
+Y. Guo, J. Fu, H. Zhang, D. Zhao, and Y. Shen. Efficient continual pre-training by miti-gating the stability gap. arXiv preprint arXiv:2406.14833 , 2024. Z. Han, C. Gao, J. Liu, J. Zhang, and S. Q. Zhang. Parameter-efficient fine-tuning for large models: A comprehensive survey, 2024. S. Hayou, N. Ghosh, and B. Yu. LoRA+: Efficient low rank adaptation of large models. 
+
+arXiv preprint arXiv:2402.12354 , 2024. N. Houlsby, A. Giurgiu, S. Jastrzebski, B. Morrone, Q. De Laroussilhe, A. Gesmundo, M. Attariyan, and S. Gelly. Parameter-efficient transfer learning for NLP. In International conference on machine learning , 2019. E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen, et al. LoRA: Low-rank adaptation of large language models. International Conference on Learning Representations , 1, 2022. J. Jang, S. Ye, S. Yang, J. Shin, J. Han, G. Kim, S. J. Choi, and M. Seo. Towards con-tinual knowledge learning of language models. In International Conference on Learning Representations , 2022. A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. S. Chaplot, D. de las Casas, F. Bressand, G. Lengyel, G. Lample, L. Saulnier, L. R. Lavaud, M.-A. Lachaux, P. Stock, T. L. Scao, T. Lavril, T. Wang, T. Lacroix, and W. E. Sayed. Mistral 7B, 2023. Z. Jiang, Z. Sun, W. Shi, P. Rodriguez, C. Zhou, G. Neubig, X. Lin, W.-t. Yih, and S. Iyer. Instruction-tuned language models are better knowledge learners. In Association for Computational Linguistics , 2024. P. C. Kainen and V. Kurkov´ a. Quasiorthogonal dimension. Beyond Traditional Probabilistic Data Processing Techniques: Interval, Fuzzy etc. Methods and Their Applications , 2020. R. M. S. Khan, P. Li, S. Yun, Z. Wang, S. Nirjon, C.-W. Wong, and T. Chen. PortLLM: Per-sonalizing evolving large language models with training-free and portable model patches. In International Conference on Learning Representations , 2025. R. M. S. Khan, Z. Tan, R. Zhang, H. Wei, T. Chen, and C. Fleming. CAR-LoRA: Train-ing compression-aware and robust LoRA adapters for evolving LLMs. In International Conference on Learning Representations , 2026. X. L. Li and P. Liang. Prefix-tuning: Optimizing continuous prompts for generation. In 
+
+Association for Computational Linguistics and International Joint Conference on Natural Language Processing , 2021. doi: 10.18653/v1/2021.acl-long.353. S.-Y. Liu, C.-Y. Wang, H. Yin, P. Molchanov, Y.-C. F. Wang, K.-T. Cheng, and M.-H. Chen. DoRA: Weight-decomposed low-rank adaptation. In International Conference on Machine Learning , 2024. X. Ma, Y. Xu, Y. Lin, T. Wang, X. Chu, X. Gao, J. Zhao, and Y. Wang. DRESSing up LLM: Efficient stylized question-answering via style subspace editing, 2025. 
+
+> 33 Woodring, Chan, Khan, Yun, Wong, and Chen
+
+A. Mijar, R. Shahroz, C.-W. Wong, and T. Chen. Fit-LoRA: Fit your LoRAs to pruned LLMs without additional training or data, 2025. F. M´ oricz. Strong limit theorems for quasi-orthogonal random fields. Journal of Multivariate Analysis , 30(2), 1989. doi: https://doi.org/10.1016/0047-259X(89)90039-0. G. Penedo, H. Kydl´ ıˇ cek, L. B. allal, A. Lozhkov, M. Mitchell, C. Raffel, L. V. Werra, and T. Wolf. The Fineweb datasets: Decanting the web for the finest text data at scale. In 
+
+Neural Information Processing Systems Datasets and Benchmarks Track , 2024. A. Radford, K. Narasimhan, T. Salimans, I. Sutskever, et al. Improving language under-standing by generative pre-training, 2018. K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. WinoGrande: An adversarial winograd schema challenge at scale. Communications of the Association for Computing Machinery , 64, 2021. doi: 10.1145/3474381. S. Shukla, A. Sriram, M. K. Narayanaswamy, and H. Jain. qa-FLoRA: Data-free query-adaptive fusion of LoRAs for LLMs. In AAAI Conference on Artificial Intelligence ,volume 40, 2026. A. Smaji´ c, I. Rami, S. Sosnin, and G. F. Ecker. Identifying differences in the performance of machine learning models for off-targets trained on publicly available and proprietary data sets. Chemical Research in Toxicology , 2023. doi: 10.1021/acs.chemrestox.3c00042. PMID: 37439496. R. Socher, A. Perelygin, J. Wu, J. Chuang, C. D. Manning, A. Ng, and C. Potts. Recursive deep models for semantic compositionality over a sentiment treebank. In Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, 2013. K. Sun and M. Dredze. Amuro & char: Analyzing the relationship between pre-training and fine-tuning of large language models. In Workshop on Representation Learning for NLP .Association for Computational Linguistics, 2025. doi: 10.18653/v1/2025.repl4nlp-1.11. Y.-L. Sung, V. Nair, and C. Raffel. Training neural networks with fixed sparse masks. In 
+
+Neural Information Processing Systems , 2021. K. Svozil. The geometric part of decoherence: Quasi-orthogonality in high-dimensional hilbert spaces. arXiv preprint arXiv:2605.03807 , 2026. A. Wang, A. Singh, J. Michael, F. Hill, O. Levy, and S. R. Bowman. GLUE: A multi-task benchmark and analysis platform for natural language understanding. In International Conference on Learning Representations , 2019. A. Williams, N. Nangia, and S. Bowman. A broad-coverage challenge corpus for sentence understanding through inference. In Association for Computational Linguistics: Human Language Technologies , 2018. 
+
+> 34 The Blessing of Dimensionality
+
+C. Xiao, P. Zhang, X. Han, G. Xiao, Y. Lin, Z. Zhang, Z. Liu, and M. Sun. InfLLM: Training-free long-context extrapolation for LLMs with an efficient context memory. In 
+
+Neural Information Processing Systems , 2024. doi: 10.52202/079017-3801. A. Yang, B. Yang, B. Hui, B. Zheng, B. Yu, C. Zhou, C. Li, C. Li, D. Liu, F. Huang, G. Dong, H. Wei, H. Lin, J. Tang, J. Wang, J. Yang, J. Tu, J. Zhang, J. Ma, J. Yang, J. Xu, J. Zhou, J. Bai, J. He, J. Lin, K. Dang, K. Lu, K. Chen, K. Yang, M. Li, M. Xue, N. Ni, P. Zhang, P. Wang, R. Peng, R. Men, R. Gao, R. Lin, S. Wang, S. Bai, S. Tan, T. Zhu, T. Li, T. Liu, W. Ge, X. Deng, X. Zhou, X. Ren, X. Zhang, X. Wei, X. Ren, X. Liu, Y. Fan, Y. Yao, Y. Zhang, Y. Wan, Y. Chu, Y. Liu, Z. Cui, Z. Zhang, Z. Guo, and Z. Fan. Qwen2 technical report, 2024. K. Yang, Y.-K. Kim, and P. Vijay Kumar. Quasi-orthogonal sequences for code-division multiple-access systems. IEEE Transactions on Information Theory , 2000. doi: 10.1109/ 18.841175. C¸ . Yıldız, N. K. Ravichandran, N. Sharma, M. Bethge, and B. Ermis. Investigating con-tinual pretraining in large language models: Insights and implications. arXiv preprint arXiv:2402.17400 , 2024. L. Yu, W. Jiang, H. Shi, J. Yu, Z. Liu, Y. Zhang, J. T. Kwok, Z. Li, A. Weller, and W. Liu. MetaMath: Bootstrap your own mathematical questions for large language models. arXiv preprint arXiv:2309.12284 , 2023. T. Zhang, W. Fang, J. Woo, P. Latawa, D. Subramanian, and A. Chan. Can LLMs rea-son over non-text modalities in a training-free manner? A case study with in-context representation learning. In Neural Information Processing Systems , volume 38, 2025.

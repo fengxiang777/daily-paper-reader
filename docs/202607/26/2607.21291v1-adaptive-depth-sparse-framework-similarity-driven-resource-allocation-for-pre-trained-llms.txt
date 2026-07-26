@@ -1,0 +1,411 @@
+Title: Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs
+
+URL Source: https://arxiv.org/pdf/2607.21291v1
+
+Published Time: Fri, 24 Jul 2026 00:56:09 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs 
+
+Yidu Wu 1, Xiang Wang 2, Kejie Zhao 3, Zhangchi Wang 1, Qinghai Guo 2, and Xiaoying Tang 1 
+
+> 1
+
+Department of Electronic and Electrical Engineering, Southern University of Science and Technology, Shenzhen, China 
+
+tangxy@sustech.edu.cn  
+
+> 2
+
+ACS Lab, Huawei Technologies Co., Ltd., Shenzhen, China  
+
+> 3
+
+Department of Computer Science and Engineering, Southern University of Science and Technology, Shenzhen, China 
+
+Abstract. Large language models (LLMs) achieve strong generation and reasoning performance, but the Transformer architecture incurs high inference cost. Existing acceleration methods often rely on task-specific fine-tuning or training from scratch, increasing adaptation cost and limit-ing cross-task usability. We present an Adaptive Depth Sparse Framework 
+
+(AdaDSF) that converts off-the-shelf pre-trained LLMs into depth-sparse models without full retraining. Our key insight is that layers contribute unequally to representation transformation, characterized by the cosine similarity between layer input and output hidden states. Based on this, AdaDSF assigns layer-wise token retention ratios from similarity statis-tics, uses a lightweight router to select informative tokens at each layer, and introduces a feature-preserving alignment objective to match inter-mediate and final representations between sparse and dense models. On GPT-NeoX and Qwen2.5 over language modeling and commonsense rea-soning, AdaDSF substantially reduces inference FLOPs while preserv-ing performance close to dense counterparts. Under comparable sparsity, AdaDSF consistently yields smaller accuracy degradation than strong baselines including MoD, D-LLM, and DLO. 
+
+Keywords: Adaptive Depth, Alignment-based Training, Similarity-Driven Sparsification, Efficient Inference 
+
+## 1 Introduction 
+
+Large language models (LLMs) [2,24,26] have become the foundation of modern language understanding and generation, with applications now extending to au-tonomous structured-action settings such as agentic Text-to-SQL pipelines [21]. Yet deploying LLMs in real-world settings remains challenging because Trans-former inference scales linearly with depth and quadratically with sequence length, leading to high computational cost. arXiv:2607.21291v1 [cs.CL] 23 Jul 2026 2 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang 
+
+Existing efficient-inference work spans quantization [3, 8, 17], knowledge dis-tillation [11, 29], and lightweight attention or architectural redesign [12]. More recently, depth-sparse methods such as Mixture-of-Depths (MoD) [18], D-LLM [10], and DLO [22] reduce computation by executing full blocks only for selected tokens or layers, demonstrating that token contributions are highly non-uniform and that conditional depth execution can significantly reduce FLOPs. Despite these advances, current depth-sparse approaches still face practi-cal limitations: many depend on task-specific tuning or specialized training pipelines, weakening the portability of pre-trained checkpoints; fixed or heuris-tic token-retention schedules may misallocate computation across layers with different transformation roles; and methods requiring substantial architectural intervention increase implementation complexity and reduce reproducibility in off-the-shelf deployment. To address these issues, we propose Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs (AdaDSF), an adap-tive depth-sparse framework that converts pre-trained LLMs into sparse variants with minimal architectural change. Our key observation is that layers contribute unevenly to representation transformation, measured via cosine similarity be-tween layer input and output hidden states. AdaDSF assigns layer-wise token retention ratios from this signal, applies a lightweight router to select informa-tive tokens, and introduces a feature-preserving alignment objective to match sparse and dense representations. Our contributions: (i) similarity-driven depth allocation , deriving token retention ratios from hidden-state similarity statistics so that more compute goes to layers with stronger representation transformation; (ii) lightweight routing 
+
+via an MLP-based token router for dynamic per-layer selection without redesign-ing the Transformer backbone; (iii) a feature-preserving alignment objec-tive that preserves intermediate and final dense-teacher representations under sparse inference; and (iv) empirical validation on GPT-NeoX and Qwen2.5, achieving better accuracy–efficiency trade-offs than strong depth-sparse base-lines under comparable sparsity. 
+
+## 2 Related Work 
+
+2.1 Sparse Conditional Computation in LLMs 
+
+Sparse conditional computation has become a major direction for efficiency. Mixture-of-Experts (MoE) methods activate only a subset of experts per to-ken, increasing capacity without proportional compute growth. Switch Trans-former [7] simplifies expert routing for stable large-scale sparse training, and GShard [13] combines conditional execution with scalable sharding. These works show that conditional activation can preserve performance with reduced effective computation, but they sparsify the expert dimension rather than depth-sparse token flow in standard dense backbones. A complementary line beyond expert sparsity has shown that representation-level supervision — aligning intermediate AdaDSF: Similarity-Driven Resource Allocation for Pre-Trained LLMs 3
+
+features rather than only final outputs — can substantially improve downstream performance under reduced computation [28], providing a broader principle for the alignment objective we develop later. 
+
+2.2 Depth-sparse Sparsification and Token Routing 
+
+Orthogonal to expert sparsity, depth-sparse methods reduce redundant com-putation along Transformer layers. MoD [18] executes full blocks only on se-lected tokens under a fixed budget, forwarding the rest through residual paths; D-LLM [10] adds dynamic layer-level execution with reduced KV-cache usage; DLO [22] combines skipping and expansion. Token pruning in vision transform-ers [6, 20, 23] provides further evidence that uniform token computation is in-efficient. Beyond direct depth-sparse work, analogous dynamic-gating principles appear in adjacent settings, where regime-aware gating adapts feature impor-tance to changing contexts [27] and graph-structured state-space models exploit instance-specific dynamics for structured prediction [15] — supporting input-dependent compute allocation over static schedules. Different from prior approaches relying on fixed or heuristic schedules, AdaDSF derives layer-wise retention from representation-transformation statistics — a data-driven compute allocation principle. Unlike prior adaptive depth approaches, our method requires no modifications to internal attention or layer expansion; the similarity-based retention strategy applies to existing Transformers with-out structural change. Feature-preserving alignment further improves robustness with only minimal modification to off-the-shelf models. 
+
+## 3 Methods 
+
+3.1 Preliminary: Decoder-only Transformer 
+
+We briefly review a standard decoder-only Transformer layer. Given hidden states Hin , self-attention is 
+
+Attention( Q, K, V ) = softmax 
+
+ QK ⊤
+
+√dk
+
+
+
+V, (1) the feed-forward network is 
+
+FFN( x) = W2(σ(W1x + b1)) + b2, (2) and the layer output is 
+
+Hout = LayerNorm( Hin + FFN(Attention( Hin ))) . (3) 4 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang Layer 1 
+
+> Cosine
+> Similarity
+> Layer 2
+> Cosine
+> Similarity
+> Layer n
+> Cosine
+> Similarity
+
+# ······       
+
+> What P1
+> Is P2
+> This P3
+> Work P4
+> About P5
+> ?P6
+> 𝐿 𝑎𝑙𝑖𝑔𝑛
+> Trainable Frozen
+> Module 1
+> Module 2
+> Module n
+
+# ···           
+
+> Similarity -Driven Retention
+> 𝐿 ℎ𝑖𝑑
+> 𝐿 ℎ𝑖𝑑
+> 𝐿 ℎ𝑖𝑑
+> Router Top K 2
+> Layer 1
+> P1 P2 P3 P4 P5 P6
+> P1 P3 P6 P2 P4 P5
+> Allocate Token Retention Ratios
+> Transformer Layer Sparse Module
+
+Fig. 1: Overview of Adaptive Depth Sparse Framework: Similarity-Driven Re-source Allocation for Pre-Trained LLMs (AdaDSF). The framework includes similarity-driven layer-wise retention allocation, lightweight token routing within sparse modules, and feature-preserving alignment training. 
+
+3.2 Problem Formulation and Framework Overview 
+
+Given a pre-trained dense LLM with L decoder layers, our goal is a depth-sparse variant that reduces inference FLOPs while preserving the dense teacher’s be-havior. Different dense layers contribute unequally to representation transfor-mation; we quantify this via cosine similarity between layer input and output hidden states and use it to assign layer-specific token retention ratios .As shown in Fig. 1, Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs has three components: (i) similarity-driven layer-wise token retention computes retention ratios from dense-layer similarity statistics; (ii) a sparse module with lightweight token router 
+
+where each sparse layer contains a router and a Transformer layer, with the router selecting Top-K informative tokens per the assigned ratio; and (iii) feature-preserving alignment training that aligns intermediate and final outputs between sparse and dense models. The design enables direct conversion of off-the-shelf checkpoints with minimal architectural changes. AdaDSF: Similarity-Driven Resource Allocation for Pre-Trained LLMs 5
+
+3.3 Similarity-Driven Layer-wise Token Retention 
+
+For the i-th dense layer, let x(i) 
+
+> in
+
+and x(i) 
+
+> out
+
+be its input/output representations. We define 
+
+si = CosSim 
+
+
+
+x(i) 
+
+> in
+
+, x (i)
+
+> out
+
+
+
+= x(i) 
+
+> in
+
+· x(i)
+
+> out
+
+∥x(i) 
+
+> in
+
+∥ ∥ x(i)
+
+> out
+
+∥ . (4) Using a calibration subset, we obtain similarity vector s = [ s1, . . . , s L].
+
+Step 1: Temperature-normalized weighting. 
+
+˜wi = exp 
+
+ si − max( s)
+
+τ
+
+
+
+, wi = ˜wi
+
+PLj=1 ˜wj
+
+. (5) 
+
+Step 2: Deviation scaling. 
+
+zi = β
+
+ 1
+
+L
+
+> L
+
+X
+
+> j=1
+
+wj − wi
+
+ , (6) where β > 0 controls deviation magnitude (we set β = 10 ). 
+
+Step 3: Sigmoid mapping to bounded ratio. 
+
+r′ 
+
+> i
+
+= 0 .05 + 0 .9 · 11 + exp( −zi) . (7) 
+
+Step 4: Global budget correction. Given target average retention t, we rescale 
+
+ri = tL 
+
+PLj=1 r′
+
+> j
+
+r′
+
+> i
+
+, s.t. 
+
+> L
+
+X
+
+> i=1
+
+ri = tL, (8) so layers with larger estimated transformation receive more compute under a fixed global budget. 
+
+3.4 Sparse Module with Lightweight Token Router 
+
+Each sparse layer is a trainable module composed of a lightweight MLP router and one Transformer layer. For hidden states x(i) ∈ Rb×s×d, the router predicts token importance scores and selects Top-Ki tokens, with Ki = ⌊ri · s⌋, yielding a binary mask m(i) ∈ Rb×s×1 and selected tokens ˆx(i) = x(i) ⊙m(i). Selected tokens are processed by the Transformer layer; unselected tokens bypass computation through the residual path. The router-score pathway is kept differentiable during training to enable end-to-end optimization. 6 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang 1 3 5 7 9 11 13 15 17 19 21 23 
+
+Layer Index 
+
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> Token Retention Ratio
+> =0.05
+> =0.2
+> MoD
+
+Fig. 2: Layer-wise retention ratios produced by the Similarity-Driven allocation strategy. 
+
+3.5 Feature-Preserving Alignment Training 
+
+Depth sparsification introduces representation shift because some tokens skip full computation. We therefore align sparse and dense trajectories at both in-termediate and output levels. This echoes recent work on instance-aware rep-resentation alignment, where per-instance correspondences capture fine-grained variation more effectively than coarse global matching [9]; in our setting, each token plays the role of an instance whose sparse-model representation must align to its dense-model counterpart. 
+
+(1) Hidden-state alignment. For layer l:
+
+L(l) 
+
+> hid
+
+= Softmax 
+
+
+
+h(l)
+
+> sparse
+
+
+
+− Softmax 
+
+
+
+h(l)
+
+> dense
+
+
+
+> 2
+
+. (9) 
+
+(2) Output distribution alignment. 
+
+Lalign =
+
+> C
+
+X
+
+> c=1
+
+Pdense (c|x) log Pdense (c|x)
+
+Psparse (c|x) . (10) 
+
+Overall objective. 
+
+L = Lalign + 1
+
+L
+
+> L
+
+X
+
+> l=1
+
+L(l)
+
+> hid
+
+. (11) This objective preserves dense behavior while enabling efficient sparse inference. 
+
+## 4 Experiments 
+
+This section provides an empirical evaluation of AdaDSF covering settings, pro-tocols, and analysis. AdaDSF: Similarity-Driven Resource Allocation for Pre-Trained LLMs 7
+
+4.1 Experimental Setup 
+
+Models. AdaDSF is evaluated on three representative models: GPT-NeoX-130M, Qwen2.5-0.5B, and Qwen2.5-1.5B. 
+
+Datasets. Two regimes are considered. GPT-NeoX is trained on Wikitext103, representing a pretraining scenario. Qwen2.5 models are trained on instruction-tuning data — GenQA [4], InfinityInstruct [14], and OpenHermes2.5 [25] — to simulate settings without pretraining resources. 
+
+Evaluation Tasks. We evaluate on language modeling (Wikitext103 test set) and six commonsense reasoning benchmarks: ARC-Challenge (AC), ARC-Easy (AE) [5], HellaSwag (HS) [30], PIQA (PI) [1], WinoGrande (WG) [19], and OpenBookQA (OB) [16]. 
+
+Metrics. Token retention ratio gives the proportion of tokens preserved at infer-ence; computational cost is measured by normalized FLOPs (sparse over dense). For reasoning, we report accuracy with average score (Avg) and degradation relative to dense (Diff). 
+
+4.2 Overall Performance Experiments on Qwen2.5 Table 1 reports performance of different depth-sparse frameworks on Qwen2.5-0.5B and Qwen2.5-1.5B. All test-task samples are excluded from training; since D-LLM is not applicable, comparisons cover MoD and DLO. The proposed method consistently outperforms both on ei-ther model, with average performance closer to the dense baseline — indicating stronger generalization. The advantage remains stable across token retention ratios (Table 1b). 
+
+Experiments on GPT-Neox We evaluate AdaDSF against MoD, D-LLM, and DLO on Wikitext103 with GPT-NeoX-130M at retention ratios of 90%, 80%, and 70%. Table 2 shows AdaDSF achieves the lowest PPL among sparse methods at every compression level while maintaining the lowest or near-lowest normalized FLOPs. At 80%, AdaDSF reaches PPL 18.9 vs. 21.6 (MoD), 2019 (D-LLM), 19.6 (DLO), using only 0.787 × the FLOPs of dense. The severe degradation of D-LLM indicates it is not suitable for standard autoregressive pretraining; AdaDSF’s PPL stays close to the dense baseline (17.9), demonstrating stable, efficient sparsification under substantial token reduction. 
+
+4.3 Ablation Studies 
+
+We conducted ablations on GPT-NeoX-130M and Qwen2.5 across Wikitext103 and the commonsense reasoning tasks. 8 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang Model Accuracy (%) FLOPs ( ↓)AC AE HS PI WG OB Avg ( ↑) Diff ( ↑)Qwen2.5-0.5B 32.3 64.6 52.1 70.2 56.3 35.2 51.7 0 1MoD 30.5 52.1 40.5 63.3 52.5 27.8 44.4 -7.3 0.784 DLO 29.8 62.5 45.3 68.5 53.7 30.4 48.3 -3.4 0.973 AdaDSF (Ours) 30.6 63.2 44.8 67.5 55.1 33.4 49.1 -2.6 0.785 Qwen2.5-1.5B 44.9 75.3 67.7 75.5 63.2 40.8 61.2 0 1MoD 32.8 56.2 48.9 66.0 52.5 29.2 47.6 -13.6 0.901 DLO 40.5 70.6 54.2 74.5 60.3 40.0 56.6 -4.6 0.984 AdaDSF (Ours) 39.4 73.5 58.6 73.1 61.6 38.2 57.4 -3.8 0.901 (a) Performance and FLOPs comparison of Qwen2.5-0.5B and Qwen2.5-1.5B under the MoD, DLO, and AdaDSF methods. Ratio Model Accuracy (%) FLOPs ( ↓)AC AE HS PI WG OB Avg ( ↑) Diff ( ↑)100% Qwen2.5-0.5B 32.3 64.6 52.1 70.2 56.3 35.2 51.7 0 190% MoD 32.5 53.4 45.1 65.7 53.8 31.0 46.9 -4.8 0.889 DLO 31.8 65.7 44.3 67.5 54.2 33.4 49.5 -2.2 1.110 AdaDSF (Ours) 31.6 64.2 45.7 68.1 54.8 32.0 49.4 -2.3 0.889 80% MoD 30.5 52.1 40.5 63.3 52.5 27.8 44.4 -7.3 0.784 DLO 29.8 62.5 45.3 68.5 53.7 30.4 48.3 -3.4 0.973 AdaDSF (Ours) 30.6 63.2 44.8 67.5 55.1 33.4 49.1 -2.6 0.785 70% MoD 26.6 47.4 39.9 63.3 49.2 27.0 42.2 -9.5 0.684 DLO 28.4 58.3 40.6 64.4 53.5 32.7 46.3 -5.4 0.840 AdaDSF (Ours) 29.7 61.7 42.3 67.6 53.9 31.2 47.7 -4.0 0.684 (b) Performance of Qwen2.5-0.5B under different token retention ratios. 
+
+Table 1: (a) Performance and FLOPs comparison for Qwen2.5 models under different sparse methods. (b) Performance under varying token retention ratios. 
+
+Similarity-Based Token Retention Ratio Allocation. Table 3 reports the effect of similarity-driven allocation: without it, PPL is 19.69; with it, the optimal PPL drops to 18.91. Variance of the retention ratio is controlled by τ — smaller 
+
+τ yields higher variance and improved performance. 
+
+Intermediate Layer Output Alignment. The joint training strategy aligns intermediate representations between dense and sparse models, allowing the router to dynamically select informative tokens while reducing skip-induced per-turbation. Table 4 shows that this loss significantly improves AdaDSF. 
+
+4.4 Discussion 
+
+The 0.8%–4.7% average improvement is achieved without modifying the inter-nal architecture of the model. Compared to approaches that require structural AdaDSF: Similarity-Driven Resource Allocation for Pre-Trained LLMs 9Ratio Model Wikitext103 PPL ( ↓) FLOPs ( ↓)100% GPT-Neox 17.9 1.000 90% MoD 19.9 0.885 D-LLM 1955.3 1.020 DLO 18.3 1.110 AdaDSF (Ours) 18.5 0.886 80% MoD 21.6 0.778 D-LLM 2019.0 0.886 DLO 19.6 0.964 AdaDSF (Ours) 18.9 0.787 70% MoD 24.0 0.678 D-LLM 2078.0 0.759 DLO 21.3 0.827 AdaDSF (Ours) 19.9 0.680 
+
+Table 2: Performance of AdaDSF, MoD, and D-LLM Methods on the Wiki-text103 dataset under Different Retention Ratio. 
+
+Model Metric/PPL ( ↓)GPT-Neox-AdaDSF (w/o τ ) 19.69 GPT-Neox-AdaDSF ( τ =0.25) 19.37 GPT-Neox-AdaDSF ( τ =0.1) 19.15 GPT-Neox-AdaDSF ( τ =0.05) 18.91 
+
+Table 3: Ablation study on the similarity-driven adaptive token retention ratio allocation strategy 
+
+Loss function Metric/PPL ( ↓)
+
+Lcausal 20.14 Ours 18.91 
+
+Table 4: Ablation study on the loss design for token-dropping layers in the mixed loss 10 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang 
+
+changes, our strategy is simple, lightweight, and easy to integrate into exist-ing pipelines — a favorable efficiency–complexity trade-off that highlights the contribution’s practical value in deployment-oriented scenarios. 
+
+4.5 Future Work 
+
+Although our experiments are limited to models up to 1.5B parameters, the proposed method is inherently scalable. We plan to extend evaluation to larger LLMs (7B+) in future work to further validate generality and robustness. 
+
+## 5 Conclusion 
+
+We presented Adaptive Depth Sparse Framework: Similarity-Driven Resource Allocation for Pre-Trained LLMs (AdaDSF), an adaptive depth-sparse frame-work that converts off-the-shelf pre-trained LLMs into efficient sparse variants with minimal architectural change. The core idea is to allocate layer-wise com-pute by hidden-state similarity, route tokens dynamically with a lightweight MLP, and preserve dense behavior via feature-level alignment. On common-sense reasoning, AdaDSF consistently yields smaller performance degradation than existing depth-sparse baselines under matched sparsity, offering a better efficiency–accuracy trade-off and a practical path for adapting pre-trained dense models to resource-constrained deployment without retraining from scratch. 
+
+## Acknowledgement 
+
+This study was supported by the National Key Research and Development Program of China (2023YFC2415400); the National Natural Science Founda-tion of China (T2422012); the Guangdong Basic and Applied Basic Research (2024B1515020088); the High Level of Special Funds (G030230001, G03034K003); the Guangdong Key Research and Development Program (2025B1111080001); the SUSTech Fang Keng Faculty Award. 
+
+## References 
+
+> 1. Bisk, Y., Zellers, R., Gao, J., Choi, Y., et al.: Piqa: Reasoning about physical commonsense in natural language. In: Proceedings of the AAAI conference on artificial intelligence. vol. 34, pp. 7432–7439 (2020) 2. Black, S., Biderman, S., Hallahan, E., Anthony, Q., Gao, L., Golding, L., He, H., Leahy, C., McDonell, K., Phang, J., et al.: Gpt-neox-20b: An open-source autore-gressive language model. arXiv preprint arXiv:2204.06745 (2022) 3. Cai, Y., Yao, Z., Dong, Z., Gholami, A., Mahoney, M.W., Keutzer, K.: Zeroq: A novel zero shot quantization framework. In: Proceedings of the IEEE/CVF confer-ence on computer vision and pattern recognition. pp. 13169–13178 (2020) 4. Chen, J., Qadri, R., Wen, Y., Jain, N., Kirchenbauer, J., Zhou, T., Goldstein, T.: Genqa: Generating millions of instructions from a handful of prompts (2024),
+> https://arxiv.org/abs/2406.10323
+
+AdaDSF: Similarity-Driven Resource Allocation for Pre-Trained LLMs 11 5. Clark, P., Cowhey, I., Etzioni, O., Khot, T., Sabharwal, A., Schoenick, C., Tafjord, O.: Think you have solved question answering? try arc, the ai2 reasoning challenge (2018), https://arxiv.org/abs/1803.05457 
+
+6. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.: An image is worth 16x16 words: Transformers for image recognition at scale. In: In-ternational Conference on Learning Representations (2021), https://openreview. net/forum?id=YicbFdNTTy 
+
+7. Fedus, W., Zoph, B., Shazeer, N.: Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Research 
+
+23 (120), 1–39 (2022) 8. Frantar, E., Ashkboos, S., Hoefler, T., Alistarh, D.: Gptq: Accurate post-training quantization for generative pre-trained transformers. arXiv preprint arXiv:2210.17323 (2022) 9. Guo, Z., Zhao, K., Zhang, L.: Instancersr: Real-world super-resolution via instance-aware representation alignment. In: ICASSP 2026 - 2026 IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP). pp. 10577–10581 (2026). https://doi.org/10.1109/ICASSP55912.2026.11462690 
+
+10. Jiang, Y., Wang, H., Xie, L., Zhao, H., Qian, H., Lui, J., et al.: D-llm: A token adap-tive computing resource allocation strategy for large language models. Advances in Neural Information Processing Systems 37 , 1725–1749 (2024) 11. Jiao, X., Yin, Y., Shang, L., Jiang, X., Chen, X., Li, L., Wang, F., Liu, Q.: TinyBERT: Distilling BERT for natural language understanding. In: Cohn, T., He, Y., Liu, Y. (eds.) Findings of the Association for Computational Linguis-tics: EMNLP 2020. pp. 4163–4174. Association for Computational Linguistics, Online (Nov 2020). https://doi.org/10.18653/v1/2020.findings-emnlp.372 ,
+
+https://aclanthology.org/2020.findings-emnlp.372/ 
+
+12. Katharopoulos, A., Vyas, A., Pappas, N., Fleuret, F.: Transformers are rnns: Fast autoregressive transformers with linear attention. In: International conference on machine learning. pp. 5156–5165. PMLR (2020) 13. Lepikhin, D., Lee, H., Xu, Y., Chen, D., Firat, O., Huang, Y., Krikun, M., Shazeer, N., Chen, Z.: {GS}hard: Scaling giant models with conditional computation and au-tomatic sharding. In: International Conference on Learning Representations (2021), 
+
+https://openreview.net/forum?id=qrwe7XHTmYb 
+
+14. Li, J., Du, L., Zhao, H., wen Zhang, B., Wang, L., Gao, B., Liu, G., Lin, Y.: Infinity instruct: Scaling instruction selection and synthesis to enhance language models (2025), https://arxiv.org/abs/2506.11116 
+
+15. Lu, Y., Hu, K., Zhang, L.: S3g: Stock state space graph for enhanced stock trend prediction. In: ICASSP 2026 - 2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). pp. 4081–4085 (2026). https://doi.org/ 10.1109/ICASSP55912.2026.11463578 
+
+16. Mihaylov, T., Clark, P., Khot, T., Sabharwal, A.: Can a suit of armor con-duct electricity? a new dataset for open book question answering. arXiv preprint arXiv:1809.02789 (2018) 17. Nagel, M., Amjad, R.A., Van Baalen, M., Louizos, C., Blankevoort, T.: Up or down? adaptive rounding for post-training quantization. In: International confer-ence on machine learning. pp. 7197–7206. PMLR (2020) 18. Raposo, D., Ritter, S., Richards, B., Lillicrap, T., Humphreys, P.C., Santoro, A.: Mixture-of-depths: Dynamically allocating compute in transformer-based language models. arXiv preprint arXiv:2404.02258 (2024) 12 Y. Wu, X. Wang, K. Zhao, Z. Wang, Q. Guo, and X. Tang 19. Sakaguchi, K., Le Bras, R., Bhagavatula, C., Choi, Y.: Winogrande: An adversarial winograd schema challenge at scale. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 34, pp. 8732–8740 (2020) 20. Si, G., Xiao, Y., Wei, B., Bullock, L.B., Wang, Y., Wang, X.: Token-selective vision transformer for fine-grained image recognition of marine organisms. Frontiers in Marine Science 10 , 1174347 (2023) 21. Su, Y., Zhu, H., Tian, Y., Zhao, C., Peng, Z., Liu, Y., Fan, L., Li, B., Zhang, L.: Agentic-sql taxonomy: A survey of autonomous and interactive text-to-sql with llms (2026) 22. Tan, Z., Dong, D., Zhao, X., Cai, J., Peng, J., Cheng, Y., Chen, T.: DLO: Dy-namic layer operation for efficient vertical scaling of LLMs. In: First Workshop on Scalable Optimization for Efficient and Adaptive Foundation Models (2025), 
+
+https://openreview.net/forum?id=E9Jw3IHuDH 
+
+23. Tang, Q., Zhang, B., Liu, J., Liu, F., Liu, Y.: Dynamic token pruning in plain vision transformers for semantic segmentation. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 777–786 (2023) 24. Team, Q.: Qwen2 technical report. arXiv preprint arXiv:2407.10671 (2024) 25. Teknium: Openhermes 2.5: An open dataset of synthetic data for generalist llm assistants (2023), https://huggingface.co/datasets/teknium/OpenHermes-2.5 
+
+26. Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M.A., Lacroix, T., Rozière, B., Goyal, N., Hambro, E., Azhar, F., Rodriguez, A., Joulin, A., Grave, E., Lample, G.: Llama: Open and efficient foundation language models (2023), 
+
+https://arxiv.org/abs/2302.13971 
+
+27. Wang, J., Fan, L., Li, B., Zhang, L.: A dynamic factor gating architec-ture with market regime awareness for stock return forecasting. Preprints (March 2026). https://doi.org/10.20944/preprints202603.2262.v1 , https:// doi.org/10.20944/preprints202603.2262.v1 
+
+28. Wang, J., Fan, L., Li, B., Zhang, L.: Forecasting with guidance: Representation-level supervision for time series forecasting (2026), https://arxiv.org/abs/2603. 24262 
+
+29. Xu, X., Li, M., Tao, C., Shen, T., Cheng, R., Li, J., Xu, C., Tao, D., Zhou, T.: A survey on knowledge distillation of large language models. arXiv preprint arXiv:2402.13116 (2024) 30. Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., Choi, Y.: Hellaswag: Can a machine really finish your sentence? (2019), https://arxiv.org/abs/1905.07830
