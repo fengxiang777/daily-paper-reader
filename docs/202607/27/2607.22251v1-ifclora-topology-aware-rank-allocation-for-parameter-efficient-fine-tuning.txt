@@ -1,0 +1,490 @@
+Title: IFCLoRA: Topology-Aware Rank Allocation for Parameter-Efficient Fine-Tuning
+
+URL Source: https://arxiv.org/pdf/2607.22251v1
+
+Published Time: Mon, 27 Jul 2026 00:43:16 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# IFCLoRA: Topology-Aware Rank Allocation for Parameter-Efficient Fine-Tuning 
+
+Wei Zhang 
+
+Faculty of Artificial Intelligence in Education Laboratory for Artificial Intelligence and New Forms of Education Central China Normal University Wuhan, Hubei, China 
+
+Xinwu Liu 
+
+Faculty of Artificial Intelligence in Education Laboratory for Artificial Intelligence and New Forms of Education Central China Normal University Wuhan, Hubei, China 
+
+Yihang Cheng ∗
+
+Faculty of Artificial Intelligence in Education Laboratory for Artificial Intelligence and New Forms of Education Central China Normal University Wuhan, Hubei, China 
+
+Abstract 
+
+Low-Rank Adaptation (LoRA) is a prominent parameter-efficient fine-tuning method for large language models, yet its effectiveness is critically shaped by how a fixed rank budget is allocated across Transformer modules. Existing adaptive-rank LoRA variants typically reallocate ranks using training-time local gradient statis-tics, incurring additional memory and computational overhead. However, this local sensitivity-driven view leaves the role of task-conditioned global information-flow structure in rank allocation largely underexplored. To address this gap, we propose IFCLoRA (Information-Flow Centrality LoRA), a topology-aware, pre-fine-tuning rank allocation procedure. IFCLoRA performs lightweight tracing on a frozen pretrained model using a small calibration set, constructing a task-conditioned sparse interaction graph whose nodes correspond to LoRA-insertable modules. The method then combines a global information-flow topology prior with node-wise local gradient sensitivity to compute Information-Flow Centrality (IFC) scores, which quantify each node’s adaptation importance under task-conditioned multi-hop propagation. Finally, IFCLoRA assigns discrete ranks in a single shot under a global rank constraint. Across models and tasks, under the same training setup and total rank budgets as representative baselines such as LoRA, AdaLoRA, and EVA, IFCLoRA consistently improves aggregate performance in multiple low-rank regimes while incurring training-time costs comparable to standard LoRA. For example, when fine-tuning LLaMA3-8B for mathematical reasoning, IFCLoRA im-proves over LoRA by 1.36% and 1.82% at rank 4 and rank 8, respectively. Further analyses reveal task-dependent, non-uniform allocation patterns in the learned rank profiles, providing an interpretable view of how adaptation capacity is distributed  
+
+> ∗Corresponding author: yihangcheng@mails.ccnu.edu.cn
+> Preprint. arXiv:2607.22251v1 [cs.LG] 24 Jul 2026
+
+and suggesting that task-conditioned global information-flow topology can serve as an informative structural prior for low-budget PEFT. 
+
+1 Introduction 
+
+Large pretrained language models (LLMs) have demonstrated strong generalization ability across a wide range of natural language processing and reasoning tasks [Vaswani et al., 2017, Grattafiori et al., 2024, Yang et al., 2025]. However, as model sizes continue to grow, full fine-tuning faces prohibitively high memory and storage costs. Parameter-efficient fine-tuning (PEFT) has accordingly emerged as a practical paradigm for adapting large models with limited trainable parameters [Han et al., 2024]. Among PEFT methods, LoRA parameterizes weight updates as low-rank matrix products, substantially reducing the number of trainable parameters while maintaining competitive performance [Hu et al., 2022]. Standard LoRA assigns the same rank to all target layers and modules, implicitly assuming that different positions contribute similarly to the task. In low-budget settings, however, Transformer layers and modules exhibit substantial functional heterogeneity. Prior analyses of Transformer circuits and feed-forward memories further suggest that attention heads, FFN blocks, and residual pathways play distinct roles in information processing [Geva et al., 2021, Wang et al., 2022, Meng et al., 2022, Syed et al., 2024]. These components differ in how they store, route, and transform information. In low-budget regimes, model performance can be sensitive to whether limited capacity is concentrated on task-relevant information-propagation paths or spread uniformly. Although adaptive rank-allocation methods improve over uniform allocation [Zhang et al., 2023, He et al., 2025, Ed-dib et al., 2025], they still mainly rely on local statistics during training and introduce additional overhead. A natural question is therefore whether a global perspective that explicitly characterizes cross-layer information flow can provide a better allocation signal. Mechanistic interpretability reveals traceable task-relevant computational subgraphs [Conmy et al., 2023, Syed et al., 2024]. Graph centrality analysis provides tools for quantifying global node importance [Page et al., 1999, Newman, 2018]. Yet these two perspectives have not been directly combined into a pre-fine-tuning rank-allocation mechanism. r=4         
+
+> r=8
+> r=8
+> r=8
+> r=8
+> r=6
+> r=4
+> r=2
+> r=8
+> r=8
+> r=4
+> r=2
+> r=2
+> 1
+> 2
+> 3
+> 4
+> r=6
+> r=3
+> r=7
+> r=4
+> r=4
+> r=4
+> r=4
+> r=2
+> r=6
+> r=1
+> LoRA IFCLoRA
+> AdaLoRA
+> Calibration data
+> Frozen model
+> Interaction graph
+> One-shot rank allocation before fine-tuning
+> Uniform static allocation
+> rank vector = [4, 4, 4, 4]
+> Ranks change during training
+> module-level ranks
+> q
+> k
+> v
+> o
+> gate
+> up
+> down
+> Computes module-level ranks once before fine-tuning
+> Step 1 →Step 2 →Step 3
+> L3
+> L2
+> L1
+> L0
+> Topology-aware one-shot
+> Layer 1
+> Layer 2
+> Layer 3
+> Layer 0 ...
+> sample1 sample2 sample 128
+
+Figure 1: Comparison of LoRA, AdaLoRA, and IF-CLoRA rank-allocation strategies. Figure 1 compares standard LoRA, AdaLoRA, and IFCLoRA from the perspec-tive of when and how ranks are allocated. To this end, we propose IFCLoRA, a topology-aware low-rank adaptation framework that completes rank allocation in a single pre-fine-tuning pass. Given a small calibration set, IFCLoRA performs lightweight tracing on a frozen model to construct a task-conditioned interaction graph, then fuses a topology prior with local gradient sensitivity into an Information-Flow Centrality score for one-shot budget-constrained rank routing. Experiments on GSM8K and SuperGLUE show that, under the same rank budget, IFCLoRA provides consistent GSM8K gains across three backbone models and a generally favorable but task-dependent SuperGLUE profile. Further analysis shows that the learned rank distribution varies across tasks and concentrates capacity on a small number of structurally important modules, providing a topology-based implementation of parameter routing in PEFT. The main contributions of this paper are: 21. We propose IFCLoRA, a topology-aware one-shot rank allocation method. IFCLoRA introduces task-conditioned interaction-graph construction and information-flow centrality analysis into PEFT, and completes discrete rank allocation under a global budget before fine-tuning begins. 2. We introduce the Information-Flow Centrality score, a heuristic importance measure that combines bidirectional graph reachability with local gradient sensitivity to produce a computable rank-allocation signal. 3. We validate IFCLoRA across multiple models, tasks, and budgets. Experiments on three backbone models cover mathematical reasoning and semantic understanding under low-rank budgets r = 4 and r = 8 . On GSM8K, IFCLoRA improves over LoRA by 1.13 percentage points on average and reaches a maximum single GSM8K gain of 1.82 percentage points. The learned rank distributions are task-specific and non-uniform. 
+
+2 Related Work 
+
+2.1 PEFT and Adaptive Rank Allocation 
+
+Representative PEFT methods include Adapter Tuning [Houlsby et al., 2019], Prefix Tuning [Li and Liang, 2021], Prompt Tuning [Lester et al., 2021], BitFit [Ben Zaken et al., 2022], IA3 [Liu et al., 2022], and LoRA [Hu et al., 2022]. LoRA parameterizes the weight increment as a low-rank decomposition, W = W(0) + BA , where B ∈ Rd1×r and A ∈ Rr×d2 with r ≪ { d1, d 2}. It greatly reduces trainable parameters and memory overhead, making it one of the most widely used PEFT baselines. The uniform rank allocation adopted by standard LoRA fails to account for the pervasive functional heterogeneity across layers and modules in Transformers. Recent work has therefore explored adaptive rank allocation from several directions: AdaLoRA and ALoRA estimate rank importance during optimization or under a fixed adaptation budget and redistribute capacity accordingly, EVA and TLoRA use downstream activations, variance, task-aware pre-fine-tuning signals, or sensitivity cues, GeLoRA and GoRA use representation geometry or gradient information, and IGU-LoRA and L1RA use attribution, uncertainty, or dynamic rank-assignment mechanisms [Zhang et al., 2023, Liu et al., 2024, Paischer et al., 2025, Lin et al., 2026, Ed-dib et al., 2025, He et al., 2025, Cui et al., 2026, Sundararajan et al., 2017, Singh et al., 2025, Deng et al., 2026]. These methods are closely related to IFCLoRA in their goal of avoiding uniform rank allocation, but their allocation signals are still primarily derived from local matrix-level, activation-level, gradient-level, attribution-level, geometric, dynamic-assignment, or training-time statistics. In contrast, IFCLoRA explicitly constructs a task-conditioned interaction graph and converts global source-to-sink information-flow topology into a pre-fine-tuning, one-shot rank-allocation prior, lightly calibrated by local gradient sensitivity. 
+
+2.2 Mechanistic Interpretability and Circuit Analysis 
+
+Mechanistic interpretability seeks to understand how neural networks realize specific functions by examining internal computational structure. Prior work suggests that language models contain traceable task-relevant computational subgraphs: attention heads, MLP layers, and residual pathways can jointly form circuits that implement specific functions [Elhage et al., 2021, Wang et al., 2022, Conmy et al., 2023, Syed et al., 2024, Hadad et al., 2026], while causal tracing and model editing locate localized computations that mediate factual recall [Meng et al., 2022]. Studies of component roles further reveal the memory-like function of feed-forward networks [Geva et al., 2021]. Although these methods reveal important structural regularities, they mostly belong to the post hoc analysis paradigm. The resulting graph structures have not yet been systematically used to guide parameter allocation before fine-tuning, and full circuit extraction is often computationally expensive. IFCLoRA borrows the idea of modeling internal interactions as a directed graph, but redirects it from post hoc explanation to pre-fine-tuning rank allocation. 
+
+2.3 Graph Centrality in Neural Networks 
+
+Graph centrality is a classical tool in complex network analysis for measuring the relative importance of nodes in a global topology [Page et al., 1999, Newman, 2018]. Deep neural networks have 3Calibration dataset   
+
+> ❄Frozen Transformer
+> (b) Topology Prior Extraction
+> (c) Local Sensitivity Calibration
+> Layer0
+> Layer1
+> Layer2
+> Layer3
+> Layer4
+> average rank
+> (d) Budget-Constrained Rank Allocation
+> Fuse
+> IFC scores
+> output-side anchor
+> input-side anchor
+> structure-aware importance scoring
+> topology prior
+> topology prior fi
+> type-wise normalized sensitivity gˉi
+> module-wise allocation
+> (a) Task-Conditioned Interaction Graph Construction
+> forward reachability
+> backward reachability
+
+IFCLoRA Framework         
+
+> ST...
+> interaction graph
+> budget-constrained allocation
+> softmax / τ4.2
+> 2.5
+> 3.2
+> 1.1
+> continuous rank quotas
+> ...
+> target unit
+> source unit
+> Layer 0
+> Layer 1
+> Layer n-1
+> 0
+> 1.0
+> ...
+> Layer0 Layer1 Layer L-2 Layer L-1
+> q k v o .. 4 5 3 2 ..
+> q k v o .. 4 3 5 2 ..
+> q k v o .. 2 8 3 2 ..
+> q k v o .. 2 3 3 2 ..
+> LoRA adapter with integer rank min_r=2
+> W
+> source unit
+> intermediate unit
+> target unit
+> influence weight
+> edge label:
+> clean forward zero ablation
+> source unit i
+> source unit i
+> target unit j
+> source unit i
+> ij
+> q
+> k
+> v
+> o
+> gate
+> up
+> down
+> Wij
+> ^
+> ...
+> ^ij
+
+Figure 2: Overall framework of IFCLoRA. Given a small calibration set, IFCLoRA first performs lightweight tracing on a frozen Transformer and compares clean forward activations with target-unit activations after source-unit zero ablation to construct a task-conditioned interaction graph (a). It then extracts Information-Flow Centrality (IFC) from the graph based on forward and backward reachability from input-side and output-side anchors as a topology prior (b). Next, IFC is fused with type-wise normalized local task sensitivity to obtain module-level importance scores (c). Finally, under a total rank-budget constraint, one-shot rank routing allocates differentiated ranks to different layers and LoRA-insertable modules (d). increasingly been abstracted as graph structures for architecture analysis and compression. Centrality scores such as PageRank, Katz centrality, betweenness centrality, and eigenvector centrality motivate global views of information flow for identifying important or redundant nodes [Yu et al., 2026]. However, existing graph-centrality methods mainly serve static architecture analysis or offline model compression. For LLM adaptation, what affects downstream reasoning is not only whether a node is a static hub, but also whether it lies on a task-relevant path and acts as a mediator in multi-hop information propagation. To transfer graph centrality into PEFT, task-relevant local sensitivity must be integrated into the centrality measure. The IFC metric proposed here is designed for this purpose. Taken together, prior work shows that ranks should not be allocated uniformly and that downstream data, gradients, and attribution signals can provide useful allocation cues. IFCLoRA complements this line of work by introducing a task-conditioned topology prior: it estimates which nodes lie on source-to-sink information-flow paths and uses this prior for one-shot budget-constrained rank allocation before fine-tuning. The resulting gap is not task awareness per se, but the explicit conversion of global multi-hop information-flow topology into a rank-allocation prior for low-budget PEFT. 
+
+3 Method 
+
+We propose IFCLoRA, a topology-aware rank allocation method for low-budget PEFT. Unlike LoRA and training-time dynamic methods such as AdaLoRA [Hu et al., 2022, Zhang et al., 2023], IFCLoRA performs lightweight circuit tracing with a small calibration set before fine-tuning begins, constructs a task-conditioned interaction graph, and completes rank allocation in one shot. The method consists of four stages: task-conditioned interaction graph construction, topology-prior extraction, local sensitivity calibration, and budget-constrained rank allocation. Figure 2 illustrates the complete IFCLoRA workflow from calibration-based tracing to budget-constrained rank routing. 43.1 Problem Definition 
+
+Let the pretrained Transformer be M, and let U = {u1, . . . , u U } denote all LoRA-insertable modules, also referred to as adaptation units, such as attention projection layers and MLP projection layers. Our goal is to assign an integer rank ru to each unit u under a total rank budget Rtot , yielding a rank allocation vector r = ( r1, . . . , r U ) ∈ ZU . The budget controlled in this paper is the total rank budget rather than a strictly matched total number of trainable parameters, so small parameter-count differences may remain when modules have different shapes. Thus, IFCLoRA focuses on how different allocation strategies affect the utilization efficiency of limited adaptation capacity under the same rank budget: UX
+
+> u=1
+
+ru = Rtot , ru ∈ Z, rmin ≤ ru ≤ rmax . (1) In all experiments, we choose feasible budgets satisfying the minimum and maximum rank constraints. Standard LoRA assumes that different layers and modules have similar adaptation requirements and therefore adopts a uniform rank allocation. In contrast, we argue that low-budget performance depends on whether limited capacity is allocated to modules that truly lie on key reasoning paths. The core problem is therefore how to estimate the relative task importance of LoRA-insertable modules before training and use that estimate for one-shot rank allocation. To solve this problem, IFCLoRA first constructs a task-conditioned interaction graph from a small calibration set. It then extracts a topology prior, calibrates it with local task sensitivity, and finally maps the resulting IFC score to a discrete rank allocation under the total budget constraint. 
+
+3.2 Task-Conditioned Interaction Graph Construction 
+
+We represent interactions among LoRA-insertable modules as a task-conditioned sparse directed interaction graph G = ( V, E ). Each node vi ∈ V corresponds to a LoRA-insertable module, also referred to as an adaptation unit, and each directed edge (i → j) ∈ E indicates that a change in node 
+
+i has an observable influence on a later node j under the current task. The goal is not to recover the full computation circuit exactly, but to build a sparse and tractable structural approximation that carries task-relevant information flow. For each calibration sample x ∈ D cal , we perform a clean forward pass and record the activation 
+
+hj (x) of target node j. We then apply zero ablation (setting the source node’s output to zero) to node i and rerun the forward pass to obtain the response of target node j under this intervention, denoted h(x;i←0)  
+
+> j
+
+. Zero ablation directly estimates how downstream representations change when a module contribution is removed, and avoids the extra activation-expectation estimates required by mean ablation. The sample-level local influence strength is 
+
+∆i→j (x) = h(x;i←0)  
+
+> j
+
+− hj (x) 2
+
+, (2) and the raw edge weight is 
+
+ewij = Ex∼D cal [∆ i→j (x)] . (3) Equations 2 and 3 define the intervention response and aggregate it over the calibration set. To control tracing cost, the implementation does not enumerate arbitrary node pairs over the full graph. After sorting target nodes by depth, it retains only candidate edges satisfying j > i and j ≤ i + w,where w is the tracing window size and is set to 15 in our experiments. This constraint controls graph size and matches the forward-depth propagation structure of decoder-only Transformers. Because nodes are ordered LoRA-insertable modules rather than layers, this window covers local cross-module neighborhoods across adjacent depth positions while avoiding a dense set of noisy long-range candidate edges. The sensitivity of IFCLoRA to routing hyperparameters is examined in Appendix C. After row-wise normalization of the filtered edge weights bwij , we obtain the transition matrix 
+
+Tij = bwij 
+
+P  
+
+> k∈N(i)
+
+bwik + ε . (4) Equation 4 converts the sparse weighted graph into a row-normalized sparse propagation operator. 53.3 Topology Prior Extraction 
+
+A node on a key reasoning path should both receive task-relevant signals from the input side and pass its influence toward the output decision side. A node with only the former property may be a passive receiver, while a node with only the latter may not be effectively coupled to the input condition. We therefore combine forward and backward reachability into a topology prior. Target nodes are sorted by depth. The shallowest target node is used as the input-side anchor, and the deepest target node is used as the output-side anchor. We define an input-side seed distribution psrc 
+
+and an output-side seed distribution ptgt , both one-hot vectors at the first and last nodes, respectively. Forward reachability, backward reachability, and the topology prior are defined as 
+
+a =
+
+> Kf
+
+X
+
+> k=0
+
+αk(T ⊤)kpsrc , b =
+
+> Kb
+
+X
+
+> k=0
+
+βkT kptgt , fi = Norm( ai · bi). (5) In Equation 5, Kf and Kb are truncation depths, and α, β ∈ (0 , 1) are damping factors. Here, Norm 
+
+denotes node-wise min-max normalization over all nodes. The score assigns high weight to nodes that both lie on upstream-reachable paths and can continue to connect to the downstream decision end. It is therefore a source-to-sink reachability score under task conditions rather than an unconditional static centrality measure. 
+
+3.4 Local Sensitivity Calibration and Budget-Constrained Rank Allocation 
+
+Local sensitivity calibration means that the topology prior is lightly corrected using local gradient sensitivity on a small calibration set, without relying on dynamic gradient statistics throughout training. We refer to this lightweight correction as weak task calibration. The topology prior fi
+
+captures structural position, but capacity allocation should also reflect the current supervised objective. For the output activation hi(x) of node i, we define local task sensitivity as 
+
+gi = Ex∼D cal 
+
+ ∇hi(x)L(x) ⊙ hi(x) 1
+
+ . (6) Because different module types have different numerical scales, we normalize gi within each module family by dividing it by the mean sensitivity of units of the same type, and denote the result as gi.We then combine the topology prior and local sensitivity through power-form fusion: 
+
+Ii = ( fi + ε)1−ρ(gi + ε)ρ, (7) Equations 6 and 7 define local sensitivity and its fusion with the topology prior, where ρ ∈ [0 , 1] 
+
+controls the balance. For 0 < ρ < 1, the multiplicative form acts as a soft AND gate: a node cannot obtain a high allocation score from either topology or gradient evidence alone, which reduces the risk that a single noisy signal dominates rank allocation. This design gives a high score only to nodes that are structurally important and locally sensitive to the current task. Since graph nodes and LoRA-insertable modules correspond one-to-one, we set the module-level score to Su = Iu. After z-score standardization over all units to eSu, a temperature-controlled softmax computes continuous rank quotas: 
+
+ωu = exp( eSu/τ )
+
+PUv=1 exp( eSv /τ ) , eru = Rtot · ωu. (8) The quota eru from Equation 8 is clipped to [rmin , r max ] and floored. Greedy residual compensation or reclamation is then applied so that Equation 1 is satisfied exactly. All ranks are fixed before training, so the subsequent fine-tuning procedure is the same as standard LoRA except for the non-uniform rank allocation. The candidate edge set scales as O(|U| w). In our hook-based implementation, tracing is a one-time preprocessing cost over the calibration set, while the subsequent training stage follows standard LoRA with fixed non-uniform ranks. We report the measured preprocessing, training-time, and memory overhead in Appendix D. 
+
+4 Experiments 
+
+We evaluate IFCLoRA on mathematical reasoning and general semantic understanding. Section 4.1 describes the setup, Section 4.2 reports the main results, Section 4.3 analyzes rank allocation, and Section 4.4 studies routing components. 64.1 Experimental Setup 
+
+We evaluate on LLaMA3-8B, Qwen3-8B, and Qwen3-14B [Grattafiori et al., 2024, Yang et al., 2025]. Tasks include GSM8K for mathematical reasoning and SuperGLUE for general semantic understanding [Cobbe et al., 2021, Wang et al., 2019]. GSM8K is evaluated with exact-match accuracy after answer extraction, while SuperGLUE uses official task-specific metrics. The compared methods are LoRA, AdaLoRA, EVA, and IFCLoRA. All methods use the same backbone model, data split, LoRA insertion modules, training protocol, random seeds, and evaluation scripts. LoRA is applied to attention projections ( q, k, v, o ) and MLP projections (gate, up, down). We mainly study low-rank budgets r = 4 and r = 8 , using total rank budget as the main fairness constraint. Unless otherwise stated, each experiment is repeated with three random seeds and reported as mean 
+
+± standard deviation. Full training settings, method-specific configurations, reproducibility details, and efficiency measurements are provided in Appendix A. To keep the main table compact, Table 1 reports a compact subset of SuperGLUE subtasks, while the complete nine-subtask breakdown is provided in Appendix B using the same evaluation scripts and metrics. 
+
+4.2 Main Experiments 
+
+Tables 1 and 2 summarize the main experimental results. On GSM8K, IFCLoRA achieves the best accuracy across the three backbone models and both low-rank budgets, showing that topology-aware rank allocation uses the same rank budget more effectively than uniform or training-time adaptive allocation in this benchmark. Table 1: Main results of IFCLoRA and baselines on GSM8K and the reported SuperGLUE tasks under the r = 4 low-rank budget. Results are reported as mean ± standard deviation over three random seeds; bold indicates the best result under the same backbone and task.                                                                                                                                                                                                                     
+
+> Math SuperGLUE Method GSM8K BoolQ CB ReCoRD RTE WSC.fixed
+> Qwen3-14B
+> LoRA 84 .84 ±0.86 91 .67 ±0.45 91 .72 ±0.28 88 .87 ±0.30 93 .62 ±0.23 84 .62 ±2.54
+> AdaLoRA 84 .99 ±0.39 89 .45 ±1.00 91 .39 ±2.10 88 .42 ±0.45 92 .58 ±2.10 83 .15 ±1.92
+> EVA 84 .79 ±0.39 90 .23 ±1.00 92 .22 ±0.35 89 .07 ±0.00 92 .56 ±0.00 83 .82 ±0.56
+> IFCLoRA (Ours) 85 .44 ±0.30 93 .23 ±0.45 93 .86 ±2.40 89 .80 ±0.94 93 .67 ±0.60 88 .78 ±2.00
+> Qwen3-8B
+> LoRA 80 .97 ±0.35 91 .80 ±0.78 95 .80 ±3.40 86 .20 ±0.45 90 .36 ±0.60 80 .13 ±1.47
+> AdaLoRA 80 .29 ±0.53 91 .68 ±0.23 95 .13 ±1.56 86 .69 ±1.03 89 .19 ±0.23 80 .27 ±2.30
+> EVA 80 .43 ±0.39 90 .27 ±0.20 91 .21 ±0.65 83 .07 ±0.83 88 .56 ±0.85 83 .12 ±0.56
+> IFCLoRA (Ours) 82 .33 ±0.73 91 .80 ±0.39 94 .72 ±2.74 86 .59 ±0.60 91 .15 ±0.23 83 .33 ±1.11
+> LLaMA3-8B
+> LoRA 64 .14 ±0.76 92 .58 ±0.39 90 .06 ±3.90 90 .02 ±0.84 89 .97 ±0.23 72 .76 ±1.11
+> AdaLoRA 65 .13 ±0.49 91 .71 ±0.45 90 .79 ±2.55 90 .68 ±0.53 89 .95 ±0.23 72 .82 ±0.56
+> EVA 64 .79 ±0.39 90 .27 ±0.00 91 .21 ±0.35 90 .07 ±0.00 88 .56 ±0.00 73 .82 ±0.56
+> IFCLoRA (Ours) 65 .50 ±0.54 92 .58 ±0.39 93 .04 ±0.62 91 .45 ±0.53 89 .58 ±0.81 74 .36 ±1.42
+
+Table 1 reports the main results under the strict low-rank budget r = 4 . On GSM8K, IFCLoRA obtains the highest accuracy on all three backbones, reaching 85.44, 82.33, and 65.50 on Qwen3-14B, Qwen3-8B, and LLaMA3-8B, respectively. Compared with LoRA, these results correspond to gains of 0.60, 1.36, and 1.36 percentage points, showing that topology-aware rank allocation can improve mathematical reasoning under limited adaptation capacity. Because all methods are compared under the same total rank budget and IFCLoRA does not change the subsequent LoRA fine-tuning procedure, the gains are attributable to the non-uniform rank-budget allocation rather than additional training capacity. On the SuperGLUE tasks reported in Table 1, IFCLoRA shows a task-dependent but generally favorable profile. For Qwen3-14B, IFCLoRA achieves the best result on all reported SuperGLUE tasks, with especially clear improvements on BoolQ, CB, and WSC.fixed. For Qwen3-8B, IFCLoRA 7obtains the highest or tied-highest scores on BoolQ, RTE, and WSC.fixed, while remaining competi-tive on CB and ReCoRD. For LLaMA3-8B, except for RTE where LoRA is slightly higher, IFCLoRA obtains the best or tied-best result on the remaining reported SuperGLUE tasks. Overall, IFCLoRA provides consistent gains on mathematical reasoning and maintains a task-dependent profile on language-understanding tasks. Compared with adaptive and initialization-based baselines, IFCLoRA shows more consistent per-formance across the evaluated settings. AdaLoRA does not consistently outperform LoRA under the same low-rank budget, suggesting that training-time dynamic rank adjustment can be sensitive in tight-budget regimes. EVA is competitive on some language-understanding tasks, but its overall performance remains below IFCLoRA. In contrast, IFCLoRA allocates the limited rank budget once before fine-tuning according to the task-conditioned topology prior, leading to more consistent GSM8K performance, with task-dependent behavior on SuperGLUE. Table 2: GSM8K performance across backbone models and rank budgets.                                                                      
+
+> Method Qwen3-14B Qwen3-8B LLaMA3-8B LoRA r= 4 84 .84 ±0.86 80 .97 ±0.35 64 .14 ±0.76
+> LoRA r= 8 84 .69 ±0.27 81 .73 ±0.76 64 .37 ±0.57
+> AdaLoRA r= 4 84 .99 ±0.39 80 .29 ±0.53 65 .13 ±0.49
+> AdaLoRA r= 8 85 .60 ±0.29 81 .50 ±0.20 65 .28 ±0.16
+> IFCLoRA r= 4 85 .44 ±0.30 82 .33 ±0.73 65 .50 ±0.54
+> IFCLoRA r= 8 85 .67 ±0.39 82 .41 ±0.54 66 .19 ±0.36
+
+Figure 3: GSM8K accuracy under differ-ent rank budgets. Table 2 reports GSM8K performance across the three backbones and two rank budgets. IFCLoRA achieves the best result in all six model-budget settings. Compared with LoRA, IFCLoRA im-proves GSM8K accuracy by 1.13 percentage points on average, with the largest gain appearing on LLaMA3-8B at r = 8 : IFCLoRA reaches 66.19%, improving over the 64.37% of LoRA by 1.82 percentage points. At the same time, IFCLoRA also outperforms AdaLoRA across the GSM8K settings, suggesting that topology-aware rank allocation before fine-tuning provides a more consistent allocation signal than training-time dynamic rank adjustment in low-budget mathematical reasoning. Figure 3 further visualizes the GSM8K rank-budget trends. When the rank budget increases from 
+
+r = 4 to r = 8 , IFCLoRA improves on all three backbones. In contrast, LoRA slightly decreases on Qwen3-14B from 84.84% to 84.69%, indicating that simply increasing a uniform rank budget does not necessarily yield consistent gains. Overall, IFCLoRA maintains an advantage across different model scales and rank budgets, suggesting that the task-conditioned topology prior provides an informative structural prior for low-budget PEFT. 
+
+4.3 Visualization of Rank Distribution 
+
+We analyze the source of IFCLoRA’s gains through the learned rank distribution. Unless otherwise specified, this section uses Qwen3-8B on GSM8K under an r = 4 -equivalent budget. 
+
+(a) Module-wise rank distribution. (b) Layer-wise average allocated rank. 
+
+Figure 4: Rank allocation analysis on Qwen3-8B with GSM8K under the r = 4 budget. (a) Module-wise rank distribution learned by IFCLoRA. (b) Layer-wise average allocated rank across allocation strategies. 8Figure 4(a) shows that IFCLoRA learns a clearly non-uniform rank allocation. More capacity is assigned to mid-to-late FFN modules and selected attention projections, while shallow modules are compressed to lower ranks. Similar non-uniform rank profiles have also been observed in recent adaptive-rank LoRA studies, whereas IFCLoRA further links the allocation pattern to task-conditioned information-flow topology [Ed-dib et al., 2025, He et al., 2025, Singh et al., 2025]. This allocation is consistent with prior observations that Transformer FFN layers can act as key-value memories, and suggests that mid-to-late FFN modules may occupy more source-to-sink information-flow paths under the GSM8K calibration distribution [Geva et al., 2021]. In this sense, the learned rank allocation is not merely non-uniform, but aligned with the topology prior used by IFC. The layer-wise view further compares the average allocated rank across strategies. Figure 4(b) shows that LoRA uses a flat allocation, while AdaLoRA produces a more dispersed dynamic allocation pattern across layers. In contrast, IFCLoRA concentrates rank around a smaller set of layers that are structurally important under the task-conditioned interaction graph. EVA is included as a data-driven initialization and rank-redistribution baseline in the quantitative comparisons in Table 1 and Appendix D; this subsection focuses on the recorded rank-allocation visualizations for LoRA, AdaLoRA, and IFCLoRA. These observations suggest that low-budget adaptation can benefit from routing capacity toward key modules rather than distributing it uniformly or relying only on diffuse dynamic reallocation. 
+
+4.4 Ablation Study 
+
+Figure 5: Ablation study and routing-control baselines on Qwen3-8B (GSM8K, r = 4 ). We ablate the routing score on Qwen3-8B (GSM8K, r = 4 ), covering routing-control base-lines (Random, Depth-biased, and FFN-biased), PageRank, graph-construction ablation (w/o zero ablation), component ablations (w/o Gradient and w/o Topology), and the full IFCLoRA score. As shown in Figure 5, IFCLoRA achieves the best accuracy (82.33), with w/o Gradient being the strongest ablation (81.88), while w/o zero ablation matches FFN-biased (81.56) and remains below the topology-based variants. The simple routing-control baselines improve over LoRA (80.97) but lag behind w/o Gradient, suggesting that the task-conditioned interaction graph captures allocation signals beyond fixed depth, module type, random assignment, or generic graph centrality. The low w/o Topology result (81.13) further suggests that local gradient-only routing may miss structurally important propagation paths. Overall, these results support the complementarity of global topology, causal zero-ablation tracing, and local task sensitivity. A broader sensitivity analysis over ρ, τ , and calibration size is provided in Appendix C. 
+
+5 Discussion 
+
+Topology-aware rank allocation offers a structural perspective on PEFT. Instead of treating LoRA rank as a uniform hyperparameter or adapting it only from local training-time statistics, IFCLoRA views LoRA-insertable modules as nodes in a task-conditioned interaction graph. This reframes low-budget adaptation as routing limited capacity along task-relevant information-flow paths. The resulting non-uniform rank profiles suggest that useful adaptation capacity is not evenly distributed across Transformer modules, but is shaped by the global organization of task-specific computation. Information-Flow Centrality is the key mechanism that operationalizes this perspective. By combining source-to-sink reachability with local gradient sensitivity, IFC estimates whether a module both receives task-relevant signals and lies on influential propagation paths. This makes the learned rank allocation more interpretable than purely local criteria: the assigned ranks can be traced back to graph structure and task-conditioned perturbation responses. We emphasize, however, that this provides structural evidence for capacity routing rather than a complete causal explanation of the model’s internal mechanism. IFCLoRA has several limitations. The IFC score is a heuristic without formal 9optimality guarantees: there is no theoretical result establishing that the resulting allocation minimizes downstream task loss under a given budget. The graph construction also assumes a forward-causal node ordering specific to decoder-only Transformers, and whether the approach transfers to encoder-decoder or mixture-of-experts architectures remains an open question. Finally, our experiments cover GSM8K and selected SuperGLUE tasks on three backbones, leaving broader domains and larger scales to be validated. 
+
+6 Conclusion and Future Work 
+
+We presented IFCLoRA, a topology-aware one-shot rank allocation method for LoRA fine-tuning. The method preserves a standard LoRA-like training stage while replacing uniform capacity assignment with a task-conditioned structural prior. Future work includes cheaper graph construction, adaptive recalibration, stronger causal interventions for validating IFC-identified bottlenecks, and extensions to code generation, long-context reasoning, instruction tuning, multimodal adaptation, and broader PEFT design choices such as insertion locations and module types. 
+
+References 
+
+Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel. BitFit: Simple parameter-efficient fine-tuning for transformer-based masked language-models. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pages 1–9, Dublin, Ireland, 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.acl-short.1. URL 
+
+https://aclanthology.org/2022.acl-short.1 .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 ,2021. URL https://arxiv.org/abs/2110.14168 .Arthur Conmy, Augustine N. Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adrià Garriga-Alonso. Towards automated circuit discovery for mechanistic interpretability. arXiv preprint arXiv:2304.14997 , 2023. URL https://arxiv.org/abs/2304.14997 .Xuan Cui, Huiyue Li, Run Zeng, Yunfei Zhao, Jinrui Qian, Wei Duan, Bo Liu, and Zhanpeng Zhou. IGU-LoRA: Adaptive rank allocation via integrated gradients and uncertainty-aware scoring. In 
+
+International Conference on Learning Representations , 2026. doi: 10.48550/arXiv.2603.13792. URL https://iclr.cc/virtual/2026/poster/10009917 .Guanzhi Deng, Bo Li, Ronghao Chen, Xiujin Liu, Zhuo Han, Huacan Wang, Lijie Wen, and Linqi Song. DR-LoRA: Dynamic rank LoRA for fine-tuning mixture-of-experts models. arXiv preprint arXiv:2601.04823 , 2026. doi: 10.48550/arXiv.2601.04823. URL https://arxiv.org/abs/ 2601.04823 .Abdessalam Ed-dib, Zhanibek Datbayev, and Amine Mohamed Aboussalah. GeLoRA: Geo-metric adaptive ranks for efficient LoRA fine-tuning. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 25174–25196, Suzhou, China, 2025. As-sociation for Computational Linguistics. doi: 10.18653/v1/2025.findings-emnlp.1372. URL 
+
+https://aclanthology.org/2025.findings-emnlp.1372/ .Nelson Elhage, Neel Nanda, Catherine Olsson, Tom Henighan, Nicholas Joseph, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, et al. A mathematical framework for transformer circuits. Transformer Circuits Thread , 2021. URL https://transformer-circuits.pub/ 2021/framework/index.html .Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer feed-forward layers are key-value memories. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pages 5484–5495, Online and Punta Cana, Dominican Republic, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.446. URL 
+
+https://aclanthology.org/2021.emnlp-main.446 .10 Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. URL https://arxiv.org/ abs/2407.21783 .Itamar Hadad, Guy Katz, and Shahaf Bassan. Formal mechanistic interpretability: Automated circuit discovery with provable guarantees. In International Conference on Learning Representations ,2026. doi: 10.48550/arXiv.2602.16823. URL https://arxiv.org/abs/2602.16823 .Zeyu Han, Chao Gao, Jinyang Liu, Jeff Zhang, and Sai Qian Zhang. Parameter-efficient fine-tuning for large models: A comprehensive survey. Transactions on Machine Learning Research , 2024. URL https://openreview.net/forum?id=lIsCS8b6zj . Accepted by TMLR. Haonan He, Peng Ye, Yuchen Ren, Yuan Yuan, Luyang Zhou, Shucun Ju, and Lei Chen. GoRA: Gradient-driven adaptive low rank adaptation. In Advances in Neural Information Processing Sys-tems , volume 38, 2025. URL https://papers.nips.cc/paper_files/paper/2025/hash/ a5e4907a40c0dcb8433a35c714ba9d79-Abstract-Conference.html .Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for nlp. In Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pages 2790–2799. PMLR, 2019. URL https: //proceedings.mlr.press/v97/houlsby19a.html .Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models. In International Conference on Learning Representations , 2022. URL https://openreview.net/forum?id= nZeVKeeFYf9 .Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pages 3045–3059, Online and Punta Cana, Dominican Republic, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.243. URL 
+
+https://aclanthology.org/2021.emnlp-main.243 .Xiang Lisa Li and Percy Liang. Prefix-tuning: Optimizing continuous prompts for generation. In 
+
+Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) ,pages 4582–4597, Online, 2021. Association for Computational Linguistics. doi: 10.18653/v1/ 2021.acl-long.353. URL https://aclanthology.org/2021.acl-long.353 .Weicheng Lin, Yi Zhang, Jiawei Dang, and Liang-Jie Zhang. TLoRA: Task-aware low rank adaptation of large language models. arXiv preprint arXiv:2604.18124 , 2026. doi: 10.48550/arXiv.2604. 18124. URL https://arxiv.org/abs/2604.18124 .Haokun Liu, Derek Tam, Mohammed Muqeeth, Jay Mohta, Tenghao Huang, Mohit Bansal, and Colin A. Raffel. Few-shot parameter-efficient fine-tuning is better and cheaper than in-context learning. In Advances in Neural Information Processing Systems , volume 35, 2022. URL 
+
+https://openreview.net/forum?id=rBCvMG-JsPd .Zequan Liu, Jiawen Lyn, Wei Zhu, Xing Tian, and Yvette Graham. ALoRA: Allocating low-rank adaptation for fine-tuning large language models. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 622–641, Mexico City, Mexico, 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.naacl-long.35. URL https://aclanthology. org/2024.naacl-long.35/ .Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing fac-tual associations in gpt. In Advances in Neural Information Processing Systems , vol-ume 35, 2022. URL https://proceedings.neurips.cc/paper_files/paper/2022/ hash/6f1d43d5a82a37e89b0665b33bf3a182-Abstract-Conference.html .Mark E. J. Newman. Networks . Oxford University Press, 2nd edition, 2018. ISBN 9780198805090. doi: 10.1093/oso/9780198805090.001.0001. URL https://academic.oup.com/book/27884 .11 Lawrence Page, Sergey Brin, Rajeev Motwani, and Terry Winograd. The PageRank citation ranking: Bringing order to the web. Technical report, Stanford InfoLab, 1999. URL https://ilpubs. stanford.edu/422/ .Fabian Paischer, Lukas Hauzenberger, Thomas Schmied, Benedikt Alkin, Marc Deisen-roth, and Sepp Hochreiter. Parameter efficient fine-tuning via explained vari-ance adaptation. In Advances in Neural Information Processing Systems , vol-ume 38, 2025. URL https://papers.nips.cc/paper_files/paper/2025/hash/ 41d33bd41fd44bd9dba0e092047cf213-Abstract-Conference.html .Raul Singh, Nicolò Brunello, Vincenzo Scotti, and Mark Carman. L1RA: Dynamic rank assignment in LoRA fine-tuning. In Proceedings of the 8th International Conference on Natural Language and Speech Processing (ICNLSP-2025) , pages 360–373, Southern Denmark University, Odense, Denmark, 2025. Association for Computational Linguistics. URL https://aclanthology. org/2025.icnlsp-1.35/ .Mukund Sundararajan, Ankur Taly, and Qiqi Yan. Axiomatic attribution for deep networks. In 
+
+Proceedings of the 34th International Conference on Machine Learning , volume 70 of Proceedings of Machine Learning Research , pages 3319–3328. PMLR, 2017. URL https://proceedings. mlr.press/v70/sundararajan17a.html .Aaquib Syed, Can Rager, and Arthur Conmy. Attribution patching outperforms automated circuit discovery. In Proceedings of the 7th BlackboxNLP Workshop: Analyzing and Interpreting Neural Networks for NLP , pages 407–416, Miami, Florida, USA, 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.blackboxnlp-1.25. URL https://aclanthology.org/ 2024.blackboxnlp-1.25 .Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural In-formation Processing Systems , volume 30, 2017. URL https://papers.nips.cc/paper/ 7181-attention-is-all-you-need .Alex Wang, Yada Pruksachatkun, Nikita Nangia, Amanpreet Singh, Julian Michael, Fe-lix Hill, Omer Levy, and Samuel R. Bowman. SuperGLUE: A stickier benchmark for general-purpose language understanding systems. In Advances in Neural Informa-tion Processing Systems , volume 32, 2019. URL https://papers.neurips.cc/paper/ 8589-superglue-a-stickier-benchmark-for-general-purpose-language-understanding-systems .Kevin Wang, Alexandre Variengien, Arthur Conmy, Buck Shlegeris, and Jacob Steinhardt. Inter-pretability in the wild: A circuit for indirect object identification in gpt-2 small. arXiv preprint arXiv:2211.00593 , 2022. URL https://arxiv.org/abs/2211.00593 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, et al. Qwen3 technical report. 
+
+arXiv preprint arXiv:2505.09388 , 2025. URL https://arxiv.org/abs/2505.09388 .Annan Yu, Danielle C. Maddix, Boran Han, Xiyuan Zhang, Abdul Fatir Ansari, Oleksandr Shchur, Christos Faloutsos, Andrew Gordon Wilson, Michael W. Mahoney, and Yuyang Wang. Under-standing transformers for time series: Rank structure, flow-of-ranks, and compressibility. In 
+
+International Conference on Learning Representations , 2026. doi: 10.48550/arXiv.2510.03358. URL https://arxiv.org/abs/2510.03358 .Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adalora: Adaptive budget allocation for parameter-efficient fine-tuning. In International Conference on Learning Representations , 2023. URL https://openreview.net/forum?id= lq62uWRJjiY .
+
+A Experimental Details 
+
+A.1 Common Training and Evaluation Setup 
+
+All methods use the same backbone models, data splits, LoRA insertion modules, random seeds, training protocol, and evaluation scripts. Because this paper focuses on rank allocation under low-rank budgets, the experimental design keeps variables unrelated to rank allocation fixed wherever possible. 12 Table 3: Common training and evaluation setup. 
+
+Item Setting Backbone models LLaMA3-8B, Qwen3-8B, Qwen3-14B Datasets GSM8K and SuperGLUE Compared methods LoRA, AdaLoRA, EVA, IFCLoRA Rank budgets r = 4 and r = 8 ; total rank budget aligned across methods LoRA target modules q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj Default optimization learning rate = 10 −4, 3 epochs, per-device batch size = 4 , gradient accumulation steps = 4 ,global batch size = 16 
+
+GSM8K training steps 1404 training steps in the main setting Random seeds 42, 52, 62 IFCLoRA calibration 128 calibration samples from the training set; calibration seed = 42 
+
+IFCLoRA graph construction Hook-based causal zero-ablation tracing on the frozen model Evaluation metrics Exact-match accuracy after answer extraction for GSM8K; task-specific official metrics for SuperGLUE Reporting protocol Mean ± standard deviation over three seeds Hardware NVIDIA A800 80G GPU Fairness principle Same backbone, data split, LoRA target modules, training protocol, and evaluation scripts; only rank allocation differs 
+
+Table 3 summarizes the common setup used for all main experiments unless otherwise specified. 
+
+A.2 Method-Specific Configurations 
+
+Table 4: Method-specific configurations.                                                        
+
+> Method Main configuration Notes LoRA Assigns the same rank to all LoRA target modules under the given total rank budget; lora_alpha = 16 and lora_dropout = 0 .05 .Non-adaptive rank allocation baseline. AdaLoRA target_r is aligned with the given rank budget; init_r = min(2 ×target_r ,32) ;tinit =tfinal = 60 ; deltaT = 10 ; beta1 =beta2 = 0 .85 ; orth_reg_weight = 0 .5.Dynamic rank adjustment dur-ing training. EVA Data-driven LoRA initialization and rank redistribution based on ac-tivation variance, using PEFT EVA with init_lora_weights="eva" ,
+> EvaConfig(rho=eva_rho) , and default eva_rho = 2 .0.Activation-variance initializa-tion and redistribution baseline; eva_rho = 1 .0disables rank re-distribution. IFCLoRA ρ=0.25 ,τ=0.8, calibration_size =128 , calibration_seed =42 ,graph_window_size = 15 ,α=β= 0 .85 , min_rank = 2 , max_rank = 32 . The tracing/calculator window is expanded with model depth when instantiating the routing calculator. One-time pre-fine-tuning rank routing; no training-time rank search or pruning.
+
+Table 4 lists method-specific settings. LoRA is the non-adaptive baseline, AdaLoRA is the training-time dynamic allocation baseline, EVA is the activation-variance initialization and redistribution baseline, and IFCLoRA computes its rank allocation once before fine-tuning. For IFCLoRA, the system first samples calibration examples from the training set with a fixed calibration seed. It then performs hook-based causal zero-ablation tracing on the frozen model to estimate task-conditioned influence strengths between modules. The final module importance score combines information-flow centrality and local gradient sensitivity. A temperature-scaled softmax maps the total rank budget to continuous quotas, and flooring plus residual balancing converts them to an integer rank allocation whose total rank units match the corresponding LoRA budget. Once the rank allocation is fixed, IFCLoRA follows the same fine-tuning process as standard LoRA. 
+
+A.3 Reproducibility Details Code availability. To preserve double-blind review, this submission does not include a public GitHub URL. The manuscript instead documents the public data sources, experimental configurations, evaluation protocol, method-specific settings, and script-level entry-point descriptions needed to assess reproducibility. The implementation and runnable scripts will be released in a public repository in the non-anonymous version. 
+
+Broader impacts. IFCLoRA may reduce the cost of adapting large language models under limited training budgets, which can make reproducible PEFT experiments more accessible to academic and resource-constrained users. At the same time, cheaper adaptation can lower the barrier to adapting 13 models for harmful, misleading, or low-quality downstream uses. The method does not remove biases, factual errors, privacy risks, or safety limitations inherited from the underlying pretrained models and datasets. Downstream users should follow the relevant model licenses and acceptable-use policies, and should conduct task-specific safety, bias, and reliability evaluations before deployment. 
+
+Existing assets and licenses. Table 5 summarizes the main external assets used in this work. We use these assets for research evaluation and follow their respective licenses, model terms, and dataset terms; we do not redistribute the original model weights or benchmark datasets. Table 5: Existing assets and license or terms information.             
+
+> Asset Use in this paper License or terms GSM8K Mathematical reasoning benchmark via the pub-lic openai/gsm8k dataset. MIT License. SuperGLUE Semantic-understanding benchmark via the pub-lic super_glue dataset. Mixed benchmark terms; the Hugging Face dataset card lists the license as other .LLaMA3 Backbone model family for fine-tuning experi-ments. Meta Llama 3 Community License and Acceptable Use Policy. Qwen3 Backbone model family for fine-tuning experi-ments. Apache-2.0 license. Hugging Face tools and loaders Dataset loading and model access utilities. Used according to the corresponding package licenses and hosted-asset terms.
+
+Experiment entry points. LoRA, EVA, Random, Gradient-only, Topology-only, and IFCLoRA are dispatched through a unified fine-tuning runner. AdaLoRA uses the corresponding AdaLoRA baseline runner. The experiment scripts cover GSM8K main experiments, SuperGLUE generalization, 
+
+ρ/τ sensitivity, calibration-size sensitivity, and efficiency measurement. During double-blind review, script and module names can be anonymized together with the repository; the released version will expose the concrete entry-point paths. 
+
+Data and preprocessing. GSM8K uses the public HuggingFace dataset openai/gsm8k . Training examples are converted into causal language-modeling format; the prompt part is masked in the loss and only the answer part is supervised. SuperGLUE uses the public super_glue benchmark, including BoolQ, CB, COPA, MultiRC, ReCoRD, RTE, WiC, WSC, and WSC.fixed. Each subtask is converted into input and label text through the same task-adaptation pipeline for all methods. 
+
+Evaluation protocol. GSM8K is evaluated with exact-match accuracy after answer extraction. For SuperGLUE, BoolQ, COPA, RTE, WiC, WSC, and WSC.fixed use accuracy; CB uses macro-F1; MultiRC uses F1a; and ReCoRD uses F1. All compared methods use the same evaluation scripts and metrics for each task. 
+
+Randomness and outputs. The main results use seeds 42, 52, and 62. The GSM8K development evaluation subset uses dev_eval_seed = 42 , and IFCLoRA calibration uses calibration_seed = 42 .Each run saves metrics, dataset statistics, and trainable-parameter statistics. IFCLoRA additionally records calibration statistics such as calibration size, seed, number of nodes, and number of edges. Efficiency runs also save runtime and memory statistics, which are used for the budget and overhead analysis in Appendix D. 
+
+B Additional Results 
+
+Table 6 reports the complete SuperGLUE task-level results over nine subtasks, including the EVA baseline. The main text uses a compact subset for readability, while the full breakdown is provided here. 14 Table 6: Complete SuperGLUE results. Results are mean ± standard deviation over three random seeds.                                                                                                                                                                                                                                                                    
+
+> Method BoolQ CB COPA MultiRC ReCoRD RTE WiC WSC WSC.fixed
+> LLaMA3-8B
+> LoRA 92 .58 ±0.39 90 .06 ±3.90 96 .33 ±1.15 88 .16 ±0.66 90 .02 ±0.84 89 .97 ±0.23 76 .30 ±1.26 73 .72 ±1.47 72 .76 ±1.11
+> AdaLoRA 91 .71 ±0.45 90 .79 ±2.55 95 .33 ±0.58 86 .08 ±0.23 90 .68 ±0.53 89 .95 ±0.23 74 .70 ±0.68 73 .78 ±0.56 72 .82 ±0.56
+> EVA 90 .27 ±0.00 91 .21 ±0.35 95 .67 ±0.58 86 .80 ±0.45 90 .07 ±0.00 88 .56 ±0.00 74 .80 ±0.70 73 .80 ±0.60 73 .82 ±0.56
+> IFCLoRA (Ours) 92 .58 ±0.39 93 .04 ±0.62 96 .67 ±2.31 87 .04 ±0.39 91 .45 ±0.53 89 .58 ±0.81 75 .00 ±0.68 75 .96 ±1.67 74 .36 ±1.42
+> Qwen3-8B
+> LoRA 91 .80 ±0.78 95 .80 ±3.40 97 .00 ±2.00 91 .51 ±1.23 86 .20 ±0.45 90 .36 ±0.60 74 .87 ±1.26 78 .53 ±0.56 80 .13 ±1.47
+> AdaLoRA 91 .68 ±0.23 95 .13 ±1.56 97 .00 ±0.46 90 .11 ±0.22 86 .69 ±1.03 89 .19 ±0.23 74 .57 ±0.90 77 .95 ±0.56 80 .27 ±2.30
+> EVA 90 .27 ±0.20 91 .21 ±0.65 96 .33 ±0.58 89 .80 ±0.70 83 .07 ±0.83 88 .56 ±0.85 74 .20 ±0.90 80 .80 ±1.10 83 .12 ±0.56
+> IFCLoRA (Ours) 91 .80 ±0.39 94 .72 ±2.74 96 .67 ±1.15 91 .66 ±0.47 86 .59 ±0.60 91 .15 ±0.23 75 .52 ±1.19 82 .05 ±1.42 83 .33 ±1.11
+> Qwen3-14B
+> LoRA 91 .67 ±0.45 91 .72 ±0.28 100 .00 ±0.00 89 .79 ±0.22 88 .87 ±0.30 93 .62 ±0.23 77 .08 ±0.81 89 .74 ±0.56 84 .62 ±2.54
+> AdaLoRA 89 .45 ±1.00 91 .39 ±2.10 96 .67 ±0.58 89 .77 ±0.23 88 .42 ±0.45 92 .58 ±2.10 77 .79 ±0.23 90 .15 ±0.96 83 .15 ±1.92
+> EVA 90 .23 ±1.00 92 .22 ±0.35 98 .33 ±1.15 89 .65 ±0.20 89 .07 ±0.00 92 .56 ±0.00 77 .10 ±0.80 89 .80 ±0.80 83 .82 ±0.56
+> IFCLoRA (Ours) 93 .23 ±0.45 93 .86 ±2.40 98 .33 ±1.15 89 .53 ±0.00 89 .80 ±0.94 93 .67 ±0.60 77 .21 ±1.58 90 .38 ±1.42 88 .78 ±2.00
+
+C Analysis 
+
+C.1 Hyperparameter Sensitivity 
+
+We evaluate the sensitivity of IFCLoRA to the mixing coefficient ρ and the temperature τ on Qwen3-8B, GSM8K, and r = 4 . We conduct a 5×5 grid search while keeping all other training configurations fixed, and report averaged validation performance over three random seeds. 
+
+Figure 6: Validation performance under different ρ and τ settings on Qwen3-8B with GSM8K under 
+
+r = 4 .Figure 6 shows that IFCLoRA is relatively insensitive to a broad range of ρ and τ values, with noticeable degradation only in a few extreme settings. The default configuration used in the main experiments lies in a favorable region. 
+
+C.2 Calibration Size Sensitivity 
+
+We analyze the sensitivity of IFCLoRA to calibration size on Qwen3-8B, GSM8K, and r = 4 . Only the number of calibration samples used for tracing and rank allocation is varied, while the rest of the training configuration is fixed. As shown in Figure 7, performance first improves and then stabilizes as calibration size increases. Very small calibration sets produce coarse interaction graphs and less consistent allocation. Once the sample size reaches a moderate level, the benefit of adding more calibration samples becomes limited, indicating that IFCLoRA does not require large-scale calibration data. 15 Figure 7: Performance of IFCLoRA under different calibration sizes on Qwen3-8B with GSM8K under r = 4 .
+
+C.3 Rank Distribution Visualization 
+
+We further visualize rank allocation from two perspectives: across backbone models under the same task, and across tasks under the same backbone. All visualizations use the same low-rank setting. 
+
+Figure 8: Rank allocation patterns across backbone models under the same task and rank budget. 
+
+Figure 9: Rank allocation patterns across tasks using the same backbone and rank budget. Figure 8 shows that different backbones exhibit non-uniform rank allocation under the same task, although the precise high-rank modules differ. Figure 9 shows that different tasks produce different allocation patterns for the same backbone. Together, these results support the task-conditioned nature of IFCLoRA and show that it does not rely on a fixed static allocation template. 16 Table 7: Trainable parameter counts under different rank budgets. 
+
+Method Rank Trainable parameters Total parameters Percentage LoRA 4 16,056,320 14,784,363,520 0.109% IFCLoRA 4 15,663,104 14,783,970,304 0.106% AdaLoRA 4 16,056,320–32,114,880 14,784,363,520 0.108–0.217% EVA 4 16,056,320 14,784,363,520 0.109% LoRA 8 32,530,432 14,800,837,632 0.220% IFCLoRA 8 32,112,640 14,800,419,840 0.217% AdaLoRA 8 32,112,640–64,229,760 14,832,537,240 0.217–0.433% EVA 8 32,530,432 14,784,363,520 0.220% 
+
+D Budget and Efficiency Analysis 
+
+D.1 Trainable Parameter Counts 
+
+Table 7 reports trainable parameter counts under aligned rank budgets. This comparison shows that IFCLoRA’s gains are not caused by a larger number of trainable parameters. For AdaLoRA, the table reports a range because its rank changes during training. For EVA, counts are reported after its activation-variance initialization and rank redistribution step. 
+
+D.2 Runtime and Memory Overhead 
+
+Table 8: Runtime and memory overhead on GSM8K under the same training setting.                                            
+
+> Method Tracing time Preprocess time Training time Eval time End-to-end time Peak memory GSM8K Acc. LoRA –4 min 40 min 13 min 57 min 19 GB 80 .97 ±0.35
+> AdaLoRA –4 min 62 min 16 min 1 h 22 min 33 GB 80 .29 ±0.53
+> IFCLoRA 5 min 4 min 39 min 13 min 1 h 1 min 19 GB 82 .33 ±0.73
+> EVA –4 min 47 min 17 min 1 h 8 min 24 GB 80 .43 ±0.39
+
+Table 8 compares runtime and peak memory on GSM8K under the same training setting. Because IFCLoRA performs tracing and rank routing before fine-tuning, we report one-time preprocessing overhead separately from the subsequent training and evaluation stages. The extra cost of IFCLoRA is concentrated in the preprocessing stage. After rank allocation is fixed, its training-stage cost and peak memory remain close to LoRA. EVA does not perform IFCLoRA’s interaction-graph tracing, but it still introduces a data-driven initialization and preprocessing cost before fine-tuning. AdaLoRA, by contrast, introduces training-stage overhead because it dynamically adjusts ranks during optimization. Thus, IFCLoRA trades a moderate one-time preprocessing cost for more effective use of the same low-rank budget. 17 NeurIPS Paper Checklist 
+
+1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: The abstract, Introduction, and Conclusion state the core claims, and the experimental sections support the claimed scope and improvements. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: Section 5 discusses limitations, including the heuristic nature of the IFC score, the lack of formal optimality guarantees, the decoder-only forward-causal graph assumption, and the limited evaluation scope across domains and model scales. Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an impor-tant role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 3. Theory assumptions and proofs 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? 18 Answer: [N/A] Justification: The paper does not present formal theorems, lemmas, or proofs; it introduces a method and evaluates it empirically. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-perimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: The main text and Appendix A disclose the backbone models, datasets, LoRA target modules, rank budgets, training hyperparameters, seeds, calibration settings, evalua-tion metrics, and method-specific configurations needed to reproduce the main experimental results. Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submis-sions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 19 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instruc-tions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Justification: To preserve double-blind review, the current submission does not include a public GitHub URL or executable supplemental package. The manuscript provides public data sources, experimental configurations, evaluation protocol, and script-level entry-point descriptions, and the implementation will be released publicly in the non-anonymous version. Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/ public/guides/CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https: //neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-rameters, how they were chosen, type of optimizer) necessary to understand the results? Answer: [Yes] Justification: Appendix A specifies the common training setup, learning rate, epochs, batch sizes, gradient accumulation, training steps, seeds, calibration size, calibration seed, graph-construction settings, evaluation metrics, and method-specific configurations used in the reported experiments. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: Main and appendix tables report mean ± standard deviation over three random seeds, and Appendix A states the reporting protocol and the seeds used. Guidelines: • The answer [N/A] means that the paper does not include experiments. 20 • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the com-puter resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer: [Yes] Justification: Appendix A reports the hardware environment, and Appendix D reports trainable parameter counts, tracing time, preprocessing time, training time, evaluation time, end-to-end time, peak memory, and accuracy for the representative GSM8K efficiency comparison. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: The work studies parameter-efficient fine-tuning on public benchmarks and pretrained models and does not involve human subjects or sensitive data collection. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consid-eration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? 21 Answer: [Yes] Justification: Appendix A includes a broader-impact discussion covering efficiency and accessibility benefits, possible misuse risks from cheaper LLM adaptation, inherited model and dataset risks, and deployment-time safety and license considerations. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: The submission does not release new high-risk models or datasets, and the cur-rent anonymized manuscript does not distribute assets that would require release safeguards. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] Justification: Appendix A includes an existing-assets table documenting the main datasets, backbone models, tooling, and their licenses or usage terms, including GSM8K, SuperGLUE, LLaMA3, Qwen3, and Hugging Face tooling. 22 Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets 
+
+has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [N/A] Justification: The current submission does not introduce or distribute a new dataset, model, or code package as a released asset. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: The paper does not involve crowdsourcing experiments or research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribu-tion of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? 23 Answer: [N/A] Justification: The paper does not involve crowdsourcing or human-subject research requiring IRB-style review. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [Yes] Justification: This work uses pretrained large language models, including LLaMA3 and Qwen3, as backbone models for parameter-efficient fine-tuning experiments. Their role is described in the Introduction, Method, and Experimental Setup sections. Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 24

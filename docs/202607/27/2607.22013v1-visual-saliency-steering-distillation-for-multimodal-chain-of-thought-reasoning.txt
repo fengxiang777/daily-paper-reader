@@ -1,0 +1,402 @@
+Title: Visual Saliency Steering Distillation for Multimodal Chain-of-Thought Reasoning
+
+URL Source: https://arxiv.org/pdf/2607.22013v1
+
+Published Time: Mon, 27 Jul 2026 00:26:09 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+VISUAL SALIENCY STEERING DISTILLATION FOR MULTIMODAL CHAIN-OF-THOUGHT REASONING 
+
+Hao Yang, Jin Wang † , Xuejie Zhang 
+
+School of Information Science and Engineering, Yunnan University, Kunming, China yanghao888@stu.ynu.edu.cn, {wangjin, xjzhang }@ynu.edu.cn 
+
+ABSTRACT 
+
+Multimodal chain-of-thought (CoT) reasoning integrates vi-sual and textual cues through step-by-step inference. In small models with limited token budgets, modality-interaction fu-sion often suppresses tiny cross-modal differences. In partic-ular, multimodal CoT often struggles when different images pair with identical text or different texts pair with an iden-tical image, making such inputs nearly indistinguishable after fusion. This study proposes Visual Saliency Steering Distillation (VSSD). VSSD leverages the attention maps of multimodal large language models to generate perturbed im-ages that capture task-sensitive feature directions, and then applies singular value decomposition to extract dominant steering vectors to guide inter-layer distillation. Experiments on ScienceQA and M 3CoT demonstrate that VSSD improves rationale generation and answer inference. The code is avail-able at https://github.com/BGWH123/VSSD . 
+
+Index Terms — Multimodal Chain-of-Thought, Per-turbed Image, Steering Vectors, Inter-Layer Distillation 
+
+1. INTRODUCTION 
+
+Multimodal chain-of-thought (CoT) captures visual-linguistic cues through explicit reasoning steps. A natural approach is to leverage multimodal large language models (MLLMs) [1, 2] to enable CoT. However, the large parameter size and high computational costs limit the deployment in resource-constrained scenarios. Therefore, research on multimodal CoT for small models is crucial. With limited token budgets, existing multimodal CoT methods for small models rely on modality-interaction fusion to integrate information [3, 4, 5, 6]. However, such fusion often leads to the confusion of tiny cross-modal features. Therefore, some approaches focus on modeling fine-grained differences during the CoT generation process [7]. Others ob-serve that modalities disadvantaged in data or parameter size often struggle to capture fine details, thus seeking to enhance the visual representation [8]. Despite these advances, current models still lack sufficient sensitivity and understanding of fine-grained distinctions across different inputs.  
+
+> †
+
+Corresponding author. Same Text                            
+
+> Close Im age
+> Question:
+> Which sample
+> has the higher
+> temperature?
+> Image Encoder
+> Text Encoder
+> Interaction
+> &Fusion
+> cos( ,)=0.979 cos( ,)=0.979
+> cos( ,)=0.995 cos( ,)=0.995
+> Text Decoder
+> cos( ,)=0.999 cos( ,)=0.999
+> Question:
+> Which of these
+> states is
+> farthest north ?
+> Question:
+> Which of
+> these states is
+> farthest east ?
+> Text Encoder
+> Interaction
+> &Fusion
+> cos( ,)=0.885 cos( ,)=0.885
+> cos( ,)=0.989 cos( ,)=0.989
+> Text Decoder
+> cos( ,)=0.993 cos( ,)=0.993
+> Image Encoder
+
+A Same Image  
+
+> Close Text
+
+B
+
+Fig. 1 . Fine-grained confusion in multimodal CoT. As illustrated in Fig. 1, multimodal CoT faces two par-ticularly challenging questions that significantly exacerbate the confusion of fine-grained differences: (A) different sam-ples share identical text inputs but have similar image con-tent, or (B) share identical image inputs but have similar tex-tual descriptions. For unimodal, they can typically distinguish such inputs by relying on tiny cues within a single modality. For instance, even for similar inputs, features from individ-ual modalities still retain discernible differences. However, for multimodal, the modality fusion process tends to sup-press these discriminative signals further, making it difficult for models to capture critical distinctions. As shown in Fig. 1, after cross-modal interaction and fusion, the feature represen-tations of different inputs become significantly more similar and are nearly indistinguishable at the decoding stage. This study proposes a visual saliency steering distillation (VSSD). Specifically, VSSD leverages MLLMs to identify and mask the image regions most relevant to the question, generating negatively perturbed semantic samples. By com-paring the feature responses in the decoder between the orig-inal and the masked image, VSSD captures the sensitive di-rection critical to the task. Subsequently, singular value de-composition (SVD) is applied to extract the dominant steer-ing vector from this difference, representing the optimal di-rection for amplifying fine-grained visual-semantic discrep-ancies. The steering vector is then injected into the intermedi-arXiv:2607.22013v1 [cs.CV] 24 Jul 2026 ate layers of the model via layer-wise distillation, guiding the model to enhance its sensitivity to key visual-semantic differ-ences. Extensive experiments on ScienceQA [9] and M 3CoT [10] validate the effectiveness of VSSD. 
+
+Our key contributions are as follows: I. We propose VSSD to address the limitation of small multimodal CoT models in capturing fine-grained visual-semantic differences. II. VSSD leverages saliency-based perturbation and SVD-guided steer-ing vector injection to enhance cross-modal sensitivity. III. 
+
+Experiments on ScienceQA and M 3CoT demonstrate that ra-tional generation and answer inference consistently improved. 
+
+2. VISUAL SALIENCY STEERING DISTILLATION 
+
+The proposed VSSD has two components in Fig. 2: (i) gener-ating perturbed image to emphasize key visual cues, and (ii) extracting the main semantic shift between original and per-turbation features to guide inter-layer distillation. 
+
+2.1. Preliminaries Model Architecture . We adopt a two-stage scheme: ratio-nale generation and answer prediction. Given an image v and textual input x = Q◦C ◦M , where Q, C, M denote the ques-tion, context, and choices respectively, the model first gener-ates r. Then, x and r are concatenated and passed for answer prediction: 
+
+r = f (x, v ), a = g(x ◦ r, v ), (1) where ◦ denotes concatenation. f and g share architecture (T5) but are trained separately, with a frozen visual encoder to encourage language adaptation. 
+
+Cross-Modal Fusion . Encoded image and text are Hv and 
+
+Hl from DETR and T5. Cross-attention aligns them: 
+
+ˆHv = softmax 
+
+ (WQHl)( WK Hv )⊤
+
+√d
+
+
+
+(WV Hv ). (2) Then, a gated fusion: 
+
+σ = sigmoid (WlHl +Wv ˆHv ), HEnc = (1 −σ)·Hl +σ· ˆHv .
+
+(3) where HEnc is input to the decoder. 
+
+Training and Inference . Given target y ∈ { r, a }, the model is trained by minimizing the standard negative log-likelihood: 
+
+LNLL = −
+
+> N
+
+X
+
+> i=1
+
+log pθ (yi | x, v, y <i ). (4) In inference, greedy decoding is applied in two stages, corresponding to different instantiations of y:
+
+r = arg max  
+
+> r′
+
+p(r′ | x, v ), a = arg max  
+
+> a′
+
+p(a′ | r, x, v ).
+
+(5) : I nflow : E xpansion                  
+
+> : T rainable : F rozen
+> A&N : Add&Norm
+> CKD: Contrastive Knowledge Distillation
+> Question: Which ocean is highlighted?
+> Options: (A) Antarctica (B) Europe
+> (C) North America (D)Asia
+> Context: N/A
+> MLLM MLLM
+> Describe Image
+> Building
+> Part 1
+> Question: Which ocean is highlighted?
+> Options: (A) Antarctica (B) Europe
+> (C) North America (D)Asia
+> Context: N/A
+> T5 -Encoder T5 -Encoder
+> DETR DETR Projection
+> Interaction
+> &Fusion +
+> H-
+> H
+> T5 -Decoder T5 -Decoder
+> Difference
+> Meanpool
+> A&N
+> Stage 2 -lHlEsteering V+
+> lZl
+> ^
+> Z+
+> lHSVD
+> CKD distill L
+> Difference
+> Meanpool
+> A&N
+> Stage 2 -lHlEsteering V+
+> lZl
+> ^
+> Z+
+> lHSVD
+> CKD distill L
+> CoT label NLL
+> Prod uct -CoT Stage 1
+> Part 2 NLL L
+
+Fig. 2 . The overall framework of VSSD. 
+
+Algorithm 1 Image Perturbation Construction 
+
+Input: Image I, question Q, threshold τ , top-k, enhancement factor α, constant ϵ, number of layers L, number of decoding tokens T .
+
+Output: Perturbed image Ir .1. Attention Extraction: A = MLLM (I, Q ); re-feed 
+
+(I, Q, A ) to get cross-attention maps M.2. Aggregation & Projection: ¯ϕ = 1
+
+> LT
+
+P 
+
+> ℓ,t
+
+Mℓ,t, :; A =
+
+Upsample (Reshape ( ¯ϕ)) .3. Normalization: ˆA = α· A− min( A)max( A)−min( A)+ ϵ ; apply Gaussian blur → A smooth .4. Mask Generation: M = ⊮[i ∈ Top-k ] · ⊮[Asmooth (i) > τ ].5. Perturbation: Ir = I ⊙ (1 − M ).
+
+2.2. Image Perturbation Construction 
+
+To emphasize informative regions and suppress spurious vi-sual cues, Perturbed images are constructed guided by cross-attention maps from MLLMs. The process is summarized in Algorithm 1. First, cross-attention maps are extracted from the multi-modal MLLM by re-feeding the image, question, and pre-dicted answer. These maps are aggregated across layer and token dimensions to obtain a global visual importance vector, which is then reshaped and upsampled into a 2D spatial map. After normalization and Gaussian smoothing, a binary mask is generated using top-k selection and thresholding. Finally, high-attention regions are masked from the original image, producing a perturbed version that preserves only less infor-mative visual content. Table 1 . Comparative results on ScienceQA. Size = backbone model size. Question classes: NAT = natural science, SOC = social science, LAN = language science, TXT = text context, IMG = image context, NO = no context, G1-6 = grades 1-6, G7-12 = grades 7-12. Results in bold are the best perfor-mance.                                            
+
+> Model Size NAT SOC LAN TXT IMG NO G1-6 G7-12 Avg Human -90.23 84.97 87.48 89.60 87.50 88.10 91.59 82.42 88.40
+> LLM
+> GPT-3.5 173B 74.64 69.74 76.00 74.44 67.28 77.42 76.80 68.89 73.97 GPT-3.5+CoT 173B 75.44 70.87 78.09 74.68 67.43 79.93 78.23 69.68 75.17 ChatGPT+CoT -78.82 70.98 83.18 77.37 67.92 86.13 80.72 74.03 78.31 GPT-4+CoT -85.48 72.44 90.27 82.65 71.49 92.89 86.66 79.04 83.99
+> Finetune (VLLM)
+> LLaMA-Adapter 6B 84.37 88.30 84.36 83.72 80.32 86.90 85.83 84.05 85.19 SciTune Base 7B 84.50 94.15 82.91 88.35 83.64 88.74 85.05 85.60 86.11 LaVIN 13B 90.32 94.38 87.73 89.44 87.65 90.31 91.19 89.26 90.50 LLaVa 13B 90.36 95.95 88.00 89.49 88.00 90.66 90.93 90.90 90.92 LLaVa (G4) 13B 91.56 96.74 91.09 90.62 88.99 93.52 92.73 92.16 92.53 SciTune Large 13B 89.30 95.61 87.00 93.08 86.67 91.75 84.37 91.30 90.03
+> Finetune (VSLM)
+> Enigma-COT 229M 88.28 78.74 85.64 88.51 84.28 86.90 85.43 85.89 85.59 MM-CoT Base 223M 87.52 77.17 85.82 87.88 82.90 86.83 84.65 85.37 84.91 MM-CoT Large 738M 95.91 82.00 90.82 95.26 88.80 92.89 92.44 90.31 91.68 DDCoT(T5) 223M 88.72 86.84 84.91 87.59 83.34 88.08 88.58 85.10 87.34 VSSD Base 223M 93.61 79.98 89.45 93.84 86.47 90.94 90.60 88.00 89.67 VSSD Large 738M 95.74 91.00 90.55 95.80 92.96 91.99 93.91 92.49 93.40
+
+2.3. Implicit Steering and Training Strategy 
+
+After applying a gated fusion mechanism between the input image and the question, the decoding stage is performed. The final L layers of hidden representations are extracted from both the original and perturbed images, denoted as {H+ 
+
+> l
+
+}Ll=1 
+
+and {H− 
+
+> l
+
+}Ll=1 , where H+ 
+
+> l
+
+, H − 
+
+> l
+
+∈ RB×T ×D , and B, T , and D
+
+denote the batch size, sequence length, and hidden dimension, respectively. For each layer l, the difference tensor is computed, and SVD is performed: 
+
+El = H+ 
+
+> l
+
+− H− 
+
+> l
+
+, E(b) 
+
+> l
+
+= U ΣV ⊤, ∀b ∈ [1 , B ]. (6) Select the top-1 right singular vector as the principal edit-ing direction: 
+
+v(b) 
+
+> steering
+
+= V:,1, z+ 
+
+> l
+
+= MeanPool (H+ 
+
+> l
+
+). (7) Collecting these steering vectors captures dominant se-mantic shifts caused by counterfactual visual information. To leverage them, a layer-wise distillation mechanism is introduced. For each of the last L decoder layers, mean pool-ing is applied over the token dimension to obtain compact hidden representations, and α is a scaling factor. To ensure that the steering does not merely scale the hid-den states but preserves their semantic direction, the steered representation is normalized to match the magnitude of the original representation: 
+
+ˆzl = z+ 
+
+> l
+
++ α · vsteering , ˜zl = ˆ zl · ∥z+ 
+
+> l
+
+∥2
+
+∥ˆzl∥2 + ϵ , (8) where ϵ is a small constant. The distillation loss and the overall training objective are defined as: 
+
+Ldistill = 1
+
+L
+
+> L
+
+X
+
+> l=1
+
+z+ 
+
+> l
+
+− ˜zl
+
+> 22
+
+, L = LNLL + β · L distill . (9) where β controls the trade-off between the main task loss and the steering-guided distillation loss. 
+
+3. EXPERIMENT 3.1. Experiments Settings Dataset . The proposed VSSD was evaluated on the Sci-enceQA [9] benchmark, a multimodal chain-of-thought dataset with over 21,000 multiple-choice questions across three science subjects. Further tests were conducted on M3CoT [10], a more challenging variant of ScienceQA where each sample is paired with an image. 
+
+Implementation Details. The T5 model is initialized with UnifiedQA [11]. The MLLMs are Qwen2.5-VL. Fine-tuning was conducted for up to 20 epochs with a learning rate 5e-5. The input lengths were 512 (rationale) and 64 (answer). Hyperparameters α and β were 0.1 and 0.2. The layer L is 2. A fixed seed 42 ensured reproducibility. 
+
+Baselines. We compare our model with five categories: (1) 
+
+Instruction-tuned LLMs : GPT-3.5, CoT-enhanced variants, ChatGPT, GPT-4 [9]; (2) Tool-augmented LLMs : Chameleon [12], VisualChatGPT [13], IdealGPT [14]; (3) Fine-tuned VLLMs : LLaMA-Adapter [15], LaVIN [16], LLaVA [2]; (4) Visual SLMs : MM-CoT [3], MC-CoT [4] DDCoT [17], Enigma-COT [8], and our VSSD. 
+
+3.2. Comparative Results 
+
+The ScienceQA results are reported in Table 1. VSSD Base 
+
+(223M) achieves 89.67% accuracy, outperforming Enigma-COT, MM-CoT Base , and DDCoT of similar size. VSSD Large 
+
+(738M) further improves to 93.40%, surpassing all other fine-tuned models, including the GPT-4-based LLaVA (92.53%). The results on M 3CoT are shown in Table 2, VSSD-Base reaches 73.19% average accuracy, outperforming all fine-tuned baselines. Without inter-layer distillation, performance drops to 61.57%, highlighting its importance for handling fine-grained multimodal reasoning. 
+
+3.3. Perturbed Image Analysis 
+
+Table 3 compares the perturbed image (PI) with the black im-age (BKG) baseline. Models using PI consistently perform better in rationale generation and answer inference, as the per-turbed image highlights critical visual regions and guides the model’s attention. In contrast, the BKG baseline removes in-formative regions, leading to a weaker focus on key evidence. This confirms the benefit of using perturbed images. Table 2 . Comparative results on M 3CoT 
+
+Model Science Commonsense Mathematics Total Lang Natural Physical Temporal Algebra Geometry 
+
+Human & Random 
+
+Human 97.83 92.62 96.28 88.71 87.23 88.75 91.61 Random 32.70 30.62 32.97 20.33 35.71 27.50 28.56 
+
+Tool-Usage 
+
+VisualChatGPT 30.09 36.28 43.48 33.33 21.99 21.25 25.92 IdealGPT 31.73 31.63 56.52 26.83 20.57 30.00 32.19 Chameleon 43.87 26.05 39.13 48.78 17.73 26.25 34.29 
+
+Finetuning (VLLM) 
+
+LLama-Adapter-7B 62.56 72.29 76.92 72.36 30.71 38.75 54.89 LLaVA-v1.5-13B 68.72 72.41 83.52 69.11 35.71 45.00 59.50 CogVLM-17B 65.88 77.52 81.32 75.61 35.71 46.25 58.25 GPT4V w/CoT 90.52 63.09 83.33 82.93 45.71 50.00 62.60 
+
+Finetuning (VSLM) 
+
+MM-CoT-Large 45.50 50.19 63.74 33.33 40.71 61.25 48.73 MC-CoT-Large 42.65 67.43 58.24 56.10 57.86 62.50 57.69 VSSD-Base 57.89 74.84 79.44 93.97 74.23 57.50 73.19 
+
+w/o distillation 51.24 61.29 68.89 78.86 63.75 52.57 61.57 
+
+Table 3 . Two-stage setting on ScienceQA: (i) rationale gen-eration (RougeL), (ii) answer inference (Accuracy). 
+
+VSSD Base (PI) VSSD Base (BKG) VSSD Large (PI) VSSD Large (BKG) QCM →R (RougeL) 98.11 97.81 98.43 98.13 QCMR →A (Acc) 89.67 87.95 93.40 90.64 
+
+3.4. Steering Vector Layers and Information Analysis 
+
+A clear trend is revealed by the experimental results in Fig. 3 (a). Using steering vectors from only the last L = 2 decoder layers yields the best performance. For example, accuracy and RougeL scores reach their peaks at this setting. When fewer than two layers are used ( L = 1 ), the steering signal be-comes too weak, as a single decoder layer cannot fully capture the semantic refinements necessary for reliable reasoning and generation. On the other hand, when more than two decoder layers are included ( L > 2), performance declines. The ratio-nale is that earlier decoder layers mainly encode intermediate or low-level signals, which, when added, introduce redundant or noisy information that interferes with the decision-critical semantics of the final layers. Thus, extracting steering vec-tors from exactly the last two decoder layers provides the best balance—retaining sufficient high-level semantic shift while avoiding unnecessary noise. To address the challenge of distinguishing visually or tex-tually similar yet semantically distinct samples, we evaluate VSSD on two representative cases: 100 pairs of the same text close image and 100 pairs of the same image close text. As shown in Fig. 3 (b), VSSD consistently reduces feature sim-ilarity in both cases across the Interaction & Fusion and De-coder stages, indicating that it effectively suppresses superfi-cial similarities and improves the model’s ability to capture subtle, meaningful differences. 1 2 3 4 5 6
+
+> Number of Distillation Layers
+> 75
+> 80
+> 85
+> 90
+> 95
+> Accuracy (%)
+> NAT
+> SOC
+> LAN
+> TXT
+> IMG
+> NO
+> G1-6
+> G7-12
+> Avg
+> RougeL
+> 96.0
+> 96.5
+> 97.0
+> 97.5
+> 98.0
+> 98.5
+> 99.0
+> Rouge Score
+
+(a) Performance vs Layer Interaction&Fusion Decoder    
+
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> 1.05
+> Cosine Similarity
+> 0.944
+> 0.984
+> 0.932 0.941 0.937
+> 0.973
+> 0.929 0.938
+> Feature Similarity across Stages
+> Base (Same Text Close Image)
+> VSSD (Same Text Close Image)
+> Base (Same image Close Text)
+> VSSD (Same image Close Text)
+
+(b) Cosine Similarity In Stages 
+
+Fig. 3 . Retained information and performance of VSSD on ScienceQA. 
+
+Table 4 . Ablation of VSSD Base on ScienceQA. 
+
+Model NAT SOC LAN TXT IMG NO G1-6 G7-12 Avg RRougeL 
+
+VSSD Base 93.61 79.98 89.45 93.84 86.47 90.94 90.60 88.00 89.67 98.11 w/o PI 89.34 81.55 88.36 89.69 86.91 89.27 88.03 86.42 87.46 97.74 w/o ILD 88.19 75.59 88.18 88.51 82.65 89.13 86.12 84.51 85.55 97.33 
+
+3.5. Ablation Study 
+
+An ablation study is conducted to investigate the contribution of key components in the framework. The results are pre-sented in Table 4. 
+
+Effect of perturbed Image (PI). Removing PI causes a no-ticeable performance drop across categories, confirming that perturbed supervision helps the model localize visually rele-vant evidence by suppressing misleading attention areas. The decline in rationale and answer generation indicates that con-trastive input improves reasoning focus. 
+
+Effect of Inter-Layer Distillation (ILD). Disabling ILD fur-ther deteriorates performance, showing its role in encoding tiny differences between factual and counterfactual inputs. ILD allows the model to capture semantically meaningful variations across decoding layers by injecting steering vec-tors derived from latent differences. The reduced generation quality suggests that the model is less sensitive to structured visual changes without ILD. 
+
+4. CONCLUSION 
+
+This study proposes a visual saliency steering distillation (VSSD) to address the loss of fine-grained visual-semantic differences in small multimodal CoT methods. Existing methods often blur tiny cross-modal cues. VSSD generates attention-guided perturbed image to capture task-sensitive feature directions and distills steering vectors into interme-diate layers. Experiments on ScienceQA and M 3CoT show consistent improvements, validating the effectiveness of both components. Future work will extend VSSD to broader mul-timodal reasoning tasks and explore more adaptive steering vector extraction. 5. ACKNOWLEDGEMENT 
+
+This work was supported in part by the National Natural Science Foundation of China (NSFC) under Grant Nos. 61966038 and 62266051, and the Postgraduate Research and Innovation Foundation of Yunnan University under Grant No.KC-252513133. The authors would like to thank the anonymous reviewers for their constructive comments. 
+
+6. REFERENCES 
+
+[1] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Ak-ila Welihinda, Alan Hayes, Alec Radford, et al., “Gpt-4o system card,” arXiv preprint arXiv:2410.21276 , 2024. [2] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee, “Visual instruction tuning,” Advances in neu-ral information processing systems , vol. 36, pp. 34892– 34916, 2023. [3] Zhuosheng Zhang, Aston Zhang, Mu Li, Hai Zhao, George Karypis, and Alex Smola, “Multimodal chain-of-thought reasoning in language models,” arXiv preprint arXiv:2302.00923 , 2023. [4] Cheng Tan, Jingxuan Wei, Zhangyang Gao, Linzhuang Sun, Siyuan Li, Ruifeng Guo, Bihui Yu, and Stan Z Li, “Boosting the power of small multimodal reason-ing models to match larger models with self-consistency training,” in European Conference on Computer Vision .Springer, 2024, pp. 305–322. [5] Kuanghong Liu, Jin Wang, Kangjian He, Dan Xu, and Xuejie Zhang, “Vision-aware Multimodal Prompt Tuning for Uploadable Multi-source Few-shot Domain Adaptation,” in Proceedings of the 39th AAAI Con-ference on Artificial Intelligence (AAAI-2025) , 2025, vol. 39, pp. 18897–18905. [6] Li Yuan, Yi Cai, Jin Wang, and Qing Li, “Joint multimodal entity-relation extraction based on edge-enhanced graph alignment network and word-pair rela-tion tagging,” in Proceedings of the AAAI Conference on Artificial Intelligence , 2023, pp. 11051–11059. [7] Guangmin Zheng, Jin Wang, Xiaobing Zhou, and Xue-jie Zhang, “Enhancing semantics in multimodal chain of thought via soft negative sampling,” in Proceedings of the 2024 Joint International Conference on Computa-tional Linguistics, Language Resources and Evaluation (LREC-COLING 2024) , 2024, pp. 6059–6076. [8] Jingxuan Wei, Cheng Tan, Zhangyang Gao, Linzhuang Sun, Siyuan Li, Bihui Yu, Ruifeng Guo, and Stan Z Li, “Enhancing human-like multimodal reasoning: a new challenging dataset and comprehensive frame-work,” Neural Computing and Applications , vol. 36, no. 33, pp. 20849–20861, 2024. [9] Pan Lu, Swaroop Mishra, Tony Xia, Liang Qiu, Kai-Wei Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, and Ashwin Kalyan, “Learn to explain: Multimodal rea-soning via thought chains for science question answer-ing,” in The 36th Conference on Neural Information Processing Systems (NeurIPS) , 2022. [10] Qiguang Chen, Libo Qin, Jin Zhang, Zhi Chen, Xiao Xu, and Wanxiang Che, “M 3cot: A novel bench-mark for multi-domain multi-step multi-modal chain-of-thought,” in Proc. of ACL , 2024. [11] Daniel Khashabi, Sewon Min, Tushar Khot, Ashish Sab-harwal, Oyvind Tafjord, Peter Clark, and Hannaneh Ha-jishirzi, “Unifiedqa: Crossing format boundaries with a single qa system,” arXiv preprint arXiv:2005.00700 ,2020. [12] Pan Lu, Baolin Peng, Hao Cheng, Michel Galley, Kai-Wei Chang, Ying Nian Wu, Song-Chun Zhu, and Jian-feng Gao, “Chameleon: Plug-and-play compositional reasoning with large language models,” Advances in Neural Information Processing Systems , vol. 36, pp. 43447–43478, 2023. [13] Chenfei Wu, Shengming Yin, Weizhen Qi, Xiaodong Wang, Zecheng Tang, and Nan Duan, “Visual chat-gpt: Talking, drawing and editing with visual foundation models,” arXiv preprint arXiv:2303.04671 , 2023. [14] Haoxuan You, Rui Sun, Zhecan Wang, Long Chen, Gengyu Wang, Hammad A Ayyubi, Kai-Wei Chang, and Shih-Fu Chang, “Idealgpt: Iteratively decomposing vision and language reasoning via large language mod-els,” arXiv preprint arXiv:2305.14985 , 2023. [15] Renrui Zhang, Jiaming Han, Chris Liu, Peng Gao, Ao-jun Zhou, Xiangfei Hu, Shilin Yan, Pan Lu, Hongsheng Li, and Yu Qiao, “Llama-adapter: Efficient fine-tuning of language models with zero-init attention,” arXiv preprint arXiv:2303.16199 , 2023. [16] Gen Luo, Yiyi Zhou, Tianhe Ren, Shengxin Chen, Xi-aoshuai Sun, and Rongrong Ji, “Cheap and quick: Ef-ficient vision-language instruction tuning for large lan-guage models,” Advances in Neural Information Pro-cessing Systems , vol. 36, pp. 29615–29627, 2023. [17] Ge Zheng, Bin Yang, Jiajin Tang, Hong-Yu Zhou, and Sibei Yang, “Ddcot: Duty-distinct chain-of-thought prompting for multimodal reasoning in language mod-els,” Advances in Neural Information Processing Sys-tems , vol. 36, pp. 5168–5191, 2023.
