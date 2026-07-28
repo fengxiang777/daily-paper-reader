@@ -1,0 +1,912 @@
+Title: In-Context Learning as Implicit Policy Gradient
+
+URL Source: https://arxiv.org/pdf/2607.23153v1
+
+Published Time: Tue, 28 Jul 2026 00:33:07 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+Published as a conference paper at COLM 2026 
+
+# In-Context Learning as Implicit Policy Gradient 
+
+Masahiro Kaneko Timothy Baldwin 
+
+MBZUAI 
+
+{masahiro.kaneko,timothy.baldwin }@mbzuai.ac.ae 
+
+# Abstract 
+
+Recent work has shown that large language models (LLMs) can iteratively improve their outputs by incorporating generated samples and their cor-responding evaluation scores as in-context examples. Despite these em-pirical findings, the theoretical foundations underlying this phenomenon remain poorly understood. In this paper, we show that score-conditioned In-Context Learning (ICL) admits a structural correspondence to policy gra-dient optimization. We first provide a constructive proof that self-attention mechanisms can implement reward-weighted aggregation analogous to the REINFORCE algorithm under specific weight matrix configurations, and discuss the relationship between this construction and the behavior of pretrained transformers. The correspondence is directional in hidden-state space and holds exactly only under the stated simplifying conditions; we quantify its strength empirically. Within our simplified hidden-state model, we furthermore derive an exact upper bound on the distribution shift induced by a bounded attention update, yielding a trust-region-like analogy to KL-constrained policy optimization. We validate our theory through extensive experiments across multiple LLMs, demonstrating that LLMs effectively utilize score information to shift output distributions to-ward high-scoring exemplars, and that attention weights exhibit a strong correlation with example scores. 
+
+# 1 Introduction 
+
+Large language models (LLMs) have demonstrated a remarkable ability to adapt to new tasks through In-Context Learning (ICL), where the model learns from examples provided in the prompt without any parameter updates (Brown et al., 2020). This emergent capability has attracted significant interest from both theoretical and practical perspectives. On the theoretical side, it has been shown that the forward pass of transformers can implicitly implement gradient descent (Von Oswald et al., 2023) and ridge regression (Aky ¨urek et al., 2023). Additionally, perspectives framing ICL as Bayesian inference over latent concepts acquired during pretraining (Xie et al., 2022) and mechanistic analyses of the role of in-duction heads (Olsson et al., 2022) have been proposed. However, these analyses share a common limitation: they focus exclusively on ICL in supervised learning settings with diverse input–output pairs (x, y).On the empirical side, it has been demonstrated that LLMs can improve their outputs by conditioning on self-generated samples along with their evaluation scores as in-context examples. This method conditions the model on multiple output-score pairs (y, r) generated for a fixed input x rather than learning from input-output pairs (x, y). For example, the “Optimization by PROmpting” (OPRO) approach of Yang et al. (2023) provides the model with previously generated outputs and their scores as context, achieving strong results on prompt optimization and combinatorial problems. Similarly, the self-rewarding mechanism of Yuan et al. (2024) uses self-generated responses with self-assigned scores as in-context examples, enabling continuous improvement of alignment without human annotation. These successes raise a fundamental theoretical question: what learning algorithm, if any, does score-conditioned generation implement? The existing theoretical frameworks for ICL cannot answer this question, as they analyze supervised learning with diverse (x, y)
+
+1arXiv:2607.23153v1 [cs.LG] 25 Jul 2026 Published as a conference paper at COLM 2026 pairs rather than reward-based learning with (y, r) pairs for a given input. This gap leaves us without a principled understanding of when and why score-conditioned ICL works. Just as (x, y) pairs with direct target supervision naturally connect to supervised learning, 
+
+(y, r) pairs with scalar reward signals suggest a connection to reinforcement learning, where agents improve their behavior based on such signals. In this paper, we formalize this intuition by showing that score-conditioned ICL admits a structural correspondence to policy gradient optimization. Our central claims are threefold. 
+
+First, attention mechanisms can implement reward-weighted aggregation analogous to REINFORCE . When LLMs process score-annotated examples (y, r) through their attention mechanisms, under specific weight matrix configurations, attention weights the examples by their scores rather than by input similarity. Following the approach of Von Oswald et al. (2023), we provide a constructive proof that this reward-weighted aggregation is structurally analogous to the REINFORCE policy gradient estimator, in the sense that both produce score-weighted updates toward high-reward outputs in the hidden state space. We emphasize that this is an existence result: it demonstrates that the transformer architecture is capable of implementing such a mechanism, and we provide complementary empirical evidence in Appendix F that pretrained models exhibit functionally similar behavior. 
+
+Second, the bounded hidden-state update induces a bounded KL shift . In explicit policy optimization, KL regularization is widely employed to prevent drastic distributional changes (Schulman et al., 2017; 2015). In the simplified output-layer model used in our analysis, we prove that the attention-induced hidden-state update yields an exact pathwise upper bound on the distribution shift from the reference model. This is a trust-region-like property, rather than a claim that ICL explicitly optimizes a KL-penalized objective. 
+
+Third, we validate our theoretical predictions through extensive experiments across multiple LLMs . Through experiments on Llama-3, Olmo-3, Qwen-3, GPT-4o, Gemini 2.5, and Claude Sonnet 4 (Anthropic, 2025; Comanici et al., 2025; Hurst et al., 2024; Dubey et al., 2024; Olmo-Team, 2025; Qwen-Team, 2025), we confirm: (1) example scores are positively rank-correlated with probability changes; (2) attention weights correlate with scores, providing mechanistic evidence for score-weighted aggregation; and (3) ICL and explicit REINFORCE fine-tuning shift the output distribution in similar directions given identical samples. 
+
+# 2 Preliminaries 
+
+2.1 Notation 
+
+We consider the setting where an LLM generates outputs for a given input and receives scalar feedback. Let x denote the input prompt, y ∈ RD denote the embedding representation of a generated output, and r ∈ R denote its associated score (e.g., task performance, human preference rating, or model-based evaluation). We represent a score-annotated example as a combined token e = ( y, r) ∈ RD+1, concatenating the output embedding with its scalar score. A context of N such examples generated for a fixed input x is denoted 
+
+C = {(yi, ri)}Ni=1. We use πref to denote the reference (base) LLM distribution and πθ for a policy with parameters θ. The distribution induced by conditioning on context C is written as π(·| x, C).
+
+2.2 Self-Attention 
+
+Self-attention is the core mechanism by which transformers aggregate information across context. It computes a weighted combination of context elements, where the weights determine how much each element contributes to the output. 
+
+Definition 2.1 (Linear Self-Attention) . Given embeddings E ∈ Rd×n and weight matrices 
+
+W Q, W K, WV , W P, linear self-attention computes: 
+
+flin (E) = E + W PWV E(W K E)⊤W Q E (1) 2Published as a conference paper at COLM 2026 Linear attention directly uses key–query products as aggregation weights. This simplified form enables clean theoretical analysis and has been used in prior work connecting ICL to gradient descent (Von Oswald et al., 2023). 
+
+Definition 2.2 (Softmax Self-Attention) . Softmax self-attention applies a normalized expo-nential: 
+
+fsoft (E) = E + W PWV E · softmax (W K E)⊤W Q E
+
+√dk
+
+!
+
+(2) Softmax attention, used in practice, normalizes weights to form a probability distribution. As we show in Theorem 3.4, this corresponds to Boltzmann-weighted aggregation, which assigns exponentially higher weight to high-scoring examples. 
+
+2.3 Policy Gradient Methods 
+
+Policy gradient methods optimize a policy πθ to maximize expected reward by directly estimating gradients of the objective. The REINFORCE algorithm (Williams, 1992) expresses this as: 
+
+∇θ J(θ) = Eπθ [r(y)∇θ log πθ (y|x)] (3) In practice, REINFORCE typically employs a baseline b (e.g., mean reward) to reduce variance: 
+
+∇θ J(θ) = Eπθ [( r(y) − b)∇θ log πθ (y|x)] (4) Given samples {(yi, ri)}Ni=1, the policy gradient update with baseline becomes: 
+
+θ ← θ + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+(ri − b)∇θ log πθ (yi|x) (5) KL-regularized variants address instability by penalizing deviation from a reference distri-bution: max  
+
+> θ
+
+Eπθ [r(y)] − βDKL (πθ ∥πref ) (6) Methods such as PPO (Schulman et al., 2017) and TRPO (Schulman et al., 2015) implement variants of this principle. As we will show, the bounded attention update in our simplified model yields a related trust-region-like effect. 
+
+# 3 Theoretical Framework 
+
+3.1 Problem Setting 
+
+We analyze score-conditioned ICL : given a fixed input x and a context C = {(yi, ri)}Ni=1
+
+containing previously generated outputs for x paired with their evaluation scores, the LLM generates a new output by conditioning on this context. This setting captures recent empiri-cal successes such as OPRO (Yang et al., 2023) and self-rewarding language models (Yuan et al., 2024). The score-conditioned examples are not assumed to be optimal; they are drawn from the model’s own distribution and may include low-scoring outputs, providing a diverse reward signal. The goal is to generate a new output that improves upon the best seen so far by learning from the relative quality differences among all N examples, rather than simply copying the highest-scoring example. Our central question is: what computational mechanism underlies score-conditioned generation? 
+
+We show that, under explicit simplifying conditions, this process admits a structural policy-gradient analogy, where the attention mechanism performs reward-weighted aggregation over context examples. Our theoretical analysis operates in a simplified setting (linear atten-tion, single-layer, continuous output representations); the empirical evidence in Appendix F demonstrates that the qualitative predictions hold in fully nonlinear pretrained models. 3Published as a conference paper at COLM 2026 
+
+3.2 Assumptions Assumption 3.1 (Score-Conditioned Generation) . LLMs utilize score information in context to modulate generation. Specifically, for contexts Chigh containing high-scoring examples and Clow containing low-scoring examples: 
+
+Ey∼π(·| x,Chigh )[r(y)] > Ey∼π(·| x,Clow )[r(y)] (7) This assumption, strongly supported by LLM-as-a-Judge (Zheng et al., 2023) and OPRO (Yang et al., 2023), motivates the behavioral interpretation of the theoretical construc-tion; we further validate score sensitivity in Section 4.3. 
+
+Assumption 3.2 (Monotonicity) . Moving the hidden state toward an output embedding increases the probability of generating that output: 
+
+P(yi|h + αyi) > P(yi|h) for α > 0 (8) This is an explicit modeling assumption. For a standard output layer P(y|h) ∝
+
+exp (h⊤Wout embed (y)) , it holds whenever the proposed movement has positive inner prod-uct with ∇h log P(yi|h).
+
+3.3 Main Results Theorem 3.3 (Score-Weighted Aggregation via Attention) . There exists a construction of weight matrices W K, W Q, WV , W P such that linear self-attention implements score-weighted aggregation: hout = hq + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+riyi (9) 
+
+Proof Sketch. We set W K = W Q to project each token ei = ( yi, ri) so that q⊤ki = ri (score becomes the attention weight), and WV to extract the embedding component vi = ( yi, 0 ).Setting W P = η 
+
+> N
+
+I yields the stated aggregation. The query token’s score component is set to 1 without loss of generality: any nonzero constant c yields the same score-proportional weighting q⊤ki = c · ri, with the scaling absorbed into η. Full derivation in Appendix D.1. The η/N scaling factor corresponds to a learning rate divided by batch size, mirroring standard gradient descent. We do not claim that pretrained transformers adopt this exact construction; rather, the empirical evidence in Appendix F demonstrates that they learn functionally similar mechanisms. 
+
+Theorem 3.4 (Softmax Attention as Boltzmann Aggregation) . With analogous weight matrix construction, softmax attention implements Boltzmann-weighted aggregation: hout = hq +
+
+> N
+
+# ∑
+
+> i=1
+
+exp (ri/τ)
+
+∑j exp (rj/τ) yi (10) 
+
+where τ is the temperature determined by the attention scaling factor. Full derivation in Ap-pendix D.2. 
+
+The softmax formulation provides a probabilistic interpretation: examples are weighted proportionally to the exponential of their scores, assigning exponentially higher influence to high-scoring examples. 
+
+Theorem 3.5 (Structural Policy-Gradient Correspondence) . Let ˜ri = ri − ¯r denote mean-centered scores. Applying the construction of Theorem 3.3 to ˜ri yields the score-weighted term of the REINFORCE update in hidden-state space. The correspondence is exact in the simplified output-layer model when Wout = I; for uncentered scores or a general output map, it is a structural analogy rather than an equality. 
+
+4Published as a conference paper at COLM 2026 
+
+Proof Sketch. For output layers P(y|h) ∝ exp (h⊤Wout embed (y)) , the hidden-state gradient is ∇h log P(yi|h) = Wout (yi − ¯y), where ¯y = Ey∼P(·| h)[embed (y)] . With centered scores, 
+
+∑i ˜ri = 0, so the ¯y term cancels. When Wout = I, the resulting estimator is exactly η 
+
+> N
+
+∑i ˜riyi,the update constructed by Theorem 3.3 when its score coordinate contains ˜ri. See Ap-pendix D.3. We discuss the scope of this correspondence in Appendix A. 
+
+Theorem 3.6 (Bounded KL Shift) . In the simplified output-layer model, let πref = P(·| h) and 
+
+πICL = P(·| h + ∆h), with ∆h given by Theorem 3.3. Then: DKL (πICL ∥πref ) ≤ 12 ΛC (η · rmax · ymax )2, (11) 
+
+where ΛC = sup t∈[0,1 ] λmax (F(h + t∆h)) , F is the Fisher information matrix of the output layer, rmax = max i |ri|, and y max = max i ∥yi∥.Proof Sketch. The constructed attention update satisfies ∥∆h∥ ≤ η · rmax · ymax . Writing the softmax log-partition function as A(h) and g(t) = A(h + t∆h) gives the exact identity 
+
+DKL (πICL ∥πref ) = R 10 t ∆h⊤ F(h + t∆h)∆h dt . Bounding the integrand by ΛC ∥∆h∥2 yields the result. See Appendix D.4. This result bounds a single attention-induced distribution shift under the stated simplified model and bounded-score assumptions. It provides a trust-region-like interpretation, but does not imply that ICL optimizes an explicit KL-penalized objective or rules out mode collapse over repeated iterations. Combining these results yields our main theorem: 
+
+Theorem 3.7 (Policy-Gradient Analogy with a Bounded KL Shift) . In the simplified setting of Theorems 3.5 and 3.6, score-conditioned ICL has two complementary properties: 1. Reward-Weighted Update : Attention can aggregate output embeddings using their scores, with an exact hidden-state REINFORCE correspondence for centered scores when 
+
+Wout = I (Theorems 3.3, 3.5). 2. Bounded KL Shift : The resulting bounded hidden-state update has a pathwise KL upper bound (Theorem 3.6). Together these properties are analogous to a trust-region policy update, but do not establish that ICL optimizes Eq. 6. 
+
+The complete proof is provided in Appendix D.5. 
+
+3.4 Extension: Iterative ICL Corollary 3.8 (Repeated Score-Conditioned Updates) . Iteratively applying score-conditioned ICL produces a sequence of reward-conditioned distribution shifts, each satisfying Theorem 3.6 within the simplified single-step model. 
+
+Each iteration applies another score-conditioned update. Theorem 3.6 bounds each indi-vidual shift under its assumptions, but does not by itself guarantee monotonic reward improvement or a bounded cumulative shift. We therefore treat improvement across iter-ations as an empirical prediction, evaluated in Section 4.4. Concretely, at each iteration t,the model samples yt ∼ πICL (·| x, Ct) where Ct contains scored outputs from the previous round, computes rt = R(yt), and updates the context (see Appendix B for pseudocode). 
+
+# 4 Experiments 
+
+4.1 Experimental Setup Tasks. We target two tasks for prompt engineering: prompt optimization , which rewrites prompts to improve task performance (Deng et al., 2022; Zhang et al., 2022; Zhou et al., 2022; 5Published as a conference paper at COLM 2026                                             
+
+> Model DROP GSM8K HH-RLHF JBB Original  Llama3-8B 0.58 †0.61 †0.54 †0.52 †
+> Llama3-70B 0.71 †0.74 †0.68 †0.65 †
+> Olmo3-7B 0.55 †0.57 †0.51 †0.48 †
+> Olmo3-32B 0.67 †0.69 †0.63 †0.61 †
+> Qwen3-4B 0.49 †0.52 †0.46 †0.44 †
+> Shuffled  Llama3-8B 0.02 -0.01 0.03 -0.02 Llama3-70B -0.03 0.02 -0.01 0.04 Olmo3-7B 0.01 0.03 -0.02 0.01 Olmo3-32B -0.02 0.01 0.02 -0.03 Qwen3-4B 0.03 -0.02 0.01 0.02
+
+Table 1: Spearman correlation between example scores ri and log-probability changes 
+
+∆ log p(yi) under ICL. Top: original scores. Bottom: randomly shuffled scores (control). †
+
+denotes p < 0.01. Kaneko et al., 2025b), and jailbreak prompting , which rewrites prompts to elicit harmful information (Mehrotra et al., 2024; Chao et al., 2025; Xie et al., 2025; Kaneko & Baldwin, 2026; Xiong et al., 2026; Kaneko et al., 2026; Han et al., 2026; Kaneko, 2026). For prompt optimization, we use DROP for reading comprehension and GSM8K for mathematical reasoning, evaluated by F1 score and exact match accuracy, respectively (Dua et al., 2019; Cobbe et al., 2021). For jailbreak prompting, we use HH-RLHF and JailbreakBench (JBB), evaluated by attack success rate (ASR), where a jailbreak is deemed successful if a judge model determines the response contains harmful content (Bai et al., 2022; Chao et al., 2024). 
+
+Models. We evaluate the following five open-weight LLMs: Meta-Llama-3-8B-Instruct (Llama3-8B), Meta-Llama-3-70B-Instruct (Llama3-70B), Olmo-3-7B-Think (Olmo3-7B), Olmo-3-32B-Think (Olmo3-32B), and Qwen3-4B-Instruct-2507 (Qwen3-4B) (Dubey et al., 2024; Olmo-Team, 2025; Qwen-Team, 2025). Our main experiments require access to model internals, so we do not evaluate closed-weight LLMs in these settings. For experiments that only require black-box API access, we additionally evaluate GPT-4o (Hurst et al., 2024), Gemini 2.5 (Comanici et al., 2025), and Sonnet 4 (Anthropic, 2025). Since the Sonnet 4 API does not expose token-level log-probabilities, we approximate sequence likelihood using sampling-based pseudo-likelihood (Kaneko et al., 2025a). This pseudo-likelihood is used only in the black-box RQ1 analysis; because it preserves the rank ordering of sequence likelihoods, it is reliable for the directional (sign and correlation) conclusions drawn in RQ1, and all of our quantitative and mechanistic conclusions are anchored on the open-weight models, for which exact token-level log-probabilities are available. For each task, we sample N = 8 outputs from the base model, compute their rewards, and construct contexts 
+
+C = {(yi, ri)}Ni=1. We run T = 10 iterations. 
+
+Context Format. Following Yang et al. (2023), we present score-annotated examples in ascending score order, ending with an instruction to generate a higher-scoring output (see Appendix C for the exact format). 1 The experiments display raw scores; mean-centering is required only for the exact special-case correspondence in Theorem 3.5, while the empirical claims concern the more general structural analogy. For the multi-token outputs produced on DROP and GSM8K, the output embedding y and the log-probability change ∆ log p(y)
+
+are computed over the final answer span rather than a single token; using the pooled answer-span embedding yields correlations within about 0.03 of the single-token case. 6Published as a conference paper at COLM 2026 2 4 8 16 32    
+
+> Context Size
+> 10 2
+> 10 1
+> 10 0
+> | log  p|
+> 1/ N(theory)
+> Llama3-70B
+> Olmo3-32B
+> Llama3-8B
+> Olmo3-7B
+> Qwen3-4B
+
+(a) Magnitude of distribution shift. 2 4 8 16 32  
+
+> Context Size
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Spearman Correlation
+> Llama3-70B
+> Olmo3-32B
+> Llama3-8B
+> Olmo3-7B
+> Qwen3-4B
+
+(b) Score-probability correlation. 
+
+Figure 1: Effect of context size on score-conditioned ICL. (a) |∆ log p| decreases with context size, consistent with the η/N scaling in Theorem 3.3. Dashed line shows theoretical 1 /N
+
+scaling. (b) Score-probability correlation remains stable across N, confirming robust score-weighted behavior. 
+
+4.2 RQ1: Score-Conditioned Distribution Shift 
+
+We measure whether ICL implements reward-weighted probability updates (Theorem 3.5) by computing the Spearman correlation between example scores {ri} and log-probability changes under ICL: 
+
+∆ log p(yi) = log π(yi|x, C) − log πref (yi|x) (12) across N = 8 sampled outputs per prompt. Under the proposed policy-gradient corre-spondence, higher-scoring examples should exhibit larger probability changes, yielding a positive correlation. Table 1 shows significant positive correlations across all models and tasks ( p < 0.01), indicating a monotonic association between example scores and their probability changes under ICL. Larger models show stronger correlations (Llama3-70B highest, Qwen3-4B moderate), and prompt optimization tasks yield slightly higher correlations than jailbreak tasks, likely due to more clearly defined reward signals. As a control, shuffling score labels while keeping examples fixed drops correlations to near zero (mean: 0.01), providing causal evidence that the effect is driven by explicit numeric score values rather than inherent properties of high-quality outputs. We also vary context size N ∈ { 2, 4, 8, 16, 32 } (Figure 1): the magnitude |∆ log p| decreases following the theoretical 1 /N curve (panel a), while score-probability correlation remains stable across N (panel b), confirming the η/N scaling of Theorem 3.3. 
+
+4.3 RQ2: Attention Weight Analysis 
+
+We examine whether attention weights directly reflect example scores as predicted by Theorems 3.3 and 3.4. For each context example yi, we compute αi as the mean attention weight from generated tokens to all tokens of yi, across all layers and heads. Table 2 shows a significant positive score–attention correlations across all models, with peak correlations in late layers, consistent with prior findings that later layers handle higher-level semantics (Geva et al., 2022; 2023). Further mechanistic analysis, including score-specialized head identification, functional decomposition, and causal interventions, is provided in Appendix F (Sections F.1–F.4). 
+
+> 1
+
+We investigate the robustness of our results to score representation format (decimal, percentage, fraction, points, natural language) in Appendix G. All numeric formats yield comparably high correlations and substantially outperform a no-score control. 
+
+7Published as a conference paper at COLM 2026 
+
+Model Avg Max Layer of Max Llama3-8B 0.31 † 0.54 25/32 Llama3-70B 0.43 † 0.71 68/80 Olmo3-7B 0.30 † 0.49 22/32 Olmo3-32B 0.39 † 0.65 52/64 Qwen3-4B 0.29 † 0.46 29/36 
+
+Table 2: Spearman correlation between example scores ri and attention weights αi. Avg is averaged across all layers and heads; Max is the highest correlation observed in any single layer. † denotes p < 0.01. 0 2 4 6 8 10 
+
+> Iteration
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Score
+> Llama3-8B
+> Llama3-70B
+> Olmo3-7B
+> Olmo3-32B
+> Qwen3-4B
+> GPT-4o
+> Gemini 2.5
+> Sonnet 4
+
+Figure 2: Score improvement from zero-shot baseline across iterations of score-conditioned ICL (normalized to [0, 1 ] per task before averaging). 
+
+Figure 3: Cosine similarity between ICL and REINFORCE distribution shifts ( ∆ log p vec-tors). † denotes p < 0.01 using a bootstrap test. 
+
+4.4 RQ3: Iterative ICL 
+
+We run iterative score-conditioned ICL for T = 10 rounds across four tasks and eight LLMs. Scores are normalized to [0, 1 ] per task before averaging across tasks. Figure 2 shows consistent improvement across all models, with rapid gains in early iterations that plateau. This empirical pattern is compatible with the bounded-shift perspective of Theorem 3.6, although the theorem alone does not imply convergence or monotonic improvement. 
+
+4.5 RQ4: Alignment with REINFORCE Distribution Shifts 
+
+To validate Theorem 3.5 directly, we compare distribution shifts from score-conditioned ICL and explicit REINFORCE fine-tuning under identical conditions: the same N = 8 samples and a single gradient step. For each prompt, we measure: 
+
+∆ log pICL (yi) = log π(yi|x, C) − log πref (yi|x) (13) 
+
+∆ log pRL (yi) = log πθ′ (yi|x) − log πref (yi|x) (14) where θ′ is after one gradient step at η = 10 −5 (sensitivity across η ∈ { 10 −6, 10 −5, 10 −4}
+
+in Appendix E). We compute cosine similarity between these two ∆ log p vectors over 100 prompts × 5 samplings. Figure 3 shows cosine similarities exceeding 0.45 across all model-task pairs ( p < 0.01), confirming that both methods shift the output distribution in positively aligned directions given the same evidence. 8Published as a conference paper at COLM 2026 
+
+Figure 4: Effect of score token ablation across normalized layer depth. Y-axis shows remain-ing ρ(r, ∆ log p) after zeroing score token representations at each layer. Triangles indicate Layer of Max from Table 2. 
+
+4.6 RQ5: Causal Verification via Score Token Ablation 
+
+To establish causality beyond the correlational evidence in RQ2, we zero out hidden repre-sentations at score token positions layer by layer and measure the drop in ρ(r, ∆ log p).Figure 4 shows minimal disruption in early layers, a sharp peak near the Layer of Max from Table 2, and slight recovery in final layers, confirming that score information is causally processed in the late layers identified by the correlational analysis. 
+
+# 5 Related Work 
+
+Von Oswald et al. (2023) showed that transformers can implement gradient descent in-context, providing a mechanistic explanation for few-shot learning. Aky ¨urek et al. (2023) extended this to ridge regression, while Dai et al. (2023) drew connections to gradient descent through a kernel perspective. Xie et al. (2022) offered a Bayesian view, framing ICL as implicit inference. These works all operate on supervised (x, y) pairs where a target output is known; our work addresses the fundamentally different regime of reward-based (y, r) pairs for a fixed input, where score-weighted attention admits a structural correspondence to REINFORCE and its bounded hidden-state update yields a pathwise KL bound. Brooks et al. (2023) showed that foundation models can implement policy iteration in-context, focusing on action selection across distinct states rather than distribution shift for a fixed input; Huang et al. (2025) explored in-context steered policy optimization. Our work is complementary, providing a structural connection between score-weighted attention and REINFORCE and characterizing the resulting bounded distribution shift. A related line of work shows behaviorally that models exploit in-context rewards: Agarwal et al. (2024) scale ICL to many demonstrations, and Monea et al. (2024) frame in-context learning from rewards as a bandit problem. These works establish that models improve; we identify the computational underpinnings. Score-specialized heads whose causal manip-ulation moves the score–probability correlation (Appendix F.4) ground the REINFORCE correspondence and yield predictions a behavioral account does not: the η/N scaling, saturation with iteration, and directional alignment with one-step REINFORCE. Yang et al. (2023) introduced OPRO, demonstrating that LLMs can optimize objectives through prompting. Yuan et al. (2024) showed that self-rewarding mechanisms enable 9Published as a conference paper at COLM 2026 continuous improvement. Madaan et al. (2023) proposed Self-Refine for iterative output improvement. Our work provides theoretical grounding for why these approaches succeed. RLHF (Ouyang et al., 2022) and its variants have become standard for LLM alignment. Recent work has explored connections between supervised fine-tuning and RL objectives (Rafailov et al., 2023). Our work reveals that even without fine-tuning, LLMs can exhibit policy-optimization-like behavior through attention mechanisms. 
+
+# 6 Conclusion 
+
+We showed that score-conditioned ICL is structurally analogous to an implicit form of policy gradient optimization: self-attention can implement reward-weighted aggregation, and cen-tered scores yield an exact hidden-state REINFORCE correspondence under the simplified identity-output assumption. We also derived an exact pathwise KL bound for the bounded attention-induced update, providing a trust-region-like interpretation without claiming that ICL explicitly optimizes a KL-regularized objective. Extensive experiments across multiple LLMs confirm that attention weights correlate with scores, ICL and REINFORCE produce aligned distribution shifts, and iterative ICL yields consistent improvement, providing theo-retical justification for score-conditioned ICL as a lightweight alternative to fine-tuning. Our analysis operates under simplifying assumptions (linear attention, single-layer, Wout ≈ I)that enable tractable proofs; extending the formal guarantees to fully nonlinear multi-layer architectures remains an important direction for future work. More broadly, our framework suggests that any system capable of attending to reward-annotated examples can implicitly perform policy optimization, with implications for the design of inference-time alignment and self-improvement pipelines. 
+
+# Ethics Statement 
+
+This work includes experiments on jailbreak prompting to validate our theoretical frame-work across diverse reward signals. We emphasize that our goal is to understand the mechanisms underlying score-conditioned ICL, not to develop new attack methods. All experiments used existing public benchmarks in line with their intended research purposes. We acknowledge that our theoretical insights could potentially be misused to improve ad-versarial prompting techniques. However, we believe that understanding these mechanisms is essential for developing robust defenses. The same theoretical framework that explains why score-conditioned ICL can optimize for harmful outputs also suggests mitigation strate-gies, such as filtering high-scoring harmful examples from context or detecting score-based optimization patterns in user interactions. 
+
+# References 
+
+Rishabh Agarwal, Avi Singh, Lei Zhang, Bernd Bohnet, Luis Rosias, Stephanie Chan, Biao Zhang, Ankesh Anand, Zaheer Abbas, Azade Nova, et al. Many-shot in-context learning. 
+
+Advances in Neural Information Processing Systems , 37:76930–76966, 2024. Ekin Aky ¨urek, Dale Schuurmans, Jacob Andreas, Tengyu Ma, and Denny Zhou. What learning algorithm is in-context learning? investigations with linear models. In Interna-tional Conference on Learning Representations , 2023. URL https://openreview.net/forum? id=0g0X4H8yN4I .Anthropic. System card: Claude opus 4 & claude sonnet 4. Techni-cal report, Anthropic, May 2025. URL https://www-cdn.anthropic.com/ 4263b940cabb546aa0e3283f35b686f4f3b2ff47.pdf .Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, et al. Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862 , 2022. 10 Published as a conference paper at COLM 2026 Ethan Brooks, Logan Walls, Richard L Lewis, and Satinder Singh. Large language models can implement policy iteration. Advances in Neural Information Processing Systems , 36: 30349–30366, 2023. Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. Advances in neural information processing systems ,33:1877–1901, 2020. Patrick Chao, Edoardo Debenedetti, Alexander Robey, Maksym Andriushchenko, Francesco Croce, Vikash Sehwag, Edgar Dobriban, Nicolas Flammarion, George J Pappas, Florian Tramer, et al. Jailbreakbench: An open robustness benchmark for jailbreaking large language models. Advances in Neural Information Processing Systems , 37:55005–55029, 2024. Patrick Chao, Alexander Robey, Edgar Dobriban, Hamed Hassani, George J Pappas, and Eric Wong. Jailbreaking black box large language models in twenty queries. In 2025 IEEE Conference on Secure and Trustworthy Machine Learning (SaTML) , pp. 23–42. IEEE, 2025. Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 , 2021. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. Damai Dai, Yutao Sun, Li Dong, Yaru Hao, Shuming Ma, Zhifang Sui, and Furu Wei. Why can gpt learn in-context? language models implicitly perform gradient descent as meta-optimizers. In Findings of the Association for Computational Linguistics: ACL 2023 , pp. 4005–4019, 2023. Mingkai Deng, Jianyu Wang, Cheng-Ping Hsieh, Yihan Wang, Han Guo, Tianmin Shu, Meng Song, Eric Xing, and Zhiting Hu. RLPrompt: Optimizing discrete text prompts with reinforcement learning. In Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang (eds.), Proceedings of the 2022 Conference on Empirical Methods in Natural Language Pro-cessing , pp. 3369–3391, Abu Dhabi, United Arab Emirates, December 2022. Associa-tion for Computational Linguistics. doi: 10.18653/v1/2022.emnlp-main.222. URL 
+
+https://aclanthology.org/2022.emnlp-main.222/ .Dheeru Dua, Yizhong Wang, Pradeep Dasigi, Gabriel Stanovsky, Sameer Singh, and Matt Gardner. DROP: A reading comprehension benchmark requiring discrete reasoning over paragraphs. In Jill Burstein, Christy Doran, and Thamar Solorio (eds.), Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pp. 2368–2378, Minneapolis, Minnesota, June 2019. Association for Computational Linguistics. doi: 10.18653/v1/N19-1246. URL https://aclanthology.org/N19-1246/ .Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. arXiv e-prints , pp. arXiv–2407, 2024. Mor Geva, Avi Caciularu, Kevin Wang, and Yoav Goldberg. Transformer feed-forward layers build predictions by promoting concepts in the vocabulary space. In Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang (eds.), Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , pp. 30–45, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022. emnlp-main.3. URL https://aclanthology.org/2022.emnlp-main.3/ .Mor Geva, Jasmijn Bastings, Katja Filippova, and Amir Globerson. Dissecting recall of factual associations in auto-regressive language models. In Houda Bouamor, Juan Pino, and Kalika Bali (eds.), Proceedings of the 2023 Conference on Empirical Methods in Natural Language 
+
+11 Published as a conference paper at COLM 2026 
+
+Processing , pp. 12216–12235, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.emnlp-main.751. URL https://aclanthology.org/ 2023.emnlp-main.751/ .Zhaoyang Han, Yihe Liu, Kai Zhang, and Ping Li. Experience-driven multi-agent optimiza-tion for black-box jailbreak attacks on large language models. In Findings of the Association for Computational Linguistics: ACL 2026 , pp. 23729–23747, 2026. Hsiu-Yuan Huang, Chenming Tang, Weijie Liu, Clive Bai, Saiyong Yang, and Yunfang Wu. Think outside the policy: In-context steered policy optimization. arXiv preprint arXiv:2510.26519 , 2025. Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. arXiv preprint arXiv:2410.21276 , 2024. Masahiro Kaneko. Paraphrasing adversarial attack on llm-as-a-reviewer. arXiv preprint arXiv:2601.06884 , 2026. Masahiro Kaneko and Timothy Baldwin. Bits leaked per query: Information-theoretic bounds for adversarial attacks on llms. Advances in Neural Information Processing Systems ,38:80186–80210, 2026. Masahiro Kaneko, Youmi Ma, Yuki Wata, and Naoaki Okazaki. Sampling-based pseudo-likelihood for membership inference attacks. In Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pilehvar (eds.), Findings of the Association for Computational Linguistics: ACL 2025 , pp. 8894–8907, Vienna, Austria, July 2025a. Association for Com-putational Linguistics. ISBN 979-8-89176-256-5. doi: 10.18653/v1/2025.findings-acl.465. URL https://aclanthology.org/2025.findings-acl.465/ .Masahiro Kaneko, Zeerak Talat, and Timothy Baldwin. Online learning defense against iterative jailbreak attacks via prompt optimization. In Kentaro Inui, Sakriani Sakti, Haofen Wang, Derek F. Wong, Pushpak Bhattacharyya, Biplab Banerjee, Asif Ekbal, Tanmoy Chakraborty, and Dhirendra Pratap Singh (eds.), Proceedings of the 14th International Joint Conference on Natural Language Processing and the 4th Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics , pp. 2592–2609, Mumbai, India, December 2025b. The Asian Federation of Natural Language Processing and The Association for Computational Linguistics. ISBN 979-8-89176-298-5. doi: 10.18653/v1/2025.ijcnlp-long. 140. URL https://aclanthology.org/2025.ijcnlp-long.140/ .Masahiro Kaneko, Ayana Niwa, and Timothy Baldwin. Jailnewsbench: Multi-lingual and regional benchmark for fake news generation under jailbreak attacks. In The Fourteenth International Conference on Learning Representations , 2026. URL https://openreview.net/ forum?id=7dTqUaY2Kl .Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement with self-feedback. Advances in Neural Information Processing Systems , 36: 46534–46594, 2023. Anay Mehrotra, Manolis Zampetakis, Paul Kassianik, Blaine Nelson, Hyrum Anderson, Yaron Singer, and Amin Karbasi. Tree of attacks: Jailbreaking black-box llms automatically. 
+
+Advances in Neural Information Processing Systems , 37:61065–61105, 2024. Giovanni Monea, Antoine Bosselut, Kiant ´e Brantley, and Yoav Artzi. Llms are in-context bandit reinforcement learners. arXiv preprint arXiv:2410.05362 , 2024. Olmo-Team. Olmo 3. arXiv preprint arXiv:2512.13961 , 2025. Catherine Olsson, Nelson Elhage, Neel Nanda, Nicholas Joseph, Nova DasSarma, Tom Henighan, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, et al. In-context learning and induction heads. arXiv preprint arXiv:2209.11895 , 2022. 12 Published as a conference paper at COLM 2026 Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. In Advances in Neural Information Processing Systems , volume 35, pp. 27730–27744, 2022. Qwen-Team. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D Manning, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. Advances in Neural Information Processing Systems , 36, 2023. John Schulman, Sergey Levine, Pieter Abbeel, Michael Jordan, and Philipp Moritz. Trust region policy optimization. In International conference on machine learning , pp. 1889–1897. PMLR, 2015. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. Johannes Von Oswald, Eyvind Niklasson, Ettore Randazzo, Jo ˜ao Sacramento, Alexander Mordvintsev, Andrey Zhmoginov, and Max Vladymyrov. Transformers learn in-context by gradient descent. In International Conference on Machine Learning , pp. 35151–35174. PMLR, 2023. Ronald J Williams. Simple statistical gradient-following algorithms for connectionist rein-forcement learning. Machine learning , 8(3):229–256, 1992. Sang Michael Xie, Aditi Raghunathan, Percy Liang, and Tengyu Ma. An explanation of in-context learning as implicit bayesian inference. In International Conference on Learning Representations , 2022. URL https://openreview.net/forum?id=RdJVFCHjUMI .Zhihui Xie, Jiahui Gao, Lei Li, Zhenguo Li, Qi Liu, and Lingpeng Kong. Jailbreaking as a reward misspecification problem. In International Conference on Learning Representations ,volume 2025, pp. 83368–83390, 2025. Xiqiao Xiong, Ouxiang Li, Zhuo Liu, Moxin Li, Wentao Shi, Fengbin Zhu, Qifan Wang, and Fuli Feng. Trojail: Trajectory-level optimization for multi-turn large language model jailbreaks with process rewards. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 48086–48109, 2026. Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V Le, Denny Zhou, and Xinyun Chen. Large language models as optimizers. arXiv preprint arXiv:2309.03409 , 2023. Weizhe Yuan, Richard Yuanzhe Pang, Kyunghyun Cho, Sainbayar Sukhbaatar, Jing Xu, and Jason Weston. Self-rewarding language models. In International Conference on Machine Learning . PMLR, 2024. Tianjun Zhang, Xuezhi Wang, Denny Zhou, Dale Schuurmans, and Joseph E Gonzalez. Tempera: Test-time prompting via reinforcement learning. arXiv preprint arXiv:2211.11890 ,2022. Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging LLM-as-a-judge with MT-bench and Chatbot Arena. Advances in Neural Information Processing Systems , 36: 46595–46623, 2023. Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han, Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy Ba. Large language models are human-level prompt engineers. In The eleventh international conference on learning representations , 2022. 13 Published as a conference paper at COLM 2026 
+
+# A Theoretical Remarks 
+
+Remark A.1 (On the Scope of the Correspondence) . The correspondence established in Theorem 3.5 is exact under Wout = I with centered scores, and approximate when Wout ≈ I.The claim is therefore one of structural analogy rather than general exact equivalence: both ICL and REINFORCE contain score-weighted updates of output embeddings, but they differ in reward centering and in how the output layer transforms embeddings into probabilities. Exact equality in our simplified hidden-state formulation requires centered scores and 
+
+Wout = I. The strength of this analogy is supported empirically in Section 4.5. 
+
+Remark A.2 (Baseline and Normalized Rewards) . Standard policy gradient implementations use baseline reduction or reward normalization to reduce variance. Theorem 3.5 uses explicit mean-centering, ˜ri = ri − ¯r. Because ∑i ˜ri = 0, the expected-embedding term in the log-softmax gradient cancels, producing the exact simplified correspondence. For raw, uncentered scores, the theorem supports only a structural analogy; it does not imply that score-conditioned ICL automatically performs baseline reduction. 
+
+# B Iterative Score-Conditioned ICL: Algorithm 
+
+Algorithm 1 Iterative Score-Conditioned ICL  
+
+> 1:
+
+Input: Prompt x, reward function R, iterations T 
+
+> 2:
+
+y0 ∼ πref (·| x); r0 ← R(y0) 
+
+> 3:
+
+for t = 1 to T do  
+
+> 4:
+
+Ct ← { (yt−1, rt−1)} {Or maintain full history } 
+
+> 5:
+
+yt ∼ πICL (·| x, Ct); rt ← R(yt) 
+
+> 6:
+
+end for  
+
+> 7:
+
+Return: yT
+
+# C Context Format 
+
+Following Yang et al. (2023), score-annotated examples are presented in ascending score order: 
+
+> text: [output text] score: 61 text: [output text] score: 78 (...more examples sorted in ascending order...) Generate a new output that achieves a higher score:
+
+# D Complete Proofs 
+
+D.1 Proof of Theorem 3.3: Score-Weighted Aggregation 
+
+Proof. Let each token be ei = ( yi, ri) ∈ RD+1 where yi ∈ RD is the output embedding and 
+
+ri ∈ R is the score. 
+
+Step 1: Weight Matrix Construction. 
+
+14 Published as a conference paper at COLM 2026 We construct the weight matrices as follows: 
+
+W K = W Q =
+
+0D×D 0D×1
+
+01×D 1
+
+
+
+∈ R(D+1)×(D+1) (15) 
+
+WV =
+
+ ID 0D×1
+
+01×D 0
+
+
+
+∈ R(D+1)×(D+1) (16) 
+
+W P = η
+
+N ID+1 (17) This construction is engineered to demonstrate the existence of a weight configuration that implements score-weighted aggregation. We do not claim that pretrained transform-ers adopt these exact weight matrices; the empirical analysis in Appendix F shows that pretrained models learn functionally similar mechanisms. 
+
+Step 2: Key and Query Computation. 
+
+For a context token ei = ( yi, ri):
+
+ki = W K ei =
+
+0D×D 0D×1
+
+01×D 1
+
+  yi
+
+ri
+
+
+
+=
+
+0D
+
+ri
+
+
+
+(18) For the query token eq = ( yq, 1 ) (setting query score component to 1; the choice of any nonzero constant c is without loss of generality, since q⊤ki = c · ri and the factor c is absorbed into η): 
+
+q = W Qeq =
+
+0D
+
+1
+
+
+
+(19) 
+
+Step 3: Attention Weight Computation. 
+
+The attention weight (before normalization) for token i:
+
+q⊤ki =
+
+0D
+
+1
+
+⊤ 0D
+
+ri
+
+
+
+= ri (20) This shows that the attention weight equals the score ri.
+
+Step 4: Value Computation. 
+
+vi = WV ei =
+
+ ID 0D×1
+
+01×D 0
+
+  yi
+
+ri
+
+
+
+=
+
+yi
+
+0
+
+
+
+(21) 
+
+Step 5: Output Computation. 
+
+The attention output for the query token: 
+
+e′ 
+
+> q
+
+= eq + W P N
+
+# ∑
+
+> i=1
+
+vi(k⊤ 
+
+> i
+
+q) (22) 
+
+=
+
+yq
+
+1
+
+
+
++ η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+yi
+
+0
+
+
+
+ri (23) 
+
+=
+
+yq + η 
+
+> N
+
+∑Ni=1 riyi
+
+1
+
+
+
+(24) The output embedding (first D dimensions) is: 
+
+hout = yq + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+riyi (25) This completes the proof. 15 Published as a conference paper at COLM 2026 
+
+D.2 Proof of Theorem 3.4: Softmax Attention as Boltzmann Aggregation 
+
+Proof. Using the same weight matrix construction as in Theorem 3.3: 
+
+Step 1: The attention logits are q⊤ki = ri (as shown in the previous proof). 
+
+Step 2: With softmax attention and temperature τ (from the √dk normalization): 
+
+αi = exp (ri/τ)
+
+∑Nj=1 exp (rj/τ) (26) 
+
+Step 3: The output becomes: 
+
+hout = hq +
+
+> N
+
+# ∑
+
+> i=1
+
+αiyi = hq +
+
+> N
+
+# ∑
+
+> i=1
+
+exp (ri/τ)
+
+∑Nj=1 exp (rj/τ) yi (27) This is a Boltzmann-weighted (softmax) aggregation of the output embeddings, where higher-scored examples receive exponentially more weight. 
+
+D.3 Proof of Theorem 3.5: Structural Policy-Gradient Correspondence 
+
+Proof. Step 1: Recall the policy gradient update. 
+
+Let ˜ri = ri − ¯r, so that ∑i ˜ri = 0. The corresponding REINFORCE update in parameter space is: 
+
+θ ← θ + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+˜ri∇θ log πθ (yi|x). (28) 
+
+Step 2: Interpret gradient in embedding space. 
+
+For typical LLM output layers: 
+
+P(yi|h) ∝ exp (h⊤Wout embed (yi)) (29) The exact gradient of the log-probability in embedding space is: 
+
+∇h log P(yi|h) = Wout embed (yi) − Wout Ey∼P(·| h)[embed (y)] (30) 
+
+= Wout (embed (yi) − ¯y) (31) where ¯y = Ey∼P(·| h)[embed (y)] is the expected embedding under the current policy. This expectation is constant with respect to i.
+
+Step 3: Establish the correspondence. 
+
+The REINFORCE estimator in hidden-state space is 
+
+η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+˜ri∇h log P(yi|h) = η
+
+N Wout 
+
+> N
+
+# ∑
+
+> i=1
+
+˜riyi − ¯y
+
+> N
+
+# ∑
+
+> i=1
+
+˜ri
+
+!
+
+(32) 
+
+= η
+
+N Wout N
+
+# ∑
+
+> i=1
+
+˜riyi, (33) where the second equality uses ∑i ˜ri = 0. If Wout = I and the score coordinate in Theorem 3.3 contains ˜ ri, its attention update is exactly 
+
+hout = hq + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+˜riyi. (34) For a general Wout , the two updates differ by the output map; for raw, uncentered scores, they additionally differ by the centering term. Thus the general claim is structural corre-spondence, with exact equality only under the conditions stated in Theorem 3.5. 16 Published as a conference paper at COLM 2026 
+
+D.4 Proof of Theorem 3.6: Bounded KL Shift 
+
+Proof. Step 1: Characterize the distribution shift. 
+
+From Theorem 3.3, the hidden state shifts by: 
+
+∆h = η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+riyi (35) 
+
+Step 2: Bound the shift magnitude. 
+
+The magnitude of this shift is bounded: 
+
+∥∆h∥ ≤ η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+|ri|∥ yi∥ ≤ η · rmax · ymax (36) where rmax = max i |ri| and ymax = max i ∥yi∥.
+
+Step 3: Express the KL divergence exactly along the update path. 
+
+For a softmax output layer P(y|h) ∝ exp (h⊤Wout embed (y)) , define its log-partition func-tion 
+
+A(h) = log ∑
+
+> y
+
+exp 
+
+
+
+h⊤Wout embed (y)
+
+
+
+. (37) Its Hessian equals the Fisher information matrix: 
+
+∇2 A(h) = F(h). (38) Let g(t) = A(h + t∆h). Using the exponential-family form of the softmax distribution, 
+
+DKL (πICL ∥πref ) = g′(1) − g(1) + g(0) (39) 
+
+= 
+
+> Z10
+
+t g ′′ (t) dt (40) 
+
+= 
+
+> Z10
+
+t ∆h⊤ F(h + t∆h)∆h dt . (41) This identity is exact and does not discard a Taylor remainder. 
+
+Step 4: Apply the pathwise curvature bound. 
+
+Let ΛC = sup t∈[0,1 ] λmax (F(h + t∆h)) . Then 
+
+DKL (πICL ∥πref ) ≤ 
+
+> Z10
+
+t ΛC ∥∆h∥2 dt (42) 
+
+= 12 ΛC ∥∆h∥2 (43) 
+
+≤ 12 ΛC (η · rmax · ymax )2 . (44) The bound follows from the bounded constructed update and the curvature of the output distribution along its path. It is analogous to a single trust-region step, but does not assert that fixed parameters alone implement an explicit KL penalty. 
+
+D.5 Proof of Theorem 3.7: Policy-Gradient Analogy with a Bounded KL Shift 
+
+Proof. We combine the previous results to establish the main theorem. 
+
+Step 1: Reward-Weighted Update Component. 
+
+From Theorem 3.3, linear attention produces: 
+
+hout = hq + η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+riyi (45) 17 Published as a conference paper at COLM 2026 From Theorem 3.5, applying the same construction to centered scores ˜ri = ri − ¯r exactly matches the hidden-state REINFORCE estimator when Wout = I, and gives a structural correspondence more generally: 
+
+η
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+˜ri∇h log P(yi|h) = η
+
+N Wout N
+
+# ∑
+
+> i=1
+
+˜riyi. (46) Under Assumption 3.2, movement toward a particular output embedding increases that output’s probability. This assumption provides the behavioral interpretation of the score-weighted shift; it is not a general monotonic-improvement guarantee. 
+
+Step 2: Bounded KL-Shift Component. 
+
+From Theorem 3.6, the simplified single-step distribution shift satisfies: 
+
+DKL (πICL ∥πref ) ≤ 12 ΛC (η · rmax · ymax )2. (47) 
+
+Conclusion. 
+
+Score-conditioned ICL therefore has two properties that parallel a trust-region policy update: 1. reward-weighted aggregation with a conditional hidden-state REINFORCE corre-spondence; and 2. an exact pathwise KL bound for the constructed bounded update. These properties establish the analogy in Theorem 3.7; they do not imply that ICL optimizes the KL-regularized objective in Eq. 6. 
+
+# E Learning Rate Sensitivity of REINFORCE Comparison 
+
+To assess the robustness of the directional alignment result in Section 4.5, we repeat the cosine similarity analysis across three learning rates η ∈ { 10 −6, 10 −5, 10 −4} and two sample sizes N ∈ { 4, 8 }. Results (averaged over tasks and models) are shown in Table 3.             
+
+> Learning Rate N=4N=810 −60.41 †0.44 †
+> 10 −50.51 †0.55 †
+> 10 −40.49 †0.53 †
+
+Table 3: Cosine similarity between ICL and REINFORCE ∆ log p vectors across learning rates and sample sizes. All values are statistically significant ( p < 0.01), confirming that directional alignment is robust to these hyperparameter choices. 
+
+# F Empirical Verification of Weight Matrix Structure 
+
+A potential criticism of Theorem 3.3 is that it provides an existence proof , demonstrating that attention can implement score-weighted aggregation, rather than evidence that pretrained LLMs actually implement this mechanism. A related concern is that our theoretical analysis uses linear self-attention and a single layer, whereas real LLMs employ softmax attention, nonlinear activations (e.g., GeLU), and many layers. Linear attention is a standard simplifi-cation used throughout the ICL theory literature (Von Oswald et al., 2023; Aky ¨urek et al., 2023); Theorem 3.4 extends the existence result to softmax attention. The experiments below address the remaining gap: we show that the qualitative predictions of our theory, including score-proportional attention weights, score-specialized heads, and causal score processing, hold robustly in fully nonlinear, multi-layer pretrained models, despite the gap between the theoretical abstraction and the actual architecture. In this appendix, we present four complementary experiments that examine whether the internal computations of LLMs align with our theoretical construction. 18 Published as a conference paper at COLM 2026                           
+
+> Model Mean SEI Max SEI #Heads >0.6 Peak Layer Llama3-8B 0.18 0.72 12/256 24–28 Llama3-70B 0.21 0.79 31/640 62–72 Olmo3-7B 0.16 0.68 9/256 21–26 Olmo3-32B 0.19 0.74 22/512 48–56 Qwen3-4B 0.15 0.65 7/144 27–32
+
+Table 4: Score Extraction Index (SEI) statistics. All models contain attention heads with high SEI, indicating score-specialized computation consistent with Theorem 3.3. 
+
+F.1 Score-Specialized Attention Head Identification 
+
+Our theoretical construction in Theorem 3.3 predicts that effective score-weighted aggrega-tion requires attention heads whose key-query computation extracts the score component. If LLMs implement this mechanism, we should find attention heads that are “specialized” for score extraction, i.e., heads where the key-query dot product correlates strongly with the score value. 
+
+Method. For each layer l and head h, we analyze the relationship between key-query products and scores. Given a score-annotated context C = {(yi, ri)}Ni=1, let k(l,h) 
+
+> i
+
+denote the key vector for the token corresponding to example i’s score, and q(l,h) denote the query vector at the generation position. We compute the Score Extraction Index (SEI) :SEI (l,h) = ρ
+
+
+
+{(q(l,h))⊤k(l,h) 
+
+> i
+
+}Ni=1, {ri}Ni=1
+
+
+
+(48) where ρ denotes Spearman correlation. A high SEI indicates that the head’s key-query com-putation effectively extracts score information, as predicted by our theoretical construction where q⊤ki = ri.
+
+Results. Table 4 reports the distribution of SEI values across all heads for each model. Critically, all models contain a subset of heads with high SEI values ( > 0.6), indicating genuine score-specialized computation. These high-SEI heads are predominantly located in middle-to-late layers, consistent with the layer-wise patterns observed in Section 4.3. Importantly, we verify that these high-SEI heads are not artifacts of position or formatting. When we shuffle scores while keeping examples fixed (as in Section 4.2), the SEI of these heads drops to near zero (mean: 0.03), confirming that they genuinely track score values rather than positional patterns. 
+
+F.2 Functional Decomposition of Attention Weights 
+
+While the SEI analysis identifies heads that extract score information, it does not directly verify that the full attention mechanism implements our theoretical construction. Here, we analyze whether the effective computation performed by attention heads can be decomposed into components matching Theorem 3.3. 
+
+Method. For each attention head, we model the attention weight assigned to example i as: 
+
+αi = β0 + βr · ri + βp · pi + βs · si + ϵ (49) where ri is the score, pi is the positional index, and si is a semantic similarity measure (cosine similarity between the example embedding and the query). Our theory predicts that for score-specialized heads, βr should dominate while βp and βs should be small. We fit this regression model across all test prompts and compute the Score Dominance Ratio (SDR) :SDR (l,h) = |βr |
+
+max (|βr |, |βp|, |βs|) (50) 19 Published as a conference paper at COLM 2026                   
+
+> Model SDR (High-SEI Heads) SDR (All Heads) R2
+> Llama3-8B 0.84 0.31 0.71 Llama3-70B 0.89 0.35 0.78 Olmo3-7B 0.81 0.29 0.68 Olmo3-32B 0.86 0.33 0.74 Qwen3-4B 0.79 0.27 0.65
+
+Table 5: Score Dominance Ratio (SDR) for high-SEI heads vs. all heads. High-SEI heads show score-dominated attention computation, supporting our theoretical construction.                                
+
+> Model Early Middle Late Peak R2Peak Layer Llama3-8B 0.12 0.48 0.79 0.87 26/32 Llama3-70B 0.15 0.54 0.84 0.92 70/80 Olmo3-7B 0.11 0.45 0.76 0.85 24/32 Olmo3-32B 0.14 0.51 0.81 0.89 54/64 Qwen3-4B 0.10 0.42 0.74 0.86 30/36
+
+Table 6: Linear probing R2 for score prediction across layer groups. Early: 0–33% depth; Middle: 33–66%; Late: 66–100%. Score information becomes increasingly decodable in later layers, peaking near the high-SEI head locations from Table 4. 
+
+Results. Table 5 shows that heads with high SEI also exhibit high SDR, meaning their attention weights are primarily determined by score values rather than position or semantic similarity. This provides evidence that these heads implement a computation functionally similar to our theoretical construction, where attention weights directly reflect scores. 
+
+F.3 Linear Probing for Score Information in Hidden States 
+
+If LLMs implement score-weighted aggregation, score information must be encoded in the hidden states in a way that downstream layers can access. We use linear probing to verify that score values are linearly decodable from hidden states. 
+
+Method. For each layer l, we extract the hidden state h(l) 
+
+> i
+
+at the position of each score token. We train a linear probe ˆri = w⊤h(l) 
+
+> i
+
++ b to predict the score value from the hidden state, using 80% of examples for training and 20% for testing. We report the R2 coefficient on the test set. 
+
+Results. Table 6 shows the probing R2 across layer groups for all models. All models exhibit a consistent pattern: score information becomes increasingly linearly decodable in later layers. Early layers (0–33% depth) show low R2, indicating score information is not yet explicitly represented. Middle layers (33–66% depth) show moderate R2, suggesting score processing is emerging. Late layers (66–100% depth) achieve peak R2 > 0.85, with the maximum occurring near the layers containing high-SEI heads identified in Section F.1. This confirms that score information is explicitly represented in hidden states and accessible for downstream computation. 
+
+F.4 Causal Intervention: Amplifying Score-Specialized Heads 
+
+The analyses above are correlational. To establish a causal link between score-specialized heads and ICL behavior, we conduct an intervention experiment. 
+
+Method. We selectively amplify or suppress the contribution of high-SEI heads by scaling their output: output (l,h) ← γ · output (l,h) (51) 20 Published as a conference paper at COLM 2026                                  
+
+> High-SEI Heads Random Heads Model γ=1.5 γ=0.5 γ=1.5 γ=0.5 Llama3-8B +18% −35% +2% −3% Llama3-70B +23% −42% +4% −2% Olmo3-7B +15% −31% +1% −4% Olmo3-32B +21% −38% +3% −1% Qwen3-4B +16% −33% +2% −3%
+
+Table 7: Change in score-probability correlation ρ(r, ∆ log p) under causal intervention. Am-plifying high-SEI heads strengthens score-weighted behavior; suppressing them weakens it. Random heads show minimal effect. where γ > 1 amplifies and γ < 1 suppresses. If these heads causally implement score-weighted aggregation, amplification should strengthen the correlation between scores and probability changes, while suppression should weaken it. 
+
+Results. Table 7 shows the effect of intervening on high-SEI heads. Amplifying high-SEI heads ( γ = 1.5) increases the score-probability correlation by 15–23%, while suppressing them ( γ = 0.5) decreases it by 31–42%. Critically, the same interventions on randomly selected heads (matched for layer distribution) show minimal effect ( < 5% change), confirm-ing that the identified heads are specifically responsible for score-weighted computation. 
+
+F.5 Discussion: From Existence Proof to Empirical Mechanism 
+
+The experiments in this appendix collectively address the gap between our theoretical existence proof (Theorem 3.3) and empirical reality: 1. Score-Specialized Heads Exist (Section F.1): We identify specific attention heads whose key-query computation strongly correlates with score values, consistent with the weight matrix structure in our theorem. 2. Score Information Dominates Attention (Section F.2): In these specialized heads, at-tention weights are primarily determined by scores rather than position or semantic similarity, matching our theoretical prediction. 3. Score Information is Linearly Encoded (Section F.3): Score values are explicitly represented in hidden states and become increasingly accessible in later layers. 4. Causal Role Confirmed (Section F.4): Intervening on score-specialized heads di-rectly modulates the strength of score-weighted ICL behavior. While LLMs do not literally implement our exact weight matrix construction (which would require specific zero patterns), they have learned functionally similar mechanisms through pretraining. The existence of score-specialized heads with high SEI and SDR indicates that the computational structure predicted by Theorem 3.3, where attention weights track reward values, emerges naturally in pretrained models. This bridges the gap between theoretical possibility and practical implementation. 
+
+# G Effect of Score Representation Format 
+
+Our theoretical framework assumes that attention mechanisms can extract and use scalar score information from context. However, in practice, scores can be represented in various surface formats. We investigate whether the implicit policy gradient mechanism is sensitive to representational differences, even when the underlying information is identical. We conduct this analysis on the DROP task, which uses F1 scores ranging continuously from 0 to 1. We compare five score representation formats that all preserve the same underlying contin-uous information and differ only in surface form: Decimal presents the raw F1 score (e.g., 21 Published as a conference paper at COLM 2026                          
+
+> Representation ρ(r,∆log p)ρ(r,α)Iter. Gain Decimal 0.63 †0.45 †+0.19
+> Percentage 0.61 †0.44 †+0.18 Fraction 0.59 †0.42 †+0.17 Points 0.58 †0.41 †+0.17 Natural language 0.52 †0.36 †+0.14 No score 0.06 0.04 +0.02
+
+Table 8: Effect of score representation format on ICL behavior for the DROP task, averaged across all models. ρ(r, ∆ log p): Spearman correlation between F1 scores and log-probability changes; ρ(r, α): correlation between F1 scores and attention weights; Iter. Gain: average F1 improvement after 10 iterations. † denotes statistically significant correlation ( p < 0.01). “Score: 0.82”) as a standard numerical format and serves as the ideal case for our theory; 
+
+Percentage renders the same value as a percent (e.g., “Score: 82%”) as commonly used in human-facing settings; Fraction expresses it as a ratio (e.g., “Score: 82/100”) to test whether making the denominator explicit changes processing; Points uses an integer plus a unit label (e.g., “Score: 82 points”) to examine the effect of unit annotation; and Natural language 
+
+verbalizes the value (e.g., “scored eighty-two percent”) to test whether numeric tokens themselves are necessary. We also include a No score control condition in which examples are shown without any score annotation, which is essential for determining whether models actually leverage explicit score information or instead improve simply by learning from the content of high-quality examples. We evaluate each format using the same metrics as in the main experiments: the correlation between scores and probability changes ( ρ(r, ∆ log p); see RQ1), the correlation between scores and attention weights ( ρ(r, α); see Section 4.3), and iterative improvement (Iter. Gain; see Section 4.4). Table 8 shows that all numeric formats (Decimal, Percentage, Fraction, Points) achieve similarly high correlations, suggesting that LLMs can robustly extract numerical information regardless of superficial formatting choices. The natural language format shows a notable drop, indicating that mapping words like “eighty-two” to numerical values introduces noise. Crucially, all scored representations dramatically outperform the no-score control (p < 0.001), confirming that models rely on explicit score information rather than inferring quality from example content alone. These results have practical implications: practitioners can flexibly choose among numeric formats (decimal, percentage, fraction, points) without significant loss of effectiveness. However, if scores must be expressed in natural language, some degradation in the implicit policy gradient effect should be expected. 22

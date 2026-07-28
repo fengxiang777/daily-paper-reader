@@ -1,0 +1,2038 @@
+Title: Offline-Online Curriculum RL for Multimodal Reasoning
+
+URL Source: https://arxiv.org/pdf/2607.23700v1
+
+Published Time: Tue, 28 Jul 2026 01:10:15 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# Offline-Online Curriculum RL for Multimodal Reasoning 
+
+Wendi Deng 1, Hang Du 1, Guoshun Nan 1,2* , Haokun Tian 1, Jiaqi Yu 1,Xinlei Cao 1, Jiale Li 1, Jingfeng Chen 3, Ling Deng 1, Ting Li 6, Hao Yang 7,Jun Liu 4, Xudong Jiang 5, Sicong Leng 5
+
+> 1*
+
+Beijing University of Posts and Telecommunications, Beijing, 100876, China. 
+
+> 2
+
+BUPT Shenzhen Institute, ShenZhen, 518038, China. 
+
+> 3
+
+Carnegie Mellon University, Pittsburgh, USA. 
+
+> 4
+
+Lancaster University, Lancaster, UK. 
+
+> 5
+
+Nanyang Technological University, Singapore, Singapore. 
+
+> 6
+
+China Telecom Corporation Limited Sichuan Branch, Chengdu, Sichuan, China. 
+
+> 7
+
+Changsha University of Science & Technology, Changsha, Hunan, China. *Corresponding author(s). E-mail(s): nanguo2021@bupt.edu.cn; Contributing authors: dengwendi02@bupt.edu.cn; 7597892@bupt.edu.cn; thksang@bupt.edu.cn; yjiaqi@bupt.edu.cn; 2023211537cxl@bupt.edu.cn; lijiale2023@bupt.edu.cn; 1357696493steven@gmail.com; 2024211778@bupt.cn; liting.sc@chinatelecom.cn; hyang@csust.edu.cn; J.liu81@lancaster.ac.uk; exdjiang@ntu.edu.sg; Lengsicong@gmail.com; 
+
+Abstract 
+
+Multimodal large language models exhibit capabilities on reasoning tasks, yet often produce flawed intermediate steps while yielding correct final answers. This behavior undermines interpretability and reliability, suggesting reliance on spurious shortcuts rather than faithful reasoning. Although efforts have explored step-level supervision, distinguishing decisive steps from redundant ones remains challenging. We propose O²-CritiCuRL, a novel curriculum reinforcement learning framework that introduces critical-step awareness through an iterative offline–online paradigm. In the offline stage, O²-CritiCuRL conducts multi-rollout analysis over step-annotated trajectories to estimate step-level importance, allowing the framework to distill critical reasoning steps and filter out redundant ones. In the online stage, we employ a progressive step-level reinforcement learning strategy, where truncated chains guide the model to infer missing steps and refine its reasoning, thereby sharp-ening its focus on critical steps and overcoming the limitations of static supervision. Extensive experiments on multimodal reasoning benchmarks show that our method achieves state-of-the-art performance while delivering superior training and inference efficiency. Code is available at https://github.com/kk0013/CritiCuRL.  
+
+> Keywords: Reinforcement Learning, Multimodal Reasoning, Vision Language Model
+
+1arXiv:2607.23700v1 [cs.AI] 26 Jul 2026 1 Introduction 
+
+Recent advances in large language models (LLMs) have demonstrated remarkable capabilities in multi-step reasoning across domains such as math-ematics, code generation, and scientific discov-ery [Wang et al., 2023, Guo et al., 2024, Comanici et al., 2025]. A common strategy for enhancing these reasoning abilities is curriculum learning, which, inspired by human education, gradually exposes models to increasingly complex exam-ples [Bengio et al., 2009, Parashar et al., 2025b]. By regulating task difficulty, curriculum learn-ing stabilizes optimization and improves gener-alization, making it an effective paradigm for reasoning-intensive tasks [Zeng et al., 2024, El-Kishky et al., 2025, Lightman et al., 2024]. Reinforcement learning (RL) further strengthens reasoning by optimizing models with outcome- or process-based rewards [Hendrycks et al., 2021, Sti-ennon et al., 2022, Wang et al., 2024b]. Among existing RL methods, Group Relative Policy Opti-mization (GRPO) has gained increasing attention due to its efficiency and scalability, encouraging models to explore and refine multiple reason-ing paths through “slow thinking’’[Shakya et al., 2023, Comanici et al., 2025, Guo et al., 2025, Park et al., 2025, Wang et al., 2025a]. Con-sequently, integrating curriculum learning with reinforcement learning has emerged as a promis-ing paradigm for improving performance on reasoning-intensive tasks[Yuan et al., 2025, Shao et al., 2024, Yao et al., 2023, Xie et al., 2024]. Nevertheless, strong answer accuracy does not necessarily imply a reliable reasoning process. As illustrated in Figure 1, Multimodal Large Lan-guage Models (MLLMs) often produce incorrect, redundant, or unnecessarily complicated interme-diate reasoning while still arriving at the correct final answer [Ling et al., 2023, Lightman et al., 2023b]. For example, a model may introduce an invalid assumption early in a mathemati-cal derivation, compensate for it through sub-sequent calculations, and eventually obtain the correct result. Although the final answer is cor-rect, the underlying reasoning trajectory remains logically flawed and difficult to trust. Such behav-ior suggests that models may rely on spurious correlations or shortcuts rather than robust log-ical deduction [Poursabzi-Sangdeh et al., 2021, # Step 1: Since ... ∠AOB = 180 °. Given ∠AOF = 40 °, we can find ... :               
+
+> ∠FOB = 180 °- 40 °= 140 °.Thus, Arc FEB = 360 °- 140 °= 220 °.
+> # Step 2: Point E is the midpoint of arc FEB. Therefore, arc FE = arc EB
+> = 220 °/2 = 110 °.
+> # Step 3: ∠EFB is an inscribed angle substending arc EB. By the
+> inscribed angle theorem: ∠EFB = 1/2 ×110 °= 55 °.
+> # Step 4: Since OF=OB, ∠OFB= ... =20 °.∠F = ∠EFB -∠OFB = 35 °.
+> # The final answer is: 35 °.
+> E
+> O
+> BF
+> AC
+> As shown in the figure, AB is the diameter of circle O. EF
+> and EB are chords of circle O, and point E is the midpoint
+> of arc FEB. Line EF intersects AB at point C. Connect OF.
+> If ∠AOF = 40 °, then what is the measure of ∠F?
+
+Vision-R1 
+
+R1-VL 
+
+O2-CritiCuRL                                        
+
+> S1S2S3S4S5A
+> S1S2S4A
+> S1S2S3S4S5A
+> S3S5
+> ∠AOB is a straight angle measuring 180 °. Given ∠AOF = 40 °, we can
+> find ∠FOB: ∠FOB = 180 °−40 °= 140 °... ∠EFB is an inscribed angle
+> that subtends arc FB, so it is half of the central angle: ∠EFB = 1/2 ×
+> ∠FOB = 1/2 ×140 °= 70 °. Because ... : ∠EFB = ∠EBF = 70 °. Angle
+> F is the angle subtended by chord EF at the circumference, which is half
+> of ∠EFB: ∠F = 1/2 ×70 °= 35 °.Therefore, ∠F = 35 °.
+> Okay, let's see. The problem is about a circle with center O. AB is the
+> diameter, EF and EB are chords... The angle AOF is 40 degrees. We need
+> to find the measure of angle F. First, ... so the central angle FOB must
+> also be 40 degrees . Since an inscribed angle is half the measure of the
+> central angle that subtends the same arc, the angle at F that intercepts
+> arc EB should be half of 40 degrees. Thus, angle F is 20 degrees.
+
+Think 
+
+Better! 
+
+Luck y
+
+Guess 
+
+Wrong 
+
+Answer 
+
+Fig. 1: Comparison of models on mathe-matical reasoning problems. Vision-R1 with answer-level supervision fails to derive the correct answer because of incorrect intermediate assump-tions. R1-VL supervises every reasoning step and may reach the correct final answer, but still follows a partially flawed reasoning path. In contrast, our O2-CritiCuRL identifies and emphasizes critical reasoning steps, enabling the model to learn accu-rate, concise, and trustworthy reasoning paths. Geirhos et al., 2020]. This substantially lim-its their applicability in high-stakes scenarios that require transparent and verifiable reasoning, including education, scientific research, and legal or medical decision support [Arrieta et al., 2020, Benda et al., 2022, Barata et al., 2023, Jayaraman et al., 2024]. In this sense, the phenomenon resem-bles reward hacking: instead of learning valid reasoning procedures, the model exploits answer-level supervision that rewards correct outcomes without constraining the intermediate reasoning process [Amodei et al., 2016, Stiglic et al., 2020]. A natural solution is to incorporate step-level supervision, which constrains intermediate rea-soning by aligning model behavior with annotated reasoning trajectories [Cheng et al., 2024, Luo et al., 2024]. However, not all reasoning steps 2contribute equally to solving a problem. As illus-trated in Figure 1, the example shown contains five explicit reasoning steps, while more chal-lenging mathematical or scientific problems may involve hundreds of intermediate steps, includ-ing indispensable deductions, repeated verifica-tions, redundant explanations, and even erroneous detours [Qu et al., 2025, Lu et al., 2025]. Among these steps, only a small subset may be decisive for reaching the correct solution. Treating every step equally not only incurs substantial annotation and training costs, but also dilutes supervision over the truly critical reasoning steps. Consequently, the model may learn to imitate lengthy trajec-tories rather than capture the essential logical structure required for robust generalization. Our empirical analysis reveals that only asmall subset of intermediate reasoning steps has a decisive impact on the correctness of the final answer, whereas supervising all steps uniformly often introduces substantial redundancy and may even reinforce uninformative reasoning patterns. We further observe that the locations and types of such decisive steps are not static but evolve as the model’s reasoning ability improves (see Section 5.4 for detailed analysis). Existing RL methods with process-level rewards offer a promis-ing alternative to trajectory imitation by enabling the model to optimize its intermediate reason-ing behavior dynamically [Wang et al., 2024c, Chen et al., 2025]. However, these methods typi-cally depend on additional reward models, incur considerable computational overhead, and remain susceptible to inaccurate reward estimation and reward hacking. More importantly, because the model’s reasoning strategies and failure modes continuously change during training, a fixed cur-riculum or a set of critical steps identified before training may gradually become misaligned with the model’s current capability. These limitations give rise to two fundamental issues: 1⃝ accurately identifying the small subset of reasoning steps that truly determines the cor-rectness of a solution, and 2 ⃝ dynamically updat-ing the corresponding critical-step supervision as the model evolves throughout training. Motivated by these observations, our key insight is that effec-tive reasoning supervision should concentrate on the dynamically evolving decisive steps of a rea-soning trajectory, rather than treating all inter-mediate steps indiscriminately. By identifying, emphasizing, and continuously adapting supervi-sion over these critical steps, the model can learn more concise, reliable, and logically consistent rea-soning patterns while requiring substantially less redundant supervision. Thus, we propose O 2-CritiCuRL, an offline– online curriculum reinforcement learning framework for critical-step-aware reasoning. O 2-CritiCuRL combines stable offline curriculum construction with adaptive online reinforcement learning. The offline component accurately iden-tifies the small subset of reasoning steps that truly determine the correctness of a solution from existing trajectories, thereby addressing the issue 1⃝, and organizes training samples according to reasoning difficulty. The online component progressively refines the model using step-level reward signals. By iteratively updating critical-step identification with the improved model, the resulting curriculum remains aligned with the model’s evolving reasoning ability, thereby addressing the issue 2 ⃝.In summary, our contributions are threefold: • We propose O2-CritiCuRL, a novel critical-step-aware curriculum reinforcement learning framework that identifies the reasoning steps most influential to solution correctness and constructs adaptive curricula around them. • We develop an efficient iterative offline–online optimization mechanism that combines stable and efficient offline critical-step identification with adaptive online reinforcement learning, enabling the curriculum to remain aligned with the model’s evolving reasoning ability. • We conduct extensive experiments demonstrat-ing that O 2-CritiCuRL consistently improves reasoning performance and training efficiency, while producing more concise, reliable, and logically consistent reasoning trajectories with stable optimization. 
+
+# 2 Related Work 
+
+2.1 Curriculum & RL Reasoning 
+
+Curriculum learning is a training paradigm that organizes tasks in increasing order of difficulty to promote effective model learning [ ?]. In the domain of LLMs and VLMs, it has been widely adopted to stabilize optimization and enhance 3reasoning generalization. From the perspective of reward design, existing works can be catego-rized as result-based or process-based rewards. Result-based methods evaluate the final answer correctness as the primary criterion, such as MMR1 [Leng et al., 2025], VLM-R1 [Shen et al., 2025], Vision-G1 [Zha et al., 2025], Infi-MMR [Liu et al., 2025a], ASTRO [Kim et al., 2025], and JT-Math [Hao et al., 2025]. In contrast, process-based reward approaches explicitly assess intermediate steps, as in R-PRM [She et al., 2025], Visual-PRM [Wang et al., 2025b]. These methods pro-vide finer-grained supervision signals but still face challenges such as high reward modeling costs. From the perspective of training phase design, works like Curr-ReFT [Deng et al., 2025a] and PCuRL [Yuan et al., 2025] introduce explicit pro-gressive stages, while E2D [Parashar et al., 2025a], and GHPO [Liu et al., 2025b] employ dynamic scheduling functions or adapt between imitation and reinforcement learning. Although effective for structuring learning, these methods typically rely on static difficulty labels or fixed schedules and overlook the importance of intermediate reasoning steps. Our work introduce a curriculum reinforce-ment learning framework that explicitly integrates step-level supervision with critical-step awareness. 
+
+2.2 Supervision for Reasoning 
+
+Traditional answer-only supervision enables mod-els to bypass reasoning trajectories as long as the final answer is correct, which undermines interpretability and reliability [Lightman et al., 2023a, Du et al., 2024]. To mitigate this issue, recent efforts incorporate intermediate reasoning rewards, such as R-PRM [She et al., 2025], Visual-PRM [Wang et al., 2025b], and StepGRPO [Zhang et al., 2025a], which evaluate the quality of inter-mediate steps. Although these methods provide transparent supervision, they tend to treat all steps equally, ignoring the fact that many reason-ing trajectories contain redundant or low-impact steps [Qu et al., 2025, Arora et al., 2025]. Several approaches attempt to address this issue through data selection or trajectory restructure. For exam-ple, DUMP [Wang et al., 2025c], Writing-RL [Lei et al., 2025], and Vision-G1 [Zha et al., 2025] pri-oritize high-value samples via bandit mechanisms or influence functions, while EduFlow [Zhu et al., 2025a] and VersaPRM [Zeng et al., 2025] lever-age large-scale preference annotations. However, these strategies remain limited in their ability to dynamically pinpoint which reasoning steps are critical for the problems. Our work differs from prior studies by introducing an offline–online framework that detects and iteratively refines decisive reasoning steps, enabling improved accu-racy, interpretability, and training efficiency. 
+
+# 3 Theoretical Proofs 
+
+Assumption : We define a critical step as a rea-soning step that induces a substantial shift in the model’s answer distribution toward the correct answer, and consider the model’s state as a con-ditional distribution over possible answers given the current reasoning prefix. A reasoning step is regarded as critical if it significantly reduces the model’s uncertainty or redirects probability mass from incorrect regions toward the correct answer. 
+
+Definition : We begin by defining the probabilis-tic state space of the reasoning process. Let Ω
+
+be the set of all possible answers. The model’s reasoning state is represented by a probability distribution over Ω. P0 = P (· | q) denotes the model’s initial answer distribution given the ques-tion without any reasoning steps, while Pi denotes the conditional distribution given steps S1: i.
+
+Pi = P (· | q, S 1: i) (1) To measure the uncertainty of the answer space, we introduce the Shannon Entropy, and the con-tribution of the i-th step can be quantified as the entropy reduction in ∆Hi:           
+
+> H(P) = −∑
+> a∈Ω
+> P(a) log P(a),∆Hi=H(Pi−1)−H(Pi)
+
+(2) Within our formulation, the reduction in uncer-tainty of the conditional distribution directly manifests as compression of the probability space, effectively eliminating a substantial portion of incorrect answers. (i.e., entropy reduction). The degree and efficiency of probability distribution changes triggered by each reasoning step are cen-tral to measuring its criticality. The relative entropy (Kullback-Leibler Divergence) naturally quantifies this distribution change, making it our information-theoretic measure for the criticality of 4step Si:
+
+Ki = DKL (Pi ∥ Pi−1) = ∑
+
+> ω∈Ω
+
+Pi(ω) log Pi(ω)
+
+Pi−1(ω)
+
+(3) 
+
+Step 1: Decomposition of Relative Entropy. 
+
+We decompose the relative entropy into contribu-tions from the correct answer ω∗ and the space of incorrect answers ω, the first term is the contribu-tion from correct answer probability increase, and the second term reflects the distributional change within the incorrect-answer subspace: 
+
+Ki = Pi(ω∗) log Pi(ω∗)
+
+Pi−1(ω∗) + ∑ 
+
+> ω̸=ω∗
+
+Pi(ω) log Pi(ω)
+
+Pi−1(ω)
+
+(4) 
+
+Step 2: Coarse-Grained Decomposition. To characterize step-level distribution changes in multimodal reasoning, we decompose the answer-space shift into a coarse-grained correctness term and a residual term within the incorrect-answer subspace. The former measures how much prob-ability mass is shifted toward the correct answer, while the latter captures the redistribution among incorrect answers, including possible semantic clusters caused by visual perception errors, rea-soning shortcuts, or similar answer candidates. Let pi = Pi(ω∗) denote the probability assigned to the correct answer at step Si. For the incorrect-answer subspace, we define the normalized con-ditional distribution: Qi(ω) = Pi(ω)1−pi , ω̸ = ω∗.
+
+Accordingly, for each incorrect answer ω̸ = ω∗,we have Pi(ω) = (1 − pi)Qi(ω). Substituting this decomposition into the KL divergence gives 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
++(1 − pi)DKL (Qi∥Qi−1).
+
+(5) 
+
+Step 3: Computable Correctness-Level Approximation. In practice, our rollout proto-col directly estimates the correctness-level tran-sition after each reasoning prefix. Therefore, we adopt the coarse-grained correctness projection, which groups the answer space into two events: correct and incorrect. This yields a tractable Bernoulli KL term: 
+
+Kcg  
+
+> i
+
+= pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+(6) 
+
+Step 4: Criticality Metric Formula. Since 
+
+DKL (Qi∥Qi−1) ≥ 0, the coarse-grained score Kcg 
+
+> i
+
+provides a conservative lower-bound approxima-tion of the full answer-space KL divergence. Based on the above analysis, we use the coarse-grained correctness-level KL as the practical criticality metric. For simplicity, we denote Kcg  
+
+> i
+
+as Ki in the following sections: 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+(7) This metric is fully characterized by the model’s probability of producing the correct answer before and after introducing step Si. The previous uni-form compression case can be viewed as a special case where Qi = Qi−1, meaning that the relative distribution inside the incorrect-answer subspace remains unchanged. 
+
+Boundary Behavior and Robustness. 
+
+The criticality measure Ki has intuitive bound-ary behavior: it grows large when a step increases the probability from near zero to a meaningful value, and it approaches zero as pi−1 → 1, where no further entropy reduction is possible. In prac-tice, the model rarely reaches such extremes, as neither infinitely informative nor completely neg-ligible steps occur under finite model capacity. Furthermore, the logarithmic form naturally sup-presses minor fluctuations: when pi ≈ pi−1 and both are moderate, Ki becomes much smaller than 
+
+|pi − pi−1|, reducing noise-induced false positives. 
+
+# 4 Method 
+
+In this section, we illustrate our proposed frame-work O²-CritiCuRL in detail. The method begins with supervised fine-tuning on step-annotated data to provide a cold-start initialization. To estimate difficulty, each sample is evaluated by GPT over multiple trials, and its answer accu-racy is recorded. Based on GPT correctness and the number of reasoning steps, all samples are grouped into difficulty tiers, and each training stage focuses on one tier, enabling a curriculum that gradually strengthens the model from easy to hard tasks. Building on this foundation, we adopt an iterative optimization strategy in which offline and online phases alternate. In the offline phase, 5Q AS4                     
+
+> QA
+> ...
+> S1
+> S5
+> S5
+> S1
+> ...
+> QAS1S2S3S4S5
+> QAS1S2S3S4S5
+> QAS1S2S3S4S5
+> QAS1S2S3S4S5
+> Final Ciritical Steps
+
+Model Input 
+
+Model Output    
+
+> ...
+> ... ...  ...  ...
+> ...  ...  ... ...
+> rollout n times
+> ...
+> S1S5
+> S3S4
+> S3S5
+> S5
+> S1
+> Si
+> A
+> ��
+> ...
+
+Data 
+
+Basic 
+
+Data 
+
+SFT 
+
+RL Stage1 
+
+RL Stage2 
+
+RL Stage3 
+
+Intermediate 
+
+Data 
+
+Advanced 
+
+Data 
+
+Expert 
+
+Data 
+
+K5
+
+K1
+
+K2
+
+> critical
+> steps
+
+Task Level Curriculum 
+
+Online Update Iterative Training Offline Rollout               
+
+> ��=��log ��
+> ��−1
+> +1−��log 1−��
+> 1−��−1
+> completion reward
+> iteration 1
+> iteration 2
+> iteration n
+> Q
+> S1
+> S2
+> S3
+> A
+
+Training Framework for each RL Stage  
+
+> step acc
+> answer acc
+> O
+> C
+> F
+> ABE
+> D
+> # Step 1: Identify the tangent segments: AE=AD, AF=AC, ...
+> # Step 2: Given that AB = 3 units, and AB = BC because
+> they are tagnents from a common point A, ...
+> # Step 3: Since AE = AF, triangle AEF is isosceles, implying
+> AE = AF = 3/2 each.
+> # The final answer is: 6.0 units.
+> Question: In the given figure, AB
+> and AC are tangent lines of circle
+> O. ... If AB is 3 units long, what
+> is the perimeter of triangle AEF?
+
+Model Input 
+
+Model Output Fig. 2 : Our O²-CritiCuRL framework conducts a two-level curriculum. (1) Task-level curriculum: data are organized by increasing difficulty, progressing from SFT to RL-Stage1/2/3. (2) Critical-step curriculum: each RL stage alternates between offline rollout and online update. The offline phase uses a KL-based score Ki to identify decisive steps. The online phase then optimizes the model with step-wise rewards guided by these steps. This iterative loop continuously refines critical steps and strengthens reasoning. key reasoning steps are extracted from existing trajectories and organized into curriculum signals. In the online phase, these signals guide reinforce-ment learning updates to refine the model’s rea-soning policy. The updated model is then returned to the offline phase for refined critical-step iden-tification, forming a closed offline–online loop. This process repeats until convergence, ensuring both stable critical-step discovery and effective reinforcement learning. 
+
+4.1 Data Processing 
+
+To estimate data difficulty, each question is sub-mitted to GPT for ten independent trials, and the response accuracy across these attempts is recorded. Based on the correctness rate and the number of reasoning steps required to reach the correct answer, we categorize the samples into four curriculum stages to ensure a progressive training scheme from easy to hard. Stage 1 includes sam-ples correctly answered in all ten trials with short reasoning chains ( 13 steps); Stage 2 covers those fully correct but with longer reasoning chains (≥ 4 steps); Stage 3 consists of samples correctly answered in 29 trials; and Stage 4 contains the most difficult ones, answered correctly in at most one trial. To mitigate the risk of reward hacking during reinforcement learning, all multiple-choice questions in the original dataset are converted into an open-ended question-answering format. This stage-wise organization enables the model to be trained under a curriculum learning paradigm, gradually enhancing its reasoning capability from simple to complex problems while maintaining stability and efficiency in optimization. 
+
+4.2 Model Initialization 
+
+We adopt Qwen-2.5-VL [Bai et al., 2025] as the backbone model and initiate the training process with a cold-start strategy. We randomly sam-ple a subset of Mulberry [Wang et al., 2023] for SFT stage. To enable curriculum learning that 6gradually exposes the model to harder samples, we use the remaining data in our framework and structure training into three stages. Unlike conventional curriculum learning approaches that primarily adjust task difficulty in a coarse-grained manner, we introduce a two-phase progressive refinement framework in each stage. 
+
+4.3 Offline Step Distillation 
+
+In the offline phase, the model autonomously iden-tifies the critical reasoning steps as shown in the lower-left panel of Figure 2. For each instance, the segmented reasoning steps are concatenated with the original question sequentially. Each step is appended to the ques-tion one by one, forming inputs of the model, until the complete chain of reasoning is reconstructed: 
+
+I =
+
+{
+
+q, q + s1, q + s1 + s2, . . . , q +
+
+> T
+
+∑
+
+> t=1
+
+st
+
+}
+
+, (8) We sequentially feed the constructed inputs into the model and evaluate the reward based on whether the predicted answer matches the ground truth. For each input, we perform n independent rollouts, obtaining n reward samples. These sam-ples form an empirical distribution that approx-imates the model’s behavior over the answer space for the given input. Following the practi-cal refinement of Equation 7, we introduce several adjustments to ensure stability under extreme probability cases. First, both pi and pi−1 are clipped into the interval [ε, 1 − ε] to avoid degen-erate values at 0 or 1. Second, a small lower bound is imposed when pi falls below a threshold (e.g., 0.01 ), preventing disproportionately large contributions to the metric. Under these refinements, we leverage the sta-bilized probabilities mi and mi−1 to compute the criticality score K between adjacent steps as following: 
+
+Ki = mi log mi
+
+mi−1
+
++ (1 − mi) log 1 − mi
+
+1 − mi−1
+
+(9) where mi and mi−1 denote the probability val-ues after the adjustments. Based on the ranking of computed criticality scores, we select the top k
+
+steps with the highest scores as the identified critical steps. Specifically, k is defined as 
+
+k = max 
+
+(
+
+1,
+
+⌊ T
+
+3
+
+⌋) 
+
+(10) where T denotes the total number of reasoning steps. This adaptive strategy allows longer trajec-tories to retain more critical steps while prevent-ing short trajectories from introducing redundant supervision. 
+
+4.4 Online Step Optimization 
+
+As illustrated in the lower-right panel of Figure 2, we construct paired training samples for rein-forcement learning. Each pair consists of a trun-cated input sequence and its corresponding target, where critical steps identified during offline dis-tillation are explicitly marked. This formulation enables the model to receive supervision not only from the final answer but also from intermediate reasoning steps, thereby emphasizing the contri-bution of critical steps during optimization. To encourage the model to derive correct answers by accurately reasoning through critical steps, we incorporate a reward component that explicitly reflects step-wise correctness. The reward func-tion is defined in Equation F19, where α, β, and 
+
+γ maintain the balance among different rewards. 
+
+Si = αR a + βR f + γ(Rt + Rs) (11) 
+
+Rf and Rt evaluates the step format and the answer format, Rs and Ra measure the correct-ness of reasoning steps and the final answer. The online strategy design encourages the model to internalize both the accuracy of the final answer and the soundness of intermediate rea-soning steps, thereby fostering the ability to derive correct answers through coherent and well-structured reasoning. The existing GRPO [Shao et al., 2024, Cao et al., 2025] framework is adopted for the rein-forcement learning paradigm. To further constrain optimization to critical reasoning steps, We per-form targeted rollouts for prefixes leading to critical steps, reducing computation and sharp-ening the training focus on decisive reasoning steps. As shown in Equation 12, we let Ki =
+
+{k1, k 2, . . . , k m} denote the indices of critical steps in the i-th reasoning trajectory {s1, s 2, . . . , s |oi|}.7For each kj ∈ K i, a rollout sample is constructed using the prefix s<k j as input and the subsequence 
+
+skj :|oi| (i.e., the remaining reasoning steps and final answer A) as the target. This design ensures that policy optimization is conducted only if the next predicted step corresponds to a critical tran-sition, thereby emphasizing information gain at decisive reasoning junctures. 
+
+q + s1 + · · · + ski−1 −→ ski + · · · + sn + A (12) 
+
+4.5 Offline-Online Iteration 
+
+As training progresses, the model’s ability to iden-tify critical steps improves, yielding step selections that better align with its current reasoning capa-bilities and exert greater influence on its decision process. Importantly, the set of steps regarded as critical is not static, as previously difficult steps may no longer be bottlenecks when the model improves, while new key steps may become more important for reasoning success. This dynamic evolution provides learning signals that are bet-ter aligned with the model’s evolving reasoning capabilities. For each epoch, critical steps within all samples are first identified through Offline Step Distillation . The samples are then reorga-nized during the Online Step Optimization and used to update the model, marking the comple-tion of one iteration. In the subsequent iteration, the updated model is applied to the next epoch, where Offline Step Distillation and Online Step Optimization are repeated. Through this iterative cycle, the model progressively improves both its capacity to recognize critical steps and its accu-racy in reasoning. The iterative process proceeds until model’s reward signal reaches a stable level, at which point the reinforcement learning stage is considered converged and training advances to the subsequent phase. 
+
+# 5 Experiments 
+
+5.1 Implementation Details 
+
+5.1.1 Evaluation 
+
+We adopt a hierarchical soft matching frame-work for both final answers and critical rea-soning steps. For answers, we first normalize predictions and references with LaTeX process-ing and unit unification. They are compared using layered strategies, including exact, equality-based soft, numerical, and canonical contain-ment matching. Multiple candidates are allowed only on the reference side to capture annotation diversity, while enumerated predictions are dis-allowed to prevent guessing. For reasoning steps, reference keywords are extracted with Qwen3-Max [Team, 2025b], and outputs are segmented into “# Step k:” blocks. A strict–soft matching scheme is applied, relying on LaTeX normal-ization for strict matching and falling back to the answer-level matcher otherwise. Enumeration suppression, dynamic length control, and step count limits further ensure precise and efficient detection of critical conclusions. 
+
+5.1.2 Training Details 
+
+We randomly sample 187 k examples from Mul-berry [Wang et al., 2023] for SFT stage and 10 kexamples for the Offline–Online RL stages. All experiments are conducted on 8× A800 GPUs. Training with 3.3k questions per stage for one epoch takes about 14 hours. We adopt Qwen [Bai et al., 2025] as the backbone. In the SFT stage, we train for 3 epochs with a batch size of 32 and learn-ing rate 2e −6. In the RL stage, the learning rate is set to 1e −6, and we experiment with subsets of 
+
+2.5k samples trained for a single epoch. Reward weights are set to α = 2 , β = 1 , and γ = 1 .
+
+5.2 Main Results 
+
+We evaluate the proposed O²-CritiCuRL on sev-eral benchmarks. As shown in Table 1, Math-Vista [Lu et al., 2024b], DynaMath [Zou et al., 2025], MathVision [Wang et al., 2024a], and MathVerse [Zhang et al., 2024] assesses visual mathematical reasoning across charts, diagrams, and images. ChartQA [Masry et al., 2022] is a benchmark for question answering about charts with visual and logical reasoning. O²-CritiCuRL achieves the best results on MathVista, Math-Vision, ChartQA, and DynaMath, and obtains competitive performance on MathVerse compara-ble to leading models. These results demonstrate that our offline–online critical-step curriculum substantially enhances multimodal mathemati-cal reasoning, consistently outperforming strong baselines across diverse task settings. We also observe that our method achieves comparable results with the strong baseline Vision-R1 on the 8Table 1 : Comparisons on multiple multimodal reasoning benchmarks. 
+
+Model Size Mathematics Science General 
+
+MathVista MathVision MathVerse ChartQA LogicVista ScienceQA MMMU MMStar MME sum 
+
+General-Purpose Models 
+
+Qwen2.5-VL [Bai et al., 2025] 7B 61.9 21.9 40.1 80.7 39.1 87.2 50.9 61.0 2303 InternVL2.5 [Chen et al., 2024] 8B 57.8 18.4 40.0 75.4 36.8 88.3 43.1 62.0 2218 InternVL3 [Zhu et al., 2025b] 8B 62.6 28.6 39.8 81.8 39.3 89.1 50.8 62.5 2424 LLaVA-OneVision [Li et al., 2025] 7B 53.3 15.3 33.6 66.1 30.6 80.5 41.6 60.7 1487 DeepSeek-VL [Lu et al., 2024a] 7B 36.1 13.7 26.2 59.1 - 88.6 36.6 37.1 1790 MiniCPM-o-2.6 [Team, 2025a] 8B 69.0 21.6 35.0 83.6 - - 51.7 62.6 2328 
+
+Reasoning-Oriented Models 
+
+LLaVA-CoT [Xu et al., 2025] 11B 54.8 20.0 33.9 78.9 - - 48.9 57.6 2137 LLaVA-Reasoner [Zhang et al., 2025c] 8B 50.6 22.3 34.1 83.0 - 86.8 40.0 54.0 -Insight-V [Dong et al., 2024] 8B 59.9 23.2 33.0 81.5 - 85.3 48.0 60.4 1869 MM-Eureka [Meng et al., 2025] 8B 68.3 27.4 40.2 83.0 40.9 86.4 51.2 63.7 2286 OpenVLThinker [Deng et al., 2025b] 7B 67.4 24.0 42.1 82.3 40.5 87.4 52.3 59.1 2111 R1-VL [Zhang et al., 2025b] 7B 63.2 28.2 37.6 79.9 35.9 84.5 38.1 61.0 2258 Vision-R1 [Huang et al., 2025] 7B 69.2 26.9 42.9 83.1 41.2 87.9 35.9 62.1 2268 Mulberry [Yao et al., 2024] 7B 59.7 26.0 41.6 80.3 34.2 85.2 39.7 59.5 2278 R1-Onevision [Yang et al., 2025] 7B 60.5 28.9 40.0 72.2 39.6 87.7 45.4 61.8 2342 
+
+O2-CritiCuRL (Ours) 7B 69.8 29.3 42.1 84.2 41.7 89.3 53.2 64.4 2376 1st offline-online iteration  
+
+> 1st critical step 2nd critical step
+
+2nd offline-online iteration  
+
+> 1st critical step 2nd critical step
+
+3rd offline-online iteration 
+
+Fig. 3 : Training curves of step-wise and answer-level rewards. MathVerse, while performs much better on other ones. The underlying reason is that MathVerse includes a non-negligible subset of purely visual problems whose solutions hinge on detailed visual perception [Liu et al., 2026] rather than step-wise reasoning, thereby reducing the relative advan-tage provided by our critical-step optimization. 
+
+5.2.1 Training Stability 
+
+Figure 3 shows that although the raw answer-level reward, step-wise reward, and final score exhibit noticeable stochastic fluctuations, their smoothed curves all maintain stable upward trends through-out a full RL training run. Specifically, both the answer-accuracy score and the step-accuracy score improve steadily as training proceeds, and the final score also increases consistently, indicating that all three components are optimized in a coor-dinated and stable manner rather than improving at the expense of one another. This observation suggests that our training framework provides reliable supervision for both intermediate reason-ing quality and final answer correctness, leading to stable end-to-end optimization. 9More importantly, the reward continues to improve across offline–online iterations. The sec-ond iteration further increases the reward after the improvement achieved in the first iteration, which shows the value of iterative key-step identi-fication and online policy refinement. Within each iteration, each identified key step contributes to reward improvement, with the first key step usu-ally bringing the largest gain. This result supports our motivation that key steps have unequal effects on model optimization, and that prioritizing the informative step can lead to the greatest benefit. 
+
+5.2.2 Evaluation of Critical-Step Identification 
+
+To evaluate whether O2-CritiCuRL identifies meaningful critical steps, we conduct a model-conditioned human evaluation on 500 ques-tions sampled from MathVista, MathVision, ScienceQA, and MME. Instead of assuming fixed human-defined gold steps, annotators judge whether the selected steps reflect reasonable rea-soning bottlenecks under the current model capa-bility, given the question, image, reasoning tra-jectory, selected steps across offline–online itera-tions, and model behaviors before and after these steps. We adopt three metrics. First, Model-Conditioned Critical Alignment (MCCA) 
+
+measures the agreement between method-selected steps and human-judged model-conditioned crit-ical steps. Let S(t) 
+
+> i
+
+be the steps selected for sample i at iteration t, and H(t) 
+
+> i
+
+be the corre-sponding human-judged critical steps. We define MCCA (t) = 2·MCP (t)·MCR (t) 
+
+> MCP (t)+MCR (t)
+
+, where MCP (t) and MCR (t) denote the averaged precision and recall between S(t) 
+
+> i
+
+and H(t) 
+
+> i
+
+. Second, Dynamic Shift Validity (DSV) evaluates whether critical-step changes across iterations are meaning-ful: DSV = Nvalid  
+
+> Nshift
+
+, where Nvalid denotes the number of valid critical-step shifts, and Nshift 
+
+denotes the total number of observed shifts. Finally, Model-Conditioned Critical Dele-tion Impact (MCDI) measures the functional necessity of the selected steps: MCDI (t) = I(t) 
+
+> crit
+
+−
+
+I(t)
+
+> random
+
+, where I(t) 
+
+> crit
+
+and I(t) 
+
+> random
+
+denote the invalid-ity rates after removing the selected critical steps and other random steps, respectively. A larger MCDI indicates that the selected steps are more essential for preserving the reasoning process. As shown in Table 2, O 2-CritiCuRL achieves the best results across all three metrics, indicating that our KL-based critical-step identification can more effectively capture dynamic and model-dependent reasoning bottlenecks.               
+
+> Method MCCA(%) DSV(%) MCDI(%) Average(%)
+> ∆p63.7 66.2 58.0 62.6 Normalized ∆p67.5 61.4 63.3 64.1
+> Ours 73.1 81.4 65.7 73.4
+
+Table 2 : Evaluation of critical-step identification. 
+
+5.2.3 Reward Hacking Analysis 
+
+To estimate reward-hacking frequency, we manu-ally inspect 500 sampled instances from each of MathVista, ChartQA, ScienceQA, and MME sum .Each case is independently reviewed by 10 human experts, with a GPT-based judge used only as an auxiliary reference. A sample is labeled as reward hacking when a strict expert majority agrees that the final answer is correct but the reasoning contains clear errors, inconsistencies, or shortcut behaviors. Under this protocol, our method consistently shows lower reward-hacking rates than strong reasoning baselines. Compared with Vision-R1 and R1-OneVision, it reduces reward hacking by an average of 4.7%, 3.3%, 2.5%, and 3.0% on MathVista, ChartQA, ScienceQA, and MME sum , respectively, suggesting that our offline–online critical-step curriculum improves both task accuracy and reasoning faithfulness. 
+
+5.3 Ablation Study 
+
+5.3.1 Training Stages 
+
+To validate the necessity of the multi-stage cur-riculum learning strategy, we conduct experi-ments to evaluate the performance gains achieved by the model at each stage. As shown in Table 3, accuracy on each benchmark improves at every stage of training. SFT brings initial gains over the base model, while RL-Stage1 and RL-Stage2 provide substantial boosts due to the model’s improved ability to leverage the distilled critical steps. RL-Stage3 yields an additional improve-ment, suggesting that iteratively refining critical-step reasoning continues to provide learning sig-nals even after earlier stages have converged. 10 Models Average MathVista MathVision MathVerse ChartQA ScienceQA MMMU MMStar MME sum 
+
+Base 57.5 61.9 21.9 39.1 80.7 87.2 50.9 61.0 2303 + SFT 59.0 64.0 23.7 40.6 82.3 87.9 52.2 62.5 2334 + RL-Stage1 59.9 65.2 25.4 41.3 82.9 88.4 52.6 63.3 2350 
+
+∆ +0.9 +1.2 +1.7 +0.7 +0.6 +0.5 +0.4 +0.8 +16 
+
++ RL-Stage2 61.1 68.8 27.6 41.7 83.8 89.0 52.8 63.9 2368 
+
+∆ +1.2 +3.6 +2.2 +0.4 +0.9 +0.6 +0.2 +0.6 +18 
+
++ RL-Stage3 61.8 69.8 29.3 42.1 84.2 89.3 53.2 64.4 2376 
+
+∆ +0.7 +1.0 +1.7 +0.4 +0.4 +0.3 +0.3 +0.5 +8 
+
+Table 3 : Perfomance of our O 2-CritiCuRL across each training stage. 
+
+5.3.2 Hyperparameter α, β, γ 
+
+Sensitivity Analysis 
+
+We conduct an ablation study on the three weight-ing coefficients, α, β, and γ, in the reward function used during the online update stage. As shown in Table 4, different combinations of α, β, and 
+
+γ have only a marginal impact on the model performance across various benchmarks. The per-formance variation is consistently within 0.6, with average fluctuations of only 0.2. These results indicate that our method is insensitive to reward weights, highlighting that its effectiveness mainly derives from the structural design rather than hyperparameter tuning.                                      
+
+> Parameter M-Vista M-Vision SciQA MMMU MMStar
+> αβ γ
+> 1 1 169.6 29.4 89.1 53.0 64.0 2 1 169.8 29.3 89.3 53.2 64.4 1 2 169.9 28.9 89.2 52.8 64.2 2 2 169.5 29.2 89.0 53.0 63.8 1 1 169.3 29.3 89.4 52.9 64.0 2 1 269.8 29.2 89.2 53.1 64.2
+
+Table 4 : Hyperparameter sensitivity analysis. 
+
+5.3.3 Critical Step Number k Selection 
+
+As mentioned in Sec 4.3, for efficiency considera-tions, we adopt an adaptive k rather than a fixed 
+
+k for selecting the number of critical steps. To val-idate this design, we compare adaptive − k with several fixed-k settings on Math, Science, and General benchmarks. We use ∆Avg GPU Hours , where 
+
+∆Avg denotes the accuracy gain from cold-start SFT to the final RL model, to measure the trade-off between performance improvement and RL training cost. As shown in Table 5, k=1 yields limited gains, while fixed k=2 or k=3 brings only marginal improvement but substantially increases computation. In contrast, adaptive-k achieves the best accuracy-cost trade-off.                         
+
+> kM-Vista M-Vision SciQA MMStar ∆Avg (×10 −3)
+> GPU Hours ↑
+> k=1 68.1 28.9 88.4 64.0 14.75
+> k=2 69.7 29.2 89.0 64.4 11.60
+> k=3 69.6 29.4 89.2 64.5 8.01
+> Adaptive-k69.8 29.3 89.3 64.4 16.33
+
+Table 5 : Critical Step Number k Selection. 
+
+5.3.4 Offline Rollout Number n
+
+Selection 
+
+As discussed in Sec 4.3, each sample is rolled out 
+
+n times in the offline stage for critical-step identi-fication, and we set n=16 by default. We further ablate n and use ∆Avg GPU Hours to evaluate efficiency. As shown in Table 6, smaller values of n lead to weaker gains, likely due to higher randomness and biased critical-step selection. Increasing n to 32 brings only marginal improvement but substan-tially increases rollout cost. These results indicate that n=16 offers the best trade-off between accu-racy and efficiency. 
+
+n M-Vista M-Vision SciQA MMStar ∆Avg (×10 −3) 
+
+> GPU Hours
+
+↑
+
+4 67.8 28.2 88.8 63.6 12.44 8 68.1 28.5 89.1 63.4 12.73 
+
+16 69.8 29.3 89.3 64.4 16.33 
+
+32 69.7 29.2 89.5 64.5 13.70 
+
+Table 6 : Offline Rollout Number n Selection. 
+
+5.3.5 Critical-Step Metrics Ablation 
+
+As shown in Table 7, we compare three candi-date metrics for critical-step identification: the direct probability difference ∆p, the normalized 11 probability increment pi−pi−1 
+
+> 1−pi−1
+
+, and our proposed KL-based metric Ki. The results show that Ki
+
+achieves the best performance on all benchmarks. These results suggest that the KL-based metric captures the overall shift of the output distri-bution after introducing a given step, and is therefore better suited to identifying steps that genuinely alter the reasoning trajectory and mate-rially affect final correctness. The advantage of Ki
+
+is particularly evident on tasks such as MathVista and MathVision, where successful prediction relies more heavily on coherent intermediate reasoning. Overall, this ablation study verifies the effective-ness of our critical-step metric for critical-step mining and provides direct support for the design of our offline critical-step selection strategy.                
+
+> Metric M-Vista M-Vision ChartQA SciQA MMStar
+> ∆p68.3 28.2 83.5 88.2 63.9
+> pi−pi−1
+> 1−pi−168.9 28.5 83.7 88.9 64.2
+> Ki69.8 29.3 84.2 89.3 64.4
+
+Table 7 : Ablations on Critical-Step Metrics. 
+
+5.3.6 Step-Acc Reward Ablation 
+
+As shown in Table 8, we evaluate the effect of the step-accuracy reward. Removing StepAcc leads to lower performance on all benchmarks, while incorporating it improves the results to 69.8, 29.3, 84.2, 89.3, and 64.4 on MathVista, Math-Vision, ChartQA, ScienceQA, and MMStar, with an average gain of 1.14. These consistent improve-ments show that supervising critical intermedi-ate steps provides benefits beyond answer-level rewards. This is important because a correct final answer does not necessarily imply a valid reason-ing process, and answer-only supervision may still encourage shortcut-based solutions. By explicitly rewarding critical-step correctness, StepAcc helps constrain intermediate reasoning and improves the robustness of end-task performance.            
+
+> Setting M-Vista M-Vision ChartQA SciQA MMStar
+> w/o StepAcc 67.5 28.6 83.3 88.1 63.7
+> w/ StepAcc 69.8 29.3 84.2 89.3 64.4
+
+Table 8 : Ablations on Step-Acc Reward. 
+
+5.3.7 Necessity of the Offline-Online Iteration 
+
+We further assess the necessity of the offline-online iteration by comparing four settings: Fixed Key Steps , where critical steps are identified once for one-time distillation; Only Offline Distillation ,which uses distilled supervision for SFT; Only Online RL , i.e., vanilla GRPO without offline critical-step mining; and our full Offline–Online Iteration . As shown in Table 9, the full method achieves the best performance across all bench-marks. The inferior results of Only Offline Dis-tillation indicate that static distilled supervision alone cannot fully translate critical-step infor-mation into strong reasoning ability. Similarly, 
+
+Only Online RL underperforms the full method, showing that RL without offline critical-step guid-ance relies on weaker and less structured rewards. Moreover, although Fixed Key Steps improves over the single-stage baselines, it remains consis-tently worse than our iterative design, suggest-ing that critical steps should be updated as the model evolves. These results demonstrate that the effectiveness of our framework comes from the closed offline–online loop, where offline distillation refreshes critical-step supervision and online opti-mization improves the model for more accurate subsequent step discovery.                      
+
+> Method M-Vista M-Vision ChartQA SciQA MMStar
+> Fixed Key Steps 68.1 28.9 83.8 88.4 64.0 Only Offline Distillation 64.0 23.7 82.3 87.9 62.5 Only Online RL 67.5 28.6 83.3 88.1 63.7
+> Offline-Online Iteration 69.8 29.3 84.2 89.3 64.4
+
+Table 9 : Necessity of the offline-online iteration. 
+
+5.3.8 Offline Rollout Efficiency Analysis 
+
+Since our framework introduces an additional offline rollout stage, it inevitably incurs extra computation compared with vanilla GRPO. To assess whether this added cost is justified, we conduct efficiency comparisons on MathVista, ChartQA, and ScienceQA. We use the total train-ing FLOPs to quantify computational overhead, and adopt ∆Avg FLOPs as the efficiency metric, where 
+
+∆Avg denotes the improvement of the final aver-age performance over the cold-start model. As shown in Table 10, our method indeed intro-duces additional cost. In return, the performance gain is substantial: the average score on the three benchmarks improves from 79.0 to 81.1, and the efficiency metric ∆Avg FLOPs increases markedly from 32.03 to 51.63. These results show that the added offline stage is highly cost-effective: forward-only 12 E M F          
+
+> BDC
+> A
+> Question: In the given diagram, let ’s ...
+> # Step 1: Identify that triangle ABC is
+> isosceles, and that D is the midpoint of BC...
+> # Step 2: Calculate the height (AD) of the
+> triangle using the area formula ...
+> ... ...
+> # Step 5: Since BM and DM are parts of a
+> triangle, ..., BM = MD ...
+> # Step 6: Since x = 4 cm, BM + DM =
+> 24/4 = 6cm.
+> # The final answer is: 6 cm.
+> key word critical step
+
+Model Input 
+
+Model Output 
+
+1st iteration         
+
+> # Step 5: Now compute BM + DM = AM
+> + DM = AD = 24/x .
+> # Step 6: Since x = 4 cm, BM + DM = 24/4
+> = 6cm.
+> # The final answer is: 6 cm.
+> key word
+> critical step
+
+Model Input 
+
+Model Output 
+
+2nd iteration 3rd iteration       
+
+> # Step 3: Since EF is the perpendicular
+> bisector of AB, every point on EF is
+> equidistant from A and B, thus AM = BM .
+> ... ...
+> # Step 5: Since BM and DM are ...
+> # Step 6: Calculate BM + DM: ...
+> # The final answer is: 6 cm.
+> key word
+> critical step
+
+Model Input 
+
+Model Output         
+
+> Question: In the given diagram, let ’s ...
+> # Step 1: Identify that triangle ABC is
+> isosceles, and that D is the midpoint of BC...
+> # Step 2: Calculate the height (AD) of the
+> triangle using the area formula ...
+> # Step 3: Since EF is the ..., every point on
+> EF is equidistant from A and B .. .
+> Question: In the given diagram, let's denote the length of the base BC of isosceles triangle ABC as variable x (x = 4cm) and the area of the
+> triangle as variable A (A = 12cm 2). Let D be the midpoint of BC. If the perpendicular bisector of AB, EF, intersects AD at point M and
+> intersects AC at point F, what is the value of BM + DM expressed in terms of x?
+> Question: In the given diagram, let ’s ...
+> # Step 1: Identify that triangle ABC is
+> isosceles, and that D is the midpoint of BC...
+> # Step 2: Calculate the height (AD) of the
+> triangle using the area formula ...
+
+Fig. 4 : The critical step shifts across iterations. rollouts provide stronger critical-step supervision with limited overhead, leading to a better compu-tation & performance trade-off.                    
+
+> Method M-Vista ChartQA SciQA Avg ↑FLOPs ↓(×10 18 )∆Avg (×10 −3)
+> FLOPs ↑
+> Offline Online
+> GRPO 67.5 83.3 88.1 79.1 –43.7187 32.03
+> Ours 69.8 84.2 89.3 81.1 6.0396 48.1998 51.63
+
+Table 10 : Offline rollout efficiency analysis. 
+
+5.4 Discussion 
+
+We offer the following insights based on our observations. 
+
+Critical steps are more important than long CoT : As shown in Table 1. R1-VL incorporates step-level rewards, but its performance remains far below ours ( 6.6% ↓), showing that naively rewarding all steps is ineffective. This contrast highlights that reasoning quality is determined not by longer chains of thought, but by accurately identifying, distilling, and reinforcing the few crit-ical steps that truly matter. 
+
+Critical steps are dynamic, not fixed : As shown in Figure 4, the steps regarded as crit-ical change during training. When the model’s reasoning ability improves, previously difficult steps may no longer limit performance, while new key steps become more important. This observa-tion suggests that fixed “gold” reasoning traces are not universally optimal. Instead, step-level supervision should evolve with the model’s capa-bility [Qiu et al., 2025]. Across multiple bench-marks, early training tends to select steps that are close to the final answer, because they pro-vide direct reward improvement. As the model becomes stronger, the selected steps gradually move toward intermediate conclusions or impor-tant theorems that support the derivation. Redun-dant or repetitive steps are rarely selected. This pattern shows that our framework is able to iden-tify the model’s current reasoning bottlenecks and assign supervision to the steps that are most ben-eficial for further optimization. 
+
+O2-CritiCuRL yields more stable RL : As shown in Figure 3, raw step-wise and answer-level rewards fluctuate substantially, while their smoothed curves increase steadily. This indicates that offline–online separation reduces reward vari-ance and improves credit assignment. 
+
+# 6 Case Study 
+
+Figure 5 presents a ScienceQA example that requires matching the items owned and desired by two individuals. R1-V1 overlooks the fact that Maria wants tomatoes and consequently selects an incorrect trade. R1-OneVision reaches the cor-rect answer, but its reasoning remains uncertain about whether Ling has tomatoes, indicating that the prediction is largely a lucky guess. In contrast, 13 Question: What can Ling and Maria trade to each get what they want?     
+
+> A. Maria can trade her almonds for Ling's tomatoes,
+> B. Ling can trade her tomatoes for Maria's broccoli,
+> C. Ling can trade her tomatoes for Maria's carrots,
+> D. Maria can trade her broccoli for Ling's oranges.
+
+R1-OneVision Ours R1-V1 
+
+Lucky 
+
+Guess        
+
+> To determine what Ling and Maria can trade,
+> we need to identify items that one has and the
+> other wants.
+> Ling wants: a sandwich, oranges, broccoli, water.
+> Maria wants: a hot dog, tomatoes, almonds,
+> water.
+> From the options, we need to find a trade
+> where both parties get something they want.
+> Option A: Maria can trade her almonds for ...
+> Option B: Ling can trade her tomatoes for
+> Maria's broccoli. Ling wants broccoli, but
+> tomatoes are not mentioned as something Maria
+> wants.
+> Option C: Ling can trade her tomatoes for ...
+> Option D: Maria can trade her broccoli for ...
+> Answer: D
+> Okay, so I'm trying to figure out what Ling and
+> Maria can trade to each get what they want.
+> The image shows two lists: what Ling wants and
+> what Maria wants. Ling wants ... Maria wants ...
+> Since both want water, maybe water could be
+> part of the trade, but none of the options
+> mention water, so I ’ll ignore that for now.
+> Option A: Maria trades her almonds for...
+> Option B: Ling ... However, I ’m not completely
+> certain whether Ling actually has tomatoes...
+> ...
+> When I compare the options carefully, Option B
+> is the only one that directly links an item Ling
+> clearly wants (broccoli) with an item
+> Maria clearly wants (tomatoes) ...
+> B.
+> # Step 1: Identify what each person has from
+> the lunches. Ling has tomatoes, oranges, a
+> sandwich, and water. Maria has broccoli, carrots,
+> almonds, and water.
+> # Step 2: Identify what each person wants. Ling
+> wants a sandwich, oranges, broccoli, and water.
+> Maria wants a hot dog, tomatoes, almonds, and
+> water.
+> # Step 3: Determine what each person is missing.
+> Ling is missing broccoli, which Maria has. Maria
+> is missing tomatoes, which Ling has.
+> # Step 4: Select the trade that allows both to
+> g e t w h a t t h e y w a n t . L i n g c a n t r a d e h e r
+> tomatoes to Maria, and Maria can trade
+> her broccoli to Ling.
+> The final answer is: B.
+
+Think 
+
+Better Fig. 5 : Case Study on ScienceQA : The reasoning behaviors of Vision-R1, R1-VL, and our proposed O²-CritiCuRL. Existing Vision-R1 provides incorrect answers due to flawed intermediate reasoning, while R1-VL reaches the correct answer only through a “lucky guess”. In contrast, our O²-CritiCuRL identifies and follows the correct critical steps, yielding logically sound and interpretable output. O2-CritiCuRL systematically identifies what each person has and wants, determines that Ling needs broccoli while Maria needs tomatoes, and selects the mutually beneficial trade. This exam-ple shows that our method reaches the correct answer through a complete and logically grounded reasoning process. Figure 6 shows an MMStar number-sequence problem in which the numbers are formed by con-catenating consecutive odd integers. Qwen2.5-VL incorrectly interprets the sequence as being gener-ated through repeated arithmetic increments and therefore produces the wrong answer. Although R1-V1 and Mulberry select the correct option, their intermediate calculations rely on inconsis-tent difference patterns and do not recover the underlying structure of the sequence. By con-trast, O 2-CritiCuRL decomposes each term into its constituent odd numbers, identifies the contin-uous sequence 1, 3, 5, . . . , 19 , and correctly infers that the next term is formed by concatenating 
+
+21 and 23 . The resulting answer is therefore sup-ported by the actual generative rule rather than an accidental numerical match. Figure 7 presents a ChartQA example that asks for the difference between the two modes of the values shown in a pie chart. Qwen2.5-VL incorrectly treats the two occurrences of 65% as two separate modes and concludes that their dif-ference is zero. Vision-R1 eventually gives the correct answer, but its reasoning contains contra-dictory statements about which values constitute the modes, again suggesting a lucky guess. O 2-CritiCuRL first extracts all values from the chart, counts their frequencies, correctly identifies 65% 
+
+and 68% as the two modes, and computes their difference as 3% . This case demonstrates that our method maintains consistency between visual evidence, intermediate reasoning, and the final answer. Overall, these case studies demonstrate a con-sistent distinction between answer correctness and reasoning correctness. Baseline models either pro-duce incorrect answers because of flawed interme-diate steps or occasionally reach correct answers through inconsistent or unsupported reasoning. In contrast, O 2-CritiCuRL identifies and executes the decisive reasoning steps in each task, pro-ducing solutions that are not only accurate but also concise, logically coherent, and interpretable. Rather than merely matching the final answer, our method preserves consistency between the observed evidence, intermediate deductions, and the resulting prediction. These findings further suggest that critical-step-aware supervision can improve both reasoning faithfulness and robust-ness across diverse multimodal settings. Addi-tional case studies are provided in the appendix to further illustrate this behavior. 14 Question: Which number comes next? A. 2023 B. 2123 C. 2223 D.2133 
+
+Qwen2.5-VL R1-V1 
+
+Step 1: Identify the pattern in the 
+
+given sequence of numbers: 13, 57, 
+
+911, 1315, 1719. 
+
+Step 2: Observe the structure of the 
+
+numbers. Each number seems to be a 
+
+four-digit number ... 
+
+Step 3: Calculate the difference 
+
+between consecutive numbers: 57 -
+
+13 = 44, 911 - 57 = 854, 1315 - 911 
+
+= 404, 1719 - 1315 = 404. 
+
+Step 4: Identify the pattern in the 
+
+differences. The differences are 44, 
+
+854, 404, and 404. The last two 
+
+differences are equal. 
+
+Step 5: Calculate the next number by 
+
+a d d i n g t h e p a t t e r n t o t h e l a s t 
+
+number in the sequence. Since ... add 
+
+404 to 1719. 
+
+Step 6: Perform the calculation: 
+
+1719 + 404 = 2123 ... 
+
+The final answer is: B 
+
+To determine the next number in the 
+
+sequence, let's analyze the pattern: 
+
+The sequence given is: 13, 57, 911, 
+
+1315, 1719, ? Let's break it down: ... 
+
+We can observe that each number is 
+
+formed by adding 44 to the previous 
+
+number ... Given the pattern in the 
+
+sequence, it seems that the numbers 
+
+are not simply increasing by 44. 
+
+Instead, it looks like the sequence is 
+
+formed by adding 44 to the previous 
+
+number and then adding 44 again to 
+
+the result. 
+
+Let's verify this pattern ...Given the 
+
+pattern in the sequence, it seems 
+
+that the numbers are not simply 
+
+increasing by 44. Instead, it looks like 
+
+the sequence is formed by adding 44 
+
+to the previous number and then 
+
+adding 44 again to the result. 
+
+The correct answer is: C. 2223 
+
+Mulberry 
+
+Step 1: Observe the sequence of 
+
+numbers: 13, 57, 911, 1315, 1719. 
+
+Step 2: Identify the pattern in the 
+
+sequence. Notice that each number 
+
+increases by 444. 
+
+Step 3: Apply the pattern to find the 
+
+next number in the sequence. Add 
+
+444 to 1719. 
+
+Step 4: Calculate: 1719 + 444 = 2163. 
+
+Compare the calculated number with 
+
+the given options. 
+
+Answer: B 
+
+Ours 
+
+Step 1: Analyze the sequence of 
+
+numbers provided: 13, 57, 911, ... 
+
+Step 2: Look for structural patterns 
+
+r a t h e r t h a n s i m p l e a r i t h m e t i c 
+
+differences ... 
+
+Step 3: Split each number in the 
+
+sequence into its constituent odd 
+
+numbers:13 is composed of 1 and 3, 
+
+57 is composed of 5 and 7,911 is 
+
+composed of 9 and 11 ... 
+
+Step 4: Observe the relationship 
+
+between the extracted numbers. 
+
+They form a continuous sequence of 
+
+consecutive odd numbers: 1, 3, 5, 7, 9, 
+
+11, 13, 15, 17, 19. 
+
+Step 5: Determine the next numbers... 
+
+t h e n e x t t w o c o n s e c u t i v e o d d 
+
+numbers are 21 and 23. 
+
+Step 6: Concatenate these two odd 
+
+numbers ... 21 and 23 gives 2123. 
+
+The final answer is: B 
+
+Think 
+
+Better 
+
+Lucky 
+
+Guess 
+
+Lucky 
+
+Guess Fig. 6 : Case Study on MMStar : The reasoning behaviors of Vision-R1, R1-VL, and our proposed O²-CritiCuRL. Existing Vision-R1 provides incorrect answers due to flawed intermediate reasoning, while R1-VL reaches the correct answer only through a “lucky guess”. In contrast, our O²-CritiCuRL identifies and follows the correct critical steps, yielding logically sound and interpretable output. W h a t i s t h e 
+
+d i f f e r e n c e 
+
+be t we e n t h e 
+
+two modes? 
+
+Qwen2.5-VL Vision-R1 Ours 
+
+# Step 1: Identify the data values in 
+
+the pie chart: 
+
+- Midwest U.S.: 65% - Northeast U.S.: 
+
+65% - South U.S.: 68% - West U.S.: 
+
+69% - Canada: 68% 
+
+# Step 2: Find the mode of the data. 
+
+The mode is the value that appears 
+
+most frequently. 
+
+# Step 3: Count the frequency of each 
+
+value: - 65% appears twice (Midwest 
+
+U.S. and Northeast U.S.) - 68% appears 
+
+twice (South U.S. and Canada) - 69% 
+
+appears once 
+
+# Step 4: The most frequent values are 
+
+65% and 68%, each appearing twice. 
+
+# Step 5: Calculate the difference 
+
+between the two modes: - Difference = 
+
+68% - 65% = 3% 
+
+# The final answer is: 3 
+
+Think 
+
+Better 
+
+Okay, let's see ... First, I need to recall 
+
+what the modes are ... Looking at the 
+
+data provided: ... So, the percentages 
+
+a r e 6 9 , 6 8 , 6 8 , 6 5 , 6 5 . T h e m o s t 
+
+frequent percentage here is 68%, which 
+
+appears twice... The next highest is 
+
+69%, which is only once. Then 65% 
+
+appears twice as well. Wait, but the 
+
+question displays "the two modes." If 
+
+there are two modes, that means there 
+
+are two different values that occur 
+
+most frequently. But in this case, both 
+
+68% and 65% occur twice. So, the 
+
+modes are 68% and 65%. ... The larger 
+
+mode is 69%, but wait, 69% is only once. 
+
+The two modes are 68% and 65%. So, 
+
+the difference between 68% and 65% is 
+
+3%. Therefore, the answer should be 
+
+3%. 
+
+Final Answer: 3 
+
+Lucky 
+
+Guess 
+
+To determine the difference between 
+
+the two modes, we need to follow these 
+
+steps: 1. Identify the data points... 2. 
+
+Determine which regi on s h a v e th e 
+
+highest frequency. 3. Calculate the 
+
+difference between these frequencies. 
+
+Step 1: Identify the data points in the 
+
+pie chart. The pie chart shows five 
+
+r e gi on s : ..., w i t h t h e i r r e s p e c t i v e 
+
+percentages. Step 2: Determine which 
+
+regions have the highest frequency 
+
+(mode). From the pie chart, we can see 
+
+that the regions with the smallest 
+
+percentage are ..., both at 65%. Step 3: 
+
+Calculate the difference between these 
+
+frequencies. Since both the Midwest 
+
+U.S. (65%) and Northeast U.S. (65%) 
+
+have the same frequency, they are 
+
+actually modes. The difference between 
+
+these two modes is therefore 0%. 
+
+Fig. 7 : Case Study on ChartQA : The reasoning behaviors of Vision-R1, R1-VL, and our proposed O²-CritiCuRL. Existing Vision-R1 provides incorrect answers due to flawed intermediate reasoning, while R1-VL reaches the correct answer only through a “lucky guess”. In contrast, our O²-CritiCuRL identifies and follows the correct critical steps, yielding logically sound and interpretable output. 
+
+# 7 Conclusion 
+
+In this work, we propose O²-CritiCuRL, an offline–online curriculum reinforcement learning framework that emphasizes critical-step aware-ness. By adaptively identifying decisive steps and iteratively refining them through offline decom-position and online reinforcement learning, our method improves accuracy, interpretability, and efficiency over conventional step-level RL. We expect that the principle of critical-step awareness is not limited to mathematical reasoning, but can be broadly applied to domains that demand trans-parent and trustworthy decision-making, such as scientific discovery, legal analysis, and medical diagnosis. Future work may integrate human feed-back into step identification on larger multimodal datasets, and design adaptive curricula that co-evolve in real-world cases under practical tasks. 15 References 
+
+Dario Amodei, Chris Olah, Jacob Steinhardt, Paul Christiano, John Schulman, and Dan Mané. Concrete problems in ai safety, 2016. URL https://arxiv.org/abs/1606.06565. Arora, Daman, Zanette, and Andrea. Training language models to reason efficiently. CoRR ,2025. Arrieta, Alejandro Barredo, Natalia Díaz-Rodríguez, Javier Del Ser, Adrien Bennetot, Siham Tabik, Alberto Barbado, Salvador García, Sergio Gil-López, Daniel Molina, Richard Benjamins, et al. Explainable artificial intelligence (xai): Concepts, taxonomies, oppor-tunities and challenges toward responsible ai. 
+
+Information fusion , 58:82–115, 2020. Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-vl technical report, 2025. URL https://arxiv.org/ abs/2502.13923. Catarina Barata, Veronica Rotemberg, Noel C. F. Codella, Philipp Tschandl, Christoph Rinner, Bengu Nisa Akay, Zoe Apalla, Giuseppe Argen-ziano, Allan Halpern, Aimilios Lallas, Susana Puig, Cliff Rosendahl, Iris Zalaudek, and Har-ald Kittler. A reinforcement learning model for ai-based decision support in skin cancer. 
+
+Nature Medicine , 29:1941–1946, 2023. URL https://doi.org/10.1038/s41591-023-02475-5. Natalie C Benda, Laurie L Novak, Carrie Reale, and Jessica S Ancker. Trust in ai: why we should be designing for appropriate reliance. Journal of the American Medical Informatics Association ,29(1):207–212, 2022. Bengio, Yoshua, Louradour, Jérôme, Ronan Col-lobert, and Jason Weston. Curriculum learning. In Proceedings of the 26th annual international conference on machine learning , pages 41–48, 2009. Xinye Cao, Yihan Lin, Guoshun Nan, Qinchuan Zhou, Yuhang Luo, Yurui Gao, Zeliang Zhang, Haolang Lu, Qimei Cui, Yanzhao Hou, et al. Advancing llm-based security automation with customized group relative policy optimization for zero-touch networks. IEEE Journal on Selected Areas in Communications , 2025. Qiguang Chen, Libo Qin, Jinhao Liu, Dengyun Peng, Jiannan Guan, Peng Wang, Mengkang Hu, Yuhang Zhou, Te Gao, and Wanxiang Che. Towards reasoning era: A survey of long chain-of-thought for reasoning large language models. 
+
+CoRR , 2025. Zhe Chen, Weiyun Wang, Yue Cao, Yangzhou Liu, Zhangwei Gao, Erfei Cui, Jinguo Zhu, Sheng-long Ye, Hao Tian, Zhaoyang Liu, Lixin Gu, Xuehui Wang, Qingyun Li, Yiming Ren, Zixuan Chen, Jiapeng Luo, Jiahao Wang, Tan Jiang, Bo Wang, Conghui He, Botian Shi, Xingcheng Zhang, Han Lv, Yi Wang, Wenqi Shao, Pei Chu, Zhongying Tu, Tong He, Zhiyong Wu, Huipeng Deng, Jiaye Ge, Kai Chen, Kaipeng Zhang, Limin Wang, Min Dou, Lewei Lu, Xizhou Zhu, Tong Lu, Dahua Lin, and Yu Qiao. Expanding performance boundaries of open-source multi-modal models with model, data, and test-time scaling, 2024. URL https://arxiv.org/abs/2412. 05271. Xiaoxue Cheng, Junyi Li, Wayne Xin Zhao, and Ji-Rong Wen. Chainlm: Empowering large lan-guage models with improved chain-of-thought prompting. CoRR , 2024. Comanici, Gheorghe, Bieber, Eric, Schaeker-mann, Mike, Pasupat, Ice, Sachdeva, Noveen, Dhillon, Inderjit, Blistein, Marcel, Ram, Ori, Zhang, Dan, Rosen, Evan, et al. Gemini 2.5: Pushing the frontier with advanced rea-soning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. Deng, Huilin, Zou, Ding, Ma, Rui, Luo, Hongchen, Cao, Yang, Kang, and Yu. Boosting the general-ization and reasoning of vision language models with curriculum reinforcement learning. arXiv preprint arXiv:2503.07065 , 2025a. Yihe Deng, Hritik Bansal, Fan Yin, Nanyun Peng, Wei Wang, and Kai-Wei Chang. Open-vlthinker: An early exploration to complex vision-language reasoning via iterative self-improvement, 2025b. URL https://arxiv.org/ abs/2503.17352. Yuhao Dong, Zuyan Liu, Hai-Long Sun, Jingkang Yang, Winston Hu, Yongming Rao, and Ziwei Liu. Insight-v: Exploring long-chain visual rea-soning with multimodal large language models. 
+
+arXiv preprint arXiv:2411.14432 , 2024. 16 Hang Du, Guoshun Nan, Jiawen Qian, Wangchen-hui Wu, Wendi Deng, Hanqing Mu, Zhenyan Chen, Pengxuan Mao, Xiaofeng Tao, and Jun Liu. Exploring what why and how: A multifaceted benchmark for causation under-standing of video anomaly. arXiv preprint arXiv:2412.07183 , 2024. El-Kishky, Ahmed, Wei, Alexander, Saraiva, Andre, Minaiev, Borys, Selsam, Daniel, Dohan, David, Song, Francis, Lightman, Hunter, Gilaberte, Ignasi Clavera, Pachocki, Jakub, et al. Competitive programming with large reasoning models. CoRR , 2025. Robert Geirhos, Jörn-Henrik Jacobsen, Claudio Michaelis, Richard Zemel, Wieland Brendel, Matthias Bethge, and Felix A. Wichmann. Shortcut learning in deep neural networks. 
+
+Nature Machine Intelligence , 2:665–673, 2020. doi: 10.1038/s42256-020-00257-z. URL https: //doi.org/10.1038/s42256-020-00257-z. Guo, Daya, Zhu, Qihao, Yang, Dejian, Xie, Zhenda, Dong, Kai, Zhang, Wentao, Chen, Guanting, Bi, Xiao, Wu, Y, Li, YK, et al. Deepseek-coder: When the large language model meets programming-the rise of code intelligence. CoRR , 2024. Guo, Daya, Yang, Dejian, Zhang, Haowei, Song, Junxiao, Zhang, Ruoyu, Xu, Runxin, Zhu, Qihao, Ma, Shirong, Wang, Peiyi, Bi, Xiao, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. 
+
+arXiv preprint arXiv:2501.12948 , 2025. Yifan Hao, Fangning Chao, Yaqian Hao, Zhaojun Cui, Huan Bai, Haiyu Zhang, Yankai Liu, Chao Deng, and Junlan Feng. Jt-math: A multi-stage framework for advanced mathematical reason-ing in large language models. arXiv preprint arXiv:2507.19748 , 2025. Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathe-matical problem solving with the math dataset, 2021. URL https://arxiv.org/abs/2103.03874. Wenxuan Huang, Bohan Jia, Zijie Zhai, Shaosheng Cao, Zheyu Ye, Fei Zhao, Zhe Xu, Yao Hu, and Shaohui Lin. Vision-r1: Incentivizing reasoning capability in multi-modal large language models, 2025. URL https://arxiv.org/abs/2503.06749. Preethi Jayaraman, John D. Doe, and Jane Smith. A primer on reinforcement learning in medicine for clinicians. npj Digital Medicine ,7(1):178, 2024. URL https://doi.org/10.1038/ s41746-024-01316-0. Joongwon Kim, Anirudh Goyal, Liang Tan, Han-naneh Hajishirzi, Srini Iyer, and Tianlu Wang. Astro: Teaching language models to reason by reflecting and backtracking in-context. arXiv preprint arXiv:2507.00417 , 2025. Xuanyu Lei, Chenliang Li, Yuning Wu, Kaim-ing Liu, Weizhou Shen, Peng Li, Ming Yan, Ji Zhang, Fei Huang, and Yang Liu. Writing-rl: Advancing long-form writing via adaptive cur-riculum reinforcement learning. arXiv preprint arXiv:2506.05760 , 2025. Sicong Leng, Jing Wang, Jiaxi Li, Hao Zhang, Zhiqiang Hu, Boqiang Zhang, Yuming Jiang, Hang Zhang, Xin Li, Lidong Bing, Deli Zhao, Wei Lu, Yu Rong, Aixin Sun, and Shijian Lu. Mmr1: Enhancing multimodal reasoning with variance-aware sampling and open resources, 2025. URL https://arxiv.org/abs/2509.21268. Bo Li, Yuanhan Zhang, Dong Guo, Renrui Zhang, Feng Li, Hao Zhang, Kaichen Zhang, Peiyuan Zhang, Yanwei Li, Ziwei Liu, and Chun-yuan Li. LLaVA-onevision: Easy visual task transfer. Transactions on Machine Learning Research , 2025. ISSN 2835-8856. URL https: //openreview.net/forum?id=zKv8qULV6n. Lightman, Hunter, Kosaraju, Vineet, Burda, Yuri, Edwards, Harrison, Baker, Bowen, Lee, Teddy, Leike, Jan, Schulman, John, Sutskever, Ilya, Cobbe, and Karl. Let’s verify step by step. In The Twelfth International Conference on Learning Representations , 2023a. Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step, 2023b. URL https://arxiv.org/abs/2305.20050. Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. In Interna-tional Conference on Learning Representations (ICLR) 2024 , 2024. URL https://proceedings. iclr.cc/paper_files/paper/2024/file/ aca97732e30bcf1303bc22ac3924fd16-Paper-Conference. pdf. Ling, Zhan, Fang, Yunhao, Li, Xuanlin, Huang, Zhiao, Lee, Mingu, Memisevic, Roland, Su, and Hao. Deductive verification of chain-of-thought 17 reasoning. Advances in Neural Information Processing Systems , 36:36407–36433, 2023. Shaonan Liu, Guoshun Nan, Leisen Niu, Ke Xu, Xiaofeng Tao, and Xudong Jiang. Tlight: A triple-modality benchmark for extreme low-light enhancement. IEEE Transactions on Cir-cuits and Systems for Video Technology , pages 1–1, 2026. doi: 10.1109/TCSVT.2026.3701028. Zeyu Liu, Yuhang Liu, Guanghao Zhu, Con-gkai Xie, Zhen Li, Jianbo Yuan, Xinyao Wang, Qing Li, Shing-Chi Cheung, Shengyu Zhang, Fei Wu, and Hongxia Yang. Infi-mmr: Curriculum-based unlocking multimodal reasoning via phased reinforcement learning in multimodal small language models. arXiv preprint arXiv:2505.23091 , 2025a. Ziru Liu, Cheng Gong, Xinyu Fu, Yaofang Liu, Ran Chen, Shoubo Hu, Suiyun Zhang, Rui Liu, Qingfu Zhang, and Dandan Tu. Ghpo: Adaptive guidance for stable and efficient llm reinforcement learning. arXiv preprint arXiv:2507.10628 , 2025b. Lu, Jinghui, Yu, Haiyang, Xu, Siliang, Ran, Shi-wei, Tang, Guozhi, Wang, Siqi, Shan, Bin, Fu, Teng, Feng, Hao, Tang, Jingqun, et al. Pro-longed reasoning is not all you need: Certainty-based adaptive routing for efficient llm/mllm reasoning. arXiv preprint arXiv:2505.15154 ,2025. Haoyu Lu, Wen Liu, Bo Zhang, Bingxuan Wang, Kai Dong, Bo Liu, Jingxiang Sun, Tongzheng Ren, Zhuoshu Li, Hao Yang, Yaofeng Sun, Chengqi Deng, Hanwei Xu, Zhenda Xie, and Chong Ruan. Deepseek-vl: Towards real-world vision-language understanding, 2024a. Pan Lu, Hritik Bansal, Tony Xia, Jiacheng Liu, Chunyuan Li, Hannaneh Hajishirzi, Hao Cheng, Kai-Wei Chang, Michel Galley, and Jianfeng Gao. Mathvista: Evaluating mathematical rea-soning of foundation models in visual contexts, 2024b. URL https://arxiv.org/abs/2310.02255. Liangchen Luo, Yinxiao Liu, Rosanne Liu, Sam-rat Phatale, Harsh Lara, Yunxuan Li, Lei Shu, Yun Zhu, Lei Meng, Jiao Sun, et al. Improve mathematical reasoning in language models by automated process supervision. CoRR , 2024. Ahmed Masry, Do Long, Jia Qing Tan, Shafiq Joty, and Enamul Hoque. ChartQA: A bench-mark for question answering about charts with visual and logical reasoning. In Findings of the Association for Computational Lin-guistics: ACL 2022 , pages 2263–2279, Dublin, Ireland, May 2022. Association for Compu-tational Linguistics. doi: 10.18653/v1/2022. findings-acl.177. URL https://aclanthology. org/2022.findings-acl.177. Fanqing Meng, Lingxiao Du, Zongkai Liu, Zhixiang Zhou, Quanfeng Lu, Daocheng Fu, Tiancheng Han, Botian Shi, Wenhai Wang, Junjun He, Kaipeng Zhang, Ping Luo, Yu Qiao, Qiaosheng Zhang, and Wenqi Shao. Mm-eureka: Exploring the frontiers of multimodal reasoning with rule-based reinforcement learn-ing. arXiv preprint arXiv:2503.07365 , 2025. Shubham Parashar, Shurui Gui, Xiner Li, Hongyi Ling, Sushil Vemuri, Blake Olson, Eric Li, Yu Zhang, James Caverlee, Dileep Kalathil, and Shuiwang Ji. Curriculum reinforcement learning from easy to hard tasks improves llm reasoning. arXiv preprint arXiv:2506.06632 ,2025a. Shubham Parashar, Shurui Gui, Xiner Li, Hongyi Ling, Sushil Vemuri, Blake Olson, Yu Zhang, James Caverlee, Dileep Kalathil, and Shuiwang Ji. Curriculum reinforcement learning from easy to hard tasks improves llm reasoning, 2025b. URL https://arxiv.org/abs/2506.06632. Chanwoo Park, Seungju Han, Xingzhi Guo, Asuman Ozdaglar, Kaiqing Zhang, and Joo-Kyung Kim. Multi-agent post-co-training for collaborative large language models with rein-forcement learning, 2025. Poursabzi-Sangdeh, Forough, Goldstein, Daniel G, Hofman, Jake M, Wortman Vaughan, Jen-nifer Wortman, Wallach, and Hanna. Manip-ulating and measuring model interpretability. In Proceedings of the 2021 CHI conference on human factors in computing systems , pages 1–52, 2021. Chenyang Qiu, Guoshun Nan, Hongrui Xia, Zheng Weng, Xueting Wang, Meng Shen, Xiaofeng Tao, and Jun Liu. Disentangled dynamic intru-sion detection. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. Qu, Xiaoye, Li, Yafu, Su, Zhaochen, Sun, Weigao, Yan, Jianhao, Liu, Dongrui, Cui, Ganqu, Liu, Daizong, Liang, Shuxian, He, Junxian, et al. A survey of efficient reasoning for large reasoning models: Language, multimodality, and beyond. 
+
+arXiv preprint arXiv:2503.21614 , 2025. 18 Shakya, Ashish Kumar, Pillai, Gopinatha, Chakrabarty, and Sohom. Reinforcement learning algorithms: A brief survey. Expert Systems with Applications , 231:120495, 2023. Shao, Zhihong, Wang, Peiyi, Zhu, Qihao, Xu, Runxin, Song, Junxiao, Bi, Xiao, Zhang, Haowei, Zhang, Mingchuan, Li, YK, Wu, Yang, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language mod-els. arXiv preprint arXiv:2402.03300 , 2024. Shuaijie She, Junxiao Liu, Yifeng Liu, Jiajun Chen, Xin Huang, and Shujian Huang. R-prm: Reasoning-driven process reward model-ing. arXiv preprint arXiv:2503.21295 , 2025. Haozhan Shen, Peng Liu, Jingcheng Li, Chunxin Fang, Yibo Ma, Jiajia Liao, Qiaoli Shen, Zilun Zhang, Kangjia Zhao, Qianqian Zhang, Ruochen Xu, and Tiancheng Zhao. VLM-R1: A stable and generalizable R1-style large vision-language model. arXiv preprint arXiv:2504.07615 , 2025. Nisan Stiennon, Long Ouyang, Jeff Wu, Daniel M. Ziegler, Ryan Lowe, Chelsea Voss, Alec Rad-ford, Dario Amodei, and Paul Christiano. Learning to summarize from human feedback, 2022. URL https://arxiv.org/abs/2009.01325. Stiglic, Gregor, Kocbek, Primoz, Fijacko, Nino, Zitnik, Marinka, Verbert, Katrien, Cilar, and Leona. Interpretability of machine learning-based prediction models in healthcare. Wiley Interdisciplinary Reviews-Data Mining And Knowledge Discovery , 10(5), 2020. OpenBMB Team. Minicpm-o 2.6: A gpt-4o-level mllm for vision, speech, and multimodal live streaming on your phone. https://github. com/OpenBMB/MiniCPM-o, 2025a. Online; OpenBMB Notion Page. Qwen Team. Qwen3-max: Just scale it, September 2025b. Wang, Hanchen, Fu, Tianfan, Du, Yuanqi, Gao, Wenhao, Huang, Kexin, Liu, Ziming, Chan-dak, Payal, Liu, Shengchao, Van Katwyk, Peter, Deac, Andreea, et al. Scientific discovery in the age of artificial intelligence. Nature , 620(7972): 47–60, 2023. Huaijie Wang, Xin Chen, Zhenyu Tang, Xiao-jun Quan, Qifan Wang, Wenwu Ou, and Yang Liu. Offline reinforcement learning for llm multi-step reasoning. In Findings of the Asso-ciation for Computational Linguistics: ACL 2025 , 2025a. URL https://aclanthology.org/ 2025.findings-acl.464.pdf. Ke Wang, Junting Pan, Weikang Shi, Zimu Lu, Mingjie Zhan, and Hongsheng Li. Measuring multimodal mathematical reasoning with math-vision dataset, 2024a. URL https://arxiv.org/ abs/2402.14804. Peiyi Wang, Lei Li, Zhihong Shao, R. X. Xu, Damai Dai, Yifei Li, Deli Chen, Y. Wu, and Zhi-fang Sui. Math-shepherd: Verify and reinforce llms step-by-step without human annotations, 2024b. URL https://arxiv.org/abs/2312.08935. Weiyun Wang, Zhangwei Gao, Lianjie Chen, Zhe Chen, Jinguo Zhu, Xiangyu Zhao, Yangzhou Liu, Yue Cao, Shenglong Ye, Xizhou Zhu, Lewei Lu, Haodong Duan, Yu Qiao, Jifeng Dai, and Wenhai Wang. Visualprm: An effective process reward model for multimodal reasoning. arXiv preprint arXiv:2503.10291 , 2025b. Xiyao Wang, Linfeng Song, Ye Tian, Dian Yu, Baolin Peng, Haitao Mi, Furong Huang, and Dong Yu. Towards self-improvement of llms via mcts: Leveraging stepwise knowledge with curriculum preference learning. arXiv preprint arXiv:2410.06508 , 2024c. Zhenting Wang, Guofeng Cui, Yu-Jhe Li, Kun Wan, and Wentian Zhao. Dump: Auto-mated distribution-level curriculum learning for rl-based llm post-training. arXiv preprint arXiv:2504.09710 , 2025c. Yuxi Xie, Anirudh Goyal, Wenyue Zheng, Min-Yen Kan, Timothy P. Lillicrap, Kenji Kawaguchi, and Michael Shieh. Monte carlo tree search boosts reasoning via iterative pref-erence learning. In Advances in Neural Infor-mation Processing Systems (NeurIPS) 2024 ,2024. URL https://openreview.net/pdf?id= s4OukoHwnz. Guowei Xu, Peng Jin, Ziang Wu, Hao Li, Yib-ing Song, Lichao Sun, and Li Yuan. Llava-cot: Let vision language models reason step-by-step. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 2087–2098, October 2025. Yi Yang, Xiaoxuan He, Hongkun Pan, Xiyan Jiang, Yan Deng, Xingtao Yang, Haoyu Lu, Dacheng Yin, Fengyun Rao, Minfeng Zhu, Bo Zhang, and Wei Chen. R1-onevision: Advancing generalized multimodal reasoning through cross-modal formalization, 2025. URL 19 https://arxiv.org/abs/2503.10615. Huanjin Yao, Jiaxing Huang, Wenhao Wu, Jingyi Zhang, Yibo Wang, Shunyu Liu, Yingjie Wang, Yuxin Song, Haocheng Feng, Li Shen, and Dacheng Tao. Mulberry: Empowering mllm with o1-like reasoning and reflection via col-lective monte carlo tree search, 2024. URL https://arxiv.org/abs/2412.18319. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large lan-guage models. In Advances in Neural Information Processing Systems (NeurIPS) 2023 , 2023. URL https://proceedings. neurips.cc/paper_files/paper/2023/file/ 271db9922b8d1f4dd7aaef84ed5ac703-Paper-Conference. pdf. Yuan, Ruifeng, Xiao, Chenghao, Leng, Sicong, Wang, Jianyu, Li, Long, Xu, Weiwen, Chan, Hou Pong, Zhao, Deli, Xu, Tingyang, Wei, Zhongyu, et al. Vl-cogito: Progressive cur-riculum reinforcement learning for advanced multimodal reasoning. arXiv preprint arXiv:2507.22607 , 2025. Zeng, Zhiyuan, Cheng, Qinyuan, Yin, Zhangyue, Wang, Bo, Li, Shimin, Zhou, Yunhua, Guo, Qipeng, Huang, Xuanjing, Qiu, and Xipeng. Scaling of search and learning: A roadmap to reproduce o1 from reinforcement learning perspective. CoRR , 2024. Thomas Zeng, Shuibai Zhang, Shutong Wu, Chris-tian Classen, Daewon Chae, Ethan Ewer, Min-jae Lee, Heeju Kim, Wonjun Kang, Jackson Kunde, Ying Fan, Jungtaek Kim, Hyung Il Koo, Kannan Ramchandran, Dimitris Papail-iopoulos, and Kangwook Lee. Versaprm: Multi-domain process reward model via synthetic reasoning data. In Proceedings of the 42nd International Conference on Machine Learning ,2025. Yuheng Zha, Kun Zhou, Yujia Wu, Yushu Wang, Jie Feng, Zhi Xu, Shibo Hao, Zhengzhong Liu, Eric P. Xing, and Zhiting Hu. Vision-g1: Towards general vision language reasoning with multi-domain data curation. arXiv preprint arXiv:2508.12680 , 2025. URL https://github. com/yuh-zha/Vision-G1. Jingyi Zhang, Jiaxing Huang, Huanjin Yao, Shunyu Liu, Xikun Zhang, Shijian Lu, and Dacheng Tao. R1-vl: Learning to reason with multimodal large language models via step-wise group relative policy optimization. arXiv preprint arXiv:2503.12937 , 2025a. Jingyi Zhang, Jiaxing Huang, Huanjin Yao, Shunyu Liu, Xikun Zhang, Shijian Lu, and Dacheng Tao. R1-vl: Learning to reason with multimodal large language models via step-wise group relative policy optimization, 2025b. URL https://arxiv.org/abs/2503.12937. Renrui Zhang, Dongzhi Jiang, Yichi Zhang, Haokun Lin, Ziyu Guo, Pengshuo Qiu, Aojun Zhou, Pan Lu, Kai-Wei Chang, Peng Gao, and Hongsheng Li. Mathverse: Does your multi-modal llm truly see the diagrams in visual math problems?, 2024. URL https://arxiv.org/abs/ 2403.14624. Ruohong Zhang, Bowen Zhang, Yanghao Li, Hao-tian Zhang, Zhiqing Sun, Zhe Gan, Yinfei Yang, Ruoming Pang, and Yiming Yang. Improve vision language model chain-of-thought reason-ing. In Wanxiang Che, Joyce Nabende, Ekate-rina Shutova, and Mohammad Taher Pilehvar, editors, Proceedings of the 63rd Annual Meeting of the Association for Computational Linguis-tics (Volume 1: Long Papers) , pages 1631–1662, Vienna, Austria, July 2025c. Association for Computational Linguistics. ISBN 979-8-89176-251-0. doi: 10.18653/v1/2025.acl-long.82. URL https://aclanthology.org/2025.acl-long.82/. Chenglin Zhu, Tao Zhang, Chong Li, Mingan Lin, Zenan Zhou, and Jian Xie. Eduflow: Advanc-ing mllms’ problem-solving proficiency through multi-stage, multi-perspective critique. arXiv preprint arXiv:2507.09374 , 2025a. Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shenglong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, Zhangwei Gao, Erfei Cui, Xuehui Wang, Yue Cao, Yangzhou Liu, Xingguang Wei, Hongjie Zhang, Haomin Wang, Weiye Xu, Hao Li, Jiahao Wang, Nianchen Deng, Songze Li, Yinan He, Tan Jiang, Jia-peng Luo, Yi Wang, Conghui He, Botian Shi, Xingcheng Zhang, Wenqi Shao, Junjun He, Yingtong Xiong, Wenwen Qu, Peng Sun, Peng-long Jiao, Han Lv, Lijun Wu, Kaipeng Zhang, Huipeng Deng, Jiaye Ge, Kai Chen, Limin Wang, Min Dou, Lewei Lu, Xizhou Zhu, Tong Lu, Dahua Lin, Yu Qiao, Jifeng Dai, and Wenhai Wang. Internvl3: Exploring advanced training and test-time recipes for open-source 20 multimodal models, 2025b. URL https://arxiv. org/abs/2504.10479. Chengke Zou, Xingang Guo, Rui Yang, Junyu Zhang, Bin Hu, and Huan Zhang. Dynamath: A dynamic visual benchmark for evaluating mathematical reasoning robustness of vision language models, 2025. URL https://arxiv.org/ abs/2411.00836. 
+
+# Appendix A Ethics Statement 
+
+In this study, no human subjects or animal exper-imentation was involved. All datasets used were sourced in compliance with relevant usage guide-lines, ensuring no violation of privacy. We have taken care to avoid any biases or discriminatory outcomes in our research process. No personally identifiable information was used, and no exper-iments were conducted that could raise privacy or security concerns. We are committed to main-taining transparency and integrity throughout the research process. 
+
+# Appendix B Reproducibility Statement 
+
+We have made every effort to ensure that the results presented in this paper are reproducible. The experimental setup, including training steps, model configurations, and hardware details, is described in detail in the paper, We also pro-vide a full description of experiments, to assist others in reproducing our experiments. Addition-ally, datasets, such as MathVista, MathVision are publicly available, ensuring consistent and repro-ducible evaluation results. We believe these mea-sures will enable other researchers to reproduce our work and further advance the field. 
+
+# Appendix C Theoretical Foundation and Interpretation 
+
+This section provides the theoretical foundation, detailing the derivation and practical implementa-tion of the criticality metric Ki. In our approach, the criticality of a reasoning step is assessed based on the change in the model’s accuracy after sequentially introducing each step. Assuming each step is correct, adding a step will not decrease the model’s accuracy; it can either improve it or leave it unchanged (if the step provides no additional information). Introducing a critical step inevitably causes a significant shift in the answer probability dis-tribution: the probability of the correct answer increases, while the probabilities of other answers decrease. To describe this process in a simple yet principled way, we introduce the uniform compression assumption :1. When the model has no reasoning ability, all answers are assigned approximately equal ini-tial probabilities; if the answer space is very large, these probabilities naturally approach zero. 2. When a critical step is introduced, the cor-rect answer probability increases, while the remaining probability mass of other answers is assumed, in an idealized sense, to be uni-formly redistributed. This assumption provides a tractable and reasonable approximation of the probability shift. To quantify the difference between the prior and posterior distributions induced by a reason-ing step, we use the Kullback-Leibler (KL) divergence , defined as 
+
+DKL (P ∥ Q) = ∑
+
+> ω∈Ω
+
+P (ω) log P (ω)
+
+Q(ω) . (C1) Its fundamental interpretation is the additional information required to represent the target dis-tribution P using a code optimized for the dis-tribution Q. In our context, the KL divergence measures the extra information needed for the current distribution to align with a distribution that successfully leads to the correct answer. Within this framework, the criticality of step 
+
+Si is quantified as the KL divergence between the posterior Pi and the prior Pi−1:
+
+Ki = DKL (Pi ∥ Pi−1). (C2) Intuitively: • Large Ki: Indicates a substantial difference between Pi and Pi−1, meaning the step Si
+
+21 provides significant new information, which is highly critical for correcting the model when it was previously far from the correct answer. • Small Ki: Indicates that Pi is similar to Pi−1,meaning the step Si offers only minor refine-ments, acting more like a fine-tuning adjust-ment when the model is already close to the correct answer. 
+
+# Appendix D Derivation of the Computable Metric 
+
+The definition of Ki is general but computation-ally complex as it requires a sum over the entire answer space Ω. To derive a tractable metric, we introduce a structural assumption about how reasoning steps affect the probability distribution. We begin by decomposing the sum into the contribution from the correct answer ω∗ and the space of all incorrect answers: 
+
+Ki = Pi(ω∗) log Pi(ω∗)
+
+Pi−1(ω∗) + ∑ 
+
+> ω̸=ω∗
+
+Pi(ω) log Pi(ω)
+
+Pi−1(ω) .
+
+(D3) Let pi = Pi(ω∗) denote the probability assigned to the correct answer at step i. Conse-quently, the total probability mass of all incorrect answers is 1 − pi = ∑  
+
+> ω̸=ω∗
+
+Pi(ω).
+
+Coarse-Grained Approximation and Residual Term. Introducing a critical step induces a shift in the model’s answer distribu-tion: the probability mass assigned to the correct answer increases, while the probability mass over incorrect answers is adjusted accordingly. To quantify the distributional change caused by step 
+
+Si, we use the Kullback-Leibler (KL) divergence: 
+
+DKL (P |Q) = ∑ 
+
+> ω∈Ω
+
+P (ω) log P (ω) 
+
+> Q(ω)
+
+. Within our framework, the criticality of step Si is measured by the distributional shift between the posterior distribution Pi and the prior distribution Pi−1:
+
+Ki = DKL (Pi|Pi−1) = ∑ 
+
+> ω∈Ω
+
+Pi(ω) log Pi(ω) 
+
+> Pi−1(ω)
+
+.
+
+Let ω∗ denote the correct answer, and let pi =
+
+Pi(ω∗) be the probability assigned to the correct answer after introducing step Si. We first decom-pose the KL divergence into the contribution from the correct answer and the contribution from the incorrect-answer subspace: Ki = pi log pi 
+
+> pi−1
+
++
+
+∑  
+
+> ω̸=ω∗
+
+Pi(ω) log Pi(ω) 
+
+> Pi−1(ω)
+
+. To characterize step-level distribution changes in multimodal reason-ing, we further decompose the answer-space shift into a coarse-grained correctness term and a resid-ual term within the incorrect-answer subspace. The former measures how much probability mass is shifted toward the correct answer, while the latter captures the redistribution among incor-rect answers, including possible semantic clus-ters caused by visual perception errors, reasoning shortcuts, or similar answer candidates. Specifically, we define the normalized dis-tribution over the incorrect-answer subspace as 
+
+Qi(ω) = Pi(ω)1−pi , ω̸ = ω∗. Thus, for each incor-rect answer ω̸ = ω∗, we have Pi(ω) = (1 −
+
+pi)Qi(ω). Substituting this decomposition into the incorrect-answer term gives 
+
+∑ 
+
+> ω̸=ω∗
+
+Pi(ω) log Pi(ω)
+
+Pi−1(ω)= ∑ 
+
+> ω̸=ω∗
+
+(1 − pi)Qi(ω) log (1 − pi)Qi(ω)(1 − pi−1)Qi−1(ω)= (1 − pi) log 1 − pi
+
+1 − pi−1
+
++ (1 − pi)DKL (Qi|Qi−1).
+
+(D4) Therefore, the full answer-space KL divergence can be written as 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
++ (1 − pi)DKL (Qi|Qi−1).
+
+(D5) The last term explicitly represents the internal redistribution among incorrect answers. There-fore, the formulation does not require incorrect answers to be uniformly distributed; instead, semantic clustering among wrong candidates is naturally absorbed into the residual term. In practice, our offline rollout estimates the correctness-level transition after each reasoning prefix. Accordingly, we use the coarse-grained correctness term as the practical criticality metric: 
+
+Kcg  
+
+> i
+
+= pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+. (D6) This term is exactly the KL divergence between two Bernoulli distributions over correctness, i.e., whether the model reaches the correct answer or not. Since DKL (Qi|Qi−1) ≥ 0, we have Kcg  
+
+> i
+
+≤
+
+22 DKL (Pi|Pi−1). Thus, the coarse-grained metric can be interpreted as a conservative approxima-tion of the full answer-space distribution shift. It focuses on the probability mass transferred toward the correct answer, while preserving the effect of incorrect-answer clustering as a residual component. Combining these contributions yields our final computable metric for step criticality: 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+. (D7) 
+
+# Appendix E Boundary Behavior, Robustness, and Smoothing 
+
+The metric Ki exhibits extreme and theoretically justified behavior at the boundaries of the prob-ability space, which necessitates careful handling in practice. 
+
+Boundary Analysis: 
+
+Case 1: pi−1 → 0+
+
+Consider 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+. (E8) As pi−1 → 0+, the second term behaves as 
+
+(1 − pi) log 1 − pi
+
+1 − pi−1
+
+= (1 − pi) log 
+
+(
+
+1 + pi−1 − pi
+
+1 − pi−1
+
+)
+
+→ (1 − pi) log(1 − pi).
+
+(E9) which remains finite. The first term behaves as 
+
+pi log pi
+
+pi−1
+
+= pi(log pi−log pi−1) ∼ − pi log pi−1 → +∞,
+
+(E10) since − log pi−1 → +∞. Therefore, Ki →
+
++∞, reflecting an infinite information gain when updating from near-zero prior probability to a finite posterior. 
+
+Case 2: pi−1 → 1−
+
+Let qi = 1 − pi and qi−1 = 1 − pi−1. Then 
+
+Ki = (1 − qi) log 1 − qi
+
+1 − qi−1
+
++ qi log qi
+
+qi−1
+
+. (E11) As qi−1 → 0+, the first term behaves as 
+
+(1 − qi) log 1 − qi
+
+1 − qi−1
+
+→ log 1 = 0 ,
+
+and the second term 
+
+qi log qi
+
+qi−1
+
+= qi(log qi−log qi−1) ∼ − qi log qi−1 → 0,
+
+(E12) because qi → 0 along with qi−1. Hence Ki → 0,indicating negligible information gain when the model is already nearly certain. 
+
+Robustness Property via Taylor Expan-sion: 
+
+Let ∆p = pi −pi−1. Expanding Ki around pi =
+
+pi−1 using log(1 + x) ≈ x − x2 
+
+> 2
+
++ O(x3):                                                
+
+> Ki=pi−1log pi−1+ ∆ ppi−1
+> + (1 −pi−1) log 1−pi−1−∆p
+> 1−pi−1
+> =pi−1log
+> (
+> 1 + ∆ppi−1
+> )
+> + (1 −pi−1) log
+> (
+> 1−∆p
+> 1−pi−1
+> )
+> ≈pi−1
+> (∆ppi−1
+> −(∆ p)2
+> 2p2
+> i−1
+> )
+> + (1 −pi−1)
+> (
+> −∆p
+> 1−pi−1
+> −(∆ p)2
+> 2(1 −pi−1)2
+> )
+> = ∆ p−(∆ p)2
+> 2pi−1
+> −∆p−(∆ p)2
+> 2(1 −pi−1)= (∆ p)2
+> 2
+> (11−pi−1
+> +1
+> pi−1
+> )
+> =(∆ p)2
+> 2pi−1(1 −pi−1).
+
+(E13) Summing both contributions: 
+
+Ki ≈ (∆ p)2
+
+2
+
+( 11 − pi−1
+
++ 1
+
+pi−1
+
+)
+
+= (∆ p)2
+
+2pi−1(1 − pi−1) .
+
+(E14) This shows that for small ∆p, Ki is of order 
+
+(∆ p)2, making it inherently robust to small fluc-tuations in the probability estimates. 
+
+Smoothing Technique: To ensure numeri-cal stability, smoothing is applied at both ends of the probability range. At the lower end, if pi or 
+
+pi−1 equals 0, this is effectively a numerical error since the model’s initial reasoning ability cannot be exactly zero. To avoid excessively large KL divergence values in practice, these probabilities are replaced by a small positive constant ϵ, e.g., 23 ϵ = 0 .1, which is much smaller than the minimal sampling probability precision. At the upper end, if pi or pi−1 equals 1, although the result does not theoretically diverge, computing log 0 could occur during calculations, which leads to numerical instability. Therefore, these probabilities are also capped below 1 − ϵ to ensure stability: 
+
+˜pi = min 
+
+(
+
+max( pi, ϵ ), 1 − ϵ
+
+)
+
+,
+
+˜pi−1 = min 
+
+(
+
+max( pi−1, ϵ ), 1 − ϵ
+
+)
+
+,ϵ ≪ minimal sampling probability .
+
+(E15) The smoothed criticality metric is then com-puted as: 
+
+K(smooth)  
+
+> i
+
+= ˜ pi log ˜pi
+
+˜pi−1
+
++ (1 − ˜pi) log 1 − ˜pi
+
+1 − ˜pi−1
+
+.
+
+(E16) 
+
+# Appendix F Reward Function 
+
+Our reward function is designed to guide the model towards three key objectives simultane-ously: 1. Correctly output the final answer. 2. Perform step-wise, logical reasoning. 3. Recognize whether the reasoning process is complete: if complete, directly output the answer; if incomplete, correctly continue the reasoning steps. The entire training process is divided into two distinct phases, each with its own reward function. They work in tandem to achieve our ultimate goal. 
+
+Offline Rollout Phase: 
+
+This phase does not involve model training. Instead, it serves as an analytical tool to iden-tify and evaluate critical steps within a Chain-of-Thought (CoT) demonstration. By using the reward function in this stage, we can prune redun-dant or less essential steps, creating a more concise and efficient training dataset. 
+
+Online Update Phase: 
+
+This is the active model training phase. We use the refined dataset from the offline stage and pro-vide real-time, granular feedback with the online reward function. This guides the model to learn and execute a correct reasoning process. This two-stage approach ensures that we first obtain high-quality training data and then use that data effectively to train the model. 
+
+F.1 Offline Rollout Reward Function 
+
+This phase is focused on evaluating the informa-tional value of each step in a demonstration. The reward function here helps in identifying which steps are most crucial for reaching the correct final answer. 
+
+Answer Accuracy Racc :
+
+This metric provides a foundational measure of the model’s ability to produce the correct final answer after a given number of reasoning steps. • For each input sample, we execute multiple sim-ulated ”rollouts.” In each rollout, we extract the final answer (the text following # The final answer is: ) and compare it to the ground truth. – If the answer is correct, we assign a reward of 
+
+Racc = 1 .– If the answer is incorrect, the reward is 
+
+Racc = 0 .• The mean correctness probability, pi, is then calculated by averaging the Racc values over a series of n rollouts. This is performed after step 
+
+i has been provided to the model, meaning the model has access to all steps from 1 to i.
+
+pi = 1
+
+n
+
+> n
+
+∑
+
+> j=1
+
+R(j) 
+
+> acc
+
+(F17) Here, pi represents the mean probability that the model can correctly solve the problem after having access to the first i reasoning steps. 
+
+Critical Step Metric Ki:
+
+The Critical Step Metric, Ki, is the core of our offline analysis. It quantifies the informa-tional value of a specific step by measuring how significantly it alters the model’s probability of producing the correct final answer. 24 • We compute the Kullback-Leibler (KL) diver-gence between the correctness probabilities of consecutive steps, pi and pi−1. A large Ki
+
+value signifies that the step provides crucial new information that dramatically improves the chances of getting the final answer correct. 
+
+Ki = pi log pi
+
+pi−1
+
++ (1 − pi) log 1 − pi
+
+1 − pi−1
+
+(F18) Conversely, a small Ki indicates the step is less essential or even redundant. 
+
+F.2 Online Update Reward Function 
+
+This phase involves granular, real-time feedback to guide the model towards producing a correct and well-formatted reasoning process. 
+
+Answer Accuracy Score Ra:
+
+This score evaluates whether the final answer pro-duced by the model matches the ground-truth solution. As the most direct indicator of task suc-cess, it reflects the model’s ability to arrive at the correct conclusion after completing its reasoning process. • If the model’s final answer exactly matches the ground-truth answer (after normalization, such as trimming whitespace and removing irrelevant punctuation), then Ra = 1 .• If the final answer does not match the ground-truth answer, or if the model produces multiple conflicting answers, then Ra = 0 .• Numerical answers are compared using both symbolic and approximate matching to account for equivalent forms (e.g., 0.5 vs. 12 ), but any semantic mismatch results in Ra = 0 .
+
+Format Score Rf :
+
+This score ensures that the model’s output strictly adheres to a predefined format, which is essential for consistent and automated evaluation through-out the training process. • If the model output strictly follows the speci-fied format ( # Step # The final answer is: ...\n ), Rf = 1 .• Any deviation from the required format results in Rf = 0 .
+
+Step Format Rt:
+
+This component evaluates whether the model’s predicted step number aligns with the expected sequential order and whether it correctly decides to stop or continue the process. We use a variable, 
+
+judging_step , to denote the expected next step number that the model should output. • When reasoning is incomplete ( judging_step ̸
+
+= 0): – Correct Continuation: If the model’s out-put begins with # Step judging_step , it receives the highest reward, Rt = 1 .– Incorrect Step Number: If the model’s out-put begins with # Step pred_step where 
+
+pred_step is not equal to judging_step ,the reward is calculated using a decay coef-ficient k: Rt = max(0 , 1 − k · | pred_step −
+
+judging_step |). The larger the deviation, the smaller the reward. – Early Answer Output: If the model out-puts the final answer before the reasoning is complete, the reward is Rt = 0 .• When reasoning is complete ( judging_step = 0, indicating the model has reached the final step from the reference CoT): – Correct Termination: If the model correctly outputs the final answer, it receives the high-est reward, Rt = 1 .– Redundant Step: If the model generates a superfluous step after the reasoning is com-plete, it receives a small, token reward of 
+
+Rt = 0.05 . This encourages early answer output and reduces redundancy. – Other Incorrect Output: Any other incorrect output results in Rt = 0 .
+
+Step Accuracy Rs:
+
+This reward is crucial for ensuring the quality of the reasoning content itself. • We check if the model’s output for the cur-rent step contains a pre-extracted key string (key_str ), which represents a crucial piece of information for that specific step. • If the output contains the key string, Rs = 1 .0.• Otherwise, Rs = 0 .0.25 Final Reward Score Si:
+
+The total reward score is a composite of all components, orchestrated by a multiplicative gat-ing mechanism. This structure ensures a holistic evaluation of the model’s performance, balancing process quality with final correctness. 
+
+Si = αR a + βR f + γ(Rt + Rs) (F19) The formula is decomposed into three main components. The first part evaluates the quality of the final answer itself. The second part evaluates whether the model outputs the final answer in the required format. The third part assesses the qual-ity of the reasoning process, which measures the logical structure and completeness of the reason-ing steps, and the generated reasoning correctly captures key steps. 
+
+Parameter Explanations. 
+
+• α (Answer Accuracy Weight): Set to 2.0. This weight emphasizes the importance of producing a correct final answer. • β (Format Weight): Set to 1.0. This weight ensures that the model adheres to the required output format. • γ (Reasoning Weight): Set to 1.0. This weight reflects the contribution of both reasoning com-pleteness and critical step accuracy to the overall score. 
+
+# Appendix G Prompt 
+
+G.1 Prompt for Training 
+
+The instruction following prompt for training is designed to guide the model through an incremen-tal reasoning process. The key goals are: 
+
+Prompting Incremental Reasoning. The model is instructed to generate reasoning steps in sequence, ensuring that each step logically leads to the next. This encourages the model to build on previous steps and engage in systematic problem-solving, which is crucial for handling complex tasks. 
+
+Ensuring Completeness in Reasoning. If the initial reasoning steps are insufficient, the model is prompted to continue generating additional steps. This ensures that the model can handle incom-plete or ambiguous reasoning processes, thereby <image> You are given a question about the 
+
+> image and a step-by-step reasoning process.
+> If the provided reasoning steps are already
+> sufficient, output only the final answer.
+> If the reasoning steps are incomplete, continue
+> generating the subsequent reasoning steps, and
+> then provide the final answer. Ensure the steps
+> are logical and concise.
+> Always format your response with the following
+> sections, separated by #.
+> # Step (next number):
+> (New reasoning step here)
+> # Step (next number + 1):
+> (New reasoning step here)
+> ...
+> # The final answer is:
+> (Your final answer here)
+
+System Prompt For RL Training 
+
+Fig. G1 : System Prompt used in RL Training. improving its ability to deal with real-world situa-tions that often require iterative problem-solving. 
+
+Structured Response Format. By enforcing a structured response format with clearly delineated steps and a final answer, the prompt fosters con-sistency in how the model organizes and presents its reasoning. This structure aids in improving the interpretability of the model’s outputs and makes it easier for humans to follow the model’s thought process. 
+
+Adaptability for Training. This design helps the model adapt to a wide range of problem complexities by learning to evaluate when rea-soning is sufficient and when further elaboration is required. This encourages the model to han-dle a variety of reasoning tasks effectively during training. 
+
+G.2 Prompt for Validating 
+
+The instruction following prompt for validation focuses on the generation of reasoning without prior steps. The design objectives are: 
+
+Encouraging Reasoning from Scratch. The model is required to generate a step-by-step rea-soning process from the given question, fostering the model’s ability to approach new problems 26 <image> You are given a question about the 
+
+> image.
+> Generate a step-by-step reasoning process to
+> solve the problem. Ensure the steps are logical
+> and concise.
+> Finally, provide the final answer in the following
+> format: 'The final answer is: xxx'.
+> Always format your response with the following
+> sections, separated by #.
+> # Step 1:
+> (Reasoning step 1 here)
+> # Step 2:
+> (Reasoning step 2 here)
+> ...
+> # The final answer is:
+> (Your final answer here)
+
+System Prompt For RL Validating Fig. G2 : System Prompt used in RL validating. without pre-existing steps. This is crucial for eval-uating the model’s ability to generalize to unseen tasks and situations. 
+
+Ensuring Logical and Concise Steps. The emphasis on generating logical and concise reason-ing steps encourages the model to produce clear and efficient explanations. This aligns with the goal of guiding the model to be not only accurate but also able to explain its reasoning in a manner that is understandable and precise. 
+
+Providing a Final Answer. After reasoning, the model is instructed to provide the final answer in a clear format. This ensures that the model is able to synthesize its reasoning into a coherent conclusion, which is essential for answering com-plex questions in real-world applications. 
+
+Evaluation of Reasoning Ability. This prompt design is particularly useful for evaluating the model’s capacity to generate reasoning and conclusions in a structured format. The clear for-mat of steps and the final answer ensures consis-tency across multiple test cases, enabling a more accurate assessment of the model’s performance. 
+
+# Appendix H Case Study 
+
+27 Question: As shown in the figure, in △ABC, point D is the 
+
+incenter of △ABC. Connect DB and DC. Through point D, draw 
+
+EF ∥BC, intersecting AB and AC at points E and F, respectively. 
+
+If BE+CF=8, then the length of EF is ( ). 
+
+A. 4 B. 5 C. 8 D. 16 
+
+Vision-R1 
+
+Ours 
+
+A
+
+B C
+
+E FD
+
+# Step 1: Identify the properties of the incircle center D. Since D is the incenter of triangle 
+
+ABC, BD and CD are angle bisectors. 
+
+# Step 2: Since BD and CD are angle bisectors, ∠DBC = ∠DBE, ∠DCB = ∠DCF. 
+
+# Step 3: Use the given condition EF ∥BC . By the property of corresponding angles, ∠DBC 
+
+=∠BDE, ∠DCB = ∠CDF .
+
+# Step 4: From ∠DBE = ∠BDE, triangle BDE is isosceles, so BE = DE . From ∠DCF = ∠CDF, 
+
+triangle CDF is isosceles, so DF = CF. 
+
+# Step 5: Find EF using the given sum BE + CF = 8. Since DE = BE and DF = CF, EF = DE + DF ,
+
+EF should be equal to (BE + CF), considering the given sum. 
+
+# Step 6: Calculate EF using the given condition BE + CF = 8. 
+
+# Step 7: Evaluate the possible option for EF that fits the geometry and given conditions, 
+
+considering the calculations and given choices. 
+
+# The final answer is: C. 
+
+Okay, let's see. The problem is about triangle ABC with point D as the incenter ... First, since 
+
+D is the incenter, it's the intersection of the angle bisectors. EF is parallel to BC. When a line 
+
+is drawn parallel to one side of a triangle and intersects the other two sides, it creates similar 
+
+triangles. So, triangle AEF should be similar to triangle ABC because EF is parallel to BC. But 
+
+wait, EF is not just any line; it's drawn from the incenter. Maybe the key here is that the 
+
+incenter divides the angle bisectors in a specific ratio. However, the problem displays that BE 
+
++ CF = 8. Since EF is parallel to BC, ... Alternatively, since D is the incenter, the lines AD, BD, 
+
+and CD are angle bisectors. If EF is parallel to BC, then the triangles AEF and ABC are similar. 
+
+The ratio of similarity would be the same as the ratio of corresponding sides. But how does 
+
+the incenter affect this ratio? … If EF is parallel to BC, then the segments BE and CF are 
+
+part of the sides AB and AC. Since EF is parallel to BC, the triangles BEF and BCF might be 
+
+similar? Wait, no. Maybe the key is that the incenter creates equal segments on the sides …
+
+Alternatively, since EF is parallel to BC, the length of EF can be found using the concept of 
+
+similar triangles. Let's denote the ratio of similarity as k. Then, EF = k * BC. But how does k 
+
+relate to the given BE + CF = 8? But how does k relate to the given BE + CF = 8? Wait, maybe 
+
+the key is that the incenter divides the sides into segments such that BE = EF and CF = EF ... 
+
+Wait, another approach: since EF is parallel to BC, the distance between EF and BC is the 
+
+same along the entire length … Therefore, the length of EF can be found by considering the 
+
+sum of BE and CF. Wait, if BE + CF = 8, and since EF is parallel to BC, maybe EF = BE + CF = 8. 
+
+That seems to fit. So the answer is 8, which is option C. Fig. H3 : The Case Study of Mathematical Task. The reasoning behaviors of Vision-R1, and our proposed O²-CritiCuRL. Existing Vision-R1 reaches the correct answer only through a lucky guess, as its intermediate reasoning contains conceptual mistakes and incorrect relationships between edges and angles. In contrast, our O²-CritiCuRL maintains coherent geometric relations and step-by-step logical transitions, producing a correct and interpretable reasoning process. 28 Question: As shown in the figure, AB is the diameter of ⊙O, 
+
+CD is the chord of ⊙O, ∠ADC = 26.0, then the degree of 
+
+∠CAB is ( ).
+
+A. 26 ° B. 74 ° C. 64 ° D. 54 °
+
+A
+
+C
+
+O B
+
+D
+
+R1-VL 
+
+Ours 
+
+To solve this problem, we need to use properties of circles and angles. Since AB is the 
+
+diameter, triangle ACB is a right triangle (angle in a semicircle is 90 °). We are given 
+
+∠ADC = 26 °, and we need to find ∠CAB. 
+
+In a circle, the angle subtended by a chord at the center is twice the angle 
+
+subtended at the circumference. Since AB is the diameter, ∠ACB = 90 °.
+
+Using the property of angles in a triangle, we have: ∠ACB + ∠CAB + ∠ABC = 180 °.
+
+Since ∠ACB = 90 °, we can write: 90 °+ ∠CAB + ∠ABC = 180 °.This simplifies to: ∠CAB 
+
++ ∠ABC = 90 °.
+
+Now, ∠ADC is an external angle to triangle ACB, so: ∠ADC = ∠CAB + ∠ABC. Given 
+
+∠ADC = 26 °, we substitute: 26 ° = ∠CAB + ∠ABC. 
+
+From the previous equation:\n ∠CAB + ∠ABC = 90 °. Subtract the second equation 
+
+from the first: ( ∠CAB + ∠ABC) - ( ∠CAB + ∠ABC) = 90 ° - 26 °.This simplifies to: 0 = 
+
+64 °
+
+This indicates a mistake in the approach. Let's correct it: 
+
+Since ∠ADC = 26 °, and ∠ADC is an external angle to triangle ACB, we have: ∠CAB = 
+
+∠ADC = 26 °.
+
+Thus, the correct answer is: A. 
+
+# Step 1: Identify key properties: - AB is the diameter, so ∠ACB = 90 ° because an 
+
+angle subtended by a diameter is a right angle. 
+
+# Step 2: Understand the given information: ∠ADC = 26 °.
+
+# Step 3: Use the properties of circles to find ∠CAB: ∠ADC and ∠ABC subtend arc AC. 
+
+Therefore, ∠ADC = ∠ABC = 26 °.
+
+# Step 4: Calculate ∠CAB: ∠CAB = 90 ° - ∠ADC (since ∠ACB = 90 °) = 64 °.
+
+# Step 5: Match the calculated angle with the choices. 
+
+# The final answer is: C. Fig. H4 : The Case Study of Mathematical Task. The reasoning behaviors of R1-VL, and our proposed O²-CritiCuRL. R1-VL provides incorrect answers due to flawed reasoning, while ours identifies and follows correct steps, yielding coherent and interpretable output. 29 Question: Is f(3) > 0? 
+
+A. Yes B. No 
+
+InternVL 
+
+Ours 
+
+Question: Subtract all small balls. Subtract all blue rubber things. How 
+
+many objects are left? 
+
+MiniCPM 
+
+Ours 
+
+To solve the problem, we need to follow these steps: 
+
+Step 1: Identify all objects in the image. - There is a blue cube (small). - There is a large 
+
+blue sphere. - There is a green metal sphere (small). - There is a gray metal cube (large). 
+
+Step 2: Subtract small balls from the list of objects... 
+
+Step 3: Subtract blue rubber things from the remaining list. The only blue object left is the 
+
+blue cube, ... Remaining objects after removing blue rubber thing: - Gray metal cube 
+
+Final answer: 2 
+
+# Step 1: Identify all the objects in the image. We have: - 1 large blue sphere - 1 small 
+
+green sphere - 1 small blue cube - 1 large metallic cube. 
+
+# Step 2: Subtract all small balls. In this image, the small green sphere is a small ball. 
+
+Number of objects after subtracting small balls: Large blue sphere: 1, Small blue cube: 1, 
+
+Large metallic cube: 1. 
+
+# Step 3: Subtract all blue rubber things. The small blue cube is blue and rubber... 
+
+# Step 4: Count the remaining objects. The remaining objects are the large blue sphere and 
+
+the large metallic cube. 
+
+# The final answer is: 2 
+
+# Step 1: Identify the value of x = 3 on the horizontal axis. 
+
+# Step 2: Locate the corresponding point on the graph for x = 3. 
+
+# Step 3: Observe the y-coordinate of this point. It is greater than zero. 
+
+# Step 4: Match the conclusion with the given choices (A) Yes or (B) No. Verify if the choice ... 
+
+# The final answer is: A 
+
+Okay, so I need to figure out whether f() at a certain point is greater than zero. Wait, the 
+
+question is "is f(3) > 0?" Hmm, that might be a typo. Let me check the original image again. 
+
+The graph shows a 5 at the center point, ... at x=5? But since the choices are Yes or No, and 
+
+the hint says to provide the correct option. ... Looking back, the graph shows a point at x=5 
+
+with y=5, and the curve passes through (5,5). Let me assume that the question is "Is f(5) > 
+
+0?" because f(5) would be the function value at x=5. Since in the graph, the point (5,5) is 
+
+shown, so f(5) = 5, which is positive. Therefore, the answer would be (A) Yes. ... Therefore, 
+
+the correct answer is: A. Fig. H5 : The Case Study of Mathematical Task. The reasoning behaviors of InternVL, MiniCPM, and our proposed O²-CritiCuRL. In the first case, InternVL fails to identify the point, leading to an incorrect reasoning process, although it ultimately gives the correct option by chance. In the second case, MiniCPM arrives at a conclusion of 1 during its reasoning process but still produces the correct answer 2 through a lucky guess. In contrast, ours derives the correct answer through a coherent and logically grounded reasoning process. 30 Question: As shown in the figure, in the parallelogram ABCD, it 
+
+is known that AB = 6.0, BC = 9.0, ∠B = 30.0, then the area of the 
+
+parallelogram ABCD is ( )
+
+A. 12 B. 18 C. 27 D. 54 
+
+MiniCPM 
+
+Ours 
+
+B C
+
+A D
+
+Solution: Since quadrilateral ABCD is a parallelogram, AD = BC = 9. 
+
+Therefore, AC = √(AB 2 + BC 2) = √a(6 2 + 9 2) = √117. 
+
+Thus, the area of triangle ABD = (1/2) × AB × CD × sin ∠B = (1/2) × 9 ×6 × sin30 ° = 27. 
+
+Hence, the answer is C. 
+
+Answer: C 
+
+# Step 1: Identify the given values: 
+
+- AB = 6.0 
+
+- BC = 9.0 
+
+- ∠B = 30 degrees 
+
+# Step 2: Use the formula for the area of a parallelogram: Area = base × height = AB ×
+
+BC × sin( ∠B) 
+
+# Step 3: Substitute the given values into the formula: Area = 6.0 × 9.0 × sin(30 °)
+
+# Step 4: Calculate sin(30 °): sin(30 °) = 0.5 
+
+# Step 5: Calculate the area: Area = 6.0 × 9.0 × 0.5 = 27.0 
+
+# The final answer is: CFig. H6 : The Case Study of Mathematical Task. The reasoning behaviors of MiniCPM and our O²-CritiCuRL. MiniCPM reaches the correct answer only through a ”lucky guess”, while ours produces the correct answer while adhering to the correct reasoning process. 31 Question: Is Slate the high median? 
+
+MiniCPM 
+
+InternVL 
+
+Ours 
+
+# Step 1: Identify the length of the "Slate" bar and other bars to find the median. 
+
+# Step 2: Arrange the bars in order of their lengths to identify the median. The median is 
+
+the middle value of a set of data, so for even sets, it is the average of the two middle values. 
+
+# Step 3: Count the number of bars. Since there are 10 bars, the median will be the 
+
+average of the 5th and 6th values in the ordered list. 
+
+# Step 4: Verify if "Slate" is the 6th bar in the ordered list to determine if it is the high 
+
+median. 
+
+# Step 5: The "Slate" is the 6th bar as the high median based on its position. 
+
+# The final answer is: A 
+
+Okay, let's tackle this question. The user is asking if "Slate" is the high median. The options 
+
+are A: yes and B: no. Alright, first I need to understand what exactly is being asked here. 
+
+From the graph, the x-axis ... Now, a high median in statistics refers to the value separating 
+
+the highest 50% from the lowest 50%. So, it's the median of the highest values.\n\nLooking 
+
+at the colors displayed, there are 1 categories listed vertically: Hot Pink, ... To find the 
+
+median value, ... Since there are 1 values, the median will be the (n+1 1)/2 th value, which is 
+
+(1+1)/2 = 9 values ... Wait, maybe not exactly, I need to check the exact lengths. Let's see: 
+
+Hot Pink is extremely long, possibly the longest. Slate: much longer, maybe third longest? ... 
+
+So possible sorted order: 1. Rosy Brown (~5) - Sky Blue (~8) - Light Sky Blue (~1) ... Teal 
+
+(~90)\n - Hot Pink (~95)\n\nAlternatively, perhaps I need to list each value and estimate 
+
+their values. Let's just about based on the bars:\n\n1axis labels (from low to high):\n\n1. 
+
+Rosy Brown: ~5\n - Light Sky Blue: ~8\n - Sky Blue: ~1? Maybe not; perhaps Sky Blue is 
+
+around 5, and Light Sky Blue is 8. Wait, that might not be. Let's check:\n\nActually, 
+
+comparing to Dodger Blue which is around 20. So:\n\n- Hot Pink ~ 95\n - Teal ~ 90\n - Slate 
+
+~ 50\n - Dark Khaki ~45\n - Dodger Blue ~25\n - Light Coral ~60\n - Medium Turquoise 
+
+~3\n - Rosy Brown ~5\n - Sky Blue, Light Sky Blue ~ around 5 or slightly higher than 
+
+Red?\n\nOr perhaps:\n\n- Rosy Brown: ~1\n - Sky Blue: ~5\n ... 
+
+To determine if Slate is the high median, we need to follow these steps: 
+
+1. Identify the Data Points: - The bar chart provides data for various colors with 
+
+corresponding values on the x-axis. - The y-axis lists the color names. 
+
+2. List the Values: Hot Pink: ~98, Slate: ~45, Teal: 87, Sky Blue: ~10 ... 
+
+3. Sort the Values in Ascending Order: 5 (Light Sky Blue), 10 (Sky Blue), 15 (Dodger Blue) ... 
+
+4. Determine the Median: Since there are 9 data points, the median will be the middle value, 
+
+which is the 5th value in the sorted list. The 5th value is 40 (Dark Khaki). 
+
+5. Compare with Slate: ... The median value is 40. Since 45 (Slate) is not equal to 40 (the 
+
+median), Slate is not the high median. Therefore, the correct answer is: (B) no Fig. H7 : The Case Study of Chart Task. The reasoning behaviors of MiniCPM, InternVL, and ours. MiniCPM misidentifies the number of bars, which leads to an incorrect reasoning process and ultimately an incorrect answer. InternVL misrecognizes the numerical values associated with the bars, also resulting in faulty reasoning and an incorrect final answer. In contrast, ours correctly identifies both the number of bars and their corresponding values, and produces the correct final answer through a coherent and accurate reasoning process. 32 Question: How many bars have values smaller than 1? 
+
+InternVL 
+
+Ours 
+
+# Step 1: Identify the values of each bar. 
+
+# Step 2: Compare each bar's value to determine if it is smaller than 1. 
+
+- "bull\": Value ≈ 4
+
+- "wish": Value ≈ 9
+
+- "heap": Value ≈ 1
+
+# Step 3: Count the number of bars with values smaller than 1. - "heap" has a value of 
+
+approximately 1, which is not smaller than 1. 
+
+# Step 4: Confirm the number of bars with values smaller than 1. - No bars have values 
+
+smaller than 1. 
+
+# The final answer is: zero 
+
+Okay, let's see. The question is asking how many bars have values smaller than 1. The image 
+
+displays displays there are three bars: bull, wish, and heap. The values are approximately 4, 9, 
+
+and 1. The heap bar is the shortest, just above 0. So, the values are 4, 9, and 1. The question 
+
+is which of these are smaller than 1. The heap bar is just above 0, so that's less than 1. The 
+
+other two are 4 and 9, which are both way above 1. So only the heap bar is smaller than 1. 
+
+Therefore, the answer should be 1. 
+
+Final Answer: 0 Fig. H8 : The Case Study of Chart Task. The reasoning behaviors of InternVL and our proposed O²-CritiCuRL. InternVL arrives at a conclusion of ”one” during its reasoning process, but ultimately guesses the correct answer ”zero” by chance. In contrast, our O²-CritiCuRL identifies and follows the correct critical steps, yielding more logically sound and fully interpretable output. 33 Question: What is the highest lysine level given? 
+
+A. 0.33% B. 0.31% C. 0.29% D. 0.32% E. 0.30% 
+
+Vision-R1 
+
+InternVL 
+
+Ours 
+
+The highest lysine level given is 0.30%. So, the correct answer is B (0.31% is not listed, but 
+
+since the available closest higher option would be considered correct, it is a mistake in the 
+
+options provided in the question). 
+
+Correct option: B 
+
+Okay, let's see. The question is asking for the highest lysine level given in the image. The 
+
+image displays displays that the lysine levels are 0.05%, 0.10%, 0.20%, and 0.30%. It also 
+
+specifically displays that the highest lysine level provided is 0.30%. The choices are A 
+
+through E, with E being 0.30%. So the answer should be E. 
+
+Final Answer: E 
+
+# Step 1: Identify the lysine levels listed in the table. 
+
+# Step 2: Compare the lysine levels provided in the choices to the ones in the table. 
+
+# Step 3: The highest lysine level is 0.30%. 
+
+# Step 4: Match the identified highest lysine level with the corresponding choice (A to E). 
+
+# Step 5: Confirm if the choice matches the highest lysine level and verify the correctness. 
+
+# The final answer is: E Fig. H9 : The Case Study of General Task. The reasoning behaviors of Vision-R1, InternVL, and our O²-CritiCuRL. Existing Vision-R1 reaches the correct answer only through a “lucky guess”, while R1-VL provides incorrect answers due to flawed intermediate reasoning. In contrast, our O²-CritiCuRL identifies and follows the correct critical steps, yielding logically sound and interpretable output. 34
