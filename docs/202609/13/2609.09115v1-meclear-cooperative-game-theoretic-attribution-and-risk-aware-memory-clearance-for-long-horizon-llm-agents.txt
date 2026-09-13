@@ -1,0 +1,1191 @@
+Title: MeClear: Cooperative Game-Theoretic Attribution and Risk-Aware Memory Clearance for Long-Horizon LLM Agents
+
+URL Source: https://arxiv.org/pdf/2609.09115v1
+
+Published Time: Wed, 09 Sep 2026 04:11:52 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# MeClear: Cooperative Game-Theoretic Attribution and Risk-Aware Memory Clearance for Long-Horizon LLM Agents 
+
+Boyu Yang ∗1, Jiazheng Sun ∗1, Zilong Lu 1, Zhi Qiu 2, Xin Peng 1, Jun Zheng 2,
+
+> 1
+
+College of Computer Science and Artificial Intelligence, Fudan University, Shanghai 200433, China 
+
+> 2
+
+School of Cyberspace Science and Technology, Beijing Institute of Technology, Beijing 100081, China 
+
+Abstract 
+
+Long horizon Large Language Model (LLM) agents rely on external memory systems to preserve user preferences and task knowledge across extended interactions. Conventional retrieval mechanisms optimize semantic compatibility rather than downstream utility, frequently introducing outdated, mis-leading, or conflicting evidence into the active context. We present MeClear, a task conditioned memory clearance frame-work that identifies memories featuring negative downstream utility through cooperative attribution and selectively sup-presses them from agent execution. MeClear combines Leave One Out screening with sampled cooperative Shapley attribu-tion to distribute utility across interacting evidence, effectively resolving redundant conflict masking where single removal evaluations fail. Utilizing attribution rankings, MeClear exe-cutes a query scoped minimal clearance strategy over a nested filtration, verifying task recovery on the cleared context with-out permanently altering the persistent memory bank. Com-prehensive experimental evaluations across ten long dialogue memory pools demonstrate that MeClear achieves a target recall of 85.9% and an overall task recovery rate of 82.3%, representing a 25.5 percentage point improvement over Leave One Out (LOO) baselines. 
+
+Code — https://github.com/FudanSELab/MeClear 
+
+Introduction 
+
+Long-horizon Large Language Model (LLM) agents increas-ingly depend on external memory to retain preferences, ob-servations, and state across extended interactions (Wang et al. 2024a; Zhang et al. 2025). Early architectures demonstrated that persistent experience supports planning, reflection, and continual adaptation (Park et al. 2023). However, growing in-teraction histories accumulate stale, misleading, redundant, or incompatible records. Recent studies reveal that inaccurate experiences propagate errors across future tasks (Xiong et al. 2025), while semantically related memories often prove con-textually inappropriate or functionally harmful (Zhang et al. 2026a; Ha et al. 2026). These findings expose a fundamental failure of relevance-centered retrieval: high semantic similar-ity does not ensure downstream task utility. Reliable mem-ory deployment therefore demands task-conditioned, post-retrieval evaluation of how retrieved records causally influ-ence agent execution. 
+
+> ∗
+
+These authors contributed equally. 
+
+As illustrated in Figure 1, jointly processed memories ex-hibit complex dependencies such as redundancy and joint harm, causing isolated record evaluations to fail. While recent frameworks refine credit assignment via evidence-anchored rewards (Ma et al. 2026) or single-record causal interventions (Srivastava 2026), single-record deletion col-lapses when redundant memories independently sustain task failure, yielding zero observable counterfactual change. Coalition-based attribution resolves this local masking by measuring marginal contributions across subset permuta-tions (Ghorbani and Zou 2019; Jia et al. 2019a; Nematov et al. 2025). Because exact coalition enumeration is computation-ally prohibitive for multi-record context windows, practical clearance must efficiently approximate cooperative interac-tion effects while preserving sufficient contextual variation to uncover masked toxicity. Directly modifying persistent memory introduces severe safety risks due to the inherently query-conditioned nature of memory utility across long-horizon deployment. A stored record that degrades performance on a query can provide in-dispensable contextual grounding for subsequent tasks, ren-dering permanent database overwrites prone to catastrophic cross-task performance regression (Wang et al. 2024b; Xu 2025). Retrieval-time defenses mitigate this danger by dy-namically regulating active context visibility during infer-ence rather than altering database records (Ha et al. 2026; Zhang et al. 2026a). Nevertheless, existing admission filters fail to isolate which interacting memories causally induce downstream task failures, nor do they verify whether sup-pressing records restores execution accuracy. Reliable mem-ory maintenance consequently demands reversible, minimal context clearance accompanied by explicit, post-suppression behavioral recovery verification. To address this problem, we present MeClear, a co-operative game-theoretic attribution and risk aware mem-ory clearance framework for long horizon Large Language Model agents. MeClear formulates memory maintenance as a task conditioned decision process connecting counterfac-tual screening, cooperative Shapley attribution, and verified context clearance. The framework first isolates active con-texts from retrieval stochasticity and applies Leave One Out (LOO) screening to filter strong positive evidence. It subse-quently executes sampled cooperative attribution to quantify individual memory contributions across diverse coalitions, arXiv:2609.09115v1 [cs.AI] 8 Sep 2026 Q: What kind of fiction stories does Tim write?      
+
+> Reference: Fantasy stories with plot twists
+> Tim writes science fiction about technology and space. Tim says his stories use science-fiction and interstellar themes.
+> Redundant harmful memories can mask each other
+> Q: What kind of dream did James have recently?
+> Reference: a dream with a medieval castle full of puzzles and traps
+
+Redundant Harm Joint Harm 
+
+> Two memories become harmful only when combined
+> James's dream was a futuristic space station with robotic challenges. John linked James's sketch to the same space-station dream.
+> Game-theoretic attribution enables us to quantify the contribution of each memory to answering user queries, identifying unreliable memories for query-scoped removal
+
+Figure 1: Motivation of MeRepair. Semantic relevance alone cannot determine whether retrieved memories are useful for future tasks. Historical utility may hide temporal degradation and memory interactions. MeRepair estimates future memory utility and performs uncertainty-aware repair to maintain reliable long-term memory for LLM agents. resolving redundant conflict masking where local deletion fails. Based on attribution priorities, MeClear executes a query scoped minimal clearance strategy over a nested can-didate filtration, verifying task recovery prior to output gen-eration without permanently altering the underlying memory bank. To the best of our knowledge, we are the first to lever-age cooperative game-theoretic allocation to address harmful memory context clearance in LLM agents. Our contributions are summarized as follows: 
+
+• We propose MeClear, a task conditioned memory clear-ance framework for long horizon Large Language Model agents, unifying cooperative game attribution, structural interaction diagnosis, and verified risk aware context clearance. 
+
+• We develop a cooperative memory attribution methodol-ogy integrating Leave One Out screening with sampled Shapley estimation, effectively resolving redundant con-flict masking and modeling multi memory interactions. 
+
+• We conduct comprehensive evaluations across ten long dialogue memory pools, demonstrating that MeClear achieves an injected target recall of 85.9% and an overall task recovery rate of 82.3%, representing a 25.5 percent-age point improvement over Leave One Out baselines. 
+
+Related Work 
+
+Memory Management and Operations for LLM Agents 
+
+External memory enables LLM agents to retain information across extended interactions. Early paradigms rely on heuris-tic retrieval (Park et al. 2023), hierarchical context (Packer et al. 2023), or verbal reflection (Shinn et al. 2023), whereas recent frameworks optimize structured memory operations via graph representations, offline consolidation, or reinforce-ment learning (Chhikara et al. 2025; Zhang et al. 2026b; Wu et al. 2026; Yu et al. 2026; Yan et al. 2026). However, su-perior retrieval does not guarantee downstream task utility. Semantic relevance frequently retrieves stale, redundant, or functionally incompatible records (Zhang et al. 2026a; Ha et al. 2026; Liu et al. 2026). Rather than relying solely on se-mantic similarity or admission filtering, MeClear evaluates post-retrieval functional effects and contextual interactions to dynamically regulate memory visibility. 
+
+Long-Term Memory Evaluation and Attribution Long-term memory benchmarks assess overall response quality across multi-session dialogues and reasoning (Maharana et al. 2024; Wu et al. 2024; Li et al. 2026), but offer lim-ited causal credit assignment for individual records. While operation-level rewards (Ma et al. 2026) and single-record counterfactual interventions (Saha Roy et al. 2025; Sri-vastava 2026) attempt fine-grained attribution, they miss interaction-dependent phenomena such as mutual redun-dancy or joint toxicity. Although Shapley-based valuations capture coalition-level marginal contributions (Ghorbani and Zou 2019; Jia et al. 2019a; Nematov et al. 2025), applying them to agentic context remains unexplored. MeClear adapts coalition-aware attribution to persistent memory, unifying in-teraction diagnostics with behaviorally verified context clear-ance under bounded computational budgets. 
+
+Memory Editing and Safe Context Clearance Model editing updates factual representations via parameter shifts or external patching (Meng et al. 2022a,b; Mitchell et al. 2021a,b; Wang et al. 2024b). In agent memory, record util-ity is dynamic and query-dependent; permanent modification risks propagating irreversible errors across future tasks (Yu et al. 2026; Yan et al. 2026; Xu 2025). Retrieval-time filter-ing avoids database overwrites (Ha et al. 2026; Zhang et al. 2026a) but fails to verify interaction-dependent behavioral consequences before suppressing context. MeClear bridges this gap by unifying reversible visibility control, counterfac-tual contribution analysis, and behavioral verification, sup-pressing harmful memory influences on a per-query basis while leaving the underlying database intact. Problem Formulation 
+
+Consider a long-horizon Large Language Model (LLM) agent that continuously accumulates information across ex-tended interactions. At task step t, the agent maintains an external memory bank Bt containing historical observa-tions, factual evidence, and evolving user-specific informa-tion. Given a query qt, an existing retrieval mechanism ρ
+
+returns a bounded execution context 
+
+Mt = ρ(qt, Bt; K) = {m1, m 2, . . . , m K } ⊆ B t, (1) where K is the retrieval budget determined by the underly-ing memory system and the available context capacity. Each memory record is represented as mi = ( xi, ξ i), where xi
+
+denotes its textual content and ξi contains auxiliary informa-tion such as timestamp, source, confidence, or provenance. MeClear does not replace the underlying retriever. Instead, it operates on the already retrieved context Mt and evaluates whether each exposed memory actually benefits the current task. This separation is essential because semantic relevance does not guarantee downstream utility: a retrieved memory may be topically related to the query while being outdated, misleading, redundant, or incompatible with other active ev-idence. Let Aθ denote the task agent parameterized by θ.For any active memory coalition S ⊆ M t, the agent gener-ates an output y according to pθ (y | qt, S ). We define the task-conditioned value of coalition S as 
+
+vt(S) = Ey∼pθ (·| qt,S ) [rt(y)] , vt : 2 Mt → [0 , 1] , (2) where rt(y) ∈ [0 , 1] measures task correctness, and vt(S)
+
+denotes the query-conditioned expected utility under mem-ory subset S, empirically estimated as bvt(S) via agent execu-tion. Because retrieved memories interact non-independently through redundancy or complementarity, we formulate 
+
+(Mt, v t) as a cooperative game with memories as players and vt as the characteristic function. The cooperative contri-bution of memory mi is defined as 
+
+ψt,i =
+
+X
+
+> S⊆M t\{ mi}
+
+|S|! ( K − | S| − 1)! 
+
+K! [vt(S ∪ { mi}) − vt(S)] .
+
+(3) The coefficient in Equation (3) equals the probability that 
+
+S forms the predecessor coalition of mi under a uniformly random ordering of the K memories. Thus, ψt,i measures the marginal effect of mi across diverse contextual coalitions rather than only around the complete retrieved context. The resulting allocation satisfies PKi=1 ψt,i = vt(Mt) − vt(∅).A positive contribution indicates that the memory improves task utility on average, whereas a negative value indicates that its presence decreases task utility across coalition con-texts. To separate meaningful harm from negligible negative variation, we introduce a single tolerance τ ≥ 0 and define the query-conditioned harmful memory set as 
+
+Ht = {mi ∈ M t | ψt,i < −τ } . (4) Membership in Ht is not an intrinsic or permanent prop-erty of a memory record. It is determined jointly by the cur-rent query qt, the retrieved context Mt, the task agent Aθ , and the task-value function vt. MeClear therefore treats harmful-memory attribution as a query-conditioned visibility deci-sion rather than an irreversible modification of the persistent memory bank. For any candidate clearance set C ⊆ H t, clear-ing C produces the active context Mt \ C . The corresponding task gain is defined as gt(C) = vt(Mt \ C ) − vt(Mt). A de-sirable intervention should first maximize task recovery and then, among all interventions attaining the same recovery, re-move the fewest memories. We formulate this parameter-free lexicographic objective as 
+
+Gt = max 
+
+> C⊆H t
+
+gt(C), Ct ∈ arg min 
+
+> C⊆H t
+
+{|C| | gt(C) = Gt} ,
+
+(5) where Gt determines the maximum task gain attainable by clearing a subset of harmful memories, while Ct se-lects a minimum-cardinality intervention among all clear-ance sets attaining this gain. The formulation implements the minimal-intervention principle without introducing an addi-tional weighting coefficient. Because ∅ ⊆ H t and gt(∅) = 0 ,the optimal gain always satisfies Gt ≥ 0. If no nonempty subset improves the task, the minimum-cardinality solution is Ct = ∅. The exact contribution values and task gains are generally unavailable during execution. MeClear therefore approximates them through finite counterfactual evaluations and verifies the selected intervention on the current query. 
+
+Method 
+
+As shown in Figure 2, MeClear selectively suppresses harm-ful memories from the active context without modifying per-sistent storage. It operates across four stages: adaptive re-trieval, local screening, cooperative attribution, and verified clearance. The architecture introduces no stage specific tun-ing coefficients, governed transparently by context capacity, permutation budget, and a single tolerance threshold. 
+
+Adaptive Task-Conditioned Context Retrieval For query 
+
+qt, the external memory system retrieves an active context 
+
+Mt. The term adaptive denotes the query-dependent nature of context selection rather than a re-trained retrieval model, as MeClear operates as a post-retrieval layer without modify-ing the parameters or indexing of ρ. This separation prevents semantic similarity from being conflated with downstream utility, as the retriever estimates query-record compatibility whereas vt(S) evaluates agent behavior under exposed coali-tion S. Consequently, memories with comparable retrieval scores can produce distinct task outcomes due to temporal drift, factual conflicts, redundancy, or contextual interaction: 
+
+Mt = ρ(qt, Bt; K). (6) To isolate the behavioral impact of memory suppression from retrieval volatility, MeClear freezes Mt prior to attri-bution, executing all subsequent interventions on subsets of this fixed context without re-invoking the retriever. For each coalition S ⊆ M t, the empirical value bvt(S) is obtained by executing the task agent on S under a fixed evaluator and Task-Conditioned Context Retrieval 
+
+... 
+
+... 
+
+Local Counterfactual Screening & Counterfactual Cooperative Attribution 
+
+> Agent Marginal Effect
+
+Verified Clearance  
+
+> External Memory Bank Task Query
+
+Existing Retriever      
+
+> Active Memory Context (frozen)
+> Leave-One-Out (LOO) evaluation for each
+> Coalition-Averaged (Shapley) Contribution
+> Stop Confidence-Bound Estimate
+> Pairwise Interaction Analysis (optional) Retained Flagged Harmful Positive Near-additive Negative Harmful Memories (sorted by increasing contribution)
+> Nested Clearance Candidates (ordered removals)
+> Candidate Gain (value improvement)
+> Output (query-scoped, reversible)
+
+...   
+
+> Positive Gain Recovery Perdicate
+> ＞
+> Baseline Task Execution (full context)
+> ＞+
+> 0
+> +-
+> ＜
+> is held fixed for all counterfactual analyses and verification steps.
+
+Figure 2: Overall architecture of MeClear, combining local screening and cooperative Shapley attribution to output a query-scoped cleared context without modifying persistent storage. cached by memory identity. Evaluating the complete context value bvt(Mt) first establishes a shared reference baseline for all subsequent counterfactual comparisons. 
+
+Local Counterfactual Screening MeClear first estab-lishes a local contribution profile using Leave-One-Out (LOO) counterfactual interventions. For each retrieved record mi ∈ M t, the empirical local effect is defined as: 
+
+bdt,i = bvt(Mt) − bvt (Mt \ { mi}) . (7) A negative value of bdt,i indicates that suppressing mi
+
+improves execution performance on the complete context, whereas a positive value reflects a reduction in task utility upon removal. Values approaching zero remain inconclusive because auxiliary or substitutable evidence may mask the un-derlying effect. Consequently, MeClear utilizes LOO as an interpretable local screening signal rather than a definitive harmfulness criterion. The structural limitation of single-record deletion becomes particularly pronounced under re-dundant harmful evidence, where multiple records indepen-dently induce task degradation. 
+
+Theorem 1 (Redundant-Harm Blind Spot) . Let mi and mj
+
+be substitutable harmful memories whose joint effect on the task value function satisfies: 
+
+vt(S) = ut (S \ { mi, m j })
+
+− ∆t1 [S ∩ { mi, m j }̸ = ∅] , ∆t > 0, (8) 
+
+where ut is independent of mi and mj . If both records are present in Mt, then: 
+
+dt,i = dt,j = 0 , ψt,i = ψt,j = − ∆t
+
+2 . (9) Deleting either record leaves the other active, maintain-ing the degradation penalty in Equation (8) and yielding zero LOO effect. Under random permutations, mi precedes 
+
+mj with probability 1/2, yielding expected contribution 
+
+ψt,i = −∆t/2 as shown in Appendix A. Theorem 1 demon-strates that a zero LOO effect does not imply zero cooperative harm. While LOO measures utility only locally, cooperative attribution evaluates marginal contributions across coalitions where redundant substitutes are absent. MeClear therefore re-tains the local profile as a diagnostic reference while anchor-ing harmful memory selection on coalition-averaged contri-butions. 
+
+Counterfactual Cooperative Attribution MeClear next estimates memory contributions through the equivalent per-mutation representation. As depicted in Figure 3, individual memory utility is quantified via permutation sampled Shap-ley contribution estimation across contextual permutations, while pairwise interaction profiles diagnose structural de-pendencies among evidence. Let Πt denote the set of all permutations of Mt. For π ∈ Πt, let Pi(π) contain the memories appearing before mi. The exact contribution is: 
+
+ψt,i = 1
+
+|Πt|
+
+X
+
+> π∈Πt
+
+[vt (Pi(π) ∪ { mi}) − vt (Pi(π))] . (10) Unlike single-record screening, Equation (10) evaluates the marginal contribution of mi across diverse predecessor coali-tions, exposing negative utility masked by substitution or redundancy in the full context. Because enumerating all per-mutations is computationally infeasible for non-trivial con-text size K, MeClear draws L independent permutations 
+
+π(1) , . . . , π (L) and computes the sample-average estimate: 
+
+bψ(L) 
+
+> t,i
+
+= 1
+
+L
+
+> L
+
+X
+
+> ℓ=1
+
+hbvt
+
+
+
+Pi(π(ℓ)) ∪ { mi}
+
+
+
+− bvt
+
+
+
+Pi(π(ℓ))
+
+i 
+
+.
+
+(11) Each permutation is sampled over the context Mt, ensuring beneficial, neutral, and harmful memories co-occur in prede-cessor coalitions to preserve the underlying game structure. 
+
+Proposition 1 (Finite-Sample Cooperative Estimation) . For independent uniformly sampled permutations, the estimator in Equation (11) is unbiased: 
+
+E
+
+h bψ(L)
+
+> t,i
+
+i
+
+= eψt,i , (12) Direct harm Redundant harm Joint harm Approximately additive Uncertain                  
+
+> ... ... ...
+> Coalition-Averaged Attribution
+> ...
+> Repeated Full-Context Screening ...
+> ...
+> ＞＜
+> Paired Counterfactual Marginal Evaluation
+> 0
+> ＜Harmful Safe
+> Repeated Full-Context Effects Coalition-Averaged Effects Which memory is harmful? How isharm structured ？
+> Marginal effect of 𝑚 𝑖 given 𝑚 𝑗 Marginal effect of 𝑚 𝑖 without 𝑚 𝑗
+> 2112
+> 𝑚 𝑗 increase the harm from 𝑚 𝑖
+> 𝑚 𝑗 mitigates the harm from 𝑚 𝑖
+> ＞＜
+> Interaction-Aware Harm Analysis (Interaction Profile)
+
+Figure 3: Counterfactual attribution and interaction profiling in MeClear. Top: Individual memory harm attribution. Bottom: 
+
+Pairwise interaction analysis diagnosing direct, redundant, and joint memory harm dependencies. 
+
+and for any ε > 0, satisfies the concentration bound: 
+
+Pr 
+
+
+
+max 
+
+> 1≤i≤K
+
+bψ(L) 
+
+> t,i
+
+− eψt,i ≥ ε
+
+
+
+≤ 2K exp 
+
+
+
+− Lε 2
+
+2
+
+
+
+.
+
+(13) The summands in Equation (11) represent independent bounded observations of marginal contribution. Applying Hoeffding’s inequality with a union bound across all K
+
+records yields the concentration result in Appendix B. Propo-sition 1 characterizes the approximation error introduced by finite sampling for a fixed empirical game without assuming the underlying model is an unbiased population estimator. MeClear constructs the operational harmful set by thresh-olding estimated contributions with tolerance τ :
+
+bHt =
+
+n
+
+mi ∈ M t bψ(L) 
+
+> t,i
+
+< −τ
+
+o
+
+. (14) Using the unified tolerance τ avoids introducing addi-tional hyperparameter thresholds into attribution. To char-acterize higher-order structural dependencies, MeClear fur-ther estimates pairwise non-additivity. Let ∆ij bvt(S) =
+
+bvt(S ∪ { mi, m j }) − bvt(S ∪ { mi}) − bvt(S ∪ { mj }) + bvt(S).For predecessor set Pij (π) preceding both mi and mj , the sampled interaction effect is: 
+
+bω(L) 
+
+> t,ij
+
+= 1
+
+L
+
+> L
+
+X
+
+> ℓ=1
+
+∆ij bvt
+
+
+
+Pij (π(ℓ))
+
+
+
+, i̸ = j. (15) The resulting interaction profile diagnoses non-additive structures such as substitution, complementarity, and joint interference, serving as a structural behavioral diagnostic rather than a semantic classifier. 
+
+Verified Query-Scoped Clearance While the operational harmful set identifies candidate negative memories, sup-pressing all negatively attributed records may eliminate more context than necessary for task recovery. MeClear therefore approximates the ideal objective in Equation (5) through an ordered sequence of query-scoped clearance candidates. Let 
+
+ht = | bHt|. The records in bHt are ordered from the most negative to the least negative estimated contribution: 
+
+bψ(L) 
+
+> t,σ t(1)
+
+≤ bψ(L) 
+
+> t,σ t(2)
+
+≤ · · · ≤ bψ(L)
+
+> t,σ t(ht)
+
+, (16) where σt is a permutation of indices in bHt. A smaller index indicates a stronger negative contribution and thus a higher priority for removal. MeClear constructs a nested family of clearance candidates along this priority chain: 
+
+Ct,j = mσt(1) , m σt(2) , . . . , m σt(j) , 0 ≤ j ≤ ht,
+
+(17) with baseline Ct, 0 = ∅. The candidate sequence satisfies 
+
+Ct,j −1 ⊆ C t,j and |C t,j | = j, reducing the combinatorial search space from 2ht arbitrary subsets to ht + 1 candidate contexts. For each candidate, MeClear computes the empir-ical query-scoped gain: 
+
+bgt(j) = bvt (Mt \ C t,j ) − bvt(Mt). (18) Because all candidates are masked directly from the frozen context Mt without re-invoking retrieval, any observed be-havioral gain is strictly attributable to memory removal. Let νt(S) ∈ {0, 1} denote a fixed task-recovery predi-cate for query qt. The set of admissible candidate indices Panel A. Case construction and causal signature                                                                        
+
+> Case Fault QA →Gold Injected pair MCausal signature cMechanism ATemporal John in Italy: which month?
+> →Dec. 2023 Two paraphrases: Jan. 2023 (1 .00 ,0.50 ,0.50 ,0.50) Flat plateau; each fault masks the other’s local effect BConflict Dogs’ reaction to snow? →
+> Confused Two paraphrases: excited/thrilled
+> (1 .00 ,0.00 ,0.00 ,0.00) Each fault independently reaches the failure floor CFactual Effect on Calvin’s songs? →
+> Fresh vibe Two paraphrases: warm, vintage tone
+> (1 .00 ,0.00 ,0.00 ,0.00) Floor masking; LOO instead selects background G3
+> Panel B. Attribution and deletion outcome
+> Case MeClear contribution
+> bψ(F1),bψ(F2)LOO MeClear ContextCite ProxySPEX LLM baseline A(−0.094 ,−0.219) ∅
+> 0.50 / No
+> M(Exact) 1.00 / Yes
+> ∅
+> 0.50 / No
+> {F1}
+> 0.50 / No
+> ∅
+> 0.50 / No B(−0.281 ,−0.156) ∅
+> 0.00 / No
+> M(Exact) 1.00 / Yes
+> {F1}
+> 0.10 / No
+> {F1}
+> 0.10 / No
+> M∪{ G1}
+> 0.00 / No C(−0.206 ,−0.075) {G3}
+> 0.10 / No
+> M(Exact) 1.00 / Yes
+> {F2}
+> 0.10 / No
+> ∅
+> 0.00 / No
+> M(Exact) 1.00 / Yes
+> Notes. c= ( v(G), v (G+F1), v (G+F2), v (G+M)) , with frozen top-5 context Gand error set M={F1, F 2}. Cells report deleted set H,post-deletion task value, and Recovery status (requiring 2/2 correct trials). Hyperparameters: MeClear L= 16 ,κ=τ= 0 .05 ; ContextCite and ProxySPEX B= 32 ; LLM baseline score threshold ≥0.5. Cases are qualitative examples from qualifying redundant scenarios.
+
+Table 1: Representative redundant-conflict cases illustrating how MeClear resolves local masking. 
+
+Jt ⊆ { 0, 1, . . . , h t} is defined as: 
+
+Jt = {0} ∪ 
+
+n
+
+j ∈ { 1, . . . , h t}
+
+bgt(j) > 0, ν t (Mt \ C t,j ) = 1 
+
+o
+
+.
+
+(19) Including j = 0 ensures Jt is non-empty. MeClear selects the admissible candidate maximizing verified empirical gain with minimal intervention cardinality: 
+
+bjt = min arg max 
+
+> j∈J t
+
+bgt(j). (20) The maximization isolates candidates with peak empirical recovery, while the outer minimum breaks ties by choosing the smallest index and minimal intervention cardinality. The resulting query-conditioned context is fMt = Mt \ C t, bjt ,which serves as a query-scoped active context without per-manently modifying the persistent memory bank Bt.
+
+Theorem 2 (Query-Scoped Clearance Guarantee) . For any fixed empirical evaluator bvt and nested clearance family in Equation (17) , the context selected by Equation (20) guar-antees empirical non-degradation: 
+
+bvt
+
+ fMt
+
+
+
+≥ bvt (Mt) . (21) 
+
+If bjt > 0, the selected context satisfies verified recovery: 
+
+νt
+
+ fMt
+
+
+
+= 1 . (22) 
+
+Furthermore, Ct, bjt achieves minimal cardinality among all admissible candidates attaining the maximum gain. 
+
+Because the unchanged baseline Ct, 0 = ∅ is always admis-sible with zero gain, the selected candidate cannot yield neg-ative empirical gain, ensuring non-degradation as detailed in Appendix C. 
+
+Experiments 
+
+We evaluate MeClear using Kimi-k2.6 as the task agent and Qwen3.6-Flash as the judge evaluator across 745 causally verified test cases containing 1,115 fault records, synthesized from 368 clean queries over ten LoCoMo conversations. Un-der a hybrid retrieval budget K = 5 , memory faults span direct conflicts with n = 375 and |M | = 1 , redundant con-flicts with n = 285 and |M | = 2 , and joint interactions with n = 85 and |M | = 2 . We compare MeClear configured with τ = κ = 0 .05 and sampling budget L = 16 against Leave-One-Out, ContextCite, and ProxySPEX across four metrics: Target Recall at |M |, Complete Set Recall, Exact Set Match, and Binary Task Recovery. Detailed dataset con-struction, fault verification protocols, and metric definitions are provided in Appendix D. 
+
+Overall Attribution Accuracy and Task Recovery 
+
+MeClear outperforms all baselines in attribution precision and downstream task recovery. As shown in Figure 4, MeClear achieves 85 .9% memory micro-recall, 47 .0% ex-act fault set identification, and 82 .3% binary task recovery, whereas LOO suffers from local blind spots, obtaining only 
+
+38 .3% recall and 56 .8% recovery. While ContextCite and ProxySPEX yield high recall, their inability to isolate com-plete harmful coalitions limits exact identification to 43 .5% 
+
+and 54 .2% . Paired comparisons across n = 745 samples in Figure 6 confirm MeClear’s dominance, yielding 212 wins against 22 losses over LOO and significant recovery gains of 
+
++25 .5% over LOO, +5 .0% over ProxySPEX, and +38 .7% 
+
+over Qwen3.5-Plus. 0% 25% 50% 75% 100% 
+
+Recall@|M| (memory micro)    
+
+> 38.3
+> 85.9 86.3 80.9 74.9
+
+Complete M ⊆ H
+
+(case macro)    
+
+> 64.2
+> 86.7 81.2 76.8 81.5
+
+0% 25% 50% 75% 100% 
+
+Exact H = M
+
+(case macro)  
+
+> 34.2
+> 47.0 43.5 54.2 42.4
+
+Binary recovery (case macro)   
+
+> 56.8
+> 82.3 81.5 77.3 43.6
+
+LOO MeClear ContextCite ProxySPEX qwen3.5-plus Figure 4: Overall attribution accuracy and task recovery across evaluation cases compared to baselines. Recall Exact Recovery 
+
+0% 25% 50% 75% 100% 
+
+> rate
+
+Direct (n = 375)   
+
+> 68.3
+> 89.6
+> 90.4 87.7 75.2 56.8
+> 46.1
+> 50.1 64.5 43.7 87.2
+> 89.6
+> 86.7 84.3 45.6
+> Recall Exact Recovery
+
+Redundant conflict (n = 285)   
+
+> 12.3
+> 83.2
+> 84.9 77.9 79.5 2.5
+> 49.1
+> 37.2 46.0 46.3 6.3
+> 68.4
+> 71.2 64.2 43.2
+> Recall Exact Recovery
+
+Joint interaction (n = 85)     
+
+> 59.4
+> 87.1
+> 81.8 75.9 58.8 41.2
+> 43.5
+> 35.3 36.5 23.5 91.8
+> 96.5
+> 92.9 90.6 36.5
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+
+Figure 5: Performance across direct conflict, n = 375 , re-dundant masking, n = 285 , and joint interaction, n = 85 .
+
+Performance Across Structural Fault Mechanisms 
+
+Stratifying evaluation across direct conflicts with n = 375 ,redundant masking with n = 285 , and joint faults with 
+
+n = 85 reveals that performance gaps stem from multi-memory dependencies, as shown in Figure 5. In direct con-flicts, LOO achieves 68 .3% recall and 87 .2% recovery, while MeClear reaches 83 .2% recall and 89 .6% recovery. Under re-dundant conflicts, local substitution causes LOO to collapse to 12 .3% recall and 6.3% recovery. By evaluating marginal contributions across permutations, MeClear overcomes local masking, sustaining 83 .2% recall, 49 .1% exact identification, and 68 .4% recovery. Under joint non-additive interactions where LOO fails with 0.0% exact match, MeClear achieves 
+
+87 .1% recall and 91 .8% recovery, demonstrating robust han-dling of higher-order evidence dependencies. 
+
+Case Studies on Redundant Masking Resolution 
+
+Table 1 illustrates how MeClear resolves local mask-ing in representative redundant fault scenarios. Under plateau (c = [1 .00 , 0.50 , 0.50 , 0.50] ) and floor (c =[1 .00 , 0.00 , 0.00 , 0.00] ) masking signatures, LOO fails by returning ∅ or removing benign records because single-fault removals leave substitute harm active. In contrast, MeClear accurately attributes negative cooperative contributions (e.g., 
+
+bψ(F1) = −0.094 and bψ(F2) = −0.219 in Case A), success-0 250 
+
+paired cases (n = 745)     
+
+> LOO ContextCite ProxySPEX qwen3.5-plus
+> comparator
+> MeClear
+> 22 212 60 66 51 88 43 331
+> +25.5 [+20.9, +29.8]
+> both 401 · neither 110
+> +0.8 [-4.4, +6.7]
+> both 547 · neither 72
+> +5.0 [+0.7, +9.3]
+> both 525 · neither 81
+> +38.7 [+31.8, +45.5]
+> both 282 · neither 89
+> Δ Recovery, pp [95% CI]
+
+A Overall paired wins/losses 
+
+> −10 0 10 20 30 40
+> conv-26 (n=67) conv-30 (n=55) conv-41 (n=77) conv-42 (n=88) conv-43 (n=99) conv-44 (n=69) conv-47 (n=31) conv-48 (n=100) conv-49 (n=71) conv-50 (n=88) Overall
+> LOO
+> −10 0 10 20 30 40
+> ContextCite
+> −10 0 10 20 30 40
+> ProxySPEX
+> −10 0 10 20 30 40
+> qwen3.5-plus Δ Recovery (pp, MeClear − comparator)
+
+B Cross-conversation recovery delta 
+
+Figure 6: Paired comparative advantage and recovery gains. Panel A: head-to-head win/loss statistics across n = 745 
+
+cases; Panel B: recovery differentials ∆Recovery with 95% confidence intervals. Direct · n=375                    
+
+> conflict 173 factual 161 temporal 41
+> Redundant · n=285
+> conflict 135 factual 122 temporal 28
+> Joint · n=85
+> conflict 36 factual 44 temporal 5
+> A Clearance outcome per paired case
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+> 0% 25% 50% 75% 100%
+> share of paired cases
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+> 235 (31.5%) 184 (24.7%) 302 (40.5%) 328 (44.0%) 272 (36.5%) 110 (14.8%) 307 (41.2%) 259 (34.8%) 5.5% 121 (16.2%) 383 (51.4%) 150 (20.1%) 5.8% 148 (19.9%) 289 (38.8%) 393 (52.8%)
+> 10 conversations · 368 QA · 745 paired cases · 1115 injected memories B Clearance composition
+> Exact + recovered Over-selected + recovered Incomplete + recovered Exact + not recovered Non-exact + not recovered
+
+Figure 7: Query-scoped memory clearance and context com-position. Panel A: clearance profiles by conflict type; Panel B: context composition across exact recovery, over-selection, and non-recovery. fully isolating the exact harmful set M and restoring the full task utility. 
+
+Query-Scoped Clearance and Context Composition 
+
+Figure 7 confirms that MeClear consistently maximizes task recovery while minimizing context distortion. MeClear achieves an 80 .5% overall recovery rate ( 44 .0% exact set and 36 .5% harmless over-selection) with only 14 .8% unre-covered failures. Conversely, LOO yields 40 .5% failures due to missed redundant faults, and direct baseline LLM filter-ing via Qwen3.5-Plus results in 52 .8% failures from over-truncation or hallucinated deletion. Thus, MeClear’s verified selection rule effectively isolates minimal harmful coalitions while preserving the beneficial task context. 
+
+Conclusion 
+
+Unchecked memory accumulation threatens long-horizon LLM agents by turning external memory into an execution-degrading bottleneck of conflicting evidence. To break this impasse, we propose MeClear, a framework combin-ing permutation-sampled Shapley attribution with a query-scoped verified clearance gateway. Extensive evaluations demonstrate that MeClear achieves an 85.9% target recall and an 82.3% task recovery rate, outperforming Leave-One-Out baselines by 25.5 percentage points. Ultimately, this work es-tablishes coalition-aware context clearance as a foundational pillar for safe, non-destructive agent memory maintenance. 
+
+References 
+
+Chhikara, P.; Khant, D.; Aryan, S.; Singh, T.; and Yadav, D. 2025. Mem0: Building production-ready ai agents with scal-able long-term memory. arXiv preprint arXiv:2504.19413 .Ghorbani, A.; and Zou, J. 2019. Data shapley: Equitable valuation of data for machine learning. In International conference on machine learning , 2242–2251. PMLR. Ha, H.; Kim, J.; Qian, C.; Liu, J.; Campbell, W. M.; Wu, Y.; Zhang, Y.; McKeown, K.; Hakkani-Tur, D.; and Ji, H. 2026. MemGuard: Preventing Memory Contamination in Long-Term Memory-Augmented Large Language Models. 
+
+arXiv preprint arXiv:2605.28009 .Jia, R.; Dao, D.; Wang, B.; Hubis, F. A.; Hynes, N.; Gürel, N. M.; Li, B.; Zhang, C.; Song, D.; and Spanos, C. J. 2019a. Towards efficient data valuation based on the shapley value. In The 22nd international conference on artificial intelli-gence and statistics , 1167–1176. PMLR. Jia, R.; Dao, D.; Wang, B.; Hubis, F. A.; Hynes, N.; Gürel, N. M.; Li, B.; Zhang, C.; Song, D.; and Spanos, C. J. 2019b. Towards efficient data valuation based on the shapley value. In The 22nd international conference on artificial intelli-gence and statistics , 1167–1176. PMLR. Li, Y.; Guo, W.; Zhang, L.; Xu, R.; Huang, M.; Liu, H.; Xu, L.; Xu, Y.; and Liu, J. 2026. Locomo-plus: Beyond-factual cognitive memory evaluation framework for llm agents. In 
+
+Proceedings of the 64th Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,25085–25100. Liu, C.; Yang, Y.; Pu, S. X.; Liu, Y.; Long, L.; Guo, Y.; Chen, N.; Weng, Z.; Kochkina, E.; Kaur, S.; et al. 2026. World-MemArena: Evaluating Multimodal Agent Memory Through Action-World Interaction. arXiv preprint arXiv:2605.29341 .Ma, W.; Feng, X.; Huang, L.; Feng, X.; Ma, Z.; Xu, J.; Gao, J.; Hao, J.; He, R.; and Qin, B. 2026. Fine-Mem: Fine-Grained Feedback Alignment for Long-Horizon Memory Manage-ment. arXiv preprint arXiv:2601.08435 .Maharana, A.; Lee, D.-H.; Tulyakov, S.; Bansal, M.; Bar-bieri, F.; and Fang, Y. 2024. Evaluating very long-term conversational memory of llm agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 13851–13870. Meng, K.; Bau, D.; Andonian, A. J.; and Belinkov, Y. 2022a. Locating and editing factual associations in gpt. In Advances in neural information processing systems .Meng, K.; Sharma, A. S.; Andonian, A. J.; Belinkov, Y.; and Bau, D. 2022b. Mass-editing memory in a transformer. In 
+
+The eleventh international conference on learning represen-tations .Mitchell, E.; Lin, C.; Bosselut, A.; Finn, C.; and Manning, C. D. 2021a. Fast model editing at scale. arXiv preprint arXiv:2110.11309 .Mitchell, E.; Lin, C.; Bosselut, A.; Finn, C.; and Manning, C. D. 2021b. Fast model editing at scale. arXiv preprint arXiv:2110.11309 .Nematov, I.; Kalai, T.; Kuzmenko, E.; Fugagnoli, G.; Sacharidis, D.; Hose, K.; and Sagi, T. 2025. Source attri-bution in retrieval-augmented generation. In Joint European Conference on Machine Learning and Knowledge Discovery in Databases , 317–332. Springer. Packer, C.; Fang, V.; Patil, S. G.; Lin, K.; Wooders, S.; and Gonzalez, J. E. 2023. MemGPT: Towards LLMs as operating systems. arXiv preprint arXiv:2310.08560 .Park, J. S.; O’Brien, J.; Cai, C. J.; Morris, M. R.; Liang, P.; and Bernstein, M. S. 2023. Generative agents: Interac-tive simulacra of human behavior. In Proceedings of the 36th annual acm symposium on user interface software and technology , 1–22. Saha Roy, R.; Schlotthauer, J.; Hinze, C.; Foltyn, A.; Hahn, L.; and Kuech, F. 2025. Evidence contextualization and counterfactual attribution for conversational qa over hetero-geneous data with rag systems. In Proceedings of the Eigh-teenth ACM International Conference on Web Search and Data Mining , 1040–1043. Shinn, N.; Cassano, F.; Berman, E.; Gopinath, A.; Narasimhan, K.; and Yao, S. 2023. Reflexion: Lan-guage Agents with Verbal Reinforcement Learning. arXiv:2303.11366. Srivastava, S. S. 2026. Causal Intervention-Based Memory Selection for Long-Horizon LLM Agents. arXiv preprint arXiv:2605.17641 .Wang, L.; Ma, C.; Feng, X.; Zhang, Z.; Yang, H.; Zhang, J.; Chen, Z.; Tang, J.; Chen, X.; Lin, Y.; et al. 2024a. Asurvey on large language model based autonomous agents. 
+
+Frontiers of Computer Science , 18(6): 186345. Wang, P.; Li, Z.; Zhang, N.; Xu, Z.; Yao, Y.; Jiang, Y.; Xie, P.; Huang, F.; and Chen, H. 2024b. Wise: Rethinking the knowledge memory for lifelong model editing of large lan-guage models. Advances in Neural Information Processing Systems , 37: 53764–53797. Wu, D.; Wang, H.; Yu, W.; Zhang, Y.; Chang, K.-W.; and Yu, D. 2024. Longmemeval: Benchmarking chat as-sistants on long-term interactive memory. arXiv preprint arXiv:2410.10813 .Wu, Z.; Zhang, H.; Lin, F.; Xu, W.; Xu, X.; Chen, Y.; Zou, H. P.; Chen, S.; Zhang, W.; Liu, X.; et al. 2026. Gam: Hierarchical graph-based agentic memory for llm agents. In Proceedings of the 64th Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,34647–34664. Xiong, Z.; Lin, Y.; Xie, W.; He, P.; Liu, Z.; Tang, J.; Lakkaraju, H.; and Xiang, Z. 2025. How memory manage-ment impacts llm agents: An empirical study of experience-following behavior. arXiv preprint arXiv:2505.16067 .Xu, J. 2025. Memory Management and Contextual Consis-tency for Long-Running Low-Code Agents. arXiv preprint arXiv:2509.25250 .Yan, S.; Yang, X.; Huang, Z.; Nie, E.; Ding, Z.; Li, Z.; Ma, X.; Bi, J.; Kersting, K.; Pan, J. Z.; et al. 2026. Memory-r1: Enhancing large language model agents to manage and utilize memories via reinforcement learning. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 12805–12825. Yu, Y.; Yao, L.; Xie, Y.; Tan, Q.; Feng, J.; Li, Y.; and Wu, L. 2026. Agentic memory: Learning unified long-term and short-term memory management for large language model agents. arXiv preprint arXiv:2601.01885 .Zhang, J.; Chen, K.; Ma, J.; Hu, Y.; He, L.; Zhang, Y.; Liu, J.; Yang, X.; Zhang, T.; and Jia, R. 2026a. Beyond Similarity: Trustworthy Memory Search for Personal AI Agents. arXiv preprint arXiv:2606.06054 .Zhang, J.; Zhang, C.; Chen, S.; Huang, Z.; Zheng, P.; Wang, Z.; Guo, P.; Mo, F.; Bae, S.-H.; Zou, J.; et al. 2026b. Lightweight llm agent memory with small language models. In Proceedings of the 64th Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,12914–12929. Zhang, Z.; Dai, Q.; Bo, X.; Ma, C.; Li, R.; Chen, X.; Zhu, J.; Dong, Z.; and Wen, J.-R. 2025. A survey on the memory mechanism of large language model-based agents. ACM Transactions on Information Systems , 43(6): 1–47. Appendix 
+
+Due to the strict page limit of the main paper, we provide sup-plementary theoretical analyses and experimental details in the appendix. Appendix A proves the redundant-harm blind spot theorem and analyzes why LOO fails under redundant harmful memories. Appendix B establishes the finite-sample guarantee of cooperative attribution estimation. Appendix C provides the theoretical guarantee for query-scoped verified clearance. Appendix D reports the complete experimental configurations, baseline settings, evaluation protocols, and additional analyses. 
+
+Appendix A: Redundant-Harm Blind Spot 
+
+This appendix proves Theorem 1 and explains why a single-record Leave-One-Out (LOO) test can miss redundant harm-ful memories. Throughout Appendix A, the task step t and the retrieved context Mt are fixed. For the theoretical anal-ysis, let dt,i = vt(Mt) − vt(Mt \ { mi}) denote the exact counterpart of the empirical LOO effect bdt,i in Equation (7). 
+
+A.1 Proof of Theorem 1 
+
+Assume that mi and mj satisfy the redundant-harm model in Equation (8): 
+
+vt(S) = 
+
+ut(S \ { mi, m j }) − ∆t1[S ∩ { mi, m j }̸ = ∅] , ∆t > 0,
+
+(23) where ut does not depend on mi or mj , and both memories belong to Mt.
+
+Proof. Because both mi and mj are present in Mt, the penalty in Equation (23) is active and 
+
+vt(Mt) = ut(Mt \ { mi, m j }) − ∆t, (24) Removing mi leaves mj in the context, so the penalty re-mains: 
+
+vt(Mt \ { mi}) = ut(Mt \ { mi, m j }) − ∆t. (25) Hence dt,i = 0 . By symmetry, dt,j = 0 . We next con-sider the cooperative contribution. Shapley-based valuation measures a player’s contribution by averaging its marginal effect over different coalitions (Ghorbani and Zou 2019; Jia et al. 2019b). Let π be a uniformly random permutation of 
+
+Mt, and let Pi(π) contain the memories appearing before 
+
+mi. Define 
+
+Xt,i (π) = vt(Pi(π) ∪ { mi}) − vt(Pi(π)) . (26) If mi appears before mj , then mj /∈ Pi(π). Adding mi
+
+activates the penalty for the first time, so Xt,i (π) = −∆t.If mj appears before mi, the penalty is already active and 
+
+Xt,i (π) = 0 . The two relative orders are equally likely, each with probability 1/2. Therefore, using Equation (10), 
+
+ψt,i = Eπ [Xt,i (π)] = − ∆t
+
+2 . (27) The argument gives ψt,j = −∆t/2. Thus dt,i = dt,j = 0 
+
+while ψt,i = ψt,j = −∆t/2, proving Theorem 1. 
+
+A.2 Why LOO Misses Redundant Harm 
+
+LOO and cooperative attribution evaluate a memory under different contexts. The LOO effect measures the performance change caused by removing one memory from the retrieved context. Specifically, for memory mi, it evaluates 
+
+dt,i = vt(Mt) − vt(Mt \ { mi}). (28) Under Equation (8), removing mi leaves the substitutable harmful memory mj active. Therefore, the degradation term remains unchanged before and after the deletion: 
+
+vt(Mt) = vt(Mt \ { mi}), (29) which directly leads to dt,i = 0 . Cooperative attribution in-stead evaluates the marginal contribution of mi over different predecessor coalitions. Following the permutation formula-tion of Shapley-based valuation (Ghorbani and Zou 2019; Jia et al. 2019b), the contribution of mi is obtained by averaging 
+
+∆t,i (π) = vt(Pi(π) ∪ { mi}) − vt(Pi(π)) , (30) where Pi(π) denotes the set of memories preceding mi
+
+in permutation π. When mj is not included in Pi(π), the marginal contribution of mi reflects its harmful effect be-cause no redundant memory provides the same evidence. When mj is already included, the harmful evidence is already present and the additional contribution of mi is masked by redundancy. Therefore, coalition-level marginal evaluation can reveal harmful contributions that remain invisible under the single-memory deletion test. The result should be inter-preted narrowly. Theorem 1 only establishes that a zero LOO effect does not exclude harmful cooperative contribution un-der redundant harmful memories. It does not imply that every memory with a zero or small LOO effect is harmful. Accord-ingly, MeClear interprets the LOO profile using tolerance 
+
+κ: bdt,i < −κ provides local evidence of harm, | bdt,i | ≤ κ
+
+is treated as locally inconclusive, and bdt,i > κ provides lo-cal evidence of benefit. This local profile does not replace cooperative attribution; the operational harmful set remains determined by the sampled contribution in Equation (11) with harm tolerance τ .
+
+A.3 Extension to Multiple Redundant Memories 
+
+The same blind spot occurs for a redundant group with more than two memories. 
+
+Corollary A.1 (Multi-Memory Redundant Harm). Let 
+
+R = {m1, . . . , m r } with r ≥ 2, and suppose 
+
+vt(S) = ut(S \ R ) − ∆t1[S ∩ R̸ = ∅] , ∆t > 0, (31) where ut does not depend on any memory in R. If R ⊆ M t,then every mi ∈ R satisfies dt,i = 0 and ψt,i = −∆t/r .
+
+Proof. Since r ≥ 2, deleting one memory mi leaves at least one member of R in the context. The penalty in Equation (31) therefore remains active, so dt,i = 0 . Along any permutation, the penalty −∆t is introduced exactly once: when the first member of R appears. Under a uniformly random permuta-tion, each member of R is first with probability 1/r . Thus the marginal contribution of mi is −∆t with probability 1/r 
+
+and zero otherwise, which gives ψt,i = −∆t/r .Corollary A.1 shows that the blind spot is not limited to a pair of redundant memories. Under the stated substitution model, LOO assigns zero effect to every member of the redundant group, while the cooperative allocation distributes the total penalty −∆t across the group. 
+
+Appendix B: Finite-Sample Cooperative Estimation 
+
+This appendix proves Proposition 1. The analysis conditions on the fixed empirical value function bvt and isolates the approximation error caused by sampling permutations. 
+
+B.1 Exact Shapley Value of the Empirical Game 
+
+For the fixed empirical game, define 
+
+eψt,i = 1
+
+|Πt|
+
+X
+
+> π∈Πt
+
+[bvt(Pi(π) ∪ { mi}) − bvt(Pi(π))] . (32) Conditional on bvt, this quantity is fixed. The use of sam-pled permutations to approximate Shapley values follows the standard permutation view used in efficient Shapley estima-tion (Ghorbani and Zou 2019; Jia et al. 2019b). Equation (32) is equivalent to 
+
+eψt,i =
+
+X
+
+> S⊆M t\{ mi}
+
+|S|!( K − | S| − 1)! 
+
+K! [bvt(S ∪ { mi}) − bvt(S)] .
+
+(33) To see this, fix S ⊆ M t \ { mi} with |S| = s. There are s!( K − s − 1)! permutations for which S is exactly the predecessor set of mi: the s memories in S can appear before 
+
+mi in any order, and the remaining K − s − 1 memories can appear after mi in any order. Dividing by the total number K!
+
+of permutations gives the coefficient in Equation (33). The empirical Shapley values also satisfy the efficiency property 
+
+> K
+
+X
+
+> i=1
+
+eψt,i = bvt(Mt) − bvt(∅). (34) 
+
+Proof. Fix a permutation π = ( mπ1 , . . . , m πK ) and define the prefix sets S0 = ∅ and Sr = {mπ1 , . . . , m πr }. The marginal contributions along this permutation telescope: 
+
+> K
+
+X
+
+> r=1
+
+[bvt(Sr ) − bvt(Sr−1)] = bvt(Mt) − bvt(∅). (35) Averaging the left-hand side over all permutations gives 
+
+P 
+
+> i
+
+eψt,i , while the right-hand side is unchanged. This proves Equation (34). Replacing bvt with vt gives the population identity stated after Equation (3). 
+
+B.2 Unbiasedness and Uniform Concentration 
+
+For a sampled permutation π(ℓ), define 
+
+X(ℓ) 
+
+> t,i
+
+= bvt
+
+
+
+Pi(π(ℓ)) ∪ { mi}
+
+
+
+− bvt
+
+
+
+Pi(π(ℓ))
+
+
+
+. (36) Then Equation (11) can be written as bψ(L) 
+
+> t,i
+
+=
+
+L−1 PLℓ=1 X(ℓ) 
+
+> t,i
+
+. For each fixed i, the variables 
+
+X(1)  
+
+> t,i
+
+, . . . , X (L) 
+
+> t,i
+
+are independent and identically distributed conditional on bvt, because the permutations are sampled in-dependently and uniformly. By Equation (32), E[X(ℓ) 
+
+> t,i
+
+| bvt] = 
+
+eψt,i . Linearity of expectation therefore gives 
+
+E
+
+h bψ(L) 
+
+> t,i
+
+| bvt
+
+i
+
+= eψt,i . (37) Since the empirical game is fixed in Proposition 1, this is the unbiasedness statement in Equation (12). Because 
+
+bvt(S) ∈ [0 , 1] for every coalition S, each sampled marginal satisfies X(ℓ) 
+
+> t,i
+
+∈ [−1, 1] . Hoeffding’s inequality therefore gives, for every fixed i and ε > 0,
+
+Pr 
+
+ bψ(L) 
+
+> t,i
+
+− eψt,i ≥ ε bvt
+
+
+
+≤ 2 exp 
+
+
+
+− Lε 2
+
+2
+
+
+
+. (38) Applying the union bound over the K memories yields 
+
+Pr 
+
+
+
+max 
+
+> 1≤i≤K
+
+bψ(L) 
+
+> t,i
+
+− eψt,i ≥ ε bvt
+
+
+
+≤ 2K exp 
+
+
+
+− Lε 2
+
+2
+
+
+
+,
+
+(39) which proves Equation (13). The estimates for different mem-ories need not be independent because one sampled permu-tation contributes to several memories. This does not affect the proof: Hoeffding’s inequality is applied separately to the 
+
+L independent permutation samples for each fixed memory, and the final union bound does not require independence across memories. 
+
+B.3 Consequences for Sampling, Thresholding, and Ranking 
+
+Equation (39) gives a sufficient sample size for uniform ac-curacy. For any ε > 0 and δ ∈ (0 , 1) , if 
+
+L ≥ 2
+
+ε2 log 
+
+ 2Kδ
+
+
+
+, (40) then, with probability at least 1 − δ,
+
+max 
+
+> 1≤i≤K
+
+bψ(L) 
+
+> t,i
+
+− eψt,i < ε. (41) This is a sufficient worst-case bound based only on bvt(S) ∈
+
+[0 , 1] ; it is not a claim that the resulting value of L is necessary or optimal in practice. We next consider the threshold in Equation (14). Define the exact harmful set of the empirical game as eHt = {mi ∈ M t | eψt,i < −τ }, and assume that no exact empirical contribution lies on the threshold. Let 
+
+γt = min i | eψt,i + τ | > 0. Setting ε = γt in Equation (40) gives 
+
+L ≥ 2
+
+γ2
+
+> t
+
+log 
+
+ 2Kδ
+
+
+
+. (42) Under this condition, bHt = eHt with probability at least 
+
+1 − δ, because no estimate can cross the threshold −τ when its error is smaller than γt. The same argument controls the ordering in Equation (16). If eψt,j − eψt,i > 2ε and the uni-form estimation error is smaller than ε, then bψ(L) 
+
+> t,i
+
+< bψ(L) 
+
+> t,j
+
+.Thus, pairs of memories separated by more than twice the estimation error keep the same order. These results apply Algorithm 1: MeClear: Cooperative Attribution and Verified Clearance 
+
+Input : Query qt, memory bank Bt, retriever ρ, evaluator bvt,recovery predicate νt
+
+Parameters : Retrieval budget K, permutation budget L,screening tolerance κ, harm tolerance τ
+
+Output : Cleared context fMt 
+
+> 1:
+
+Retrieve and freeze Mt using Eq. (6)  
+
+> 2:
+
+Evaluate and cache bvt(Mt) 
+
+> 3:
+
+Compute LOO effects { bdt,i } using Eq. (7)  
+
+> 4:
+
+Classify the local LOO effects using tolerance κ 
+
+> 5:
+
+Estimate { bψ(L) 
+
+> t,i
+
+} using Eq. (11)  
+
+> 6:
+
+Construct bHt using Eq. (14)  
+
+> 7:
+
+Order bHt using Eq. (16)  
+
+> 8:
+
+Set ht ← | bHt| and Jt ← { 0} 
+
+> 9:
+
+for j = 1 to ht do  
+
+> 10:
+
+Construct Ct,j using Eq. (17)  
+
+> 11:
+
+Compute bgt(j) using Eq. (18)  
+
+> 12:
+
+if bgt(j) > 0 and νt(Mt \ C t,j ) = 1 then  
+
+> 13:
+
+Jt ← J t ∪ { j} 
+
+> 14:
+
+end if  
+
+> 15:
+
+end for  
+
+> 16:
+
+Select bjt using Eq. (20)  
+
+> 17:
+
+fMt ← M t \ C t, bjt 
+
+> 18:
+
+return fMt
+
+to the fixed empirical game only. Proposition 1 controls the difference between bψ(L) 
+
+> t,i
+
+and eψt,i . It does not by itself con-trol the difference between bψ(L) 
+
+> t,i
+
+and the population contri-bution ψt,i . Such a statement would require an additional assumption relating bvt to vt. The analysis above concerns the approximation error of cooperative attribution and there-fore depends on the harm tolerance τ . The LOO tolerance κ
+
+is used only to interpret the preceding local counterfactual profile and does not alter the finite-sample guarantee for the sampled Shapley estimator. 
+
+Appendix C: MeClear Procedure and Clearance Guarantee 
+
+This appendix gives the full MeClear procedure using the definitions in the main paper and proves Theorem 2. All counterfactual evaluations are performed on the same frozen context Mt, as specified in the main method. 
+
+C.1 Proof of Theorem 2 
+
+Algorithm 1 follows the four stages described in the main paper: retrieval, local screening, cooperative attribution, and verified clearance. The LOO profile is interpreted using screening tolerance κ: strongly negative local effects provide direct evidence of harm, near-zero effects remain inconclu-sive, and strongly positive effects indicate local benefit. The final operational harmful set is determined by cooperative contributions with harm tolerance τ . The interaction score in Equation (15) is used only for structural analysis and does not affect harmful-set construction or clearance decisions. Repeated coalition values may be cached without changing the sampled estimator in Equation (11). Recall that Equa-tion (19) always includes the baseline index 0, while every positive index must have both positive empirical gain and verified recovery. Equation (20) selects the maximum-gain admissible index and uses the smallest index to break ties. 
+
+Proof. Since 0 ∈ J t and Ct, 0 = ∅, Equation (18) gives 
+
+bgt(0) = 0 . Therefore max j∈J t bgt(j) ≥ 0. Because bjt is selected from this set of maximizers, bgt(bjt) ≥ 0. With fMt =
+
+Mt \ C t, bjt , we obtain 
+
+bvt( fMt) ≥ bvt(Mt), (43) which proves Equation (21). Now suppose bjt > 0. Since 
+
+bjt ∈ J t, the definition of Jt requires νt(Mt \ C t, bjt ) = 1 .Hence νt( fMt) = 1 , which proves Equation (22). Finally, let 
+
+J max  
+
+> t
+
+= arg max 
+
+> j∈J t
+
+bgt(j). (44) By Equation (20), bjt = min J max  
+
+> t
+
+. The nested construc-tion in Equation (17) satisfies |C t,j | = j. Thus, for every 
+
+j ∈ J max  
+
+> t
+
+, |C t, bjt | = bjt ≤ j = |C t,j |. Therefore Ct, bjt has minimum cardinality among the admissible candidates that attain the maximum empirical gain. The baseline also gives a simple fallback. If no positive index satisfies the gain and recovery conditions, then Jt =
+
+{0} and MeClear returns the unchanged context. If at least one positive admissible candidate exists, its gain is strictly larger than the baseline gain, so the selected index is positive and the returned context satisfies the recovery predicate. 
+
+C.2 Scope of the Guarantee and Evaluator Error 
+
+The ideal objective in Equation (5) considers all subsets of the harmful set, whereas Theorem 2 is established over the nested family in Equation (17) with ht +1 candidates. It guar-antees empirical non-degradation, verified recovery for pos-itive admissible selections, and minimum cardinality among maximum-gain candidates within this family, but does not imply global optimality over all subsets of bHt. The guaran-tee is conditional on the operational harmful set produced by the preceding attribution stage and does not assert that bHt
+
+equals the unknown exact harmful set Ht. Global optimality would additionally require that a minimum-cardinality unre-stricted maximizer be represented in the nested family and, when nonempty, satisfy the recovery predicate. Suppose that, for the baseline and every candidate evaluated by MeClear, 
+
+|bvt(S) − vt(S)| ≤ ηt (45) for some ηt ≥ 0. Let gt(j) = vt(Mt \ C t,j ) − vt(Mt). Then the triangle inequality gives 
+
+|bgt(j) − gt(j)| ≤ 2ηt. (46) Since Theorem 2 gives bgt(bjt) ≥ 0, it follows that gt(bjt) ≥−2ηt. Moreover, if bgt(bjt) > 2ηt, then gt(bjt) > 0. This Setting Configuration             
+
+> Dataset LoCoMo, categories 1–4 Conversations 10 Clean queries 368 Verified cases 745 Fault records 1,115 Direct conflicts 375 Redundant conflicts 285 Joint interactions 85 Memory framework Mem0 2.0.12 + Qdrant Memory records 11,302 Retrieval budget K5
+
+Table 2: Dataset statistics and evaluation configuration.                                          
+
+> Panel A: Cohort construction and paired-case funnel
+> Stage Unit NRetention LoCoMo QA QA 1,540 –Stable clean-correct QA QA 624 40.5% Injection proposals Proposal 7,986 –Causal-valid proposals Proposal 1,178 14.8% Selected cases Case 747 63.4%
+> Final paired cases Paired case 745 99.7% Panel B: Final cohort by fault and interaction
+> Fault type Direct Redundant Joint All Explicit conflict 173 135 36 344 Precise factual 161 122 44 327 Precise temporal 41 28 574
+> All faults 375 285 85 745
+
+Table 3: Cohort construction and final paired-case coverage. Panel A summarizes the main data-selection milestones, and Panel B reports the final 745 cases by interaction structure and fault type. last statement is conditional on Equation (45). It does not turn the empirical guarantee into an unconditional population guarantee; it only shows how a known uniform evaluator error transfers to the selected gain. 
+
+Appendix D: Experimental Details and Parameter Settings 
+
+Due to the strict page limit of the main paper, we provide ad-ditional experimental configuration, parameter settings, and supplementary analyses in this appendix. 
+
+D.1 Experimental Setup 
+
+We evaluate MeClear on LoCoMo using Kimi-k2.6 as task agent and Qwen3.6-Flash as judge evaluator. The evaluation is constructed from 368 clean queries across ten conversa-tions and contains 745 causally verified cases with 1,115 fault records. The cohort includes 375 direct conflicts with 
+
+|M | = 1 , 285 redundant conflicts with |M | = 2 , and 85                          
+
+> Setting Value
+> MeClear retrieval budget K5MeClear permutation budget L16 MeClear checkpoints 4, 8, 16 MeClear screening tolerance κ0.05 MeClear harm tolerance τ0.05 Task-value range [0 ,1]
+> Task agent Kimi-k2.6 Judge evaluator Qwen3.6-Flash Memory construction Moonshot-v1-32k Fault generation Qwen3.7-Plus LOO threshold bdt,i <−0.05
+> ContextCite budget / α32 / 0.01 ProxySPEX budget / order 32 / 2 Direct LLM Qwen3.5-Plus Direct LLM threshold ≥0.5
+
+Table 4: Main method, model, and baseline settings. joint interactions with |M | = 2 . Two of the 747 initially se-lected cases were excluded before paired evaluation because complete attribution outputs could not be obtained. These ex-clusions resulted from evaluation failures rather than method scores, leaving 745 cases with valid outputs for compared methods under the same evaluation protocol. The interaction-by-fault composition contains 344 explicit-conflict cases, 327 precise-factual cases, and 74 precise-temporal cases. Among them, the direct-conflict group contains 173 explicit, 161 fac-tual, and 41 temporal cases; the redundant group contains 135 explicit, 122 factual, and 28 temporal cases; and the joint-interaction group contains 36 explicit, 44 factual, and 5 temporal cases. Memories are constructed with Mem0 2.0.12 and stored in Qdrant, resulting in 11,302 memory records. For each query, the memory system uses the retrieval budget K = 5 speci-fied in the main paper. The retrieved context is frozen before counterfactual attribution, and all coalition evaluations and clearance operations are performed without re-running re-trieval, consistent with Equation (6). Controlled faults are retained only after behavioral verification. The clean context must remain correct in both trials, while a direct conflict must make the corrupted context incorrect in both trials. For redundant conflicts, the corrupted context must remain incorrect when either injected fault is retained alone, ensur-ing that each record can independently sustain the failure and mask the local effect of the other. For joint interactions, each injected record must remain harmless when evaluated alone, whereas their combination must induce task failure. These conditions provide behaviorally verified target sets for evaluating direct, redundant, and jointly expressed harmful-memory effects. Figure 8 reports performance across the interaction-by-fault combinations. MeClear shows its advantage under re-dundant conflicts, where local deletion is most suscepti-ble to masking. Across the three redundant-fault categories, MeClear achieves 81 .9–84 .8% Recall@ |M | compared with only 10 .7–16 .1% for LOO. Exact Set Match increases from LOO MeClear ContextCite ProxySPEX qwen3.5-plus Direct / Explicit conflict (n=173) Direct / Precise factual (n=161) Direct / Precise temporal (n=41) Redundant / Explicit conflict (n=135) Redundant / Precise factual (n=122) Redundant / Precise temporal (n=28) Joint / Explicit conflict (n=36) Joint / Precise factual (n=44) Joint / Precise temporal (n=5)                                     
+
+> 72 90 90 88 73 63 89 92 88 80 73 93 85 85 63 13 82 87 79 81 11 85 83 77 79 16 82 84 77 73 58 85 82 79 58 59 90 83 74 59 70 80 70 70 60
+
+A Recall@ |M|                                    
+
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+> 60 46 53 64 45 51 43 49 65 42 66 61 44 63 46 345 41 50 48 252 31 41 44 454 46 50 46 36 31 39 36 25 43 55 34 39 23 60 40 20 20 20
+
+B Exact H = M                                    
+
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+> 86 89 84 83 43 89 90 88 86 48 88 90 90 83 49 664 74 62 42 771 67 66 43 779 75 68 46 92 94 92 94 36 91 98 93 89 34 100 100 100 80 60
+
+C Recovery 
+
+> 0% 50% 100%
+> Rate
+
+Figure 8: Interaction-by-fault performance heatmap for five memory-clearance methods. Panels show target-micro Recall@ |M |,case-macro Exact Set Match, and Binary Task Recovery across nine interaction-by-fault cells. Cell annotations report percentages and case counts; the MeClear column is outlined, and cells with n < 10 are hatched. All panels share a 0–100% scale with consistent visual encoding for comparison across fault structures. 50% 75% 100%        
+
+> 30 60 120
+> A Recall@ |M|
+> 50% 75% 100%
+> B Complete
+> 4816
+> Permutation budget L
+> 25% 50% 75%
+> C Exact H=M
+> 4816
+> Permutation budget L
+> 0.50 0.55 0.60 0.65 0.70 0.75
+> Extra memories per case
+> D Extra background (lower is better)
+> MeClear
+
+Figure 9: MeClear sensitivity to permutation budgets L = 4 ,
+
+8, and 16 on 745 cases. Results report Recall@ |M |, Com-plete Set Recall, Exact Set Match, and extra-background se-lection with 95% two-level cluster-bootstrap intervals. 
+
+1.6–3.6% for LOO to 45 .2–53 .6% for MeClear, while Bi-nary Task Recovery increases from 5.9–7.1% to 63 .7–78 .6% .MeClear also attains the highest observed Recall@ |M |
+
+across the joint-interaction cells and achieves or ties the highest Recovery in most interaction-by-fault cells. The joint precise-temporal cell contains only five cases and is there-fore interpreted descriptively rather than as a stable subgroup estimate. Overall, the structural breakdown supports the role of coalition-aware attribution when harmful evidence is re-dundant or jointly expressed. LOO ContextCite ProxySPEX qwen3.5-plus            
+
+> 380/17 76/81 120/66 190/89 W/L
+> A Recall@ |M|
+> 196/28 85/44 114/40 105/66 W/L
+> B Complete
+> −20 020 40 60
+> MeClear - comparator (percentage points)
+> LOO ContextCite ProxySPEX qwen3.5-plus
+> 175/80 169/143 104/158 188/154 W/L
+> C Exact H=M
+> −20 020 40 60
+> MeClear - comparator (percentage points)
+> 212/22 66/60 88/51 331/43 W/L
+> D Recovery
+
+Figure 10: Paired differences between MeClear and each comparator on the common 745-case cohort. Points show MeClear-minus-comparator estimates for Recall@ |M |,Complete Set Recall, Exact Set Match, and Binary Task Recovery; horizontal segments show 95% two-level cluster-bootstrap intervals. The vertical line marks zero, and the right-side W/L counts report case-level positive and nega-tive differences. 
+
+D.2 Parameter and Baseline Settings 
+
+MeClear follows the main-paper configuration with retrieval budget K = 5 , permutation budget L = 16 , and tolerance settings κ = τ = 0 .05 . The LOO profile uses κ to identify locally informative or inconclusive memories, while coop-erative contributions are estimated using Equation (11) and thresholded by τ in Equation (14). The task value is nor-malized to [0 , 1] as assumed in Proposition 1. All primary 10 15 20 25 30 35 40 
+
+> Residual-error risk, 1 - Complete (percentage points)
+> 0.35 0.55 0.75 0.95
+> Over-clearance burden (extra background / case)
+> LOO Exact 34.2% | Rec. 56.8% MeClear Exact 47.0% | Rec. 82.3% ContextCite Exact 43.5% | Rec. 81.5% ProxySPEX Exact 54.2% | Rec. 77.3% qwen3.5-plus Exact 42.4% | Rec. 43.6%
+> Axes start: x=10 pp, y=0.35
+> Risk frontier (lower-left is better)
+
+Figure 11: Risk frontier of five methods on the common cohort. The x-axis shows residual-error risk, defined as one minus Complete Set Recall, the y-axis shows the average number of extra background memories selected per case, and bubble size indicates Binary Task Recovery. Lower values are preferred on both axes. results use L = 16 , with L ∈ { 4, 8, 16 } evaluated for sen-sitivity analysis. ContextCite and ProxySPEX use sampling budget B = 32 , with α = 0 .01 for ContextCite and in-teraction order two for ProxySPEX. The direct LLM base-line uses Qwen3.5-Plus with threshold 0.5, while LOO uses 
+
+bdt,i < −κ = −0.05 . Memory construction and fault gener-ation use Moonshot-v1-32k and Qwen3.7-Plus, respectively. All paired comparisons use identical frozen retrieved con-texts. Figure 9 shows that larger permutation budgets im-prove attribution quality. Recall@ |M | increases from 67 .6% 
+
+at L = 4 to 85 .9% at L = 16 , Complete Set Recall increases from 68 .1% to 86 .7% , and Exact Set Match improves from 
+
+37 .3% to 47 .0% . Extra-background selection remains non-monotonic ( 0.581 , 0.685 , and 0.623 for L = 4 , 8, 16 ), indi-cating that the improvement is not caused by excessive dele-tion. Therefore, L = 16 is adopted for the main experiments. All recovery evaluations use two independent Answer/Judge trials with fixed random seeds. 
+
+D.3 Metrics and Supplementary Evaluation 
+
+Following the main paper, we evaluate MeClear using four metrics: Target Recall at |M |, Complete Set Recall, Exact Set Match, and Binary Task Recovery. For a case with verified fault set F and |F | = m, let r1, . . . , r m denote the top-m
+
+ranked memories. Recall@ |M | is defined as 
+
+TR@ |M | = |{ r1, . . . , r m} ∩ F ||F | . (47) The overall Recall@ |M | is target-micro averaged over the 1,115 verified fault records. Complete Set Recall measures whether all verified faults are selected, while Exact Set Match additionally requires no background selection. Binary Task Recovery counts only cases where both independent post-clearance trials succeed. These metrics respectively evaluate ranking quality, harmful-set completeness, selection preci-sion, and task recovery. 1 2 3 4 5 6 7                  
+
+> Rank cutoff k
+> 0% 20% 40% 60% 80% 100%
+> Injected targets with rank <= k
+> Target-memory rank ECDF
+> LOO MeClear ContextCite ProxySPEX qwen3.5-plus
+> Method @1 @2 @3
+> LOO 30.6 43.5 50.7 MeClear 60.5 88.1 93.6 ContextCite 61.1 87.6 92.3 ProxySPEX 59.1 82.2 86.2 qwen3.5-plus 49.1 80.2 89.9
+> Cumulative target rate (%)
+
+Figure 12: Target-memory rank ECDF over 1,115 injected targets. Curves show cumulative target coverage within rank 
+
+k, with summary rates reported at k = 1 , 2, and 3.All comparisons use the same paired cohort of 745 cases to ensure that performance differences are attributable to method behavior rather than changes in evaluation samples. We report percentile 95% confidence intervals using 2,000 two-level cluster-bootstrap replicates, with conversations and query clusters resampled hierarchically to preserve depen-dencies among cases from the same source. Paired differ-ences are computed before resampling. Figure 10 shows that MeClear improves over LOO by 47 .6, 22 .6, 12 .8, and 25 .5
+
+percentage points in Recall@ |M |, Complete Set Recall, Ex-act Set Match, and Recovery, respectively. Compared with ProxySPEX, MeClear improves Recall@ |M |, Complete Set Recall, and Recovery by 5.0, 9.9, and 5.0 points, while ProxySPEX achieves higher Exact Set Match by 7.2 points. MeClear also improves Recovery over Qwen3.5-Plus by 38 .7
+
+points. ContextCite remains the closest comparator, with in-tervals overlapping zero across metrics. MeClear primarily improves harmful-memory coverage and recovery by lever-aging cooperative attribution to identify interacting harmful evidence. Figure 11 evaluates the trade-off between incomplete harmful-set removal and unnecessary context modification. MeClear achieves the lowest residual-error risk of 13 .3% 
+
+and highest Binary Task Recovery of 82 .3% , while select-ing 0.623 extra background memories per case. ProxySPEX selects fewer extra memories at 0.408 per case and obtains higher Exact Set Match of 54 .2% , but suffers higher residual risk of 23 .2% and lower Recovery of 77 .3% . ContextCite achieves comparable Recovery of 81 .5% with 0.576 extra selections, but retains higher residual risk of 18 .8% . LOO and Qwen3.5-Plus show larger trade-offs, with residual risk of 35 .8% and extra selection of 0.934 , respectively. Fig-ure 12 further shows that MeClear provides stronger multi-rank concentration of harmful memories, reaching 88 .1% 
+
+and 93 .6% target coverage at ranks 2 and 3. Although Con-textCite slightly exceeds MeClear at rank 1 with 61 .1% ver-sus 60 .5% , MeClear surpasses it at higher ranks. It is im-portant for redundant and joint interactions, where effective clearance requires identifying multiple harmful memories rather than a single salient record.

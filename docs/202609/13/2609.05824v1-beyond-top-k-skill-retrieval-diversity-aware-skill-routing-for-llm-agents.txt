@@ -1,0 +1,368 @@
+Title: Beyond Top-k Skill Retrieval: Diversity-Aware Skill Routing for LLM Agents
+
+URL Source: https://arxiv.org/pdf/2609.05824v1
+
+Published Time: Wed, 09 Sep 2026 00:23:05 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Beyond Top-k Skill Retrieval: Diversity-Aware Skill Routing for LLM Agents 
+
+## Wang Wei 1, Tiankai Yang 2, Samyadeep Basu 3, Hongjie Chen 4,Yue Zhao 2, Zhengzhong Tu 5, Xiyang Hu 6, Franck Dernoncourt 3,Ryan A. Rossi 3, Hoda Eldardiry 1*
+
+> 1
+
+## Virginia Tech, 2University of Southern California, 3Adobe Research, 
+
+> 4
+
+## Dolby Labs, 5Texas A&M University, 6Arizona State University 
+
+## {wangwei718,hdardiry}@vt.edu 
+
+## Abstract 
+
+Large language model (LLM) agents increas-ingly rely on external skills, but routing user requests over large skill registries is difficult because many skills are functionally redundant while complex tasks often require complemen-tary skill sets. Existing skill routers typically rank candidates independently by query rele-vance, which can waste context budget on re-dundant skills. We propose Diverse Skill Rout-ing (DSR), a diversity-aware reranking frame-work that uses a Determinantal Point Process to balance relevance and non-redundancy. DSR introduces a query-residual diversity kernel that penalizes redundant skill overlap while reduc-ing penalties caused only by shared query rel-evance. On the SkillRouter benchmark, DSR improves recall and full coverage over a strong pointwise reranking baseline, with larger gains on multi-skill queries. These results suggest that skill routing should be treated not only as relevance ranking, but also as complementary set selection. 
+
+## 1 Introduction 
+
+Large language model (LLM) agents increasingly rely on external tools and skills to solve tasks that require capabilities beyond direct text generation. Early tool-use systems showed that language mod-els can learn when and how to call external APIs (Schick et al., 2023), while subsequent agent frame-works use LLMs to decompose user requests, select external models or tools, and aggregate their out-puts (Shen et al., 2023; Qin et al., 2023). More recently, skill-based agents organize procedural knowledge into reusable modules, such as instruc-tions, scripts, examples, and reference documents, that can be loaded into context at inference time (Wang et al., 2023; Xu and Yan, 2026). This design makes agents more extensible, since new capabil-ities can be added through external skill libraries rather than model retraining. 
+
+> *Corresponding author.
+
+However, the growth of skill libraries creates a new routing bottleneck. When thousands or tens of thousands of skills are available, it is infeasible to expose all of them to the agent because the con-text window is limited, and irrelevant skills may distract execution. Recent work on skill routing studies this problem directly by retrieving task-relevant skills from large registries. SkillRouter, for example, evaluates skill selection over an ap-proximately 80K-skill pool and shows that full skill implementations contain important routing signals beyond names and descriptions (Zheng et al., 2026). SkillsBench further highlights that curated skills can improve agent performance, but their benefit depends strongly on task and skill quality (Li et al., 2026). These findings suggest that skill selection is becoming a central component of practical LLM-agent systems. Existing skill routers typically formulate selec-tion as a pointwise retrieval or reranking problem: each candidate skill is scored independently against the query, and the top-ranked skills are returned. This is natural for single-skill tasks, where suc-cess depends on finding one correct skill. However, many realistic agent tasks are compositional. A user request may require several complementary skills, such as document parsing, information ex-traction, data transformation, and visualization. In such cases, independent top-k retrieval can return redundant shortlists: several skills may have similar descriptions or implementations and therefore re-ceive high relevance scores, while other necessary but different skills are omitted. This wastes limited context budget and weakens the agent’s ability to cover all parts of a multi-step workflow. We argue that large-scale skill routing should be treated not only as relevance ranking, but also as complementary set selection. This perspective is related to diversity-aware retrieval, where the goal is to select items that are both individually useful and mutually non-redundant. Determinantal 1arXiv:2609.05824v1 [cs.AI] 5 Sep 2026 Point Processes (DPPs) provide a principled proba-bilistic model for such subset selection problems by favoring sets with high item quality and high diversity (Kulesza and Taskar, 2012). DPPs have been widely used for selecting diverse high-quality subsets, but applying them directly to skill routing is non-trivial. In skill routing, two skills may be similar because they are redundant, but they may also be similar because both are relevant to the same query while still covering different steps of the task. Penalizing all similarity uniformly can therefore remove useful complementary skills. To address this issue, we propose Diverse Skill Routing (DSR), a diversity-aware reranking frame-work for large-scale skill selection. DSR builds on a standard retrieve-and-rerank pipeline: a re-triever first produces candidate skills, and a quality model assigns query-dependent relevance scores. DSR then applies DPP-based selection to con-struct a skill set that balances relevance and non-redundancy. The key component is a query-residual diversity kernel, which measures inter-skill redun-dancy after removing the component of each skill representation aligned with the query. This design reduces the penalty on skills that are jointly relevant to the query, while still discouraging near-duplicate candidates. The selected skills are finally ordered by their quality scores to produce the ranked short-list. We evaluate DSR on the SkillRouter bench-mark (Zheng et al., 2026), which contains approx-imately 80K candidate skills and includes both single-skill and multi-skill queries. Compared with a strong pointwise SkillRouter baseline, DSR im-proves recall and full coverage, with larger gains on multi-skill queries and at larger cutoffs. Abla-tions show that the query-residual kernel is critical: replacing it with a standard inter-skill similarity kernel substantially reduces multi-skill full cover-age. These results suggest that, as skill registries continue to grow, effective routing should account for both relevance to the user request and diversity across the selected skill set. Our contributions are as follows: • We formulate large-scale skill routing as a diversity-aware subset selection problem, mo-tivated by redundancy in large skill registries and the compositional structure of multi-skill agent tasks. • We propose DSR, a DPP-based reranking frame-work that balances query-dependent skill rele-vance with inter-skill non-redundancy. • We introduce a query-residual diversity kernel that distinguishes redundant overlap from simi-larity induced by shared query relevance. • We show that DSR improves recall and full cover-age over a strong pointwise SkillRouter baseline, with larger gains on multi-skill queries. 
+
+## 2 Related Work 
+
+Tool use and skill-augmented agents. A grow-ing line of work studies how LLMs can use external tools and procedural knowledge to solve tasks be-yond direct text generation. Toolformer shows that language models can learn when and how to call external APIs through self-supervised training sig-nals (Schick et al., 2023). HuggingGPT uses an LLM as a controller to decompose user requests, select expert models from Hugging Face, execute subtasks, and aggregate the results (Shen et al., 2023). ToolLLM scales tool learning to thousands of real-world APIs by constructing ToolBench and training models for tool-use decision making (Qin et al., 2023). Voyager studies an embodied setting where an LLM-powered agent grows an executable skill library over time and retrieves relevant skills for new tasks (Wang et al., 2023). These works demonstrate the value of external tools and skills, but they do not directly address how to select non-redundant skill sets from very large skill registries. 
+
+Skill routing and skill evaluation. Recent work has begun to study skills as a first-class abstrac-tion for LLM agents. Xu and Yan (2026) describe agent skills as composable packages of instructions, code, and resources that can be loaded on demand. SkillRouter directly studies large-scale skill selec-tion, showing that routing over tens of thousands of skills is difficult and that full skill implemen-tations provide important routing signals beyond names and descriptions (Zheng et al., 2026). Skills-Bench evaluates whether curated skills improve downstream agent performance and finds that skills can be beneficial, but their effects vary across tasks and domains (Li et al., 2026). Our work is comple-mentary to these studies. Rather than introducing a new skill benchmark or skill representation, we focus on the selection objective: given a candidate pool and relevance scores, how should the router construct a non-redundant shortlist for multi-skill tasks? 
+
+LLM routing. Routing across LLMs has emerged as a practical approach for improving 2performance under heterogeneous model capabil-ities and inference costs. Cost-aware systems such as FrugalGPT use cascaded routing to re-duce inference cost while maintaining task per-formance (Chen et al., 2023). Other methods learn query-dependent model selection policies or model representations. EmbedLLM learns compact representations of LLMs that can support down-stream applications such as model routing (Zhuang et al., 2025), while RouterDC uses dual contrastive learning to route queries to suitable LLMs (Chen et al., 2024). Recent work also studies rout-ing benchmarks and learning settings, including RouterBench (Hu et al., 2024), RouterEval (Huang et al., 2025), RouteLLM (Ong et al., 2025), and BaRP (Wang et al., 2025). These methods moti-vate routing as a practical mechanism for efficient LLM deployment. However, LLM routing usually selects one model, a cascade, or a small set of mod-els, whereas skill routing often needs to expose several complementary skills to an agent at once. This makes redundancy among selected items a central concern in skill routing. 
+
+Diversity-aware subset selection. Diversity has long been studied in retrieval, recommendation, and summarization. Maximal Marginal Rele-vance balances query relevance with novelty to reduce redundancy in reranked document lists (Car-bonell and Goldstein, 1998), while later diversifi-cation methods explicitly model multiple query aspects (Santos et al., 2010). DPPs provide a probabilistic framework for subset selection prob-lems that require balancing item quality and di-versity (Kulesza and Taskar, 2012). They have been used in settings such as document summa-rization (Cho et al., 2019), recommendation (Wil-helm et al., 2018), and information retrieval (Af-fandi et al., 2014; Deng et al., 2020). DPP MAP inference is generally challenging, and efficient greedy variants are commonly used for large-scale settings (Han et al., 2017). Our work brings this diversity-aware perspective to skill routing, where redundancy arises from overlapping procedural functionality. Unlike standard applications that penalize raw inter-item similarity, DSR computes diversity in a query-residual space tailored to query-conditioned skill selection. 
+
+## 3 Method 
+
+We now describe how to select a compact set of skills for a query from a large skill registry. Given a user query x and a skill pool S = {s1, . . . , s N },the goal is to return a ranked shortlist of k skills that are both relevant to the query and non-redundant with each other. Standard top-k retrieval addresses only the first requirement: it ranks each skill inde-pendently by relevance and overlooks whether the selected skills cover distinct parts of the task. Our proposed DSR addresses this limitation by combining query-dependent quality scores with diversity-aware subset selection. It first retrieves a small candidate set, assigns each candidate a qual-ity score, and then applies DPP-based greedy MAP selection to construct a non-redundant shortlist. We use two types of scoring models. The first is an encoder retriever, which independently em-beds the query and each skill and scores a pair with cosine similarity. The encoder retriever is used for efficient candidate retrieval from the full reg-istry. The second is a pointwise quality model, or reranker, which takes a query-skill pair as input and outputs a relevance logit. The reranker is more expressive but is applied only to the retrieved can-didate set for efficiency. In our main experiments, DSR uses reranker scores as the quality signal; we later ablate this choice by replacing reranker quality with embedding-based quality in Section 4.3. 
+
+3.1 Candidate Skill Retrieval 
+
+Let ex denote the embedding of query x and ei
+
+denote the embedding of skill si. All embeddings are L2-normalized. We define the retrieval score as 
+
+ai(x) = e⊤ 
+
+> x
+
+ei and retrieve the M highest-scoring skills: 
+
+Cx = arg max 
+
+> C⊆S ,|C| =M
+
+X
+
+> si∈C
+
+ai(x), (1) where M ≪ N . DSR applies diversity-aware selection only within Cx, which makes reranking tractable for large skill registries. 
+
+3.2 Quality-Aware DPP Selection 
+
+For each candidate skill si ∈ C x, DSR requires a non-negative quality score qi(x) that measures its relevance to the query. In our experiments, this score is provided by the learned pointwise reranker used in SkillRouter. Let hi(x) denote the raw reranker logit for query x and skill si. We define 
+
+qi(x) = σ(hi(x)) . (2) This transformation maps reranker logits to non-negative quality scores, which determine the item-quality terms in the DPP kernel. 3DSR constructs a DPP kernel L(x) over Cx:
+
+L(x) 
+
+> ij
+
+= qi(x) ϕx(si, s j ) qj (x), (3) where ϕx(si, s j ) is a query-conditioned similarity between skills. For a subset A ⊆ C x, the DPP score is 
+
+F (A; x) = det( L(x) 
+
+> A
+
+), (4) where L(x) 
+
+> A
+
+is the principal submatrix indexed by 
+
+A. The determinant favors subsets whose elements have high quality scores while avoiding redundant skill representations. DSR therefore selects 
+
+A⋆ = arg max  
+
+> A⊆C x,|A|=k
+
+det( L(x) 
+
+> A
+
+). (5) When k = 1 , this reduces to ordinary relevance ranking because ϕx(si, s i) = 1 and L(x) 
+
+> ii
+
+= qi(x)2.
+
+3.3 Query-Residual Diversity Kernel 
+
+A standard DPP kernel can compute ϕx(si, s j ) di-rectly from inter-skill cosine similarity. For skill routing, this can be too aggressive: two skills may be close in embedding space because they are re-dundant, but they may also be close because both are relevant to the same query. Penalizing all simi-larity uniformly may remove useful skills that are jointly needed for a multi-step task. DSR instead measures diversity in a query-residual space. Let ex and ei be L2-normalized query and skill embeddings. We first remove the query-aligned component from each skill embed-ding: 
+
+ri = ei − (e⊤ 
+
+> i
+
+ex)ex. (6) We then blend this residual with the original skill embedding and normalize the result: 
+
+˜zi = λri + (1 − λ)ei, zi = ˜zi
+
+∥˜zi∥2
+
+. (7) where λ ∈ [0 , 1] controls the strength of the resid-ual projection. This mixture focuses the diversity computation on query-orthogonal variation while retaining a small amount of the original representa-tion for stability. The query-conditioned similarity is 
+
+ϕx(si, s j ) = 1 + z⊤ 
+
+> i
+
+zj
+
+2 . (8) This maps cosine similarity to [0 , 1] and ensures 
+
+ϕx(si, s i) = 1 . The resulting kernel penalizes residual overlap between skills while reducing penalties caused only by shared relevance to the query. 
+
+Why query-residual diversity? Raw inter-skill similarity treats all shared embedding directions as redundancy. This assumption is too strong for skill routing because skills required by the same query often share a query-aligned component. For example, a multi-step data analysis request may require one skill for parsing a spreadsheet, another for cleaning columns, and another for generating a visualization. These skills can be close in the origi-nal embedding space because they are all relevant to the same request, but selecting them together is still useful because they cover different parts of the workflow. A standard cosine kernel can over-penalize such skills and favor candidates that are superficially different but less useful. The query-residual kernel removes the shared query direction before computing inter-skill similarity, so the di-versity term focuses on overlap that remains after accounting for relevance to the same request. This matches the goal of DSR: selected skills should be jointly relevant to the query while still contributing distinct functionality. 
+
+3.4 Greedy MAP Selection and Ranking 
+
+Exact DPP MAP inference is computationally ex-pensive, so DSR uses greedy MAP selection. Start-ing from the empty set, it repeatedly adds the can-didate with the largest marginal gain: 
+
+s⋆ = arg max  
+
+> si∈C x\A
+
+log det( L(x)
+
+> A∪{ si}
+
+)−log det( L(x) 
+
+> A
+
+).
+
+(9) The process stops when |A| = k.The first greedy step preserves the top prediction from the quality model. When A = ∅, the marginal gain for si is 
+
+log L(x) 
+
+> ii
+
+= log qi(x)2, (10) since ϕx(si, s i) = 1 . Thus, the first selected skill is 
+
+s(1) = arg max 
+
+> si∈C x
+
+qi(x). (11) Later steps condition on the selected set and favor candidates that add complementary information. The final selected skills are sorted by quality score to produce the output ranking. DSR applies DPP selection only to the re-trieved candidate set Cx, not the full skill pool. Greedy MAP is implemented with incremental Cholesky updates, which compute log-determinant marginal gains without recomputing determinants from scratch. 4Algorithm 1 DSR Inference 
+
+Require: Query x, skill pool S, candidate size M , output size k 
+
+> 1:
+
+Encode x and skills in S to obtain normalized embeddings ex and {ei}Ni=1  
+
+> 2:
+
+Retrieve candidate set Cx using Eq. (1)  
+
+> 3:
+
+Compute quality scores qi(x) for each si ∈ C x 
+
+> 4:
+
+for each si ∈ C x do  
+
+> 5:
+
+Compute residual representation: ri ← ei − (e⊤ 
+
+> i
+
+ex)ex 
+
+> 6:
+
+Mix residual and original embedding: ˜zi ← λri + (1 − λ)ei 
+
+> 7:
+
+Normalize: zi ← ˜zi/∥˜zi∥2 
+
+> 8:
+
+end for  
+
+> 9:
+
+Construct ϕx(si, s j ) ← (1 + z⊤ 
+
+> i
+
+zj )/2 
+
+> 10:
+
+Construct DPP kernel L(x) 
+
+> ij
+
+← qi(x)ϕx(si, s j )qj (x) 
+
+> 11:
+
+Initialize A ← ∅  
+
+> 12:
+
+while |A| < k do  
+
+> 13:
+
+Select s⋆ with the largest log-determinant marginal gain  
+
+> 14:
+
+Update A ← A ∪ { s⋆} 
+
+> 15:
+
+end while  
+
+> 16:
+
+return Selected skills in A, sorted by quality score Algorithm 1 summarizes the inference proce-dure. DSR retrieves candidates, computes reranker quality scores, constructs the query-residual DPP kernel, and greedily selects a compact skill set be-fore sorting the selected skills by quality. 
+
+## 4 Experiments 
+
+We evaluate whether diversity-aware selection im-proves skill routing over large and redundant skill registries. Our experiments are designed to an-swer three questions: (i) whether DSR improves coverage of required skills compared with point-wise retrieval and reranking; (ii) whether the gains are larger for multi-skill queries; and (iii) whether the query-residual kernel is necessary for effective diversity-aware selection. 
+
+4.1 Experimental Setup Benchmark. We evaluate on the SkillRouter benchmark introduced by Zheng et al. (2026), which studies skill selection over a large registry derived from the Claude Skill Registry. The bench-mark contains 75 expert-verified queries over ap-proximately 80K candidate skills. These queries span 55 domains across 8 super-categories and in-clude both single-skill and multi-skill tasks. The single-skill subset contains 24 queries that require one target skill, while the multi-skill subset con-tains 51 queries that require two to five target skills. Following the benchmark protocol, we evaluate on two robustness tiers: E ASY , with 78,361 candidate skills, and H ARD , with 79,141 candidate skills in-cluding 780 LLM-generated distractor skills. We report averages across both tiers unless otherwise specified. 
+
+Baseline. We compare against the full Skill-Router pipeline (Zheng et al., 2026). SkillRouter follows a retrieve-and-rerank design: SR-Emb-0.6B first retrieves candidate skills from the full registry, and SR-Rank-0.6B then reranks the re-trieved candidates using the full skill text. This pro-vides a strong pointwise reranking baseline because each candidate skill is evaluated with a learned rele-vance model rather than only embedding similarity. However, the final ranking is still produced inde-pendently for each skill: the score of one skill does not depend on which other skills are also selected. As a result, SkillRouter can assign high ranks to multiple overlapping skills when they are all indi-vidually relevant to the query. 
+
+DSR variant. DSR uses the same SR-Emb-0.6B retriever and SR-Rank-0.6B relevance model as SkillRouter. The only change is the final selection step: instead of returning the pointwise top-ranked skills, DSR constructs a query-residual DPP kernel over the retrieved candidates and selects a shortlist that balances relevance and non-redundancy. This design keeps candidate generation and relevance scoring fixed, allowing us to isolate the effect of diversity-aware selection. In other words, DSR does not rely on a stronger retriever or a stronger 5reranker; it changes how high-scoring candidates are selected together. 
+
+Implementation details. For DSR, we retrieve the top 50 candidates before applying DPP se-lection. The query-residual kernel uses residual mixing coefficient λ = 0 .85 . Greedy MAP se-lection is implemented with incremental Cholesky updates. We evaluate ranked outputs at cutoffs 
+
+k ∈ { 10 , 20 , 50 }. Since the released SkillRouter pipeline returns 20 ranked skills, its Recall@50 and Full Coverage@50 are equal to its Recall@20 and Full Coverage@20. We report these values for completeness, and focus the main comparison on shared cutoffs as well as the coverage behavior of longer DSR shortlists. All experiments were conducted on NVIDIA A100 80GB GPUs. 
+
+Metrics. We use two primary coverage metrics. 
+
+Recall@k measures the fraction of target skills re-covered in the top k predictions. Full Coverage@k 
+
+measures whether all target skills for a query are retrieved within the top k positions. Full Coverage is stricter than recall and is especially important for multi-skill tasks, where missing any required skill may prevent the agent from completing the work-flow. Since our focus is complementary skill-set re-covery, we report MRR@k only in the appendix A as an early-precision diagnostic. 
+
+4.2 Main Results 
+
+Table 1 compares DSR with the full SkillRouter pipeline under the controlled setup described above. DSR improves coverage-oriented metrics across all evaluated cutoffs. On all queries, Recall@20 increases from 0.754 to 0.768 , and Full Cover-age@20 increases from 0.560 to 0.573 . These gains are modest at the shared cutoff, but they show that DSR can recover more target skills with-out changing the underlying relevance model. Ap-pendix A further shows that DSR remains close to SkillRouter on MRR, indicating that the cover-age gains do not come from a large loss in early precision. The benefit becomes clearer for longer shortlists. At cutoff 50, DSR improves overall Recall from 
+
+0.754 to 0.808 and Full Coverage from 0.560 to 
+
+0.633 . This pattern is expected: pointwise rerank-ing can place several similar skills near the top, while DSR encourages the selected shortlist to cover different parts of the task. Since the released SkillRouter output contains 20 ranked skills, its Recall@50 and Full Coverage@50 are equal to its @20 values. We therefore treat @20 as the shared-cutoff comparison and use @50 to examine whether diversity-aware selection can construct a longer, less redundant shortlist. DSR is especially useful for multi-skill queries. On this subset, Recall@20 improves from 0.704 
+
+to 0.739 , and Full Coverage@20 improves from 
+
+0.458 to 0.492 . At cutoff 50, Recall improves from 
+
+0.704 to 0.773 , while Full Coverage improves from 
+
+0.458 to 0.551 . These results support our main hy-pothesis: skill routing should not only rank individ-ually relevant skills, but also select non-redundant skill sets that better cover the requirements of com-plex tasks. 
+
+4.3 Ablation Study 
+
+Table 2 analyzes two design choices in DSR: the diversity kernel and the quality score. The diversity kernel determines how redundancy between two candidate skills is measured. The standard cosine kernel computes similarity directly from skill em-beddings, while the query-residual kernel first re-moves the query-aligned component and then mea-sures similarity in the residual space. The quality score determines how strongly each individual skill is favored before diversity is considered. Our main method uses reranker quality from SR-Rank-0.6B. To test whether the quality source matters, we also include an ablation that replaces reranker quality with embedding quality, where qi(x) is computed from normalized query-skill embedding similarity. The query-residual kernel accounts for the largest ablation effect. With reranker quality, re-placing the standard cosine kernel with the query-residual kernel improves multi-skill Full Cover-age@10 from 0.254 to 0.441 . This result shows that naive diversity is not sufficient for skill routing. A raw cosine kernel penalizes all inter-skill simi-larity, including similarity that arises because two skills are both relevant to the same query. In multi-skill tasks, this can remove useful complementary skills that share the same task context but contribute different functionality. The residual kernel avoids this failure mode by focusing the diversity penalty on overlap beyond the query direction. The quality signal also matters. With the query-residual kernel, replacing embedding quality with reranker quality improves Recall@10 from 0.618 
+
+to 0.711 and multi-skill Full Coverage@10 from 
+
+0.237 to 0.441 . This indicates that diversity-aware selection still depends on a reliable relevance sig-nal: if the quality scores do not identify useful 6Recall Full Coverage Method @10 @20 @50 @10 @20 @50 
+
+All queries (75) 
+
+SkillRouter .705 .754 .754 .520 .560 .560 DSR .712 .768 .808 .527 .573 .633 
+
+Multi-skill (51) 
+
+SkillRouter .659 .704 .704 .424 .458 .458 DSR .668 .739 .773 .432 .492 .551 
+
+Table 1: Full-pipeline results on the SkillRouter benchmark. Both methods use SR-Emb-0.6B retrieval and SR-Rank-0.6B relevance scores. SkillRouter applies pointwise reranking, while DSR applies query-residual DPP selection. For SkillRouter, Recall@50 and Full Coverage@50 equal the corresponding @20 values because its released output is truncated at 20. Bold indicates the best result in each column.                   
+
+> Kernel Quality R@10 Multi-FC@10
+> Pointwise baseline
+> –Reranker quality .705 .424
+> Standard cosine kernel
+> Cosine Embedding quality .540 .178 Cosine Reranker quality .534 .254
+> Query-residual kernel
+> Residual Embedding quality .618 .237 Residual Reranker quality .711 .441
+
+Table 2: Ablation study of DSR design choices. All DSR variants use SR-Emb-0.6B retrieval over the top 50 candidates. Embedding quality uses normalized query-skill embedding similarity as qi(x), while reranker qual-ity uses SR-Rank-0.6B scores. R@10 is averaged over all queries; Multi-FC@10 is Full Coverage@10 on multi-skill queries. 
+
+candidates, the DPP has less useful material to se-lect from. At the same time, comparing SkillRouter with the residual-kernel DSR variants shows that reranker quality alone is not enough. The strongest coverage-oriented results come from combining a learned relevance model with query-residual diver-sity. 
+
+4.4 Analysis of Reranking Strategies 
+
+Table 3 compares different ranking and selection strategies on single-skill and multi-skill queries. The compared methods represent increasingly ex-pressive ways to order the retrieved candidates: embedding-only Top-k retrieval, zero-shot LLM reranking, the learned SkillRouter reranker, and DSR. On single-skill queries, Top-k retrieval, Skill-Router, and DSR achieve the same Recall@10 and Full Coverage@10. This suggests that when only                       
+
+> Single-skill Multi-skill Method R@10 FC@10 R@10 FC@10 Top-kretrieval .875 .875 .630 .381 LLM ranker .719 .719 .616 .331 SkillRouter .875 .875 .659 .424 DSR .875 .875 .668 .432
+
+Table 3: Comparison of ranking and selection strategies for single-skill and multi-skill queries. Top-k retrieval ranks skills by embedding similarity without reranking. The LLM ranker uses Qwen3-8B in a zero-shot rerank-ing setting. SkillRouter uses the learned SR-Rank-0.6B pointwise reranker. DSR applies diversity-aware se-lection using reranker quality and the query-residual kernel. 
+
+one target skill is required, strong pointwise rele-vance signals are often sufficient. The main chal-lenge appears in the multi-skill setting, where the router must recover several required skills within the same shortlist. Compared with Top-k retrieval, SkillRouter im-proves multi-skill Recall@10 from 0.630 to 0.659 
+
+and Full Coverage@10 from 0.381 to 0.424 , show-ing the value of a learned reranker. DSR fur-ther improves Recall@10 to 0.668 and Full Cov-erage@10 to 0.432 . These gains are smaller than those at larger cutoffs in Table 1, but they follow the same pattern: diversity-aware selection helps most when the task requires multiple complemen-tary skills. The zero-shot LLM ranker performs worse than SkillRouter and DSR, suggesting that prompt-based reranking alone is not enough for fine-grained discrimination among many similar skills. 
+
+Overall takeaways. Across the main compari-son, ablation study, and reranking-strategy analy-7sis, the same pattern emerges. Pointwise relevance models are effective for identifying individually useful skills, especially when a query requires only one target skill. However, they do not directly optimize coverage of a required skill set. DSR improves this coverage by changing the selection objective rather than the underlying retriever or reranker. The largest gains appear for multi-skill queries and larger cutoffs, which is consistent with the role of diversity-aware selection: it mainly im-proves which additional skills are included after the highest-scoring candidates have already been found. The results also clarify when diversity should be applied. The ablation shows that diversity based on raw inter-skill cosine similarity can hurt cover-age, even when the same quality scores are used. This suggests that diversity is useful only when the similarity measure reflects redundancy rather than shared relevance. The query-residual kernel provides this distinction by removing the query-aligned component before measuring inter-skill overlap. As a result, DSR encourages the selected skills to remain close to the user request while re-ducing overlap among the selected candidates. This distinction is important for skill routing because multi-skill queries often require several skills that are related to the same task but not inter-changeable. A router that penalizes all similarity may remove useful skills simply because they share the same task context. Conversely, a router that ignores diversity may return several high-scoring but overlapping skills. DSR addresses the mid-dle ground: it keeps the relevance signal from the learned reranker while using query-conditioned diversity to improve coverage of complementary skills. 
+
+## 5 Conclusion 
+
+We studied skill routing for LLM agents over large and redundant skill registries. Existing skill routers typically rank candidate skills independently by query relevance, which can waste context bud-get on redundant skills and miss complementary skills needed for multi-step tasks. To address this limitation, we proposed DSR, a diversity-aware reranking framework that uses DPP-based subset selection to balance relevance and non-redundancy. DSR introduces a query-residual diversity kernel that penalizes redundant skill overlap while reduc-ing penalties caused by shared query relevance. Experiments on the SkillRouter benchmark show that DSR improves recall and full coverage over a strong pointwise reranking baseline, with larger gains on multi-skill queries. Further analysis shows that the query-residual kernel is critical for effec-tive diversity-aware selection, and that the bene-fits of DSR are most clear when the router must recover multiple required skills within a limited shortlist. These findings show that the selection layer remains important even when the retriever and reranker are fixed. As skill registries continue to grow, effective agent systems will need rout-ing methods that account not only for individual relevance, but also for redundancy and complemen-tarity among the selected skills. 
+
+## Limitations 
+
+Our evaluation follows the SkillRouter benchmark, which contains 75 expert-verified queries over a large skill registry. Although the registry is large and includes both single-skill and multi-skill tasks, the number of evaluated queries is limited. Future work should evaluate diversity-aware skill routing on broader benchmarks with more domains, more complex workflows, and different types of skills. DSR operates after candidate retrieval. If the initial retriever does not include required skills in the candidate set, the DPP selection stage cannot recover them. Our results therefore isolate the ef-fect of diversity-aware selection given a retrieved candidate pool, but they do not remove the need for strong skill retrieval and relevance modeling. Im-proving candidate generation and diversity-aware selection jointly could be an important direction for future work. We evaluate skill routing using retrieval-based metrics such as Recall and Full Coverage. These metrics measure whether the required skills are retrieved, but they do not directly measure down-stream agent execution success. In practice, an agent may still fail even when all required skills are retrieved, for example because of incorrect tool use, poor planning, or conflicts among skill instruc-tions. Future evaluations should connect skill-set coverage with end-to-end task completion. DSR adds a DPP-based selection step after reranking. We apply this step only to the retrieved top candidates, which keeps the overhead man-ageable, but the cost may still matter for latency-sensitive deployments or much larger candidate sets. More efficient approximations and adaptive 8candidate sizes could further reduce the cost of diversity-aware selection. 
+
+## References 
+
+Raja Hafiz Affandi, Emily Fox, Ryan Adams, and Ben Taskar. 2014. Learning the parameters of determinan-tal point process kernels. In International Conference on Machine Learning , pages 1224–1232. Jaime Carbonell and Jade Goldstein. 1998. The use of MMR, diversity-based reranking for reordering doc-uments and producing summaries. In Proceedings of the 21st Annual International ACM SIGIR Confer-ence on Research and Development in Information Retrieval , pages 335–336. Lingjiao Chen, Matei Zaharia, and James Zou. 2023. Frugalgpt: How to use large language models while reducing cost and improving performance. arXiv preprint arXiv:2305.05176 .Shuhao Chen, Weisen Jiang, Baijiong Lin, James T. Kwok, and Yu Zhang. 2024. Routerdc: Query-based router by dual contrastive learning for assembling large language models. In Advances in Neural Infor-mation Processing Systems , volume 37. Sangwoo Cho, Chen Li, Dong Yu, Hassan Foroosh, and Fei Liu. 2019. Multi-document summarization with determinantal point processes and contextualized rep-resentations. In Proceedings of the 2nd Workshop on New Frontiers in Summarization , pages 98–103. Qilin Deng, Kai Wang, Minghao Zhao, Zhene Zou, Runze Wu, Jianrong Tao, Changjie Fan, and Liang Chen. 2020. Personalized bundle recommendation in online games. In Proceedings of the 29th ACM Inter-national Conference on Information and Knowledge Management , pages 2381–2388. Insu Han, Prabhanjan Kambadur, Kyoungsoo Park, and Jinwoo Shin. 2017. Faster greedy map inference for determinantal point processes. In International Conference on Machine Learning , pages 1384–1393. PMLR. Qitian Jason Hu, Jacob Bieker, Xiuyu Li, Nan Jiang, Benjamin Keigwin, Gaurav Ranganath, Kurt Keutzer, and Shriyash Kaustubh Upadhyay. 2024. Router-bench: A benchmark for multi-LLM routing system. 
+
+arXiv preprint arXiv:2403.12031 .Zhongzhan Huang, Guoming Ling, Yupei Lin, Yandong Chen, Shanshan Zhong, Hefeng Wu, and Liang Lin. 2025. RouterEval: A comprehensive benchmark for routing LLMs to explore model-level scaling up in LLMs. In Findings of the Association for Computa-tional Linguistics: EMNLP 2025 , pages 3860–3887. Association for Computational Linguistics. Alex Kulesza and Ben Taskar. 2012. Determinantal point processes for machine learning. Foundations and Trends in Machine Learning , 5(2–3):123–286. Xiangyi Li, Wenbo Chen, Yimin Liu, Shenghan Zheng, Xiaokun Chen, Yifeng He, Yubo Li, Bingran You, Haotian Shen, Jiankai Sun, Shuyi Wang, Binxu Li, Qunhong Zeng, Di Wang, Xuandong Zhao, Yuanli Wang, Roey Ben Chaim, Zonglin Di, Yipeng Gao, and 22 others. 2026. Skillsbench: Benchmarking how well agent skills work across diverse tasks. 
+
+Preprint , arXiv:2602.12670. Isaac Ong, Amjad Almahairi, Vincent Wu, Wei-Lin Chiang, Tianhao Wu, Joseph E. Gonzalez, M. Waleed Kadous, and Ion Stoica. 2025. Routellm: Learning to route llms with preference data. In International Conference on Learning Representations .Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou, Mark Gerstein, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2023. Toolllm: Fa-cilitating large language models to master 16000+ real-world apis. Preprint , arXiv:2307.16789. Rodrygo Santos, Jie Peng, Craig Macdonald, and Iadh Ounis. 2010. Explicit search result diversification through sub-queries. pages 87–99. Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettle-moyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. In Thirty-seventh Conference on Neural Information Processing Systems .Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li, Weiming Lu, and Yueting Zhuang. 2023. Hugging-gpt: Solving ai tasks with chatgpt and its friends in hugging face. Preprint , arXiv:2303.17580. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Man-dlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. 2023. Voyager: An open-ended embodied agent with large language models. 
+
+Preprint , arXiv:2305.16291. Wei Wang, Tiankai Yang, Hongjie Chen, Yue Zhao, Franck Dernoncourt, Ryan A. Rossi, and Hoda El-dardiry. 2025. Learning to route llms from bandit feedback: One policy, many trade-offs. Preprint ,arXiv:2510.07429. Mark Wilhelm, Ajith Ramanathan, Alexander Bonomo, Sagar Jain, Ed Chi, and Jennifer Gillenwater. 2018. Practical diversified recommendations on youtube with determinantal point processes. pages 2165– 2173. Renjun Xu and Yang Yan. 2026. Agent skills for large language models: Architecture, acquisition, security, and the path forward. Preprint , arXiv:2602.12430. YanZhao Zheng, ZhenTao Zhang, Chao Ma, YuanQiang Yu, JiHuai Zhu, Yong Wu, Tianze Xu, Baohua Dong, Hangcheng Zhu, Ruohui Huang, and Gang Yu. 2026. Skillrouter: Skill routing for llm agents at scale. 
+
+Preprint , arXiv:2603.22455. 
+
+9Richard Zhuang, Tianhao Wu, Zhaojin Wen, Andrew Li, Jiantao Jiao, and Kannan Ramchandran. 2025. Em-bedLLM: Learning compact representations of large language models. In The Thirteenth International Conference on Learning Representations .
+
+10 A MRR Diagnostic 
+
+Table 4 reports MRR together with the coverage metrics from the full-pipeline comparison. MRR measures the rank of the first retrieved correct skill, so it is mainly an early-precision diagnostic. This metric is less aligned with our main goal because multi-skill routing requires recovering the full set of required skills, not only one correct skill. DSR remains close to SkillRouter on MRR while improving Recall and Full Coverage. On all queries, DSR obtains MRR@10 of 0.784 , com-pared with 0.788 for SkillRouter. On multi-skill queries, DSR obtains MRR@10 of 0.788 , com-pared with 0.792 for SkillRouter. These small differences suggest that DSR improves skill-set coverage without substantially degrading the first relevant skill position. 
+
+## B LLM Usage 
+
+We used ChatGPT during the preparation of this manuscript for language editing and drafting sup-port. LLMs were not used to generate experimental results or to make final scientific decisions. 11 Table 4: Full-pipeline results with MRR included as an early-precision diagnostic. Both methods use SR-Emb-0.6B retrieval and SR-Rank-0.6B relevance scores. The main paper focuses on Recall and Full Coverage because multi-skill routing requires recovering complete skill sets. 
+
+MRR Recall Full Coverage Method @10 @20 @50 @10 @20 @50 @10 @20 @50 
+
+All queries (75) 
+
+SkillRouter .788 .790 .790 .705 .754 .754 .520 .560 .560 DSR .784 .785 .785 .712 .768 .808 .527 .573 .633 
+
+Multi-skill queries (51) 
+
+SkillRouter .792 .793 .793 .659 .704 .704 .424 .458 .458 DSR .788 .790 .790 .668 .739 .773 .432 .492 .551 
+
+12

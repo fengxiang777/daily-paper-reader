@@ -1,0 +1,471 @@
+Title: Stable-MM-R1: Anchoring Multimodal Reasoning Dynamics via Entropy-Guided Stratification
+
+URL Source: https://arxiv.org/pdf/2609.07148v1
+
+Published Time: Wed, 09 Sep 2026 01:58:19 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Stable-MM-R1: Anchoring Multimodal Reasoning Dynamics via Entropy-Guided Stratification 
+
+Yimeng Ye 1,* , Shawn Chen 1,* , Wenxuan Huang 2, Manyuan Zhang 2
+
+Kaituo Feng 2, Zhangquan Chen 3, Jiayu Chen 2, Yucheng Zhou 2
+
+Yicheng Xiao 3, ZhiYuan Feng 3, Tianyu Shi 41Columbia University 2CUHK 3THU 4McGill University 
+
+> *Equal contribution
+
+Abstract 
+
+While Reinforcement Learning (RL) effec-tively incentivizes reasoning in Large Lan-guage Models, current pipelines are hindered by training instability and rapid entropy col-lapse. These limitations often stem from "Roll-out Silencing" and low-quality gradient signals in standard sampling procedures. In this work, we propose a robust, data-centric framework to stabilize RL training. We first introduce Potential-Aware Query Mining (PAQM), which filters data dynamically to focus on the "Distil-lation Zone"—samples with high potential for capability elicitation. Furthermore, we present Hybrid Stratified Replay (HSR), a novel mech-anism that restructures batches by stratifying rollouts based on Path Entropy, a rollout-level confidence proxy, and outcome reward. Within each optimization step, HSR reuses current-policy "Stability Anchors" and "Hard Nega-tives" to construct high-contrast optimization groups, then clears its buffers before the next step. This approach mitigates entropy collapse while improving the utilization of learning sig-nals under limited compute. Our method out-performs strong baselines on complex reason-ing tasks, offering a principled solution for sta-ble and efficient RL fine-tuning. 
+
+1 Introduction 
+
+Multimodal large language models (MLLMs) have recently demonstrated striking progress on com-plex reasoning tasks, especially when equipped with explicit reasoning traces such as chain-of-thought (CoT) (Wei et al., 2022; Chen et al., 2026c). However, reliably eliciting and stabilizing reason-ing behaviors during post-training remains chal-lenging, particularly when we move beyond super-vised imitation toward reinforcement learning (RL) with verifiable rewards (Ouyang et al., 2022; Chen et al., 2026b; DeepSeek-AI et al., 2025; Zhang et al., 2025; Feng et al., 2026b). In reasoning-centric settings (e.g., math and diagram reason-ing), RL is attractive because correctness can be automatically verified, enabling scalable learning signals without dense human labels (Cobbe et al., 2021; Lightman et al., 2023). Yet practitioners con-sistently observe that RL training can be brittle: reward curves oscillate, KL/entropy diagnostics exhibit abrupt shifts, and the policy may prema-turely collapse into narrow modes that look confi-dent but generalize poorly (Yuan et al., 2025; Yu et al., 2025). Following recent reasoning LLM practice, we define stable training as a process where (i) re-ward and benchmark performance improve steadily across steps, and (ii) the model’s internal state evolves smoothly without abrupt regime changes, as reflected by diagnostics such as training– inference KL divergence and sequence-level/token-level entropy (Yuan et al., 2025). Unfortunately, stability is often violated in modern RL pipelines for reasoning. A prominent failure mode is prema-ture entropy collapse: once the policy discovers a narrow high-reward strategy, the action distribution sharpens too quickly, cutting off exploration and trapping learning in local optima. This issue be-comes more severe in long-CoT reasoning where gradient signal is sparse and delayed, and even PPO-style actor–critic RL can collapse without careful value calibration (Schulman et al., 2017; Yuan et al., 2025). Moreover, group-based methods that avoid a learned critic—e.g., GRPO—reduce system complexity and have enabled strong reason-ing results (Shao et al., 2024; Chen et al., 2026a; DeepSeek-AI et al., 2025; Feng et al., 2026a; Wu et al., 2025a; Huang et al., 2026; Zeng et al., 2026; Fang et al., 2026), but still suffer from batch de-generacy: stochastic group composition can yield near-zero advantage variance (vanishing updates) or noisy baselines (destabilizing updates), espe-cially under limited rollout budgets. 1arXiv:2609.07148v1 [cs.LG] 7 Sep 2026 Common stabilization mechanisms are objective-centric , including clipped policy updates and KL or entropy control (Schulman et al., 2017; Yu et al., 2025). While effective in some regimes, these “soft constraints” can be sensitive to scaling, reward spar-sity, and long-horizon CoT dynamics. Inspired by recent data-centric RL observations (e.g., advan-tage collapsing / rollout silencing in multimodal RL fine-tuning) (Zhu et al., 2025b), we ask a different question: instead of modifying how RL optimizes, can we stabilize training by controlling what data the optimizer sees at each step? We argue that a major source of instability is not the RL objective itself, but the stochastic quality of rollouts and opti-mization groups: easy queries waste compute with near-zero gradients, impossible queries inject high-variance noise, and mixed-quality rollouts within a group can produce unreliable advantage estimates. To address these challenges, we propose Stable-MM-R1 , a data-centric stabilization framework for reasoning RL that structures learning around two complementary axes: outcome (verification re-ward) and confidence (Path Entropy, defined as a sequence-level surprisal proxy). Unlike stan-dard methods that rely on stochastic sampling, our approach actively manages the training distribu-tion. First, we introduce Potential-Aware Query Mining (PAQM) to dynamically curate a curricu-lum, ensuring the model continuously operates within a "Distillation Zone" of learnable queries rather than wasting compute on the trivial or the impossible. Second, and most crucially, we em-ploy Hybrid Stratified Replay (HSR) to engineer the composition of optimization groups. By pair-ing high-surprisal exploration targets with "Stabil-ity Anchors" (mastered samples) and "Hard Nega-tives" (confident errors), we construct stable, high-contrast optimization groups whenever the corre-sponding samples are available. Together, these components are designed to reduce the incidence of zero-signal groups and mitigate premature en-tropy collapse without modifying the underlying RL objective. Our main contributions are: (1) We identify stochastic group degeneracy as one source of insta-bility in reasoning RL, showing from a data-centric perspective how uncontrolled rollout quality can lead to vanishing gradients and premature entropy collapse. (2) We introduce Potential-Aware Query Mining (PAQM), a dynamic curriculum framework that filters data based on Pass@K and Path En-tropy to concentrate updates within the "Distillation Zone." (3) We propose Hybrid Stratified Replay (HSR), a novel sampling strategy that reduces the incidence of degenerate groups through the struc-tured inclusion of Stability Anchors and Hard Nega-tives when the corresponding samples are available, thereby anchoring the policy update dynamics. (4) We demonstrate that Stable-MM-R1 outperforms the evaluated open-source 7B-scale baselines on average across diverse benchmarks, while maintain-ing healthy Path-Entropy trajectories that avoid the collapse patterns observed in GRPO and DAPO. 
+
+2 Related Works 
+
+2.1 Multimodal Large Reasoning Models (MLRMs) 
+
+The paradigm of post-training has shifted from su-pervised imitation to reinforcement learning (RL), driven by the premise that reasoning capabilities emerge from exploration rather than memoriza-tion (Feng et al., 2025; Chen et al., 2025b). Pi-oneering works like DeepSeek-R1 (DeepSeek-AI et al., 2025) and Kimi k1.5 (Team et al., 2025) have demonstrated that RL with verifiable rewards can incentivize long-chain reasoning (CoT). This trend is rapidly extending to the multimodal domain with models like Qwen2.5-VL (Bai et al., 2025b) and LLaVA-OneVision (An et al., 2025). Recent specialized frameworks have further ex-panded this frontier. SATORI-R1 (Shen et al., 2025) integrates spatial grounding with verifiable rewards to incentivize fine-grained visual reason-ing by decomposing VQA into verifiable stages. Similarly, Retrv-R1 (Zhu et al., 2025a) introduces a reasoning-driven framework tailored for univer-sal multimodal retrieval. Our work complements these by focusing on the stability of the underlying optimization process itself. 
+
+2.2 Entropy Collapse and Stabilization in RL 
+
+A critical failure mode in reasoning-oriented RL is Entropy Collapse, where the policy prematurely converges to a deterministic distribution (Yuan et al., 2025). PPO-style training constrains policy updates through clipping and can additionally use KL or entropy control, but group-based methods such as GRPO still struggle to maintain diversity (Schulman et al., 2017). Recent works have proposed various objective-centric modifications to stabilize GRPO. Quantile Advantage Estimation (QAE) (Wu et al., 2025b) replaces the mean baseline with quantile estimates 2Distillation Zone Queries 
+
+> (Learnable)
+> Discarded
+> (Acc=0)
+> + Hint Injection
+
+Pass@K check 
+
+0 < Pass@N < 1 
+
+Phase 0: PAQM 
+
+(Potential Aware Query Mining) 
+
+> Q: What is in the image?
+> Multimodal Input
+> Generate N Rollouts
+> Reward
+> Entropy
+> Green Bucket:
+> Anchors
+> (Low Entropy, Correct)
+> Red Bucket:
+> Hard Negatives
+> (Low Entropy,
+> Incorrect)
+> Yellow Bucket:
+> Epiphanies
+> (High Entropy,
+> Correct)
+> Trash Can:
+> Anchors
+> (Low Entropy,
+> Incorrect)
+
+Phase 1: Stratification 
+
+Path Entropy Check 
+
+(Rollout Diversity) 
+
+> Perceptual Deficit
+> Cognitive Deficit
+> Key
+> Reasoning Node
+> Visual
+> Decompositi on hint
+> Hybrid Assembly Strategy
+> Epiphany
+> Sample
+> Reused
+> Anchor
+> Reused Hard
+> Negative
+> Structured Group
+> (Targeted
+> Correction)
+> Stream A: Structured Stabilization (50%)
+> Stream B: Natural
+> Generalization (50%)
+> Natural Sample
+> (Uniform
+> Sampling)
+> Natural
+> Group
+> (Unbiased Distribution)
+> Budget
+> Normalization
+> GRPO Update
+> (Policy Optimization)
+
+Phase 2: HSR 
+
+(Hybrid Group Assembly) Figure 1: Overview of the Stable-MM-R1 framework. Phase 0 (PAQM): A dynamic curriculum is constructed via a multi-dimensional filter (Pass@K and Path Entropy). Queries in the "Impossible" zone undergo a Modality-Decoupled Diagnosis , receiving targeted Visual Decomposition or Cognitive Key Nodes to reclaim them into the learnable frontier. Phase 1 (Stratification): Generated rollouts are diagnosed using Path Entropy and reward, then classified into semantic buffers: Anchors (stability), Hard Negatives (correction), and Epiphanies (exploration), while stochastic Noise is discarded. Phase 2 (HSR Group Assembly): Optimization groups are assembled via a hybrid strategy. Stream A (Structured) explicitly reuses Anchors and Hard Negatives to stabilize the gradient variance for Epiphanies, while Stream B (Natural) preserves natural on-policy samples. Together, Phases 1 and 2 constitute the complete HSR pipeline. 
+
+to prevent reward outliers from crushing entropy. Sharpness-Guided GRPO (GRPO-SG) (Le et al., 2025) uses probability-based token weights to downweight tokens likely to induce overly large gradients. Similarly, M-GRPO (Bai et al., 2025a) utilizes a momentum-updated reference model to anchor the policy target, reducing oscillation. Tak-ing a control-theoretic perspective, EntroPIC (Yang et al., 2025) applies Proportional-Integral (PI) con-trol to dynamically adjust loss coefficients, explic-itly targeting a desired entropy trajectory. 
+
+2.3 Data-Centric Policy Optimization 
+
+An emerging alternative focuses on the input data distribution rather than the objective function. Shuffle-R1 (Zhu et al., 2025b) identifies "rollout silencing" and proposes contrastive batch organiza-tion. Concurrently, Tang et al. (2025) emphasize sample polarity, while MMR1 (Leng et al., 2025) explores variance-aware sampling. Beyond selection, recent works explore restruc-turing the data itself. RoRecomp (Li et al., 2025) enhances reasoning efficiency via rollout response recomposition. Addressing gradient variance di-rectly, Zeng et al. (2025) introduce Shrinkage Base-lines for verifiable rewards to improve estimator accuracy. Unlike these approaches, our Stable-MM-R1 introduces Path Entropy, a rollout-level confidence proxy, as a dimension for data curation. By explicitly stratifying samples into stability an-chors and exploration targets, we enforce training stability through structured data composition. 
+
+3 Methodology 
+
+In this section, we present Stable-MM-R1, a unified framework designed to stabilize the post-training of multimodal reasoning models. Our approach op-erates in two stages: first, we curate a dynamic cur-riculum via Potential-Aware Query Mining (Phase 0, §3.1); second, we stabilize the optimization pro-cess using Hybrid Stratified Replay, which com-bines diagnostic stratification (Phase 1, §3.2) with structured group assembly (Phase 2, §3.3). By addressing both data ingestion and optimization-group composition, our framework targets zero-3signal groups and premature entropy collapse. 
+
+3.1 Phase 0: Potential-Aware Query Mining (PAQM) 
+
+Constructing a high-quality prompt set is the first line of defense against training instability. We in-troduce Potential-Aware Query Mining (PAQM), a dynamic curation pipeline that filters queries based on their "Learnability." 
+
+Mathematical Definition of Learnability. For a given prompt x, we sample N = 16 rollouts 
+
+{y1, ..., y 16 } from the current policy πθ. We esti-mate the empirical success rate ˆp(x) = 1
+
+> N
+
+P r(yi).We categorize queries into three zones: • Distillation Zone (Learnable): Queries where 0 < ˆp(x) < 1. These exhibit variance in outcomes, indicating the model is capable but unstable—the ideal target for RL. • Trivial Zone: Queries where ˆp(x) = 1.These are mastered concepts and are down-sampled to prevent overfitting. • Impossible Zone: Queries where ˆp(x) = 0 .These yield zero gradients in standard RL and are candidates for diagnosis. To obtain a tractable rollout-level confidence score within the Distillation Zone, we define Path Entropy as the length-normalized sequence sur-prisal of a sampled rollout. Motivated by predictive-uncertainty estimation (Malinin and Gales, 2018), we compute 
+
+Hpath (y|x) = − 1
+
+|y|
+
+> |y|
+
+X
+
+> t=1
+
+log πθ(yt|x, y <t ). (1) This sample-level quantity is a proxy for model confidence: it is not the Shannon entropy of the full predictive distribution and should not be interpreted as a direct estimate of epistemic uncertainty. 
+
+Adaptive Frontier Expansion via Modality-Decoupled Diagnosis. For queries in the Impos-sible Zone, we apply Modality-Decoupled Diagno-sis. We probe the model using ground-truth cap-tions to isolate the failure mode. • Perceptual Deficit: If the model solves the text-only probe, we inject a Visual Decompo-sition Hint (e.g., coordinates, shapes) derived from an auxiliary vision model. • Cognitive Deficit: If the model fails the probe, we inject a Key Reasoning Node (e.g., the first theorem step) distilled from a teacher model’s trace. This mechanism reclaims roughly 30% of hard queries back into the Distillation Zone. Note that these hints are generated offline using the propri-etary teacher model Seed-1.5-VL (Guo et al., 2025) and are injected only during Phase 0 curriculum construction. 
+
+3.2 Phase 1: Diagnostic Path-Entropy–Reward Stratification 
+
+One source of instability in Group Relative Pol-icy Optimization (GRPO) is the stochastic quality of optimization groups. To address it, we propose Hybrid Stratified Replay (HSR), which treats "Mas-tered Samples" and "Confident Errors" as Stability Anchors. We categorize rollouts based on outcome correct-ness r(y) and the Path-Entropy score Hpath (y|x).To adapt to the shifting policy distribution, we em-ploy Dynamic Percentile Thresholding. We cal-culate the empirical Path-Entropy distribution H
+
+across all rollouts in the current global batch (cov-ering multiple queries) to obtain batch-adaptive cutoffs. We define dynamic thresholds τlow =
+
+Percentile (H, 10) and τhigh = Percentile (H, 90) .Rollouts are classified into three buffers: • Stability Anchors (Banc ): Correct samples with low Path Entropy ( r = 1 , H path (y|x) <τlow ). These are reused as high-confidence positive anchors. • Hard Negatives (Bneg ): Incorrect samples with low Path Entropy ( r = 0 , H path (y|x) <τlow ). These are high-confidence errors in-cluded to provide outcome contrast. • Epiphanies (Bepi ): Correct samples with high Path Entropy ( r = 1 , H path (y|x) > τ high ). These are low-confidence successes empha-sized as learning targets. Samples in the "Confusion Zone" (r =0, H path (y|x) > τhigh ) are treated as low-confidence errors and excluded from the valid sam-ple pool. 
+
+3.3 Phase 2: Hybrid Group Assembly 
+
+Standard GRPO constructs optimization groups via random sampling, which can yield low-contrast 4or high-variance updates (Zhu et al., 2025b; Leng et al., 2025). To balance the need for targeted correction and natural on-policy coverage , we al-locate the total group budget G into two equal streams: the Structured Stream ( 50% ) and the Nat-ural Stream ( 50% ). 
+
+Stream A: Structured Stabilization (50%). 
+
+This stream focuses on "Correction" by explicitly engineering the batch topology. Within the allo-cated budget for this stream ( Gstruct = 0 .5G), we enforce a strict semantic ratio: 50% Epiphanies (to drive learning), 25% Stability Anchors (to anchor the baseline), and 25% Hard Negatives (to sharpen the decision boundary). Formally: 
+
+Gstruct = S50%  
+
+> epi
+
+∪ Sample (Banc , 25%) 
+
+∪ Sample (Bneg , 25%) (2) When all structured quotas are available, this injec-tion grounds the selected exploration targets with positive anchors and contrasting errors within the micro-batch. 
+
+Stream B: Natural Generalization (50%). To prevent the policy from overfitting to the artificial topology of Stream A, the second stream ( Gnat =0.5G) focuses on "Robustness." We sample groups uniformly from the valid sample pool (excluding only the filtered noise). This preserves natural on-policy coverage alongside the deliberately shifted structured stream. 
+
+Clarification on Replay Scope (Intra-Step Only). 
+
+A critical distinction of our framework is the scope of the replay buffers. Unlike traditional experi-ence replay used in off-policy RL, HSR employs an Intra-Step Replay mechanism. The buffers Banc 
+
+and Bneg have a lifespan of τ = 1 ; they are pop-ulated solely from the N rollouts generated at the 
+
+current optimization step and are cleared imme-diately after the gradient computation. This en-sures that all "reused" samples are drawn from the current policy πθ, thereby maintaining on-policy consistency without requiring importance sampling corrections for stale data. 
+
+3.3.1 Theoretical Motivation: Degenerate Groups 
+
+Randomly sampled groups may become reward-degenerate when all rollouts receive the same out-come, causing group-relative advantages to van-ish. HSR reduces the incidence of such zero-signal groups by constructing a structured stream contain-ing both successful and failed rollouts whenever the corresponding samples are available. Section A.3 provides a conditional variance analysis and de-scribes the fallback used when a structured quota cannot be satisfied. 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets and Benchmarks. Distinct from prior multi-stage approaches, Stable-MM-R1 uses RL-only parameter updates on multimodal data, with-out a supervised cold-start phase; teacher-generated hints affect selected training prompts but are not used for supervised parameter updates. To sup-port this, we construct a high-quality RL Prompt Corpus comprising approximately 189k samples by aggregating verifiable multimodal tasks from Geometry3K (Lu et al., 2021) and a curated sub-set of MM-Eureka (Meng et al., 2025). Further-more, we integrate ViRL39K (Wang et al., 2025a), a large-scale dataset of verifiable visual reasoning queries, to expand the diversity of visual scenar-ios. Crucially, our Potential-Aware Query Min-ing (PAQM) pipeline utilizes a teacher-guided dis-tillation strategy to generate scaffolding hints for hard queries. Given the multimodal nature of our data source, we exclusively employ the propri-etary Vision-Language Model Seed-1.5-VL (Guo et al., 2025) to generate both perceptual descrip-tions and reasoning traces offline. These cached multimodal hints are injected into selected prompts during Phase 0 curriculum construction, before RL rollouts begin. For evaluation, we employ a comprehensive suite of benchmarks covering mathematical rea-soning, visual perception, and chart understanding: MathVerse (Zhang et al., 2024), MathVision (Wang et al., 2024a), MathVista (Lu et al., 2024), Dy-naMath (Zou et al., 2024), WeMath (Qiao et al., 2024), LogicVista (Xiao et al., 2024), MMMU (Yue et al., 2024a), MMMU-Pro (Yue et al., 2024b), CharXiv (Wang et al., 2024b), and MMStar (Chen et al., 2024). 
+
+Baselines. We benchmark Stable-MM-R1 against three categories of systems to ensure a rigorous evaluation. First, we include leading proprietary models as upper-bound references: GPT-4.1 (OpenAI, 2025), Gemini-2.5-Pro-Thinking (Comanici et al., 2025), Claude-4-Sonnet 5(Anthropic, 2025), and Doubao-1.5-Thinking-Vision-Pro (Guo et al., 2025). Second, we consider representative lightweight open-source MLLMs: Qwen2.5-VL-3B-Instruct (Bai et al., 2025b), FAST-3B (Xiao and Gan, 2025), and VLAA-Thinker-3B (Chen et al., 2025a). Third, we evaluate competitive 7B-scale open-source MLLMs, including Qwen2.5-VL-7B-Instruct, OpenVLThinker-1.2-7B (Deng et al., 2025), MM-Eureka-Qwen-7B (Meng et al., 2025), MMR1-Math-v0 (Leng et al., 2025), ThinkLite-7B-VL (Wang et al., 2025b), VLAA-Thinker-7B, VL-Rethinker-7B (Wang et al., 2025a), and Vision-G1 (Zha et al., 2025). Most open-source baselines are fine-tuned from the Qwen2.5-VL family, ensuring comparability in architecture and training setup. 
+
+Implementation Details. We utilize the EasyR1 framework (Zheng et al., 2025) as our training code-base. We employ Qwen2.5-VL-7B-Instruct (Bai et al., 2025b) as the base policy to verify scalabil-ity. We freeze the vision encoder and update only the LLM backbone during RL training. We set the global batch size to 128 and the learning rate to 
+
+1 × 10 −6. The rollout temperature is set to 1.0. For HSR, we generate N = 16 rollouts per query. Across in-house methods, we match the final group size ( G = 16 ) and the number of gradient updates (400 steps). This controls the optimization-update budget but does not make total data-preparation and generation cost identical: PAQM uses an offline hint cache and may resample queries that initially fall in the Impossible Zone. All experiments are conducted on 8× H100 GPUs. Throughout the pa-per, Pass@8 denotes majority-vote accuracy over eight independently sampled responses. 
+
+Data Decontamination. Given the aggregation of multiple datasets, data leakage is a critical con-cern. We applied a de-duplication pipeline. For text, we used MinHash LSH to remove samples with > 0.8 Jaccard similarity to any query in the evaluation set. For images, we employed percep-tual hashing (pHash) to filter out visual duplicates. These checks reduce direct and near-duplicate over-lap, although they cannot rule out all semantic con-tamination. 
+
+Controlled Baseline Reproduction & Fairness. 
+
+All in-house comparisons use the same base model, source prompt pool, final per-query rollout group size, training schedule, and evaluation protocol. PAQM and HSR are enabled only in the configura-tions explicitly marked in Table 2. Standard GRPO and DAPO do not use PAQM. The ‘+ PAQM‘ con-figuration uses the full hint-augmented curriculum with the standard GRPO objective, whereas Full Stable-MM-R1 additionally enables HSR; their comparison therefore isolates the contribution of structured batch topology under the same PAQM data pipeline. We match the final group size (G = 16 ) and update count across methods; the offline teacher and resampling overhead described above are additional costs of PAQM. 
+
+Note on Training Duration: While Stable-MM-R1 maintained stability throughout the full training schedule (approx. 400 steps), we observed that the GRPO and DAPO baselines frequently suffered from entropy collapse and performance degrada-tion after step 250 (as visualized in Figure 3). To ensure a fair comparison, we report the peak perfor-mance achieved by these baselines prior to collapse, rather than their final converged checkpoints. This protocol ensures that the reported gaps reflect the ceiling of the baselines capabilities rather than their failure modes. 
+
+4.2 Main Results Comparison with Baselines. Table 1 presents a comprehensive comparison against both propri-etary and open-source models. Stable-MM-R1 achieves the highest average score among the evalu-ated open-source 7B-scale models, with an average score of 56.2%, outperforming the strongest evalu-ated open-source competitor Vision-G1 (46.5%) by 9.7 points. Notably, on the fine-grained vi-sual reasoning benchmark MathVerse, our method achieves 56.3%, surpassing Vision-G1 (50.0%) by 6.3 points and indicating strong performance on fine-grained visual mathematical reasoning. On MathVision, which evaluates challenging visual mathematical reasoning, we observe an improve-ment of 28.0 points over the Qwen2.5-VL base model and 20.2 points over the strongest evaluated open-source baseline. While our performance on MathVista (75.5%) is slightly below Vision-G1 (-0.6%), Stable-MM-R1 outperforms the base model and the other evaluated RL baselines on average while exhibiting more stable training dynamics in Figures 2 and 3. 
+
+Stability Analysis. Figure 2 contrasts the train-ing dynamics of the three methods. The GRPO baseline exhibits large Path-Entropy fluctuations 6Model MathVerse-V MathVision MathVista DynaMath-W WeMath LogicVista MMMU MMMU-Pro CharXiv MMStar Avg.                                                                                                                                                                                                                    
+
+> Closed-Source Models
+> Gemini-2.5-Pro-Thinking 81.2 55.3 83.8 57.1 78.0 75.2 82.0 76.5 69.3 79.7 73.8 Doubao-1.5-thinking-vision-pro 80.4 68.7 85.6 60.5 78.0 71.8 77.9 67.6 63.4 78.2 73.2 Claude-4-Sonnet 66.1 54.6 70.4 46.9 63.0 64.4 74.4 60.7 58.4 66.9 62.6 GPT-4.1 59.8 51.8 72.0 48.3 55.5 63.8 75.0 65.0 55.8 71.2 61.8
+> 3B-scale MLLMs
+> Qwen2.5-VL-3B-Instruct 33.0 21.2 62.3 17.0 17.9 35.8 53.1 31.6 25.3 51.1 34.8 VLAA-Thinker-3B 36.4 24.4 61.0 18.2 33.8 38.5 49.7 33.3 28.2 53.4 37.7 FAST-3B 37.2 26.8 66.2 15.4 23.3 35.4 52.0 34.6 28.3 55.2 37.4
+> Stable-MM-R1-3B 47.9 44.9 67.2 24.4 41.9 44.1 56.5 43.9 34.4 57.2 46.2
+> ∆(Ours–Best Evaluated Open 3B) +10.7 +18.1 +1.0 +6.2 +8.1 +5.6 +3.4 +9.3 +6.1 +2.0 +8.5
+> 7B-scale Models
+> Qwen2.5-VL-7B-Instruct 42.9 25.1 68.2 21.2 36.2 45.0 58.6 38.3 35.5 62.1 43.3 VLAA-Thinker-7B 48.2 26.4 68.0 22.4 29.2 48.5 54.6 41.6 36.1 64.5 44.0 ThinkLite-7B-VL 45.3 32.9 75.1 22.0 26.5 40.7 55.5 41.3 39.3 63.4 44.2 OpenVLThinker-1.2-7B 40.7 25.9 72.3 21.2 37.9 41.4 58.7 42.9 39.3 62.9 44.3 VL-Rethinker-7B 49.1 32.3 74.9 27.4 27.8 44.5 56.7 41.7 39.8 62.7 45.7 MMR1-Math-v0 45.1 30.2 71.0 25.2 33.2 50.8 57.1 43.2 39.3 63.8 45.9 MM-Eureka-Qwen-7B 49.6 26.9 73.0 24.0 34.7 46.8 57.3 43.3 39.5 64.4 46.0 Vision-G1 50.0 31.3 76.1 27.2 29.0 50.2 53.4 41.2 41.0 66.0 46.5
+> Stable-MM-R1-7B 56.3 53.1 75.5 39.3 49.6 55.3 67.2 52.3 47.7 65.9 56.2
+> ∆(Ours–Best Evaluated Open 7B) +6.3 +20.2 -0.6 +11.9 +11.7 +4.5 +8.5 +9.0 +6.7 -0.1 +9.7
+
+Table 1: Performance comparison of various MLLMs on diverse multimodal reasoning benchmarks. Note on Metrics: We report Pass@8 (majority-vote) accuracy for all evaluated open-source models. Proprietary models are included as reference points and excluded from the within-scale rankings. Within each open-source model group (3B and 7B), the best results are highlighted in bold, and the second-best are underlined. MathVerse-V, DynaMath-W and WeMath-S denote the vision-only, worst, and strict settings, respectively.                             
+
+> Configuration MathVista MathVision MMMU Avg.
+> GRPO (Baseline) 70.6 50.1 61.5 60.7 DAPO (Strong Baseline) 71.8 (+1.2) 51.2 (+1.1) 62.9 (+1.4) 62.0 (+1.3) + PAQM (Ours) 73.5 (+2.9) 52.9 (+2.8) 65.1 (+3.6) 63.8 (+3.1) + HSR (Ours) 74.2 (+3.6) 53.6 (+3.5) 66.2 (+4.7) 64.7 (+4.0)
+> Full Stable-MM-R1 75.5 (+4.9) 54.7 (+4.6) 67.2 (+5.7) 65.8 (+5.1)
+
+Table 2: Ablation study. Standard GRPO and DAPO use neither PAQM nor HSR. ‘+ PAQM‘ applies the full hint-augmented curriculum with the standard GRPO objective, ‘+ HSR‘ enables HSR without PAQM, and Full Stable-MM-R1 combines both components. The comparison between ‘+ PAQM‘ and Full isolates the contribution of HSR. Best results are bold .
+
+followed by a sharp decline, while DAPO’s Path Entropy gradually falls to approximately 0.2 by its final recorded step. After its initial decline, Stable-MM-R1 remains mostly within approxi-mately 0.35 –0.60 nats, and its reward stays near the late-training plateau through step 400. These trajectories show greater late-training stability for Stable-MM-R1 in this run, without implying mono-tonic improvement at every step. 
+
+4.3 Ablation Study 
+
+To dissect the contribution of each component, we analyze the impact of removing PAQM and HSR. Table 2 summarizes the results. 
+
+HSR vs. Hints. A key question is whether the gains stem solely from the Seed-1.5-VL hints in PAQM. The row ‘+ PAQM‘ represents GRPO trained on the same hint-augmented curriculum used by the full method. Comparing ‘+ PAQM‘ with ‘Full Stable-MM-R1‘ therefore isolates a 2.0-point average gain from adding HSR under PAQM, showing that structured batch topology contributes beyond the hint-augmented curriculum alone. 
+
+Effectiveness of PAQM. As shown in Table 2, adding PAQM alone (‘+ PAQM‘) improves the av-erage score by 3.1 points over the GRPO baseline. This result is consistent with the benefit of concen-trating updates on the learnable frontier. 
+
+Impact of Hybrid Stratified Replay. Adding HSR without PAQM (‘+ HSR‘) improves the aver-age score by 4.0 points over GRPO, while combin-ing PAQM and HSR yields the best ablation result (65.8 average). Figure 3 further shows that the full method continues to improve after the GRPO and DAPO curves peak; because the figure com-pares complete methods rather than individual HSR buffer components, we do not attribute this trend to any single buffer category. 
+
+5 Conclusion 
+
+In this paper, we showed that stochastic optimization-group composition can contribute to instability in RL training for reasoning. We pro-posed a unified data-centric framework compris-ing Potential-Aware Query Mining (PAQM) and 7(a) Accuracy dynamics.   
+
+> (b) Path-Entropy evolution.
+> Figure 2: Training stability analysis. Accuracy (top) and mean Path Entropy (bottom) over training. Stable-MM-R1 maintains healthy exploration levels and avoids the collapse modes of the baselines.
+
+Hybrid Stratified Replay (HSR). By dynamically curating learnable queries and structuring optimiza-tion groups with stability anchors and contrastive negatives, the full method mitigated entropy col-lapse in our experiments. Beyond the performance gains, our results show that explicit contrast within the micro-batch—via anchors and hard negatives—can improve long-chain reasoning training without changing the underlying GRPO objective. This data-centric paradigm offers a complementary path for stabi-lizing future multimodal models. 
+
+Limitations 
+
+While Stable-MM-R1 improves stability, it relies on a proprietary teacher model (Seed-1.5-VL) for initial scaffolding, which may introduce distilla-tion bias and accessibility constraints. Although our comparisons match update count and final group size, PAQM incurs additional offline teacher-generation and query-resampling costs, and HSR requires careful intra-step buffer management. Fi-nally, our method currently focuses on verifiable reasoning; extending entropy-guided stratification   
+
+> (a) MathVista Pass@8 over training.
+> (b) MMMU Pass@8 over training.
+> Figure 3: Training dynamics comparison. Pass@8 accuracy trajectories on (a) MathVista and (b) MMMU. While GRPO and DAPO suffer from performance col-lapse, Stable-MM-R1 maintains a robust upward trajec-tory.
+
+to open-ended generation remains future work. 
+
+Ethical Considerations 
+
+As this work introduces a framework for enhanc-ing the reasoning capabilities of Multimodal Large Language Models (MLLMs) via Reinforcement Learning, we address several ethical implications regarding data selection, model behavior, and po-tential misuse. 
+
+Bias in Data Selection (PAQM). Our Potential-Aware Query Mining (PAQM) mechanism actively filters training data based on the model’s current ca-pability (Pass@K). While this improves efficiency, there is a theoretical risk of algorithmic exclu-
+
+8sion . If the base model exhibits pre-existing biases against specific linguistic dialects, cultural contexts, or visual concepts (classifying them as "Impossi-ble"), PAQM might systematically exclude this data from the training loop, exacerbating the bias. We mitigate this by using diverse, standard academic benchmarks (STEM-focused), but we advise practi-tioners to audit the "Discarded" data partition when applying this method to sociologically sensitive domains. 
+
+Data Privacy and Content Safety. We inspected the training corpus to identify and mitigate po-tential risks related to Personally Identifiable In-formation (PII) and offensive content. Although our data sources (Geometry3K, MM-Eureka, and ViRL39K) primarily consist of public academic benchmarks in STEM domains where PII risks are relatively low, we employed automated keyword filtering and random-sample audits to reduce the risk of propagating sensitive personal data or toxic material into the RL fine-tuning stage. 
+
+Teacher-Student Alignment Risks. The use of teacher-generated hints (visual decompositions and reasoning nodes) facilitates rapid learning. How-ever, this creates a dependency on the safety align-ment of the teacher model. If the teacher model harbors latent jailbreak vulnerabilities or halluci-nates harmful instructions, the student model may internalize these patterns via the high-reward gradi-ent signal. Although our experiments focus on ver-ifiable math and logic tasks where safety risks are minimal, applying Stable-MM-R1 to open-ended generation requires integrating safety-specific re-ward models (e.g., Rule-Based Reward Models or Constitutional AI) to prevent the reinforcement of hazardous content. 
+
+Dual Use and Automation. By stabilizing the reasoning capabilities of 7B-scale models, this work lowers the barrier for deploying powerful multimodal agents. While this democratizes ac-cess to advanced AI, it also increases the poten-tial for misuse in automated tasks, such as solving CAPTCHAs or automating interaction in visual en-vironments. We emphasize that the models trained in this paper are research prototypes intended for academic evaluation and should be subjected to rig-orous red-teaming before real-world deployment. 
+
+Environmental Impact. RL fine-tuning is com-putationally intensive. Our experiments utilized 8×
+
+H100 GPUs. HSR is designed to reduce zero-signal optimization groups under a fixed step budget, al-though we do not report a full energy or carbon accounting. Data-centric efficiency remains an im-portant direction for reducing the environmental cost of model post-training. 
+
+Disclosure of AI Assistance. We acknowledge the use of AI assistants for improving textual clarity and verifying code syntax. The authors reviewed the manuscript, scientific claims, and reported re-sults and retain responsibility for the final content. 
+
+References             
+
+> Xiang An, Yin Xie, Kaicheng Yang, Wenkang Zhang, Xiuwei Zhao, Zheng Cheng, Yirui Wang, Songcen Xu, Changrui Chen, Didi Zhu, Chunsheng Wu, Hua-jie Tan, Chunyuan Li, Jing Yang, Jie Yu, Xiyao Wang, Bin Qin, Yumeng Wang, Zizhen Yan, and 4 others. 2025. LLaVA-OneVision-1.5: Fully open framework for democratized multimodal training. arXiv preprint arXiv:2509.23661 .Anthropic. 2025. Introducing Claude 4. https://www. anthropic.com/research/claude-4 .Bizhe Bai, Hongming Wu, Peng Ye, and Tao Chen. 2025a. M-grpo: Stabilizing self-supervised rein-forcement learning for large language models with momentum-anchored policy optimization. arXiv preprint arXiv:2512.13070 .Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wen-bin Ge, Sibo Song, Kai Dang, Peng Wang, Shi-jie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, and 8 oth-ers. 2025b. Qwen2.5-vl technical report. Preprint ,arXiv:2502.13923. Hardy Chen, Haoqin Tu, Fali Wang, Hui Liu, Xian-feng Tang, Xinya Du, Yuyin Zhou, and Cihang Xie. 2025a. Sft or rl? an early investigation into train-ing r1-like reasoning large vision-language models.
+> arXiv preprint arXiv:2504.11468 . Introduces VLAA-Thinker. Lin Chen, Jinsong Li, Xiaoyi Dong, Pan Zhang, Yuhang Zang, Zehui Chen, Haodong Duan, Jiaqi Wang, Yu Qiao, Dahua Lin, and Feng Zhao. 2024. Are we on the right way for evaluating large vision-language models? arXiv preprint arXiv:2403.20330 .Shuang Chen, Kaituo Feng, Hangting Chen, Wenx-uan Huang, Dasen Dai, Quanxin Shou, Yunlong Lin, Xiangyu Yue, Shenghua Gao, and Tianyu Pang. 2026a. Opensearch-vl: An open recipe for frontier multimodal search agents. arXiv preprint arXiv:2605.05185 .Shuang Chen, Hangyu Guo, Yimeng Ye, Shijue Huang, Wenbo Hu, Jiayu Chen, Manyuan Zhang, Haoxi Li,
+
+9Song Guo, and Nanyun Violet Peng. 2026b. Ares: Multimodal adaptive reasoning via difficulty-aware token-level entropy shaping. In International Con-ference on Learning Representations , volume 2026, pages 147474–147512. Shuang Chen, Yue Guo, Zhaochen Su, Yafu Li, Yu-lun Wu, Jiacheng Chen, Jiayu Chen, Weijie Wang, Xiaoye Qu, and Yu Cheng. 2025b. Advancing multimodal reasoning: From optimized cold start to staged reinforcement learning. arXiv preprint arXiv:2506.04207 .Shuang Chen, Quanxin Shou, Hangting Chen, Yucheng Zhou, Kaituo Feng, Wenbo Hu, Yi-Fan Zhang, Yun-long Lin, Wenxuan Huang, Mingyang Song, et al. 2026c. Unify-agent: A unified multimodal agent for world-grounded image synthesis. arXiv preprint arXiv:2603.29620 .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 2021. Training verifiers to solve math word prob-lems. Preprint , arXiv:2110.14168. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, et al. 2025. Gemini 2.5: Push-ing the frontier with advanced reasoning, multimodal-ity, long context, and next generation agentic capabil-ities. arXiv preprint arXiv:2507.06261 .DeepSeek-AI, Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, et al. 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. Preprint , arXiv:2501.12948. Yihe Deng, Hritik Bansal, Fan Yin, Nanyun Peng, Wei Wang, and Kai-Wei Chang. 2025. OpenVLThinker: Complex vision-language reasoning via iterative SFT-RL cycles. Preprint , arXiv:2503.17352. Zhen Fang, Yu Zeng, Wenxuan Huang, Yiming Zhao, Shiting Huang, Tianfei Ren, Qi Lu, Qingnan Ren, Qisheng Su, Lionel Z. Wang, Qingyu Yin, Shuang Chen, Zehui Chen, Lin Chen, Zhenfei Yin, Yao Hu, Shaohui Lin, Wanli Ouyang, Shaosheng Cao, and Feng Zhao. 2026. Video-deepresearch: Towards the next-generation multimodal deepresearch agent. 
+
+Preprint , arXiv:2608.03979. Kaituo Feng, Kaixiong Gong, Bohao Li, Zonghao Guo, Yibing Wang, Tianshuo Peng, Junfei Wu, Xiaoy-ing Zhang, Benyou Wang, and Xiangyu Yue. 2025. Video-r1: Reinforcing video reasoning in mllms. In 
+
+Advances in Neural Information Processing Systems ,volume 38, pages 99114–99137. Kaituo Feng, Manyuan Zhang, Shuang Chen, Yunlong Lin, Kaixuan Fan, Yilei Jiang, Hongyu Li, Dian Zheng, Chenyang Wang, and Xiangyu Yue. 2026a. Gen-searcher: Reinforcing agentic search for image generation. arXiv preprint arXiv:2603.28767 .Kaituo Feng, Manyuan Zhang, Hongyu Li, Kaixuan Fan, Shuang Chen, Yilei Jiang, Dian Zheng, Peiwen Sun, Yiyuan Zhang, Haoze Sun, et al. 2026b. One-thinker: All-in-one reasoning model for image and video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5432–5443. Dong Guo et al. 2025. Seed1.5-VL technical report. 
+
+Preprint , arXiv:2505.07062. Wenxuan Huang, Yu Zeng, Qiuchen Wang, Zhen Fang, Shaosheng Cao, Zheng Chu, Qingyu Yin, Shuang Chen, Zhenfei Yin, Lin Chen, et al. 2026. Vision-deepresearch: Incentivizing deepresearch capability in multimodal large language models. arXiv preprint arXiv:2601.22060 .Tue Le, Linh Ngo Van, and Trung Le. 2025. Sharpness-guided group relative policy optimization via proba-bility shaping. arXiv preprint arXiv:2511.00066 .Sicong Leng, Jing Wang, Jiaxi Li, Hao Zhang, Zhiqiang Hu, Boqiang Zhang, Yuming Jiang, Hang Zhang, Xin Li, Lidong Bing, Deli Zhao, Wei Lu, Yu Rong, Aixin Sun, and Shijian Lu. 2025. MMR1: Enhancing mul-timodal reasoning with variance-aware sampling and open resources. arXiv preprint arXiv:2509.21268 .Gang Li, Yulei Qin, Xiaoyu Tan, Dingkang Yang, Yuchen Shi, Zihan Xu, Xiang Li, Xing Sun, and Ke Li. 2025. Rorecomp: Enhancing rea-soning efficiency via rollout response recomposi-tion in reinforcement learning. arXiv preprint arXiv:2509.25958 .Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2023. Let’s verify step by step. Preprint ,arXiv:2305.20050. Pan Lu, Hritik Bansal, Tony Xia, Jiacheng Liu, Chun-yuan Li, Hannaneh Hajishirzi, Hao Cheng, Kai-Wei Chang, Michel Galley, and Jianfeng Gao. 2024. MathVista: Evaluating mathematical reasoning of foundation models in visual contexts. In The Twelfth International Conference on Learning Representa-tions .Pan Lu, Ran Gong, Shibiao Jiang, Liang Qiu, Siyuan Huang, Xiaodan Liang, and Song-Chun Zhu. 2021. Inter-gps: Interpretable geometry problem solving with formal language and symbolic reasoning. In 
+
+Proceedings of the 59th Annual Meeting of the Asso-ciation for Computational Linguistics (ACL) , pages 6774–6786. Andrey Malinin and Mark Gales. 2018. Predictive un-certainty estimation via prior networks. In Advances in Neural Information Processing Systems (NeurIPS) ,volume 31, pages 7047–7058. Fanqing Meng, Lingxiao Du, Zongkai Liu, Zhixiang Zhou, Quanfeng Lu, Daocheng Fu, Tiancheng Han, Botian Shi, Wenhai Wang, Junjun He, Kaipeng 
+
+10 Zhang, Ping Luo, Yu Qiao, Qiaosheng Zhang, and Wenqi Shao. 2025. Mm-eureka: Explor-ing the frontiers of multimodal reasoning with rule-based reinforcement learning. arXiv preprint arXiv:2503.07365 .OpenAI. 2025. Introducing GPT-4.1 in the API. https: //openai.com/index/gpt-4-1/ .Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welin-der, Paul Christiano, Jan Leike, and Ryan Lowe. 2022. Training language models to follow instructions with human feedback. Preprint , arXiv:2203.02155. Runqi Qiao, Qiuna Tan, Guanting Dong, Minhui Wu, Chong Sun, Xiaoshuai Song, Zhuoma GongQue, Shanglin Lei, Zhe Wei, Miaoxuan Zhang, Runfeng Qiao, Yifan Zhang, Xiao Zong, Yida Xu, Muxi Diao, Zhimin Bao, Chen Li, and Honggang Zhang. 2024. We-Math: Does your large multimodal model achieve human-like mathematical reasoning? arXiv preprint arXiv:2407.01284 .John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Prox-imal policy optimization algorithms. Preprint ,arXiv:1707.06347. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024. Deepseekmath: Pushing the limits of mathemati-cal reasoning in open language models. Preprint ,arXiv:2402.03300. Chuming Shen, Wei Wei, Xiaoye Qu, and Yu Cheng. 2025. Satori-r1: Incentivizing multimodal reasoning through explicit visual anchoring. arXiv preprint arXiv:2505.19094 .Xinyu Tang, Yuliang Zhan, Zhixun Li, Wayne Xin Zhao, Zhenduo Zhang, Zujie Wen, Zhiqiang Zhang, and Jun Zhou. 2025. Rethinking sample polarity in reinforce-ment learning with verifiable rewards. arXiv preprint arXiv:2512.21625 .Kimi Team, Angang Du, Bofei Gao, Bowei Xing, Changjiu Jiang, Cheng Chen, Cheng Li, Chenjun Xiao, Chenzhuang Du, Chonghua Liao, Chuning Tang, Congcong Wang, Dehao Zhang, Enming Yuan, et al. 2025. Kimi k1.5: Scaling reinforcement learn-ing with llms. Preprint , arXiv:2501.12599. ArXiv preprint arXiv:2501.12599. Haozhe Wang, Chao Qu, Zuming Huang, Wei Chu, Fangzhen Lin, and Wenhu Chen. 2025a. Vl-rethinker: Incentivizing self-reflection of vision-language models with reinforcement learning. In 
+
+Advances in Neural Information Processing Systems .Ke Wang, Junting Pan, Weikang Shi, Zimu Lu, Houxing Ren, Aojun Zhou, Mingjie Zhan, and Hongsheng Li. 2024a. Measuring multimodal mathematical reason-ing with the MATH-Vision dataset. In Advances in Neural Information Processing Systems (NeurIPS) ,volume 37, pages 95095–95169. Xiyao Wang, Zhengyuan Yang, Chao Feng, Hongjin Lu, Linjie Li, Chung-Ching Lin, Kevin Lin, Furong Huang, and Lijuan Wang. 2025b. Sota with less: Mcts-guided sample selection for data-efficient vi-sual reasoning self-improvement. arXiv preprint arXiv:2504.07934 .Zirui Wang, Mengzhou Xia, Luxi He, Howard Chen, Yitao Liu, Richard Zhu, Kaiqu Liang, Xindi Wu, Hao-tian Liu, Sadhika Malladi, Alexis Chevalier, Sanjeev Arora, and Danqi Chen. 2024b. CharXiv: Charting gaps in realistic chart understanding in multimodal LLMs. Advances in Neural Information Processing Systems , 37:113569–113697. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc V. Le, and Denny Zhou. 2022. Chain-of-thought prompt-ing elicits reasoning in large language models. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) .Junfei Wu, Jian Guan, Kaituo Feng, Qiang Liu, Shu Wu, Liang Wang, Wei Wu, and Tieniu Tan. 2025a. Rein-forcing spatial reasoning in vision-language models with interwoven thinking and visual drawing. In Ad-vances in Neural Information Processing Systems ,volume 38, pages 143297–143330. Junkang Wu, Kexin Huang, Jiancan Wu, An Zhang, Xiang Wang, and Xiangnan He. 2025b. Quantile advantage estimation: Stabilizing RLVR for LLM reasoning. arXiv preprint arXiv:2509.22611 .Wenyi Xiao and Leilei Gan. 2025. Fast-Slow Thinking GRPO for large vision-language model reasoning. 
+
+arXiv preprint arXiv:2504.18458 .Yijia Xiao, Edward Sun, Tianyu Liu, and Wei Wang. 2024. LogicVista: Multimodal LLM logical rea-soning benchmark in visual contexts. Preprint ,arXiv:2407.04973. Kai Yang, Xin Xu, Yangkun Chen, Weijie Liu, Jiafei Lyu, Zichuan Lin, Deheng Ye, and Saiyong Yang. 2025. Entropic: Towards stable long-term training of llms via entropy stabilization with proportional-integral control. arXiv preprint arXiv:2511.15248 .Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Wang Zhang, and 16 others. 2025. Dapo: An open-source llm re-inforcement learning system at scale. Preprint ,arXiv:2503.14476. Yufeng Yuan, Yu Yue, Ruofei Zhu, Tiantian Fan, and Lin Yan. 2025. What’s behind ppo’s collapse in long-cot? value optimization holds the secret. Preprint ,arXiv:2503.01491. 
+
+11 Xiang Yue, Yuansheng Ni, Kai Zhang, Tianyu Zheng, Ruoqi Liu, Ge Zhang, Samuel Stevens, Dongfu Jiang, Weiming Ren, Yuxuan Sun, Cong Wei, Botao Yu, Ruibin Yuan, Renliang Sun, Ming Yin, Boyuan Zheng, Zhenzhu Yang, Yibo Liu, Wenhao Huang, and 3 others. 2024a. MMMU: A massive multi-discipline multimodal understanding and reasoning benchmark for expert AGI. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition , pages 9556–9567. Xiang Yue, Tianyu Zheng, Yuansheng Ni, Yubo Wang, Kai Zhang, Shengbang Tong, Yuxuan Sun, Botao Yu, Ge Zhang, Huan Sun, Yu Su, Wenhu Chen, and Gra-ham Neubig. 2024b. MMMU-Pro: A more robust multi-discipline multimodal understanding bench-mark. arXiv preprint arXiv:2409.02813 .Guanning Zeng, Zhaoyi Zhou, Daman Arora, and An-drea Zanette. 2025. Shrinking the variance: Shrink-age baselines for reinforcement learning with verifi-able rewards. arXiv preprint arXiv:2511.03710 .Yu Zeng, Wenxuan Huang, Zhen Fang, Shuang Chen, Yufan Shen, Yishuo Cai, Xiaoman Wang, Zhenfei Yin, Lin Chen, Zehui Chen, et al. 2026. Vision-deepresearch benchmark: Rethinking visual and tex-tual search for multimodal large language models. 
+
+arXiv preprint arXiv:2602.02185 .Yuheng Zha, Kun Zhou, Yujia Wu, Yushu Wang, Jie Feng, Zhi Xu, Shibo Hao, Zhengzhong Liu, Eric P Xing, and Zhiting Hu. 2025. Vision-g1: Towards general vision language reasoning with multi-domain data curation. arXiv preprint arXiv:2508.12680 .Renrui Zhang, Dongzhi Jiang, Yichi Zhang, Haokun Lin, Ziyu Guo, Pengshuo Qiu, Aojun Zhou, Pan Lu, Kai-Wei Chang, Peng Gao, and Hongsheng Li. 2024. Mathverse: Does your multi-modal llm truly see the diagrams in visual math problems? In European Conference on Computer Vision (ECCV) , pages 169– 186. Springer. Xiaoying Zhang, Hao Sun, Yipeng Zhang, Kaituo Feng, Chao Yang, and Helen Meng. 2025. Critique-grpo: Advancing llm reasoning with natural lan-guage and numerical feedback. arXiv preprint arXiv:2506.03106 .Yaowei Zheng, Junting Lu, Shenzhi Wang, Zhangchi Feng, Dongdong Kuang, Yuwen Xiong, and Richong Zhang. 2025. Easyr1: An efficient, scalable, multi-modality rl training framework. https://github. com/hiyouga/EasyR1 .Lanyun Zhu, Deyi Ji, Tianrun Chen, Haiyang Wu, and Shiqi Wang. 2025a. Retrv-r1: A reasoning-driven mllm framework for universal and efficient multi-modal retrieval. arXiv preprint arXiv:2510.02745 .Linghao Zhu, Yiran Guan, Dingkang Liang, Jianzhong Ju, Zhenbo Luo, Bin Qin, Jian Luan, Yuliang Liu, and Xiang Bai. 2025b. Shuffle-r1: Efficient rl frame-work for multimodal large language models via data-centric dynamic shuffle. Preprint , arXiv:2508.05612. Chengke Zou, Xingang Guo, Rui Yang, Junyu Zhang, Bin Hu, and Huan Zhang. 2024. Dynamath: A dy-namic visual benchmark for evaluating mathemati-cal reasoning robustness of vision language models. 
+
+Preprint , arXiv:2411.00836. 
+
+A Appendix 
+
+A.1 Hyperparameter Sensitivity 
+
+We conducted a sensitivity analysis on the key hy-perparameters of HSR: the stream split ratio (Struc-ture/Natural) and the percentile thresholds ( τ ). • Stream Ratio: We swept the Structured Stream ratio from 0% (Pure GRPO) to 100%. We observed that a ratio of 50% provides the optimal balance. Higher ratios (>75%) led to overfitting on the replay buffer, while lower ratios (<25%) failed to prevent entropy col-lapse. • Path-Entropy Thresholds: We tested τlow ∈{5, 10 , 20 }th percentile. Results indicate that stringent thresholds (5th percentile) overly re-strict the anchor pool, leading to buffer deple-tion, while loose thresholds (20th percentile) allow noisy samples into the anchor set, de-grading stability. The 10th/90th percentile set-ting proved robust across all examined bench-marks. 
+
+A.2 Algorithmic Implementation Details 
+
+In this section, we provide a step-by-step commen-tary on the training procedure outlined in Algo-rithm 1. The framework extends standard Group Relative Policy Optimization (GRPO) by introduc-ing a dynamic curriculum (Phase 0) and a struc-tured replay mechanism (Phase 1 & 2). 
+
+Initialization and Inputs. The algorithm re-quires a curated multimodal instruction dataset D,the policy model πθ to be optimized, and an of-fline hint cache Chint generated in advance by a frozen proprietary teacher model πseed (Seed-1.5-VL). For each query, we use a per-query rollout group size of G = N = 16 . This group is sub-sequently partitioned between the structured and natural streams. 
+
+Phase 0: Dynamic Query Handling (Lines 3– 12). Standard RL fine-tuning often wastes com-putational resources on queries that are currently intractable for the model. 12 • Pilot Assessment: For each sampled query x,we generate N pilot rollouts to estimate the empirical success rate ˆp(x).• Intervention: If ˆp(x) = 0 (Line 6), the query is classified as “Impossible.” Rather than dis-carding these samples, we retrieve its precom-puted visual or cognitive hint h from the of-fline cache Chint . The prompt is augmented (x′ ← x ⊕ h) during Phase 0 curriculum con-struction, and rollouts are then regenerated 
+
+(Line 10). This mechanism converts selected “Impossible” queries into “Learnable” ones (the Distillation Zone) prior to gradient com-putation. 
+
+Phase 1: Path-Entropy-Based Stratification (Lines 13–24). Upon finalizing the rollouts for the current optimization step, we compute the re-ward r and Path-Entropy score Hpath (y|x) for ev-ery sample. • Dynamic Thresholding: We pool the Path-Entropy scores of all rollouts generated for the current global batch and calculate their 
+
+10 th and 90 th percentiles ( τlow , τ high ). The thresholds are therefore batch-adaptive and use no samples from previous optimization steps. • Buffer Allocation: Samples are stratified into three mutually exclusive buffers: Banc 
+
+(high confidence, correct), Bneg (high confi-dence, incorrect), and Bepi (low confidence, correct). Note that “Confusion” samples ( r =0, H path > τ high ) are implicitly filtered out, as they do not meet the criteria for any buffer. 
+
+Phase 2: Hybrid Group Assembly (Lines 25–32). 
+
+To construct the final per-query optimization group 
+
+Gf inal , we partition the G = 16 rollouts into two streams that balance stability and exploration: • Stream A (Structured): We explicitly sam-ple 50% of the total budget G from the sorted buffers. We enforce a composition of 25% 
+
+Epiphanies (learning targets), 12 .5% Anchors (stability), and 12 .5% Hard Negatives (con-trast) whenever the corresponding samples are available. This structured injection yields non-zero empirical reward variance when both outcome classes are present; otherwise, the un-available quota falls back to natural on-policy sampling. • Stream B (Natural): The remaining 50% is sampled uniformly from the valid sample pool (excluding noise). This stream acts as a regu-larizer, ensuring the policy does not overfit to the artificial topology of Stream A. 
+
+Optimization and Lifecycle (Lines 33–36). Fi-nally, gradients are computed using the combined group Gf inal . A critical feature of our implemen-tation is the Intra-Step Replay Scope (Line 36). Unlike off-policy methods with persistent replay buffers, our buffers Banc,neg,epi are cleared immedi-ately after every gradient step. This ensures that all optimization samples are drawn from the current policy πθ, maintaining the on-policy consistency of the GRPO objective without requiring corrections for stale data. 13 Algorithm 1 Stable-MM-R1 Unified Training Framework 
+
+Require: Dataset D; Current Policy πθ ; Offline Hint Cache 
+
+Chint ; Pilot Rollout Count and Final Group Size N =
+
+G = 16 ; Quantile thresholds δlow = 0 .1, δ high = 0 .9
+
+Ensure: Optimized Policy parameters θ
+
+1: while not converged do 
+
+2: Sample batch query x ∼ D 
+
+▷ Phase 0: Potential-Aware Query Mining (PAQM) 
+
+3: Ypilot ← { y1, . . . , y N } ∼ πθ (·| x) ▷ Generate pilot rollouts 4: ˆp(x) ← 1
+
+> N
+
+PNi=1 r(yi) ▷ Estimate empirical success rate 5: if ˆp(x) = 0 then 
+
+▷ a. Apply Modality-Decoupled Diagnosis for Impossible Queries 
+
+6: h ← LOOKUP HINT (x, Chint ) ▷ Retrieve precomputed offline hint 7: x′ ← x ⊕ h ▷ Inject hint during curriculum construction 8: Y ← RESAMPLE (πθ , x ′, N ) ▷ Regenerate rollouts with hint 9: else 
+
+10: Y ← Y pilot 
+
+11: end if 
+
+▷ Phase 1: Diagnostic Path-Entropy–Reward Stratification 
+
+12: Ht ← { Hpath (y|x) | y ∈ Y batch ,t } ▷ Pool current global-batch rollouts 13: τlow ← PERCENTILE (Ht, δ low ); τhigh ←
+
+PERCENTILE (Ht, δ high )
+
+14: Banc ← ∅ ; Bneg ← ∅ ; Bepi ← ∅ 
+
+15: for all y ∈ Y do 
+
+16: if r(y) = 1 ∧ Hpath (y|x) < τ low then 
+
+17: Banc ← B anc ∪ { y} ▷ Stability Anchor 18: else if r(y) = 0 ∧ Hpath (y|x) < τ low then 
+
+19: Bneg ← B neg ∪ { y} ▷ Hard Negative 20: else if r(y) = 1 ∧ Hpath (y|x) > τ high then 
+
+21: Bepi ← B epi ∪ { y} ▷ Epiphany (Target) 22: end if 
+
+23: end for 
+
+▷ Phase 2: Hybrid Group Assembly 
+
+▷ b. Stream A: Structured Stabilization ( 50% Budget) 
+
+24: Sepi ← SAMPLE (Bepi , 0.25 G)
+
+25: Sanc ← SAMPLE (Banc , 0.125 G)
+
+26: Sneg ← SAMPLE (Bneg , 0.125 G)
+
+27: Gstruct ← Sepi ∪ Sanc ∪ Sneg 
+
+▷ c. Stream B: Natural Generalization ( 50% Budget) 
+
+28: Gnat ← SAMPLE (Y \ Noise , 0.5G)
+
+▷ Optimization Update (Intra-Step Scope) 
+
+29: Gf inal ← Gstruct ∪ Gnat 
+
+30: θ ← GRPO_U PDATE (θ, G f inal )
+
+31: Clear (Banc , Bneg , Bepi ) ▷ Buffers are cleared immediately after step 32: end while 
+
+A.3 Conditional Variance Analysis of Structured Groups 
+
+This section analyzes the conditional effect of struc-tured group composition in sparse-reward Group Relative Policy Optimization (GRPO). The analy-sis motivates HSR but does not assert a non-zero update for every optimization step. 
+
+A.3.1 Degenerate Groups in Standard GRPO 
+
+Let G = {y1, . . . , y G} be a group of outputs sam-pled from policy πθ(·| x). The GRPO gradient esti-mator is defined as: 
+
+ˆgGRP O = 1
+
+G
+
+> G
+
+X
+
+> i=1
+
+r(yi) − ¯r
+
+ˆσ + ϵ ∇θ log πθ(yi|x), (3) where ¯r and ˆσ are the empirical mean and standard deviation of rewards within the group. 
+
+Degenerate-group probability. In a binary re-ward setting r ∈ { 0, 1}, let pθ(x) be the true suc-cess rate of the policy. The probability of sampling a degenerate group , in which all rewards are identi-cal, is 
+
+Pdegen = pθ(x)G + (1 − pθ(x)) G. (4) In such groups, ˆσ = 0 , so the group-relative advan-tages vanish or become numerically ill-conditioned depending on the implementation. When pθ(x)
+
+is close to 0 or 1, Pdegen increases, making zero-signal groups more likely under random sampling. 
+
+A.3.2 Conditional Variance of Structured Groups 
+
+Conditional on the relevant buffers being non-empty, HSR’s structured stream includes at least 
+
+kanc positive samples (Stability Anchors) and kneg 
+
+negative samples (Hard Negatives). Let Gstruct be the structured-group size. 
+
+Conditional lower bound. If kanc ≥ 1 and 
+
+kneg ≥ 1, the empirical reward variance of the structured group is strictly positive. Let N+ ≥
+
+kanc and N− ≥ kneg denote the numbers of pos-itive and negative samples, with N+ + N− =
+
+Gstruct . Then 
+
+ˆσ2 = 1
+
+Gstruct 
+
+N+(1 − ¯r)2 + N−(0 − ¯r)2
+
+= N+N−
+
+G2
+
+> struct
+
+> 0.
+
+(5) Thus, the structured group has non-zero reward variance whenever both outcome classes are avail-able. If either quota cannot be satisfied, HSR re-leases the unavailable structured allocation and fills it through natural on-policy sampling. The bound is therefore conditional rather than a guarantee for every optimization step. 14 A.3.3 Distribution-Shift Trade-off 
+
+Structured sampling changes the empirical training distribution by emphasizing anchors, hard nega-tives, and high-Path-Entropy successes. We treat this as a deliberate distribution shift toward infor-mative boundary cases rather than claiming that the resulting estimator is unbiased. Stream B retains natural on-policy samples within every optimiza-tion step, while the empirical training-dynamics results evaluate whether the resulting trade-off im-proves stability in practice. 15

@@ -1,0 +1,543 @@
+Title: MVFA: A Multi-View Text-Guided Multimodal Fusion LLM Adapter for Sentiment Analysis and Emotion Recognition
+
+URL Source: https://arxiv.org/pdf/2609.06188v1
+
+Published Time: Wed, 09 Sep 2026 00:50:46 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+1
+
+# MVFA: A Multi-View Text-Guided Multimodal Fusion LLM Adapter for Sentiment Analysis and Emotion Recognition 
+
+Pengfei Shao, Jisheng Dang, Jiawen Fang, Ning Liu, Wencan Zhang, Bimei Wang, Jingwen Zhao, Jianhuang Lai, 
+
+Senior Member, IEEE , Qi Tian, Fellow, IEEE , Tat-Seng Chua 
+
+Abstract —Multimodal sentiment analysis and emotion recog-nition in conversations demand effective modeling of heteroge-neous interactions across textual, acoustic, and visual modal-ities. Although large language models (LLMs) offer powerful language understanding, adapting them to multimodal affec-tive computing remains challenging: full-model fine-tuning is computationally prohibitive, while many existing lightweight adapters fail to preserve rich textual cues during cross-modal fusion. To address these limitations, we propose the multi-view text-guided multimodal fusion adapter (MVFA), a parameter-efficient framework that augments frozen LLMs with strong multimodal reasoning capability. MVFA first constructs comple-mentary text views via max pooling, mean pooling, and attention pooling; these views then guide cross-modal interactions with audio and visual features. The fused multimodal representations are subsequently compressed into a compact set of learnable pseudo-tokens through an Enhanced Q-Former Fusion Module. Using ChatGLM3-6B-base as the primary backbone, we further validate MVFA on LLaMA2-7B and Qwen3-8B to examine its portability across multiple frozen LLM backbones. MVFA is evaluated on three challenging datasets: CH-SIMS V2.0, MELD, and CHERMA. Experimental results demonstrate that MVFA achieves state-of-the-art performance on key metrics while up-dating only a small fraction of parameters. Specifically, it attains 84.62% Acc2 and 84.59% F1 on CH-SIMS V2.0, 67.36% Acc and 66.03% WF1 on MELD, and 74.66% Acc on CHERMA. These findings establish multi-view text-guided fusion as an effective and scalable paradigm for parameter-efficient multimodal LLM adaptation in affective computing. The code is publicly available at https://github.com/Overwhelm1208/MVFA. 
+
+Index Terms —Affective computing, multimodal sentiment analysis, emotion recognition in conversations, large language models, parameter-efficient adaptation, multimodal fusion. 
+
+I. I NTRODUCTION This work was supported by the National Natural Science Foundation of China (Grants No. 62227807 and U24B20186). This work was also supported by the Supercomputing Center of Lanzhou University. Pengfei Shao and Ning Liu are with the School of Information Science and Technology, Guangdong University of Foreign Studies, Guangdong, China (E-mail: 20251010019@mail.gdufs.edu.cn). Jisheng Dang, Bimei Wang, and Jingwen Zhao are with the School of Information Science and Engineering, Lanzhou University, Lanzhou, China (E-mail: dangjisheng@lzu.edu.cn). Jiawen Fang and Jianhuang Lai are with the School of Computer Sci-ence and Engineering, Sun Yat-sen University, Guangdong, China (E-mail: fangjw6@mail2.sysu.edu.cn). Qi Tian is with Cloud and AI BU, Huawei, Shenzhen, Guangdong 518129, China (E-mail: tian.qi1@huawei.com). Wencan Zhang and Tat-Seng Chua are with the School of Comput-ing, National University of Singapore, Singapore 119077 (E-mail: dc-scts@nus.edu.sg). *Corresponding author: Jisheng Dang. 00:00  00:02  00:04  00:06    
+
+> Single -View Text Guidance
+> I stopped that a long time ago. Some years ago, my javelin hit the judge in a competition. I got
+> a lifetime ban for that.
+> Multi -View Text Guidance (Ours)
+> hit the judge lifetime ban
+> violent action,
+> strong
+> negative cue
+> severe
+> punishment,
+> negative outcome
+> Negative Weakly Positive
+> lifetime ban
+> past accident
+> consequence
+> hit the judge
+> not an accusation
+> ironic recounting
+> detached ,
+> self -mocking
+> Single Compressed Text View
+> temporal distance
+> calm tone
+> Complementary Text Views
+> (Lexical Cues) (Contextual Cues )
+> Humorous/Teasing
+> Weakly Positive
+> (Pragmatic Interpretation )
+
+Fig. 1. An example illustrating that a single compressed text view may fail to preserve complementary affective cues (e.g., salient lexical expressions, discourse-level contrast, and context-relevant tokens) during multimodal fu-sion. 
+
+# HUMAN communication is inherently multimodal, with intentions and emotions conveyed through the coordi-nated use of language, acoustic prosody, and visual cues. This observation has driven extensive research in multimodal senti-ment analysis (MSA) and emotion recognition in conversations (ERC), which aim to infer speakers’ affective states by inte-grating heterogeneous signals from text, audio, and vision [1], [2]. Such capabilities are central to building empathetic dia-logue systems and socially aware artificial intelligence. Recent advances in large language models (LLMs) have opened new opportunities for multimodal affective computing. In partic-ular, frozen LLMs provide powerful language understanding and generation capabilities, making them appealing backbones for parameter-efficient adaptation. However, directly applying LLMs to MSA and ERC remains a challenge. Full fine-tuning of large multimodal systems is computationally prohibitive, while existing lightweight multimodal adapters typically rely on a single compressed textual view or dense cross-modal interactions, which often fail to preserve complementary textual cues essential for aligning language with nonverbal behaviors. As illustrated in Fig. 1, a single utterance may contain multiple affective cues simultaneously, such as salient sentiment-bearing words, discourse-level contrast, and context-relevant tokens that should be emphasized differently during multimodal fusion. arXiv:2609.06188v1 [cs.AI] 5 Sep 2026 2
+
+Earlier multimodal approaches primarily focused on explicit fusion of heterogeneous representations. For instance, TFN models unimodal, bimodal, and trimodal interactions via ten-sor products [3], while LMF improves efficiency by factoriz-ing high-dimensional fusion tensors [4]. Subsequent methods introduced more adaptive mechanisms, such as MAG that con-ditions pretrained language representations on audio and visual cues [5], CHFN that dynamically adjusts word representations using nonverbal information [6], and GraphCFC that models cross-modal complementarity through graph-based message passing [7]. More recently, parameter-efficient multimodal adaptation has gained increasing attention in the LLM era. MSE-Adapter [8], for example, injects compact pseudo-tokens into frozen LLMs for MSA and ERC. Nevertheless, existing approaches still leave significant room for improvement in how complementary textual cues are preserved and leveraged to guide multimodal alignment before token injection. To address these limitations, we propose the Multi-View Text-Guided Multimodal Fusion Adapter (MVFA) , aparameter-efficient framework that adapts frozen LLMs to MSA and ERC. Instead of representing text as a single com-pressed vector, MVFA constructs complementary text views through max pooling, mean pooling, and attention pooling; these views then guide cross-modal interactions with audio and visual features. The fused multimodal representations are sub-sequently compressed into a compact set of learnable pseudo-tokens via an Enhanced Q-Former Fusion Module (ENQF). This design avoids parallel modality-specific branches and heavy stacking of self-attention while preserving richer textual guidance for multimodal reasoning. We primarily implement MVFA on top of the open-source ChatGLM3-6B-base backbone [9] and evaluate it on three widely used public datasets: CH-SIMS V2.0 [10], MELD [1], and CHERMA [11]. To examine whether MVFA can be ap-plied to different frozen LLM backbones, we further instantiate MVFA on LLaMA2-7B [12] and Qwen3-8B [13] in the main benchmark comparisons. Experimental results demonstrate that MVFA achieves strong and consistent performance while updating only a small fraction of model parameters. Our main contributions are summarized as follows:  
+
+> •
+
+We propose MVFA, a lightweight parameter-efficient adapter that effectively adapts frozen LLMs to both MSA and ERC tasks.  
+
+> •
+
+We design a multi-view text modeling module that con-structs complementary textual representations via max, mean, and attention pooling, progressively fusing them to guide cross-modal alignment.  
+
+> •
+
+We introduce an Enhanced Q-Former Fusion Module (ENQF) that compresses multimodal information into compact pseudo-tokens for efficient injection into frozen LLMs.  
+
+> •
+
+We conduct extensive experiments on CH-SIMS V2.0, MELD, and CHERMA, demonstrating that MVFA de-livers strong and consistent results in both Chinese and English multimodal affective computing datasets and shows portability to different frozen LLM backbones, while ChatGLM3-6B-base gives the strongest overall performance in our experiments. II. R ELATED WORK 
+
+A. Conventional Multimodal Fusion for MSA and ERC 
+
+Early multimodal approaches mainly focused on explicit fusion of heterogeneous representations. TFN [3] models uni-modal, bimodal, and trimodal interactions through tensor prod-ucts, while LMF [4] improves computational efficiency by fac-torizing high-dimensional fusion tensors. Subsequent methods introduced more adaptive interaction mechanisms. MAG [5] conditions pretrained language representations on acoustic and visual signals, CHFN [6] dynamically adjusts word representa-tions using nonverbal information, and GraphCFC [7] models cross-modal complementarity in conversational settings via graph-based message passing. Other studies explore auxiliary supervision, disentangled representations, or robustness under missing modalities, such as Self-MM [14], MISA [15], and ConFEDE [16]. These methods provide useful mechanisms for multimodal interaction, but most are not designed for parameter-efficient adaptation of frozen LLMs. 
+
+B. Unified-task and Multimodal Reasoning Frameworks 
+
+Recent work has also explored more unified formulations of multimodal affective computing. UniMSE [17] studies MSA and ERC within a shared framework, while broader multimodal models such as UNIMO [18] investigate unified multimodal understanding and generation. These approaches highlight the benefit of sharing knowledge across tasks and modalities. However, their focus is different from ours: rather than unifying tasks under a shared framework, we study how to adapt a frozen LLM to multimodal sentiment and emotion reasoning in a lightweight and parameter-efficient manner. 
+
+C. Parameter-Efficient Adaptation for Frozen LLMs 
+
+With the rise of large pretrained models, parameter-efficient adaptation has become increasingly important. Prompt-based approaches such as CoOp [19] and MaPLe [20] introduce learnable tokens to guide downstream behavior, while adapter-based methods insert lightweight trainable modules into frozen backbones. In multimodal settings, MMA [21] bal-ances modality-specific adaptation and cross-modal alignment through shared and private projections, Chameleon [22] unifies heterogeneous modalities into RGB-like tokens for single-branch processing, and MSE-Adapter [8] injects compact pseudo-tokens into frozen LLMs for MSA and ERC. Among these methods, MSE-Adapter is the most closely related to our work because both methods follow the frozen-LLM plus pseudo-token adaptation paradigm. The key difference is that MSE-Adapter mainly relies on text-guided feature mixing before token injection, whereas MVFA explicitly constructs complementary text views through different aggregation strate-gies, uses them to guide cross-modal interaction, and then compresses the resulting multimodal information via ENQF. In general, existing methods focus either on conventional multimodal fusion or on lightweight adaptation without suf-ficiently preserving complementary textual cues before mul-timodal compression. In contrast, our method emphasizes multi-view text-guided multimodal fusion under a frozen-LLM 3Vision   
+
+> Encoder
+> Audio
+> Encoder
+> LSTM LSTM
+> The good news is, the soda is no longer cold,
+> but my heart is frozen.
+> Text
+> task_specific_prompt: Please predict the
+> sentiment intensity of the above multimodal
+> content in the range [ -1.0, 1.0]. response: The
+> sentiment is
+> Prompt
+> LLM
+
+Progressive 
+
+Fusion    
+
+> Video Audio
+> Max
+> Pooling
+> Mean
+> Pooling
+> Attention
+> Pooling
+> -1.0 -0.6000(negative) +1.0
+> Predicted Score: -0. 6000
+
+Sentiment Inte nsity    
+
+> LLM
+> The good news is salient positive cue
+> Positive
+> Single Compressed Text View
+> Concat
+> Single -View Text Guidance
+> Negative
+> Multi -View Text Guidance
+> MLP
+> Projector
+> Add & Norm
+> Cross
+> Attention
+> Add & Norm
+> MLP
+> Add & Norm
+> Concat
+> Fmax
+> Fmean
+> MLP
+> Concat
+> Fattn
+> Cross
+> Attention
+> Add & Norm
+> Concat
+
+෨𝑉  ሚ𝐴   
+
+> Enhanced Q -
+> Former
+> Feature
+> Enhancer MLP
+> MLP
+> Add
+> Learnable Queries Hadamard Product
+
+𝛼     
+
+> Lexical Cues :
+> “good news ”(positive) + “heart is frozen ”(negative)
+> → lexical conflict
+> Contextual Cues :
+> The contrastive marker "but" shifts emotional focus,
+> and "good news" serves as an ironic preface
+> Pragmatic Interpretation :
+> Metaphorical contrast between physical
+> temperature and emotional state
+> Fmean
+> Fmax Fattn
+
+𝑇 
+
+𝑇 𝑝 
+
+𝑇 𝑝 
+
+𝑇 
+
+𝑃 
+
+𝐹 𝑐𝑟𝑜𝑠𝑠 
+
+𝑇 
+
+Fig. 2. Overview of the proposed MVFA framework. Lightweight encoders first extract representations from the audio and visual modalities. The MVFA then constructs complementary text views through max pooling, mean pooling, and attention pooling, progressively fuses them to guide cross-modal interaction, and compresses the resulting multimodal representation into a small set of pseudo-tokens via the Enhanced Q-Former Fusion Module (ENQF). These pseudo-tokens are concatenated with the raw text embeddings T and the prompt-augmented text embeddings Tp to form the input sequence Xinput = [ P ; T ; Tp], which is fed into a frozen LLM for autoregressive sentiment or emotion prediction. Only the MVFA is trained, while the LLM backbone remains frozen. 
+
+setting, aiming to improve cross-modal affective alignment while remaining parameter-efficient. III. METHOD 
+
+A. Overall Architecture 
+
+We propose MVFA, a parameter-efficient module that adapts frozen LLMs to MSA and ERC while preserving their general-purpose capabilities. Following standard practice in multimodal foundation model research, our approach operates on pre-extracted and standardized feature sequences rather than raw inputs such as speech waveforms, video frames, or text. This design improves reproducibility, facilitates cross-dataset transfer, and allows us to focus on the core challenges of efficient cross-modal alignment and instruction-guided af-fective reasoning under a frozen LLM. We adopt the MSE-Adapter preprocessing pipeline [8], as described below. 
+
+Text Modality. Each input sequence is constructed by prepending a task-specific natural-language prompt to the raw utterance. The combined sequence is tokenized using the Sen-tencePiece tokenizer [23] built into the target LLM, producing a sequence of token IDs. These IDs are then passed through the embedding layer of the LLM to obtain text embeddings that incorporate both task guidance and utterance semantics. 
+
+Audio and Visual Modalities. For audio and visual inputs, we employ pre-trained toolkits to extract high-level seman-tic features [10], [11], [17]. Each toolkit produces temporal feature vectors with fixed dimensions, providing standardized representations for multimodal fusion. After preprocessing, each sample is represented by raw text embeddings T ∈
+
+RLt×dt , prompt-augmented text embeddings Tp ∈ RLt×dt ,audio features A ∈ RLa×da , and visual features V ∈ RLv ×dv ,where Lm and dm denote the sequence length and feature dimension of modality m ∈ { t, a, v }.
+
+B. Modality Encoding 
+
+Audio and Visual Encoding. For the pre-extracted temporal features A ∈ RLa×da and V ∈ RLv ×dv , we employ uni-directional Long Short-Term Memory (LSTM) networks for contextual modeling. Global summaries with fixed dimensions are then obtained via linear projection: 
+
+˜A = Linear a (LSTM a(A)final ) ∈ Rh, (1) 
+
+˜V = Linear v (LSTM v (V )final ) ∈ Rh. (2) 
+
+Multi-View Text Modeling and Fusion (MTF) Module. To preserve complementary textual cues for multimodal align-ment, we design a multi-view text modeling and fusion module. Let T ∈ RLt×dt denote the raw text embeddings, and let h = 256 be the intermediate representation dimension. Instead of assuming a strict semantic hierarchy, we construct 4
+
+three complementary text views using different aggregation strategies. 
+
+1) Max-Pooling Text View: An independent MLP is applied to T , followed by max-pooling along the sequence dimension to capture salient local activations: 
+
+Fmax = max( MLP max (T )) ∈ Rh, (3) where max( ·) denotes max-pooling along the sequence length 
+
+Lt.
+
+2) Mean-Pooling Text View: An independent MLP is ap-plied to T , followed by average pooling along the sequence dimension to summarize the overall semantic tendency: 
+
+Fmean = AvgPool (MLP mean (T )) ∈ Rh. (4) 
+
+3) Attention-Pooled Text View: An independent MLP is applied to T , and each token is then weighted using aparameter-free attention mechanism: 
+
+S = MLP attn (T ) ∈ RLt×h, (5) 
+
+a = softmax(mean( S, dim = −1)) ∈ RLt , (6) 
+
+Fattn = a⊤S ∈ Rh, (7) where mean (·, dim = −1) computes a scalar score for each token by averaging over the hidden dimension. 
+
+4) Progressive Fusion: The three text views are fused in two stages with residual connections: 
+
+Z1 = LayerNorm  MLP 1([ Fmax ; Fmean ]) + Fmax 
+
+, (8) 
+
+Ftext = LayerNorm  MLP 2([ Z1; Fattn ]) + Fattn 
+
+ ∈ Rh, (9) where [·; ·] denotes concatenation. All MLP modules (MLP max ,MLP mean , and MLP attn ) use independent parameters so that different aggregation views can learn complementary repre-sentations. Given the fused text feature Ftext ∈ Rh, the global audio representation ˜A ∈ Rh, and the global visual representation 
+
+˜V ∈ Rh, we treat each vector as a sequence of length 1 and perform two independent cross-attention operations. 
+
+5) Text-Audio Cross-Attention: We adopt the Multi-Head Attention (MHA) mechanism of [24], using the text feature as the query and the audio feature as both key and value: 
+
+Qa = F ⊤ 
+
+> text
+
+∈ R1×h, (10) 
+
+Ka = Va = ˜A⊤ ∈ R1×h, (11) 
+
+Oa = LayerNorm  MHA( Qa, K a, V a) + Qa
+
+. (12) 
+
+6) Text-Visual Cross-Attention: Similarly, we use the text feature as the query and the visual feature as both key and value: 
+
+Qv = F ⊤ 
+
+> text
+
+∈ R1×h, (13) 
+
+Kv = Vv = ˜V ⊤ ∈ R1×h, (14) 
+
+Ov = LayerNorm  MHA( Qv , K v , V v ) + Qv
+
+. (15) Finally, the outputs of the two cross-attention operations are concatenated along the feature dimension and projected back to the original dimension through a two-layer MLP with ReLU activation: 
+
+Fcross = W2 · ReLU (W1[Oa; Ov ]) ∈ Rh, (16) where W1 ∈ Rh×2h and W2 ∈ Rh×h are learnable parameters. 
+
+Enhanced Q-Former Fusion (ENQF) Module. To enhance cross-modal alignment while maintaining computational effi-ciency, we propose a streamlined Enhanced Q-Former Fusion Module. At its core is a set of learnable pseudo-queries that extract context-aware semantic representations from the fused multimodal feature via cross-attention. Formally, let 
+
+Fcross ∈ Rh denote the cross-modal fused feature vector. We first project it into a normalized latent space: 
+
+Fproj = LayerNorm  GELU( Wproj Fcross ), (17) where Wproj is a learnable projection matrix. To adaptively emphasize discriminative channels, we introduce a lightweight feature enhancement subnetwork consisting of two fully con-nected layers with GELU activation and a sigmoid gate: 
+
+g = σ(Wg2 · GELU (Wg1Fcross )) , (18) 
+
+Fenh = g ⊙ Fproj , (19) where Wg1 and Wg2 are learnable parameters, σ denotes the sigmoid function, and ⊙ represents element-wise multiplica-tion. The projected feature and the enhanced feature are then fused as 
+
+Fcombined = Fproj + α · Fenh . (20) In the default configuration, we set α = 0 .3. A sensitivity analysis of α is provided in Sec. IV-F. We introduce a set of learnable query embeddings Q ∈ Rn×h, where the default number of pseudo-tokens is n = 4 and the hidden dimension is h = 256 . After a linear transformation, cross-attention is performed with the fused feature: 
+
+H = MHA (Linear (Q), F combined , F combined ). (21) After residual connection and layer normalization, the output is mapped to the target dimension through a lightweight projection head to obtain the final pseudo-tokens P :
+
+P = Proj out (H) ∈ Rn×dt . (22) This design avoids the complex self-attention stacking in the traditional Q-Former. While significantly reducing the number of parameters and computational overhead, it enhances the queries’ ability to capture key information from the input through an explicit feature enhancement mechanism. 
+
+C. LLM Inference and Loss Function 
+
+The pseudo-tokens, raw text embeddings, and prompt-augmented text embeddings are concatenated in sequence to form the unified final input: 
+
+Xinput = [ P ; T ; Tp] ∈ R(n+2 Lt)×dt . (23) The frozen LLM generates the sentiment or emotion label sequence Y = [ y1, . . . , y m] in an autoregressive manner, and the training loss is: 
+
+L = −
+
+> m
+
+X
+
+> k=1
+
+log p(yk | Xinput , y <k ; θLLM ). (24) Gradients are only backpropagated to the MVFA module, and 
+
+θLLM remains frozen. 5               
+
+> TABLE I MSA RESULTS ON CH-SIMS V2.0. A CC 2AND F1 ARE COMPUTED UNDER THE NON -POSITIVE /POSITIVE BINARIZATION RULE ,AND ACC 2-W EAK IS EVALUATED ON THE SUBSET OF SAMPLES WHOSE GROUND -TRUTH SENTIMENT SCORES FALL IN THE RANGE [-0.4, 0.4]. R ESULTS MARKED WITH *ARE CITED FROM [10], RESULTS MARKED WITH †ARE REPRODUCED ON OUR EXPERIMENTAL PLATFORM ,AND THE REMAINING RESULTS ARE TAKEN FROM THE CORRESPONDING ORIGINAL PAPERS .
+
+Model Acc2 ↑ F1 ↑ Acc2-Weak ↑ Corr ↑ R2↑ MAE ↓
+
+TFN [3] 76.51 76.31 66.27 0.667 35.90 0.323 LMF [4] 77.05 77.02 69.34 0.638 40.64 0.343 MFN [25] 75.27 75.24 66.46 0.606 32.26 0.355 MULT [26] 79.50 79.59 69.61 0.703 47.15 0.317 Self-MM [14] 79.01 78.89 71.87 0.640 29.36 0.335 MISA [15] 80.53 80.63 70.50 0.725 50.59 0.314 MMIM [27] 80.95 80.97 72.28 0.707 43.81 0.316 AV-MC [10] 82.50 82.55 74.54 0.732 50.65 0.297 MSE-ChatGLM3-6B [8] † 82.86 82.72 74.69 0.728 44.66 0.291 
+
+MVFA-LLaMA2-7B (Ours) 76.48 76.26 70.60 0.578 18.99 0.360 
+
+MVFA-Qwen3-8B (Ours) 81.20 80.96 74.04 0.686 39.31 0.310 
+
+MVFA-ChatGLM3-6B (Ours) 84.62 84.59 77.27 0.736 45.34 0.284 
+
+IV. E XPERIMENTS 
+
+A. Experimental Settings 
+
+Unless otherwise specified, the main experiments are con-ducted on a single NVIDIA H100 GPU using Python 3.10 and PyTorch 2.2.0 with CUDA 11.8. We use ChatGLM3-6B-base [9] as the primary frozen backbone model. To examine the portability of MVFA across multiple frozen LLM back-bones, we additionally instantiate MVFA on LLaMA2-7B [12] and Qwen3-8B [13] in the main benchmark comparisons. Un-less otherwise specified, ablation, hyperparameter sensitivity, and qualitative analyses are conducted on the ChatGLM3-6B-base backbone. Variants equipped with the proposed adapter are denoted with the prefix MVFA. Model optimization is performed using AdamW together with a cosine learning rate scheduler and a linear warm-up strategy. Hyperparameters are tuned separately for each dataset. To ensure stability and reproducibility, all experiments are repeated five times with different random seeds, namely 0000, 1111, 2222, 3333, and 4444. Following the protocol of [8], sentiment prefixes are prepended to polarity labels to reduce class ambiguity during tokenization. For the ERC task, discrete emotion categories are mapped to fixed numerical identifiers within the prompt template, which facilitates structured and consistent model generation. 
+
+B. Datasets 
+
+To comprehensively evaluate the effectiveness and gen-eralizability of the proposed adapter framework for MSA and ERC, experiments are conducted on three widely used datasets: CH-SIMS V2.0 [10], MELD [1], and CHERMA [11]. These datasets provide multilingual coverage in English and Chinese, diverse conversational contexts, and rich multimodal signals with fine-grained emotion annotations. Such properties enable a rigorous assessment of cross-lingual and cross-task generalization performance. 
+
+C. Metrics and Performance 
+
+We evaluate MVFA-ChatGLM3-6B on standard datasets for MSA and ERC using established protocols. These evaluations include both classification and regression settings. For CH-SIMS V2.0, we report Acc2, F1, Acc2-Weak, Pearson cor-relation (Corr), coefficient of determination (R 2), and mean absolute error (MAE), and further analyze Acc3 and Acc5 in the ablation and sensitivity experiments. Following the standard evaluation protocol, Acc2 and F1 are computed under the non-positive/positive binarization rule, while Acc2-Weak is evaluated on the subset of samples whose ground-truth sentiment scores fall in the range [-0.4, 0.4], focusing on weak-sentiment recognition. For MELD, we report overall accuracy (Acc) and weighted F1 score (WF1). For CHERMA, we report overall accuracy (Acc) together with per-category F1 scores. Table I compares the performance of MVFA with several baseline models on the CH-SIMS V2.0 dataset. We report both classification-oriented metrics, including Acc2, F1, and Acc2-Weak, and regression-oriented metrics, including Pearson cor-relation, R 2, and MAE, to provide a comprehensive evalua-tion of model performance. MVFA-ChatGLM3-6B achieves the best results on the main classification metrics, reaching 84.62% in Acc2, 84.59% in F1, and 77.27% in Acc2-Weak. It also obtains the highest Pearson correlation of 0.736 and the lowest MAE of 0.284, while achieving a competitive R 2 value of 45.34. Compared with the reproduced MSE-ChatGLM3-6B baseline, MVFA-ChatGLM3-6B improves Acc2 by 1.76 points, F1 by 1.87 points, and Acc2-Weak by 2.58 points, while also improving Corr from 0.728 to 0.736, increasing R2 from 44.66 to 45.34, and reducing MAE from 0.291 to 0.284. In addition, MVFA can be instantiated on Qwen3-8B and LLaMA2-7B, although the final performance remains backbone-dependent, with ChatGLM3-6B-base achieving the strongest overall results on CH-SIMS V2.0. The fine-grained results on the CHERMA dataset are shown in Table II. In addition to the overall accuracy, we report per-category F1 scores to provide a more detailed view 6
+
+TABLE II FINE -GRAINED EMOTION RECOGNITION RESULTS ON THE CHERMA DATASET . W E REPORT F1 SCORES FOR EACH EMOTION CATEGORY TOGETHER WITH OVERALL ACCURACY (A CC ). R ESULTS MARKED WITH † ARE REPRODUCED ON OUR EXPERIMENTAL PLATFORM .
+
+Model Happiness ↑ Sadness ↑ Fear ↑ Anger ↑ Surprise ↑ Disgust ↑ Neutrality ↑ Acc ↑
+
+TFN [3] 74.91 75.56 66.15 74.41 66.29 43.34 65.60 68.37 LMF [4] 74.52 75.83 66.73 74.55 65.08 45.70 65.64 68.23 EFT [11] 74.98 76.88 67.32 74.85 66.73 47.48 64.60 68.72 LFT [11] 75.07 76.29 66.80 74.88 66.67 47.74 65.97 69.05 LFMIM [11] 76.60 77.83 69.44 75.32 69.83 50.20 68.24 70.54 MULT [26] 76.18 76.88 67.36 74.85 68.18 46.96 65.26 69.24 PMR [28] 75.68 76.46 67.97 75.43 67.37 48.93 66.59 69.53 MSE-ChatGLM3-6B [8] † 81.04 81.22 75.04 77.25 71.91 52.80 68.72 73.41 
+
+MVFA-LLaMA2-7B (Ours) 79.69 81.88 79.24 76.51 69.56 50.66 68.17 72.75 
+
+MVFA-Qwen3-8B (Ours) 80.30 82.45 80.87 76.85 72.21 52.37 69.49 73.87 
+
+MVFA-ChatGLM3-6B (Ours) 81.13 82.06 82.17 77.34 74.09 54.41 69.79 74.66 Ang Dis Fea Hap Neu Sad Sur Ang Dis Fea Hap Neu Sad Sur                                                                                           
+
+> (a) MSEAdapter
+> 0.730 0.057 0.011 0.003 0.126 0.054 0.020 0.215 0.240 0.003 0.077 0.373 0.043 0.049 0.064 0.004 0.558 0.008 0.131 0.153 0.082 0.004 0.020 0.008 0.850 0.091 0.021 0.006 0.043 0.023 0.021 0.106 0.701 0.068 0.039 0.029 0.002 0.039 0.005 0.098 0.823 0.004 0.078 0.029 0.107 0.085 0.275 0.022 0.404
+> Ang Dis Fea Hap Neu Sad Sur Ang Dis Fea Hap Neu Sad Sur
+> (b) MVFA (Ours)
+> 0.718 0.131 0.002 0.002 0.065 0.064 0.019 0.142 0.594 0.002 0.033 0.156 0.044 0.028 0.012 0.012 0.799 0.002 0.068 0.042 0.064 0.004 0.034 0.006 0.790 0.126 0.027 0.014 0.025 0.076 0.008 0.058 0.735 0.067 0.031 0.024 0.007 0.006 0.003 0.093 0.862 0.005 0.018 0.063 0.069 0.009 0.072 0.024 0.745
+
+Fig. 3. Row-normalized confusion matrices on CHERMA for (a) MSE-Adapter and (b) MVFA, both based on ChatGLM3-6B-base. MVFA yields a more concentrated diagonal pattern, especially for difficult classes such as Disgust, Fear, and Surprise. 
+
+of model behavior across different emotion classes. Among the compared methods, MVFA-ChatGLM3-6B achieves the highest overall accuracy of 74.66%, outperforming the re-produced MSE-ChatGLM3-6B baseline by 1.25 points and the strongest previously reported baseline, LFMIM, by 4.12 points. At the category level, MVFA-ChatGLM3-6B achieves the best F1 scores on six of the seven emotion classes, namely Happiness, Fear, Anger, Surprise, Disgust, and Neu-trality, while MVFA-Qwen3-8B achieves the best result on Sadness. In addition, MVFA also remains competitive when instantiated on LLaMA2-7B and Qwen3-8B, suggesting that the proposed adapter generalizes across different frozen LLM backbones. Overall, these results indicate that the proposed multi-view text-guided fusion strategy improves not only the overall recognition performance but also fine-grained emotion discrimination across diverse affective categories. To further examine the class-wise behavior of the pro-posed model, we first visualize the row-normalized confusion matrices on CHERMA for MSE-Adapter and MVFA, both instantiated on ChatGLM3-6B-base, as shown in Fig. 3. Com-pared with MSE-Adapter, MVFA exhibits a more concentrated diagonal structure overall, indicating improved fine-grained emotion discrimination. The improvement is especially evident 
+
+TABLE III EMOTION RECOGNITION RESULTS ON THE MELD DATASET . W E REPORT OVERALL ACCURACY (A CC ) AND WEIGHTED F1 (WF1). R ESULTS MARKED WITH † ARE REPRODUCED ON OUR EXPERIMENTAL PLATFORM ,
+
+> AND THE REMAINING RESULTS ARE TAKEN FROM THE CORRESPONDING ORIGINAL PAPERS
+
+.
+
+Model Acc ↑ WF1 ↑
+
+LMF [4] 61.15 58.30 TFN [3] 60.70 57.74 GraphCFC [7] 61.42 58.86 MM-DFN [29] 62.49 59.46 EmoCaps [30] – 64.00 GA2MIF [31] 61.65 58.94 UniMSE [17] 65.09 65.51 UniSA GPT2 [32] 48.12 31.26 UniSA T5 [32] 64.52 62.17 UniSA BART [32] 62.34 62.22 MSE-ChatGLM3-6B [8] † 65.88 64.67 
+
+MVFA-LLaMA2-7B (Ours) 65.14 63.66 
+
+MVFA-Qwen3-8B (Ours) 63.82 62.17 
+
+MVFA-ChatGLM3-6B (Ours) 67.36 66.03 
+
+for relatively difficult classes such as Disgust, Fear, and Surprise, whose diagonal values increase from 0.240 to 0.594, 0.558 to 0.799, and 0.404 to 0.745, respectively. MVFA also improves the recognition of Neutrality and Sadness, whereas Anger and Happiness exhibit slight decreases rather than gains. Overall, these observations suggest that MVFA is more effective at reducing confusion among several semantically adjacent emotion categories and yields more discriminative fine-grained emotion representations. The results on the MELD dataset are reported in Ta-ble III. Among the compared methods, MVFA-ChatGLM3-6B achieves the best overall performance, reaching 67.36% Acc and 66.03% WF1. Compared with the reproduced MSE-ChatGLM3-6B baseline, MVFA-ChatGLM3-6B improves Acc by 1.48 points and WF1 by 1.36 points. In addition, MVFA-7       
+
+> TABLE IV MODULE -LEVEL ABLATION RESULTS ON CH-SIMS V2.0, WHERE W /O DENOTES REMOVING A MODULE . T HE FULL MODEL ACHIEVES THE BEST RESULTS ON THE MAIN CLASSIFICATION -ORIENTED METRICS AND ON R2,WHILE SOME ABLATED VARIANTS REMAIN COMPETITIVE ON INDIVIDUAL REGRESSION -RELATED METRICS SUCH AS CORR OR MAE.
+
+Model Acc2 ↑ F1 ↑ Acc2-Weak ↑ Acc3 ↑ Acc5 ↑ Corr ↑ R2↑ MAE ↓
+
+w/o MTF 82.92 82.75 75.20 77.45 57.68 0.734 42.77 0.289 
+
+w/o ENQF 82.65 82.46 75.44 75.90 55.96 0.710 43.07 0.296 w/o MTF, ENQF 80.33 79.99 73.50 73.42 57.86 0.765 42.77 0.305 
+
+MVFA-ChatGLM3-6B (Ours) 84.62 84.59 77.27 79.01 59.19 0.736 45.34 0.284       
+
+> TABLE V MODULE -LEVEL ABLATION RESULTS ON MELD AND CHERMA, WHERE W/O DENOTES REMOVING A MODULE . T HE SETTING W /OMTF, ENQF
+> CORRESPONDS TO AN EARLY -FUSION BASELINE IN WHICH FEATURES FROM ALL MODALITIES ARE SYMMETRICALLY CONCATENATED WITH TEXTUAL PROMPTS BEFORE BEING FED INTO THE FROZEN LLM.
+
+Model MELD CHERMA Acc ↑ WF1 ↑ Acc ↑ WF1 ↑
+
+w/o MTF 66.24 65.04 73.52 73.21 w/o ENQF 63.85 62.73 74.36 74.41 w/o MTF, ENQF 62.01 60.62 72.37 72.30 
+
+MVFA-ChatGLM3-6B (Ours) 67.36 66.03 74.66 74.62 
+
+LLaMA2-7B achieves competitive results, while MVFA-Qwen3-8B remains weaker in this setting, suggesting that the proposed adapter is transferable across different frozen LLM backbones, although the MVFA variant built on ChatGLM3-6B-base achieves the strongest overall performance on MELD. Compared with earlier multimodal baselines such as UniMSE, MM-DFN, and GraphCFC, MVFA also shows clear improve-ments. 
+
+D. Efficiency Analysis 
+
+As a lightweight frozen-LLM adapter, MVFA maintains a very small trainable footprint relative to the full backbone. On the ChatGLM3-6B-base backbone, MVFA uses 6.05M–6.26M trainable parameters across the three datasets, corresponding to only 0.0968%–0.1002% of the full model parameters. The slight variation across datasets mainly comes from dataset-specific dimensional settings in the modality encoders, such as the LSTM-related dimensions used for audio and visual features. Overall, these results show that MVFA achieves strong multimodal adaptation while updating only about 0.1% of the backbone parameters. 
+
+E. Ablation Study 
+
+We conduct ablation studies on three datasets, namely the English dataset MELD and the Chinese datasets CH-SIMS V2.0 and CHERMA, to evaluate the effectiveness of different components in MVFA across languages and tasks. All experimental settings, including hyperparameters and random seeds, are kept consistent with the main experiments to ensure fair comparison. For compactness, the ablation results on CHERMA are summarized using Acc and WF1, while the main results additionally report per-category F1 scores. Table IV reports the module-level ablation results on CH-SIMS V2.0. Removing either MTF or ENQF degrades per-formance, and removing both causes a further overall drop. Despite some competitive regression-related values in individ-ual ablations, the full model achieves the best overall trade-off across metrics, indicating that both modules are beneficial and complementary. Table V presents the module-level ablation results on MELD and CHERMA. The full model performs best on both datasets, while removing both modules yields the largest degradation. The relative impact of MTF and ENQF varies by task, sug-gesting that both are important for multimodal fusion, but their contributions are dataset-dependent. Beyond removing the whole MTF module, we further conduct leave-one-out branch ablations to examine whether the three text aggregation branches provide complementary information. Specifically, we remove the max-pooling, mean-pooling, and attention-pooling branches individually, denoted as w/o Max, w/o Mean, and w/o Attn, respectively. Table VI reports the leave-one-out branch ablation results on CH-SIMS V2.0. The full model achieves the best per-formance on the main classification-oriented metrics, while removing any single branch consistently degrades these met-rics, indicating that each view contributes useful information to multimodal sentiment prediction. At the same time, some ablated variants remain competitive on individual regression-related metrics. For instance, w/o Max achieves the best MAE and the highest R 2, whereas the full model still attains the highest Corr and the strongest overall trade-off across metrics. These results suggest that the three branches introduce complementary inductive biases, and that their combination is more effective than any single branch alone. We further evaluate the same multi-view design on MELD. As shown in Table VII, the full model again achieves the best overall performance, reaching 67.36% in accuracy and 66.03% in weighted F1. Removing any single branch consistently degrades the results, with the largest drop observed when the mean-pooling branch is removed. This finding indicates that all three text views contribute to the final prediction, while their combination provides complementary rather than redundant information. Table VIII reports the modality ablation results on MELD. Here, T , V , and A denote the textual, visual, and audio modalities, respectively. When the text modality is removed, 8
+
+TABLE VI LEAVE -ONE -OUT BRANCH ABLATION OF THE PROPOSED MULTI -VIEW TEXT MODELING MODULE ON CH-SIMS V2.0. W E REMOVE THE MAX -POOLING ,
+
+> MEAN
+
+-POOLING , AND ATTENTION -POOLING BRANCHES INDIVIDUALLY , DENOTED AS W /O MAX , W/O MEAN , AND W /O ATTN .
+
+Model Acc2 ↑ F1 ↑ Acc2-Weak ↑ Acc3 ↑ Acc5 ↑ Corr ↑ R2↑ MAE ↓
+
+w/o Max 82.92 82.70 75.40 77.10 57.37 0.727 46.32 0.281 
+
+w/o Mean 83.75 83.61 76.52 78.16 58.48 0.729 44.80 0.284 w/o Attn 82.63 82.33 75.15 76.42 56.73 0.728 45.00 0.286 
+
+MVFA-ChatGLM3-6B (Ours) 84.62 84.59 77.27 79.01 59.19 0.736 45.34 0.284 
+
+TABLE VII LEAVE -ONE -OUT BRANCH ABLATION OF THE PROPOSED MULTI -VIEW TEXT MODELING MODULE ON MELD. W E REMOVE THE MAX -POOLING ,
+
+> MEAN
+
+-POOLING , AND ATTENTION -POOLING BRANCHES INDIVIDUALLY ,
+
+> DENOTED AS W
+
+/O MAX , W/O MEAN , AND W /O ATTN , RESPECTIVELY .RESULTS ARE AVERAGED OVER FIVE RANDOM SEEDS . ∆ DENOTES THE PERFORMANCE DIFFERENCE RELATIVE TO THE FULL MVFA MODEL .
+
+Model Acc ↑ WF1 ↑ ∆Acc ∆WF1 w/o Max 66.73 65.58 -0.63 -0.45 w/o Mean 66.31 64.89 -1.05 -1.14 w/o Attn 66.47 65.31 -0.89 -0.72 
+
+MVFA-ChatGLM3-6B (Ours) 67.36 66.03 – –
+
+TABLE VIII MODALITY ABLATION RESULTS ON MELD. T , V , AND A DENOTE THE TEXTUAL , VISUAL , AND AUDIO MODALITIES , RESPECTIVELY . ∆ DENOTES THE PERFORMANCE DIFFERENCE RELATIVE TO THE FULL TRI -MODAL MODEL .
+
+Modality Acc ↑ WF1 ↑ ∆Acc ∆WF1 
+
+V + A 47.21 35.35 -20.15 -30.68 
+
+T + V 66.62 65.62 -0.74 -0.41 
+
+T + A 66.81 65.77 -0.55 -0.26 
+
+T + V + A 67.36 66.03 – –
+
+the performance drops sharply: the V +A setting achieves only 47.21% Acc and 35.35% WF1, which is substantially worse than all text-involved variants. This confirms the dominant role of textual information in ERC. At the same time, adding either visual or audio cues to text further improves performance. Specifically, both T +A and T +V achieve competitive results, and the difference between them is relatively small, suggesting that audio and visual modalities provide complementary non-verbal cues from different perspectives. The best performance is obtained when all three modalities are jointly fused, reach-ing 67.36% Acc and 66.03% WF1. These results demonstrate that while text serves as the primary signal, audio and visual information still provide useful complementary evidence, and MVFA can effectively exploit cross-modal interactions for ERC. 
+
+F. Hyperparameter Sensitivity 
+
+We analyze the sensitivity of ENQF to two key hyperparam-eters, namely the pseudo-token number n and the enhancement factor α.
+
+TABLE IX SENSITIVITY ANALYSIS OF THE PSEUDO -TOKEN NUMBER n IN ENQF ON 
+
+CH-SIMS V2.0, WHERE n DENOTES THE NUMBER OF PSEUDO -TOKENS .RESULTS ARE AVERAGED OVER FIVE RANDOM SEEDS .
+
+n Acc2 ↑ F1 ↑ Acc3 ↑ Acc5 ↑ Corr ↑ R2↑ MAE ↓
+
+2 83.15 83.07 77.87 57.85 0.725 43.02 0.291 4 84.62 84.59 79.01 59.19 0.736 45.34 0.284 
+
+8 82.61 82.49 77.18 56.56 0.728 46.46 0.286 16 81.20 80.71 75.57 55.45 0.725 45.34 0.291 
+
+TABLE X SENSITIVITY ANALYSIS OF THE ENHANCEMENT FACTOR α IN ENQF ON 
+
+CH-SIMS V2.0. R ESULTS ARE AVERAGED OVER FIVE RANDOM SEEDS ,
+
+> AND ALL OTHER SETTINGS ARE KEPT UNCHANGED
+
+.
+
+α Acc2 ↑ F1 ↑ Acc3 ↑ Acc5 ↑ Corr ↑ R2↑ MAE ↓
+
+0.1 83.14 83.05 77.33 57.45 0.723 46.41 0.283 
+
+0.2 83.66 83.62 78.41 59.15 0.727 44.53 0.285 0.3 84.62 84.59 79.01 59.19 0.736 45.34 0.284 0.4 83.19 82.97 77.25 57.00 0.728 45.67 0.287 0.5 83.19 83.09 77.93 57.49 0.723 45.33 0.286 
+
+We first study the effect of the pseudo-token number n,which controls the capacity of multimodal compression before token injection into the frozen LLM. As shown in Table IX, we test n ∈ { 2, 4, 8, 16 }. Overall, using 4 pseudo-tokens provides the best overall trade-off among all settings. Compared with 
+
+n = 2, setting n = 4 improves all the main evaluation metrics, including Acc2 (83.15% → 84.62%), F1 (83.07% 
+
+→ 84.59%), Acc3 (77.87% → 79.01%), Acc5 (57.85% →
+
+59.19%), Corr (0.725 → 0.736), and R 2 (43.02 → 45.34), while reducing MAE from 0.291 to 0.284. Increasing the number of pseudo-tokens further to 8 or 16 does not yield consistent gains. Although n = 8 achieves a higher R 2
+
+of 46.46, both settings underperform n = 4 on the main classification metrics, and n = 16 leads to the weakest overall results. These results suggest that too few pseudo-tokens may limit multimodal compression capacity, whereas too many may introduce redundancy and hurt overall predictive performance. We therefore use n = 4 in the main experiments. We further analyze the sensitivity of the enhancement factor α, which controls how strongly the enhanced feature contributes to the final fused representation. As shown in Table X, we test α ∈ { 0.1, 0.2, 0.3, 0.4, 0.5} while keeping all other settings unchanged. The results show that α = 0 .3900:03  00:06  00:09 
+
+> The good news is, the soda is no longer cold, but my heart is frozen.
+
+00:00  00:02  00:04 
+
+> Seriously, this is humiliating!
+
+00:00  00:02  00:04 
+
+> That troublemaker, tell him not to come back. Let him stay at his uncle’s
+> garage. There’s no room for him in this family anymore.
+
+(Ours)          
+
+> -1.0 -0.6000(negative) +1.0
+> Predicted Score: -0. 6000
+> labels_T: -0.4 labels_A: -0.4 labels_V: -0.6
+> Please predict the sentiment
+> intensity of the above multimodal
+> content in the range [ -1.0, 1.0].
+
+(Prompt)  Sentiment Inte nsity 
+
+(Ours)     
+
+> -1.0 -0.8000(negative) +1.0
+> Predicted Score: -0. 8000
+> Please predict the sentiment
+> intensity of the above multimodal
+> content in the range [ -1.0, 1.0].
+
+(Prompt)  Sentiment  Intensity 
+
+(Ours)     
+
+> -1.0 -0.8000(negative) +1.0
+> Predicted Score: -0. 8000
+> Sentiment Intensity
+> Please predict the sentiment
+> intensity of the above multimodal
+> content in the range [ -1.0, 1.0].
+
+(Prompt)           
+
+> labels_T: -0.8 labels_A: -1.0 labels_V: -0.6
+> labels_T: -1.0 labels_A: -0.6 labels_V: -0.8
+
+Fig. 4. Qualitative cases from CH-SIMS V2.0. Each example shows the utterance, predicted sentiment score, and modality-wise labels. MVFA handles both explicit and contrastive/figurative sentiment cases. 
+
+gives the best overall performance, achieving the highest Acc2, F1, Acc3, and Corr. Smaller values such as 0.1 and 0.2 remain competitive and are slightly better on individual metrics, specifically, α = 0 .2 yields the best Acc5, while 
+
+α = 0 .1 achieves the best R 2 and MAE. When α increases further to 0.4 or 0.5, performance degrades on most metrics. These results suggest that a moderate enhancement strength is beneficial: if the coefficient is too small, the enhance-ment branch is underutilized, whereas an excessively large coefficient may over-amplify auxiliary signals and disturb the primary fused representation. Therefore, we use α = 0 .3 in the main experiments. 
+
+G. Qualitative Case Analysis on CH-SIMS V2.0 
+
+To provide an intuitive view of model behavior, Fig. 4 presents three qualitative cases from CH-SIMS V2.0 to illus-trate how MVFA performs multimodal sentiment prediction. Each example contains the utterance, the model prediction, and the modality-wise labels for text, audio, and vision. Compared with the architectural illustration in Fig. 2, the purpose of this figure is not to restate the workflow, but to show how the model behaves on representative sentiment cases. The first example is more challenging. Although the ut-terance contains superficially positive wording such as “good news,” its overall sentiment is negative due to the contrastive structure and the metaphorical expression “my heart is frozen.” Here, the final prediction is not determined by isolated lexical cues alone, but by the joint interpretation of textual, acous-tic, and visual signals. This case qualitatively illustrates the importance of text-guided multimodal fusion: the model can move beyond literal word polarity and produce a prediction that better matches the underlying sentiment. The second and third examples correspond to relatively explicit negative sentiment, where the textual content already carries strong affective cues and the non-textual modalities provide consistent supporting evidence. In these cases, MVFA produces strongly negative predictions that are aligned with the multimodal annotations. This suggests that the model can effectively aggregate consistent evidence across modalities when the sentiment is clearly expressed. Overall, these examples suggest that MVFA can handle both relatively direct affective expressions and more implicit or contrastive sentiment cases. The qualitative results are consis-tent with the quantitative improvements reported in the main experiments, and provide an intuitive view of how multimodal evidence contributes to the final prediction. V. C ONCLUSION 
+
+We proposed MVFA, a parameter-efficient adapter for MSA and ERC with frozen LLMs. By preserving complemen-tary text views for cross-modal interaction and compressing the fused representation into compact pseudo-tokens, MVFA enables effective multimodal reasoning without full-model fine-tuning. Experiments on CH-SIMS V2.0, MELD, and CHERMA demonstrate that MVFA achieves strong and sta-ble performance across diverse multimodal affective datasets while remaining parameter-efficient in the frozen-LLM setting. Additional experiments on multiple frozen LLM backbones further indicate that MVFA can be applied to more than one backbone architecture, although its final performance remains dependent on the chosen backbone. These findings highlight the value of multi-view text-guided fusion for multimodal LLM adaptation. In future work, we plan to further evaluate the framework on larger backbone architectures and broader multimodal tasks. 10 
+
+REFERENCES [1] S. Poria, D. Hazarika, N. Majumder, G. Naik, E. Cambria, and R. Mihal-cea, “MELD: A multimodal multi-party dataset for emotion recognition in conversations,” in Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics , 2019, pp. 527–536. [2] A. B. Zadeh, P. P. Liang, S. Poria, E. Cambria, and L.-P. Morency, “Multimodal language analysis in the wild: CMU-MOSEI dataset and interpretable dynamic fusion graph,” in Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2018, pp. 2236–2246. [3] A. Zadeh, M. Chen, S. Poria, E. Cambria, and L.-P. Morency, “Tensor fusion network for multimodal sentiment analysis,” in Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing , 2017, pp. 1103–1114. [4] Z. Liu, Y. Shen, V. B. Lakshminarasimhan, P. P. Liang, A. B. Zadeh, and L.-P. Morency, “Efficient low-rank multimodal fusion with modality-specific factors,” in Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,2018, pp. 2247–2256. [5] W. Rahman, M. K. Hasan, S. Lee, A. B. Zadeh, C. Mao, L.-P. Morency, and E. Hoque, “Integrating multimodal information in large pretrained transformers,” in Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , 2020, pp. 2359–2369. [6] J. Guo, J. Tang, W. Dai, Y. Ding, and W. Kong, “Dynamically ad-just word representations using unaligned multimodal information,” in 
+
+Proceedings of the 30th ACM International Conference on Multimedia ,2022, pp. 3394–3402. [7] J. Li, X. Wang, G. Lv, and Z. Zeng, “GraphCFC: A directed graph based cross-modal feature complementation approach for multimodal conversational emotion recognition,” IEEE Transactions on Multimedia ,vol. 26, pp. 77–89, 2023. [8] Y. Yang, X. Dong, and Y. Qiang, “MSE-Adapter: A lightweight plugin endowing LLMs with the capability to perform multimodal sentiment analysis and emotion recognition,” in Proceedings of the AAAI Confer-ence on Artificial Intelligence , vol. 39, no. 24, 2025, pp. 25 642–25 650. [9] GLM Team, A. Zeng, B. Xu, B. Wang, C. Zhang, D. Yin, D. Zhang, D. Rojas, G. Feng, H. Zhao et al. , “ChatGLM: A family of large language models from GLM-130B to GLM-4 all tools,” arXiv preprint arXiv:2406.12793 , 2024. [10] Y. Liu, Z. Yuan, H. Mao, Z. Liang, W. Yang, Y. Qiu, T. Cheng, X. Li, H. Xu, and K. Gao, “Make acoustic and visual cues matter: CH-SIMS V2.0 dataset and AV-Mixup consistent module,” in Proceedings of the 2022 International Conference on Multimodal Interaction , 2022, pp. 247–258. [11] J. Sun, S. Han, Y.-P. Ruan, X. Zhang, S.-K. Zheng, Y. Liu, Y. Huang, and T. Li, “Layer-wise fusion with modality independence modeling for multi-modal emotion recognition,” in Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2023, pp. 658–670. [12] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale et al. , “Llama 2: Open foundation and fine-tuned chat models,” arXiv preprint arXiv:2307.09288 , 2023. [13] A. Yang et al. , “Qwen3 technical report,” arXiv preprint arXiv:2505.09388 , 2025. [14] W. Yu, H. Xu, Z. Yuan, and J. Wu, “Learning modality-specific representations with self-supervised multi-task learning for multimodal sentiment analysis,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 35, no. 12, 2021, pp. 10 790–10 797. [15] D. Hazarika, R. Zimmermann, and S. Poria, “MISA: Modality-invariant and -specific representations for multimodal sentiment analysis,” in 
+
+Proceedings of the 28th ACM International Conference on Multimedia ,2020, pp. 1122–1131. [16] J. Yang, Y. Yu, D. Niu, W. Guo, and Y. Xu, “ConFEDE: Contrastive feature decomposition for multimodal sentiment analysis,” in Proceed-ings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2023, pp. 7617–7630. [17] G. Hu, T.-E. Lin, Y. Zhao, G. Lu, Y. Wu, and Y. Li, “UniMSE: Towards unified multimodal sentiment analysis and emotion recognition,” in 
+
+Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , 2022, pp. 7837–7851. [18] W. Li, C. Gao, G. Niu, X. Xiao, H. Liu, J. Liu, H. Wu, and H. Wang, “UNIMO: Towards unified-modal understanding and generation via cross-modal contrastive learning,” in Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , 2021, pp. 2592–2607. [19] K. Zhou, J. Yang, C. C. Loy, and Z. Liu, “Conditional prompt learning for vision-language models,” in Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , 2022, pp. 16 816– 16 825. [20] M. U. Khattak, H. Rasheed, M. Maaz, S. Khan, and F. S. Khan, “MaPLe: Multi-modal prompt learning,” in Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , 2023, pp. 19 113– 19 122. [21] L. Yang, R.-Y. Zhang, Y. Wang, and X. Xie, “MMA: Multi-modal adapter for vision-language models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 23 826–23 837. [22] M. I. Liaqat, S. Nawaz, M. Z. Zaheer, M. S. Saeed, H. Sajjad, T. De Schepper, K. Nandakumar, M. H. Khan, and M. Schedl, “Chameleon: Images are what you need for multimodal learning robust to missing modalities,” arXiv preprint arXiv:2407.16243 , 2024. [23] T. Kudo and J. Richardson, “SentencePiece: A simple and language independent subword tokenizer and detokenizer for neural text process-ing,” in Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing: System Demonstrations , 2018, pp. 66–71. [24] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in Neural Information Processing Systems , vol. 30, 2017. [25] A. Zadeh, P. P. Liang, N. Mazumder, S. Poria, E. Cambria, and L.-P. Morency, “Memory fusion network for multi-view sequential learning,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 32, no. 1, 2018. [26] Y.-H. H. Tsai, S. Bai, P. P. Liang, J. Z. Kolter, L.-P. Morency, and R. Salakhutdinov, “Multimodal transformer for unaligned multimodal language sequences,” in Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics , 2019, pp. 6558–6569. [27] W. Han, H. Chen, and S. Poria, “Improving multimodal fusion with hierarchical mutual information maximization for multimodal sentiment analysis,” in Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , 2021, pp. 9180–9192. [28] F. Lv, X. Chen, Y. Huang, L. Duan, and G. Lin, “Progressive modality re-inforcement for human multimodal emotion recognition from unaligned multimodal sequences,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 2554–2562. [29] D. Hu, X. Hou, L. Wei, L. Jiang, and Y. Mo, “MM-DFN: Multimodal dynamic fusion network for emotion recognition in conversations,” in 
+
+ICASSP 2022-2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2022, pp. 7037–7041. [30] Z. Li, F. Tang, M. Zhao, and Y. Zhu, “EmoCaps: Emotion capsule based model for conversational emotion recognition,” in Findings of the Association for Computational Linguistics: ACL 2022 , 2022, pp. 1610–1618. [31] J. Li, X. Wang, G. Lv, and Z. Zeng, “GA2MIF: Graph and attention based two-stage multi-source information fusion for conversational emotion detection,” IEEE Transactions on Affective Computing , vol. 15, no. 1, pp. 130–143, 2023. [32] Z. Li, T.-E. Lin, Y. Wu, M. Liu, F. Tang, M. Zhao, and Y. Li, “UniSA: Unified generative framework for sentiment analysis,” in Proceedings of the 31st ACM International Conference on Multimedia , 2023, pp. 6132–6142.

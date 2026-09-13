@@ -1,0 +1,1761 @@
+Title: InfluenceField: A Differentiable Field with Interventionally Identifiable Causal Structure for Multimodal World Modeling
+
+URL Source: https://arxiv.org/pdf/2609.07874v1
+
+Published Time: Wed, 09 Sep 2026 02:42:46 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# InfluenceField: A Differentiable Field with Interventionally Identifiable Causal Structure for Multimodal World Modeling 
+
+# Zihao Yang ∗† 1, Zijia WANG ∗2, Zhiqiu HUANG 3
+
+> 1
+
+Mathematical Institute, University of Oxford 
+
+> 2
+
+Department of Computer Science, University of Oxford 
+
+> 3
+
+School of Mathematical Sciences, University of Nottingham Ningbo China 
+
+Abstract 
+
+Multimodal large language models often capture visual– linguistic correlations but struggle to predict how local visual interventions propagate and affect downstream answers. We introduce InfluenceField, an intervention-aware latent field inserted between the visual encoder and language decoder. It lifts patch features into a continuous spatial representa-tion, propagates directed influence over multiple steps, and predicts local intervention effects through a shared transi-tion operator. Training jointly optimizes language modeling, cross-environment invariance, counterfactual rollout supervi-sion, and structural regularization. For a nonlinear finite-basis population model, we show that target-aligned interventional supervision, together with a one-step separation condition on the transition, restricts admissible representations to within-location reparameterizations, so that the directed dependency graph of the full transition is recovered exactly. A linear spe-cialization gives an exact partial-coverage characterization and a finite-loss stability bound, and the field analysis de-rives the spatial profile of coefficient interventions together with a shared-channel calibration result. On CausalVQA, InfluenceField improves overall accuracy over its backbone by 13.1 percentage points, with the largest gains on the planning and hypothetical categories. Capacity-matched baselines and structural controls attribute the gains in robustness and factual–counterfactual consistency to the causal objectives rather than to added capacity. 
+
+# 1 Introduction 
+
+An intelligent multimodal system should not only recog-nize what happens, but also explain why it happens and predict what would happen if conditions changed [1, 2]. Such capabilities help make multimodal systems more in-terpretable, robust, and controllable. Video understanding is particularly demanding because models must integrate spa-tial content, temporal dependencies, and vision–language in-teractions [3, 4]. However, current multimodal systems still rely heavily on superficial correlations and remain unreliable under context shifts [2, 5]. Asked why the ground is wet, a model may answer “because the person has an umbrella,” mistaking correlation for cause (Fig. 1a). This limitation is particularly evident in counterfactual reasoning, where a model must predict the consequences of 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author: shil6682@ox.ac.uk 
+
+Figure 1: (a) Multimodal models often rely on spurious corre-lations rather than causal mechanisms. (b) Existing causality-guided methods and their limitations. (c) InfluenceField pro-vides unified cross-modal reasoning with a continuous spatial representation and dynamic influence propagation, trained with intervention-aware objectives. an intervention in a specific observed situation rather than ex-trapolate from observational correlations. Consider a video in which a ball strikes a row of dominoes and they fall in sequence. When asked what would have happened if the middle domino had been removed, the model must trace how this local intervention would break the chain of spatial inter-actions and prevent the downstream dominoes from falling, rather than relying on a learned correlation between a moving ball and the entire row falling. Recent approaches incorpo-rate causal information into multimodal learning through counterfactual data augmentation [6], representation-level causal disentanglement through confounder adjustment [7], and multimodal causal discovery [8]. However, these ap-proaches do not jointly provide an explicit spatial state in which local intervention effects can propagate across regions over multiple reasoning steps. Beyond these methodological differences, a key theoret-ical question is whether learned causal representations and structures are identifiable. This question is central to causal representation learning [9, 10], but remains largely unad-dressed in existing multimodal causal methods [7, 8]. arXiv:2609.07874v1 [cs.LG] 7 Sep 2026 We propose InfluenceField , a differentiable influence field inserted between the visual encoder and the language decoder. It unifies continuous spatial modeling, multi-step propagation of directed influence, and localized field-space interventions, and is trained with a joint objective combin-ing language modeling, cross-environment invariance, coun-terfactual rollout supervision, and structural regularization. We also establish sufficient conditions under which target-aligned interventions identify the dependency graph of a nonlinear finite-basis transition up to within-location repa-rameterization, and a linear specialization that yields finite-coverage and finite-loss guarantees (Sec. 4). Our contribu-tions are: 
+
+• Continuous field with directional propagation. Patch features are lifted into a continuous latent field queryable at arbitrary locations; a state-dependent directional influ-ence matrix with an iterative propagation operator lets local interventions induce multi-step, long-range effects. 
+
+• Identifiability analysis. In a nonlinear finite-basis popu-lation model, target-aligned intervention consistency pre-serves the complete transition graph, while the representa-tion is determined up to within-location diffeomorphisms. The linear specialization gives an exact partial-coverage characterization and a finite-loss stability bound, and the field analysis derives the kernel-column intervention pro-file and its shared-channel calibration condition. 
+
+• Capacity-matched and structure-destruction con-trols. Parameter/FLOP-matched non-causal controls, influence-matrix transposition/symmetrization, and shuf-fled counterfactual supervision isolate the causal contri-bution; coverage curves, cross-seed stability, operational-influence agreement, bandwidth effects, and the observed √ε trend probe theory-motivated predictions. 
+
+• Empirical validation. Across causal video QA, multi-modal causal discovery, OOD generalization, and coun-terfactual consistency, InfluenceField outperforms strong baselines, with the largest gains on planning and hypo-thetical questions. 
+
+# 2 Related Work 
+
+Causality-guided multimodal reasoning. Data-level counterfactual augmentation: CF-VLM [6] encodes causal supervision through paired counterfactual examples and spe-cialized objectives, but leaves the causal structure implicit in the learned representation rather than instantiating an ex-plicit causal state and transition model. Representation-level causal disentanglement: Causal-LLaVA [7] performs causal disentanglement through confounder adjustment using finite, category-indexed visual and textual confounder dictionaries; it does not model how intervention effects propagate across spatial regions over multiple rollout steps. Structure-level causal discovery: COAT and MLLM-CD [8, 11] infer or refine directed relations from unstructured or multimodal observations. These methods represent causal structure as factor-level graphs rather than continuous spatial states gov-erned by a transition operator. Taken together, these repre-sentative approaches neither integrate a continuous spatial causal state with multi-step language-conditioned reasoning nor establish conditions for recovering an internal spatial influence structure. For evaluation, CELLO [2], CausalVLBench [12], MuCR [5], and CausalSpatial [13] primarily assess causal reasoning in image-based settings, whereas CausalVQA [14] focuses on physically grounded videos in which causal effects unfold over time and serves as our main benchmark. 
+
+Causal representation learning and identifiability. 
+
+Identifiability of latent causal representations generally re-quires additional supervision or structural assumptions, in-cluding interventions, temporal or auxiliary variables, and mechanism constraints [9, 10, 15–17]. Representative ap-proaches include CausalVAE, CITRIS, and BISCUIT [18– 20]. Prior work establishes nonlinear identification from paired interventions or temporal supervision, recovering la-tents up to relabeling and within-variable reparameterization and handling multidimensional causal factors [19, 21]. Com-plementary work obtains affine or permutation-and-scaling equivalence classes by exploiting interventional support ge-ometry or linear latent causal models under linear and general nonlinear observation maps [9, 22, 23]. Our analysis tailors these ideas to the deterministic finite-basis transition used for field rollout: the nonlinear result preserves the block support of the Jacobian of the full transition map, while the linear specialization characterizes partial coverage, finite-loss sta-bility, and field-induced intervention geometry. 
+
+World models and continuous scene representations. 
+
+Canonical world models learn action-conditioned latent dy-namics for prediction and control [24–26]. However, pre-dictive fit under the observed regime need not transfer to forecasts under interventions [27]. Causal dynamics have been studied in object-oriented reinforcement-learning en-vironments [28], while recent work couples an LLM agent with a CRL-based causal world model for multi-step reason-ing and planning [29]. The latter operates on disentangled factor-level variables through a modular simulator. NeRF [30] and D-NeRF [31] provide differentiable continuous-coordinate representations but are not designed for causal interventions or directed influence propagation. Influence-Field shares the multi-step rollout paradigm, but additionally embeds a continuous spatial state with directed influence and localized interventions directly in the visual–language pathway for language-grounded counterfactual reasoning. 
+
+# 3 Methodology 
+
+3.1 Overview 
+
+Given multimodal inputs, InfluenceField (Fig. 2) learns one shared field representation through four jointly trained components— field construction , a directional influence function , a propagation operator , and a field intervention module —supporting factor localization, directed influence inference, and intervention-aware counterfactual prediction. 
+
+3.2 Field Construction 
+
+Let the visual encoder output N patch features {zi}Ni=1 , zi ∈
+
+RC , at normalized positions pi ∈ [0 , 1] 2. We define a field Figure 2: Overview of InfluenceField. Visual patches are lifted into a continuous field F0 by Gaussian interpolation (Eq. 1), iteratively propagated for T steps via the learned directional influence matrix (Eqs. 3–5), and optionally intervened upon with a kernel-profile mask (Eq. 6) whose counterfactual rollout shares the same transition operator. Factual or counterfactual fields are fused with language tokens via cross-modal attention for answer generation; training combines language supervision with invariance, counterfactual rollout, and structural objectives (Eq. 7). 
+
+F : [0 , 1] 2 × { 0, . . . , T } → RC initialized by Gaussian interpolation 
+
+F(p, 0) = 
+
+> N
+
+X
+
+> i=1
+
+wi(p) ϕ(zi), (1) where ϕ is a learnable projection shared across patches and 
+
+wi(p) = exp( −∥ p − pi∥2/2σ2)
+
+PNj=1 exp( −∥ p − pj ∥2/2σ2) (2) is a normalized Gaussian kernel with bandwidth σ > 0. The construction is continuous (queryable at arbitrary positions), differentiable (gradients flow into the field and encoder inter-face), and smooth (nearby positions share feature mixtures, aiding occlusion interpolation and consistency across object parts). In practice we evaluate the field on a regular H × W
+
+grid, F0 ∈ RK×C , K = HW ; in our implementation the field grid coincides with the patch grid ( K = N ), so the sampled interpolation matrix is square. 
+
+3.3 Directional Influence and Propagation 
+
+Given the discretized field Ft, the directed influence from location i to j is 
+
+Gtij = Stij · 1
+
+nhnhX
+
+> h=1
+
+At,h ij , (3) where At,h ij is scaled dot-product attention affinity with a learnable directional bias, 
+
+et,h ij = (WhQFti)⊤(WhK Ftj )
+
+√dh
+
++ bdir  
+
+> h
+
+, A t,h ij = exp( et,h ij )
+
+P 
+
+> k
+
+exp( et,h ik ) ,
+
+(4) and the sparsity gate Stij = σ(MLP[ Fti ∥ Ftj ]) suppresses weak or implausible edges. The matrix is row-normalized, 
+
+ˆGtij = Gtij /(P 
+
+> k
+
+Gtik + ϵ); asymmetry arises from distinct query/key projections and the pairwise gate, so generally 
+
+Gtij ̸ = Gtji , and Gt evolves with the scene state since it is recomputed each step. Effects propagate via 
+
+Ft+1 = α ( ˆGt)⊤Ft + (1 − α) eFt, (5) where eFt = WO (MHA( Ft)) is an attention-based refine-ment branch and α = σ(wmix ) ∈ (0 , 1) is learnable: the first term performs explicit influence-based transport, the sec-ond preserves contextual semantics beyond the sparse graph. After T steps, FT = T T (F0); multi-step propagation lets indirect dependencies emerge, with depth playing the role of latent rollout depth rather than frame count. We emphasize— and prove next—that the attention parameterization by itself carries no causal semantics; its causal content is supplied by the interventional training objective. 
+
+3.4 Field Intervention and Counterfactual Rollout 
+
+Following Pearl [1], we modify local field values inside a spatial mask and roll out with the same operator. Given center 
+
+p∗ and target value v ∈ RC ,
+
+FI (p, t ) = m(p) v + (1 − m(p)) F(p, t ), (6) with Gaussian mask m(p) = exp( −∥ p − p∗∥2/2σ2) whose bandwidth is tied to that of Eq. (2). Theorem 3 derives the exact kernel-column profile of a single coefficient in-tervention; the convex blend above approximates that pro-file up to a smoothness residual and a finite-grid boundary-normalization term. Intervening in field space avoids synthe-sizing photorealistic counterfactual images while preserving locality and differentiability. We instantiate object removal (learnable null state), attribute modification (lightweight transformation network), and custom interventions. After in-tervention, F0 
+
+> I
+
+= I(F0) and Fk 
+
+> I
+
+= T k(F0 
+
+> I
+
+), k = 1 , . . . , T ;factual and counterfactual trajectories share the same op-erator and readout (a shared-transition principle), yielding outputs o and oI .
+
+3.5 Cross-Modal Fusion and Training 
+
+The propagated field (query) is fused with language tokens 
+
+L (key/value) via Ffused = CrossAttn( FT , L, L), followed by pooling and an MLP readout. Training proceeds in three stages (field grounding on intervention-rich pretraining data, structure refinement under multi-environment supervision, downstream fine-tuning) with 
+
+L = Llm + λ1Linv + λ2Lcf + λ3Lsp + λ4Lsm . (7) 
+
+Llm is standard language modeling. The invariance loss com-pares propagated fields across environment pairs of the same scene [32]; guided by the analysis below, pairs vary nuisance while preserving the causal parameterization (color jitter and background substitution; viewpoint perturbation is excluded because it changes the field’s spatial indexing), and the loss is computed over a foreground mask B ∈ { 0, 1}K (broadcast across channels) covering regions unaffected by the nuisance change, 
+
+Linv =   P  
+
+> k
+
+Bk C−1 B ⊙ (FTe1 − FTe2 ) 2 
+
+> F
+
+, (8) so regions whose content legitimately differs (e.g. substituted background) are not forced to agree. The counterfactual evo-lution loss supervises rollout against target post-intervention trajectories, 
+
+Lcf = T −1 PTk=1 (KC )−1∥Fk 
+
+> I
+
+− Fk
+
+> gt
+
+∥2 
+
+> F
+
+, (9) where Fk 
+
+> gt
+
+encodes the ground-truth post-intervention ob-servations of the synthetic pretraining environments (which execute the intervention in the simulator) with an EMA copy of the encoder under stop-gradient; anchoring targets to simulator-produced observations rules out the degenerate solution of ignoring interventions. Lsp (ℓ1 on ˆGt) and Lsm 
+
+(neighboring-pair smoothness) regularize structure and field. 
+
+# 4 Interventional Identifiability of Field Dynamics 
+
+This section states precisely which structure can be identi-fied from field-level rollout supervision. We distinguish the dependency graph of the complete transition operator from the internal attention matrix used to parameterize one of its branches. We first give a population result for nonlin-ear dynamics and then specialize it to a linear finite-basis model, where finite intervention coverage and nonzero-loss guarantees can be made quantitative. Full proofs are in Ap-pendices B–G. 
+
+Finite-basis field and transition graph. Let {φi}Ki=1 be linearly independent spatial basis functions on a domain Ω.For coefficient blocks z = ( z1, . . . , z K ), zi ∈ Z i ⊆ RC ,define 
+
+(Bz)( p) = 
+
+> K
+
+X
+
+> i=1
+
+φi(p)zi, HK := range( B). (10) Linear independence makes B injective, so every field in HK
+
+has unique coefficients. The Gaussian construction of Eq. (2) is the sampled instance used by InfluenceField. We assume that the field update closes on HK and define its coefficient transition by ˆf = B−1 ◦ T ◦ B . On the sampled grid, this coefficientization is well defined whenever the synthesis ma-trix is invertible and each updated grid is reconstructed in the same basis. Let zt+1 = f ∗(zt) on an open connected product domain Z = Q 
+
+> i
+
+Zi, where f ∗ = ( f ∗ 
+
+> 1
+
+, . . . , f ∗ 
+
+> K
+
+) is 
+
+C1. Its directed transition-dependency graph is 
+
+E∗ := {(i, j ) : Dif ∗ 
+
+> j
+
+(z)̸ ≡ 0 on Z} . (11) Thus i → j means that the next state at location j functionally depends on the current state at location i. Because these are time-lagged dependencies, self-loops and directed cycles are allowed. The graph has a causal interpretation when z is a sufficient Markov state and the edits below correspond to valid structural interventions. Let y = q(z) denote the learned coefficient representa-tion, including the observation map and encoder. We assume that q : Z → Y = Q 
+
+> i
+
+Yi is a C1 diffeomorphism onto the product domain Y and that corresponding latent and learned blocks have the same dimension. These are standing assumptions for the result below, not properties implied by the network architecture alone. 
+
+Target-aligned interventions. Fix an anchor ai ∈ Z i and let Ri : Z → Z replace zi by ai. The learned edit Qi may choose its replacement value as a function of the input, but the map z 7 → Qiq(z) is continuous and changes only learned block i. We impose four population conditions. (N1) The factual source distribution has support Z, and zero factual field-state residual gives, for every z ∈ Z ,
+
+ˆf (q(z)) = q(f ∗(z)); (12) (N2) for every location i, the paired pre-intervention source-state distribution has support Z, including the original value of zi; (N3) zero one-step counterfactual field-state loss gives 
+
+ˆf (Qiq(z)) = q(f ∗(Riz)); (13) for every z ∈ Z . Full support and continuity extend zero population residuals to these pointwise identities. In (N3), the stop-gradient target encoder in Eq. (9) is idealized as the same population representation q; language-answer loss alone would not imply this identity. (N4) The transition is one-step separating on the relevant intervention pairs: 
+
+ˆf (Qiq(z)) = ˆf (q(Riz)) = ⇒ Qiq(z) = q(Riz). (14) Injectivity of ˆf on Qiq(Z) ∪ q(RiZ) is a simple suffi-cient condition. Alternatively, direct alignment of the post-intervention state at step 0 makes (N4) unnecessary. This separation condition is substantive: a many-to-one transition can map distinct edited states to the same successor. Factual fitting alone cannot enforce the desired coordi-nates. For any diffeomorphism M , the pair qM = M ◦ q
+
+and ˆfM = M ◦ ˆf ◦ M −1 produces the same factual trajecto-ries; a coordinate-mixing M can change the transition graph. Target-aligned interventions remove precisely this ambigu-ity. 
+
+Theorem 1 (Nonlinear transition-graph identifiability) . Un-der the standing finite-basis, product-domain, and regularity assumptions above and (N1)–(N4), every zero-loss represen-tation is blockwise identifiable: there exist C1 diffeomor-phisms ψi : Zi → Y i such that 
+
+q(z) = ( ψ1(z1), . . . , ψ K (zK )) . (15) 
+
+Moreover, for every z ∈ Z ,
+
+Di ˆfj (q(z)) = Dψ j (f ∗ 
+
+> j
+
+(z)) Dif ∗ 
+
+> j
+
+(z) [ Dψ i(zi)] −1. (16) 
+
+Consequently, Di ˆfj (q(z)) = 0 if and only if Dif ∗ 
+
+> j
+
+(z) = 0 ,and the learned and true transition-dependency graphs are identical. Transition functions and derivative magnitudes re-main identified only up to the within-location reparameteri-zations {ψi}.Proof sketch. Applying Eq. (12) to Riz and comparing with Eq. (13), left-cancellability yields Qiq(z) = q(Riz).Since Qi leaves every block j̸ = i unchanged, qj (z) = 
+
+qj (Riz) for all contexts. Repeating this argument for every 
+
+i̸ = j shows that qj depends only on zj , proving Eq. (15). Dif-ferentiating the conjugacy ˆf ◦ q = q ◦ f ∗ then gives Eq. (16); its two outer factors are nonsingular, so they preserve the zero–nonzero status and rank of every Jacobian block. □
+
+One anchor value per node is sufficient here because its edit is paired with every pre-intervention state in the prod-uct domain. This is fundamentally different from observing one finite training pair per node, which is not sufficient for global nonlinear identification: a smooth coordinate-mixing diffeomorphism can agree with the desired map on any finite set and differ elsewhere. Known target alignment removes the usual permutation ambiguity; if targets are observed only up to an unknown relabeling, the conclusion holds up to that permutation. This result is tailored to the deterministic finite-basis field transition and should be viewed within the broader literature on intervention-based nonlinear causal representa-tion learning [19, 21], rather than as a general nonlinear causal representation theorem. The same argument yields exact multi-step rollout for each calibrated intervention: ˆf k(Qiq(z)) = q(( f ∗)k(Riz)) . An unseen replacement value a ∈ Z i is realizable when the learned edit uses the calibrated value ψi(a); graph recovery alone does not assign semantic units to intervention values. 
+
+Proposition 1 (Finite-loss intervention equivariance) . Sup-pose a uniform μ > 0 satisfies ∥ ˆf (u) − ˆf (v)∥ ≥ μ∥u − v∥
+
+for every relevant state pair. Define ri 
+
+> f
+
+(z) = ˆf (q(Riz)) −
+
+q(f ∗(Riz)) and ri
+
+> c
+
+(z) = ˆf (Qiq(z)) − q(f ∗(Riz)) . Then 
+
+X 
+
+> j̸=i
+
+∥qj (z)−qj (Riz)∥2 ≤ 2
+
+μ2
+
+ ∥ri 
+
+> f
+
+(z)∥2 +∥ri
+
+> c
+
+(z)∥2. (17) 
+
+If the two squared residuals have means at most εf,i and 
+
+εc,i under the paired source distribution for node i, the root-mean-square off-target change is at most p2( εf,i + εc,i )/μ .This controls approximate intervention equivariance, not nonlinear Jacobian support; support recovery from finite loss additionally requires derivative-level control and a minimum edge strength. Direct step-0 alignment yields the analogous bound without the inverse-Lipschitz factor. 
+
+Linear specialization. The nonlinear result requires popu-lation coverage across contexts. Under the stronger assump-tion of linear dynamics and mixing, finitely many experi-ments suffice and the guarantees become quantitative. Let scalar state Zt ∈ RK evolve as Zt+1 = A∗Zt, with edge 
+
+i → j defined by A∗
+
+> ji
+
+̸ = 0 . Observations are Xt = g(Zt)
+
+with g injective; the learner uses F t = h(Xt) = HZ t,
+
+H ∈ GL( K), and F t+1 = ˆAF t. This corresponds to the frozen-G, α = 1 , no-refinement limit of Eq. (5). We assume: (A1) the stated linear dynamics; (A2) linear invertible mix-ing; (A3) factual initial states span RK ; (A4) every node receives one known-site, nontrivial hard intervention; (A5) 
+
+A∗ is nonsingular; and (A6) the factual and corresponding one-step counterfactual population losses are zero. These assumptions characterize the surrogate and are not conse-quences of Linv or Llm .
+
+Lemma 1 (Observational non-identifiability) . Under factual fitting alone, the zero-loss solutions form the similarity orbit 
+
+{(H′, H ′A∗H′− 1) : H′ ∈ GL( K)}. Consequently, transi-tion support, sparsity, and directionality are not identifiable in general. In particular, if A∗ is diagonalizable over R, an observationally equivalent solution is diagonal and hence symmetric. 
+
+Hence an attention-based influence matrix—however sparse or asymmetric—carries no causal guarantee by it-self; interventional supervision supplies exactly the missing constraint: 
+
+Theorem 2 (Linear identification from finite interventions) .
+
+Under (A1)–(A6), H is diagonal and ˆAij = ( hi/h j )A∗ 
+
+> ij
+
+.Hence supp( ˆA) = supp( A∗), including edge directions, while weights are identified up to node-wise scaling. Every learned coordinate intervention has an exact latent coordi-nate counterpart, and its subsequent rollout is exact. A spec-ified unseen latent target additionally requires calibration of its representation-space value. Proof sketch. Factual optimality and (A3) give ˆA =
+
+HA ∗H−1. Zero one-step counterfactual loss for a covered intervention on node i forces the learner’s field-space edit to map, through H−1, onto the latent edit: the direction ei
+
+acts as a probe that the learner can match only if ei is an eigenvector of H. Coverage of every node diagonalizes H.
+
+□
+
+The scaling cancels in field space ( ˆAk ˜F 0 = HA ∗k ˜Z0), so it is latent unit freedom rather than rollout error. With unknown site correspondence , the remaining ambiguity is a permutation followed by node-wise scaling [9, 22]. Under partial coverage, predictions for covered-node edits remain exact, but the covered subgraph is determined only when no covered node feeds an uncovered one. Appendix E gives the exact solution set and shows that generic full-graph identifi-cation requires full coverage. 
+
+Proposition 2 (Finite-loss stability of the linear specializa-tion) . Assume (A1)–(A5), with (A3) strengthened quantita-tively (training initial-state second moment bounded below), intervention states and magnitudes bounded, and the encoder scale normalized to ∥H∥2 = 1 . In place of (A6), suppose the factual and per-intervention one-step counterfactual popula-tion losses are bounded by ε ≤ ε0 (an explicit threshold), and every covered intervention has magnitude |v − Z0 
+
+> i
+
+| ≥ δ > 0.Then there is a diagonal D with 
+
+D−1 ˆAD − A∗ 
+
+> F
+
+≤ C κ (H)3
+
+√εδ , (18) 
+
+where C is explicit, depending on K, the training-state con-ditioning, and the norms of A∗, but not on ε, δ, or H. If more-over the smallest nonzero |A∗ 
+
+> ij
+
+| exceeds twice the bound, en-trywise thresholding of D−1 ˆAD recovers supp( A∗) exactly. 
+
+Because Eq. (9) averages over rollout depth, intervention sites, field entries, and examples, its scalar value is not itself the ε in Proposition 2. We measure the required one-step fac-tual and maximum per-site counterfactual errors separately. The sufficient threshold ε0 is conservative and is not reached by our checkpoints. Figure 3(b) therefore tests the predicted √ε functional form outside the certified regime rather than claiming empirical verification of the bound. Under field-structured mixing, H = Wσ ⊗ Φ and κ(H) = κ(Wσ )κ(Φ) ,so the certified upper bound worsens polynomially with field conditioning; empirical monotonicity is a separate observa-tion. 
+
+Theorem 3 (Finite-basis intervention geometry) . Let the field be sampled on the patch grid and let Wσ ∈ RK×K be the known, invertible Gaussian interpolation matrix. In the linear shared-channel model F = Wσ ZΦ⊤, Φ ∈ GL( C),with nonsingular location dynamics Zt+1 = A∗Zt, as-sume K ≥ 2 and that the collection of factual coefficient-state columns spans RK . Then (i) factual equality implies 
+
+A∗ = W −1 
+
+> σ
+
+ˆAW σ ; (ii) replacing coefficient block i changes the sampled field along the unique profile Wσ ei, whereas a hard replacement of sampled row i is not a single-coefficient intervention and has a positive one-step loss floor for every nonzero coefficient edit; and (iii) if known latent channel offsets spanning RC and their learned offsets are paired at one site, the shared map Φ is identified and the calibration transfers to all sites. 
+
+Claim (iii) is a shared-parameter calibration result, not a statement that one ordinary intervention suffices in the de-ployed C=256 model. The convex blend in Eq. (6) approxi-mates the ideal kernel-column edit: it contains a smoothness residual, and finite-grid row normalization creates a bound-ary mismatch (Appendix G). A centered additive edit has the exact profile. The principle is kernel matching rather than Gaussianity. 
+
+What is identified in the deployed parameterization. For Eq. (5), write ¯G(y) = ˆGt and let r denote the refinement branch. The block Jacobian of the complete transition is 
+
+Di ˆfj (y) = α ¯Gij (y)IC + (1 − α)Dirj (y)+ α
+
+> K
+
+X
+
+> p=1
+
+yp
+
+ ∇yi
+
+¯Gpj (y)⊤. (19) Theorem 1 therefore identifies the dependency graph of the complete transition ˆf , not the support of raw ¯G. The lat-ter is an influence parameterization whose agreement with operational interventions is evaluated empirically; it coin-cides with the transition matrix only up to orientation: in the frozen-G, α=1 , no-refinement linearization, ˆA = ¯G⊤.
+
+Scope. The nonlinear result is a population statement on the fixed finite-dimensional space HK ; it does not identify an unrestricted continuous operator, neural-network param-eters, or raw attention weights. Finite isolated interventions cannot establish global nonlinear identifiability without ad-ditional function-class restrictions. The linear results pro-vide finite-coverage and finite-loss refinements but rely on a stronger surrogate. The theory-aligned control in Table 3 and the operational-influence comparison in Section 5.4 measure parts of this theory–architecture gap; neither is a proof that the nonlinear network satisfies the population assumptions. 
+
+# 5 Experiments 
+
+We address five questions. Q1: Does InfluenceField improve causal video reasoning? Q2: Are the gains due to causal ob-jectives rather than capacity, and does the model use direc-tional influence? Q3: Are the theory-motivated recovery and stability trends observed empirically? Q4: Does the learned field remain robust under distribution shift and intervention? 
+
+Q5: Does it recover causal structure on discovery bench-marks? 
+
+5.1 Setup 
+
+Datasets and baselines. We pretrain on CLEVRER [33] and Causal3DIdent [34]/CITRIS [19] for intervention-rich grounding, then fine-tune downstream. For QA, Qwen3-VL-8B [35] is the partially frozen backbone, compared against GPT-4o [36], Gemini 2.5 Flash [37], InternVL2.5 [38], LLaVA-OneVision [39], Perception-LM [40], and Qwen2.5-VL [41]. For graph-structure tasks, backbone MLLMs (GPT-4o, Gemini 2.0 [42], LLaMA 4 [43], Grok-2v [44]) serve as frozen feature providers, compared against META/COAT [11] and MLLM-CD [8]; only InfluenceField and light heads are trained on top of frozen features. Benchmarks: 
+
+CausalVQA [14] contains 793 QA pairs spanning An-ticipation, Counterfactual, Descriptive, Hypothetical, and Planning; Reasoning pools the four non-descriptive cate-gories. We additionally evaluate zero-shot transfer on the NExT-QA validation set [45]. Discovery: We use MAG and Lung Cancer following MLLM-CD. Unless otherwise stated, downstream results summarize three runs and synthetic-identifiability results summarize five; uncertainties are re-ported in the corresponding table cells or captions. Implementation details. Patch features are projected onto a 14 × 14 field with C=256 channels and 4 attention heads. Unless noted, T =3 and σ=1 .0; the intervention mask uses the same bandwidth, motivated by the ideal kernel-column profile in Theorem 3 but subject to the residuals described in Appendix G. Loss weights are in Appendix H.1. The syn-thetic experiments in Fig. 3 probe the linear specialization through coverage, finite-loss trends, and kernel conditioning; they do not establish the population assumptions of Theo-rem 1. 
+
+Protocol details. OOD splits. We evaluate four controlled shifts derived from the CausalVQA validation pool: Scene Shift (n=214 ) varies background and viewpoint configura-tions; Composition Shift (n=189 ) evaluates novel object– action combinations; Template Shift (n=793 ) uses held-out question templates; and Intervention Shift (n=176 ) changes intervention-type–target combinations. Exact construction rules and split manifests are provided in Appendix H.3. At the observed accuracies, the per-split binomial standard er-rors are approximately 1.7–3.8 percentage points. Coherence metrics. Each counterfactual question is paired with its fac-tual counterpart on the same video; annotators mark whether answers must agree, whether and to what the answer must change, and the admissible outcome set. Consistency is the fraction of pairs satisfying the annotated agreement relation; 
+
+Causal Flip Accuracy is, among answer-changing pairs, the fraction changing to the annotated answer; Invalid Transi-tion Rate is the fraction of counterfactual answers outside the admissible set.                                                        
+
+> Method Ant. Ctrf. Desc. Hypo. Plan. Reas. All GPT-4o 37.0 47.2 64.6 34.3 53.9 43.2 51.0 Gemini 2.5 Flash 45.2 49.5 76.0 52.2 68.8 53.5 61.7 InternVL2.5 42.8 43.8 48.3 40.3 58.8 47.1 47.5 LLaVA-OneVision 33.7 46.1 55.2 23.9 51.8 39.6 45.3 Perception-LM 41.8 48.3 51.7 46.3 61.7 49.1 50.1 Qwen2.5-VL 35.6 46.1 61.8 40.3 48.9 41.8 49.1 Qwen3-VL-8B (base) 40.5 49.2 66.4 46.9 56.7 47.4 54.3
+> InfluenceField 52.5 61.0 79.0 60.5 73.2 60.8 67.4
+> Human 83.5 76.6 90.6 75.9 84.0 81.4 84.7
+
+Table 1: Causal video QA on CausalVQA (%). Best auto-mated results in bold. Automated results are means over three seeds; per-cell standard deviations range from 0.36 to 1.04. 
+
+5.2 Q1: Causal Video Reasoning 
+
+InfluenceField reaches 67.4 overall (Table 1), 13.1 points above its backbone, and outperforms every automated base-line including Gemini 2.5 Flash. The largest gains are on Planning ( 56 .7→73 .2) and Hypothetical ( 46 .9→60 .5), the two categories that most directly require action–consequence reasoning; aggregate Reasoning rises from 47.4 to 60.8. On zero-shot NExT-QA (Table 2), which the model never sees during training, the gain concentrates on causal questions (Causal +4 .4, Temporal +1 .4, Descriptive +0 .4), indicat-ing that the mechanism transfers rather than that the model exploits CausalVQA-specific regularities.             
+
+> Method Causal Temporal Desc. All Qwen3-VL-8B (base) 71.4 68.2 80.5 72.3
+> InfluenceField 75.8 69.6 80.9 74.9
+
+Table 2: Zero-shot accuracy on NExT-QA validation by ques-tion type; published baselines are quoted in Appendix J.2. Results are means over three seeds; per-cell standard devia-tions range from 0.27 to 0.63. 
+
+5.3 Q2: Capacity-Matched and Structure Controls 
+
+The component ablation (Table 6) shows the field and propagation alone contribute substantially; Table 3 iso-lates the causal contribution. C1 replaces the propaga-tion module with a parameter/FLOP-matched transformer block trained with Llm only. C2 keeps the architecture but removes Linv /Lcf , matching compute and feeding invariance-pair augmentations as ordinary augmentation. C3 
+
+destroys structure at inference: symmetrized ( ˆG+ ˆG⊤)/2,transposed ˆG⊤, or frozen random ˆG (evaluable on OOD splits since inference-time). C4 trains with shuffled intervention– outcome pairings. We also report the theory-aligned config-urations of the Scope paragraph. The controls address a natural concern: that the model has learned a useful relational representation rather than structure with interventional content. First, the +13.1 in-domain gain decomposes as follows. A parameter-matched transformer block (C1) accounts for +4.8; the field-and-propagation architecture adds +2.3 (Table 6, DIF+DP: 61.4); the causal objectives contribute the remaining +6.0 (+4.5 relative to C2, which additionally sees the invariance-pair data as augmentation). More telling is what the non-causal variants fail to recover: C2 regains only about a fifth of the Consistency and Flip improvements (69.5 and 49.1, against 66.8/46.8 for the backbone and 78.6/59.7 for the full model), and its OOD drop (7.3) equals the backbone’s. Robustness and coherence therefore come from the causal objectives specifically. Second, destroying edge directional-ity at inference (C3-transposed) degrades the intervention-sensitive categories (Planning −11 .1, Counterfactual −8.3)while leaving Descriptive nearly intact ( −1.8), and accu-racy falls monotonically from full to symmetrized to trans-posed to random ˆG. The model therefore uses the specific learned directions—the empirical counterpart of Lemma 1; whether those directions are also correct is tested in Sec-tion 5.4. Third, shuffling the intervention–outcome pairings (C4) lowers Counterfactual accuracy to slightly below the no-Lcf level (56.3 vs. 59.1 in Table 6) and returns Flip to the no-causal-loss level (49.3 vs. 49.1 for C2): Lcf works through the content of the pairs, not as a generic regular-izer. Finally, enforcing the linear-theory-aligned restrictions (α=1 and rollout-constant ˆG) reduces overall accuracy by 1.5 points ( 67 .4→65 .9). This control measures the empiri-cal cost of narrowing the deployed architecture toward the setting analyzed by the linear theory. Variant All Desc. Plan. Ctrf. Drop ↓ Cons. ↑ Flip ↑
+
+Full model 67 .4±0.49 79 .0±0.91 73 .2±0.51 61 .0±0.98 5.9±0.63 78 .6±0.49 59 .7±0.53 
+
+C1 matched Transf. 59 .1±0.35 74 .0±0.58 62 .5±1.04 52 .4±0.38 7.2±0.32 68 .0±0.47 47 .2±0.44 
+
+C2 no causal losses 62 .9±0.41 72 .6±0.60 67 .5±0.43 55 .6±0.47 7.3±0.36 69 .5±1.00 49 .1±0.71 
+
+C3 symmetrized 63 .8±0.30 78 .2±0.40 67 .3±1.04 55 .5±1.01 7.0±0.71 72 .4±0.78 51 .3±1.04 
+
+C3 transposed 59 .3±0.33 77 .2±0.68 62 .1±0.63 52 .7±0.63 7.6±0.47 70 .3±0.44 47 .8±1.02 
+
+C3 random frozen 57 .8±0.73 75 .0±0.42 60 .2±0.96 50 .9±0.36 8.3±0.68 66 .4±1.04 45 .1±0.37 
+
+C4 shuffled CF 64 .0±0.47 78 .3±0.35 69 .7±0.57 56 .3±0.89 7.2±0.71 70 .4±0.67 49 .3±0.72 
+
+Frozen- ˆG rollout 67 .1±0.76 78 .8±0.42 72 .7±0.34 60 .5±0.49 6.1±0.66 78 .0±1.01 59 .0±0.81 
+
+α=1 (no refine) 66 .3±0.91 78 .1±0.35 71 .9±0.55 59 .7±0.48 6.2±0.32 77 .1±0.74 58 .3±0.44 
+
+α=1 + frozen- ˆG 65 .9±0.46 77 .9±0.91 71 .5±0.42 59 .2±0.73 6.3±0.33 76 .6±0.49 57 .7±0.87 
+
+Table 3: Capacity-matched (C1/C2), structure-destruction (C3), shuffled-supervision (C4), and theory-aligned controls. Entries are mean ± standard deviation over three runs. Drop is computed per run as the in-domain All accuracy minus the unweighted mean over the four OOD splits; the corresponding per-split results are reported in Table 9. 
+
+Figure 3: Identifiability on a synthetic simulator with known 
+
+A∗ (five seeds; protocols in Appendix H.4). (a) Coverage vs. recovery (Thm. 2 and its partial-coverage refinement): the dashed line is the theory-predicted identifiable-pair fraction and refers to the overall curve; within-covered F1 counts only pairs inside the covered set. (b) Empirical finite-loss √ε trend (Prop. 2) over early-stopping checkpoints. (c) Recovery vs. bandwidth as κ(Wσ ) grows (Thm. 3). 
+
+5.4 Q3: Empirical Identifiability 
+
+On a synthetic latent simulator with known A∗ (grid K=64 ,linear dynamics, rendered observations), which satisfies (A1) by construction and (A2) up to encoder training error, Fig. 3 provides controlled diagnostics against the linear predic-tions; panel (a) additionally probes robustness beyond the as-sumptions with two nonlinear-dynamics variants, and adapts two causal-representation baselines to the simulator with the same intervention information (protocol in Appendix H.4). The observed trends are consistent with the linear anal-ysis, subject to its stated scope. (a) Recovery tracks cover-age as Theorem 2 and its partial-coverage refinement (Ap-pendix E) predict: near-chance at zero coverage, high F1 within the covered subgraph at partial coverage, and near-exact recovery at full coverage. The tanh and MLP variants are robustness stress tests rather than verifications of Theo-rem 1; in particular, the unconstrained MLP does not have a globally fixed Jacobian support. Cross-seed correlation of 
+
+ˆG is 0.91 with Lcf versus 0.43 without, consistent with re-duced variability along observationally equivalent solutions. The learned ˆG also agrees with operational influence (in-tervening at site i and recording ∥∆F 1 
+
+> j
+
+∥), with Spearman 
+
+ρ=0 .74 and 82% direction agreement. (b) Across five seed-specific early-stopping trajectories (20 checkpoints per seed; 
+
+N =100 ), aligned recovery error follows an empirical √ε
+
+trend while κ(H) remains approximately constant. Because these checkpoints lie outside the certified ε0 regime, this supports the functional form but does not verify Proposi-tion 2. (c) Recovery degrades as κ(Wσ ) grows. The opti-mized hard-row loss is 0.061 , close to its exact minimum of 
+
+0.059 , whereas the kernel-profile edit attains 0.007 , consis-tent with Theorem 3(ii). Although σ=0 .5 gives marginally better synthetic recovery, it reduces downstream QA by 0.9 points (Appendix H.5, Table 12, panel (a)); we therefore use 
+
+σ=1 .0.
+
+5.5 Q4: Robustness and Consistency 
+
+InfluenceField attains the highest mean OOD accuracy (61.5) and the smallest average degradation (5.9 points) across the four evaluation shifts (Table 4). The degradation is smallest under Scene Shift (4.6 points) and largest under Interven-tion Shift (7.8 points), indicating that generalization to al-tered interventions remains the most difficult axis. Because the four splits differ in both size and construction, we treat small between-split differences descriptively and use the un-weighted mean across shifts as the primary robustness sum-Method In-d. Scene Comp. Templ. Interv. OOD Drop ↓                           
+
+> GPT-4o 51.0 45.1 44.6 42.3 41.6 43.4 7.6 Gemini 2.5 Fl. 61.7 57.5 53.9 55.8 52.6 55.0 6.8 Qwen3-VL-8B 54.3 48.9 47.4 47.5 44.0 47.0 7.3
+> Ours 67.4 62.8 61.6 61.9 59.6 61.5 5.9
+
+Table 4: OOD generalization (abridged; full table incl. In-ternVL2.5, LLaVA-OneVision, Perception-LM, Qwen2.5-VL, with per-split standard deviations, in Appendix H.3, Ta-ble 8).                         
+
+> Method Ctrf. Acc. Cons. ↑Inv.Tr. ↓Flip ↑
+> GPT-4o 47.2 61.8 14.9 42.7 Gemini 2.5 Flash 49.5 65.1 13.5 45.6 Qwen2.5-VL 46.1 59.4 15.8 41.3 Qwen3-VL-8B 49.2 66.8 12.9 46.8
+> Ours 61.0 78.6 8.1 59.7
+
+Table 5: Factual–counterfactual consistency. Results are means over three seeds; per-cell standard deviations range from 0.41 to 1.01. mary. On coherence (Table 5), Consistency rises 66 .8→78 .6,Invalid Transitions fall 12 .9→8.1, and Flip Accuracy reaches 59.7; control C4 attributes these gains chiefly to the content 
+
+of counterfactual rollout supervision. 
+
+Failure analysis. Residual errors on intervention-sensitive questions concentrate in three regimes: interactions involving occluded or off-screen objects, dependencies whose effective horizon exceeds the propagation depth T , and spatially am-biguous intervention targets, jointly accounting for 61% of remaining errors; qualitative cases and a per-regime break-down are in Appendix H.7. 
+
+5.6 Q5: Multimodal Causal Discovery 
+
+Averaged over four backbone MLLMs on Lung Cancer, In-fluenceField reaches NF 0.94 and AF 0.73 , compared with 
+
+0.90 /0.68 for our reproduction of MLLM-CD, while re-ducing ESHD from 5.50 to 4.30 ; on MAG, NF improves 
+
+0.89 →0.93 , AF 0.57 →0.64 , and ESHD 13 .42 →11 .10 
+
+(full per-backbone tables with standard deviations in Ap-pendix H.6). These benchmarks are small-scale and their factors are not spatially indexed, so we use them as structure-oriented validation complementary to—not covered by—the spatial-node guarantees of Section 4. 
+
+5.7 Ablation and Efficiency 
+
+Table 6 shows that DIF and DP provide the representational and mechanistic foundation ( 54 .3→61 .4), while CI and CF add the causal constraints ( +2 .9 and +3 .1). Accuracy sat-urates at T =3 (Planning 66 .4→73 .2 from T =0 ) and dips slightly at T =4 ; under matched profiling, the latency over-head over the backbone is 7% (Appendix H.5).                                     
+
+> DIF DP CI CF Ant. Ctrf. Desc. Hypo. Plan. Reas. All 40.5 49.2 66.4 46.9 56.7 47.4 54.3
+> ✓44.1 51.8 70.1 50.6 61.2 51.1 58.0
+> ✓✓47.8 55.4 72.0 54.8 66.9 55.4 61.4
+> ✓✓✓50.1 59.1 75.0 57.2 70.1 58.2 64.3
+> ✓✓✓✓52.5 61.0 79.0 60.5 73.2 60.8 67.4
+
+Table 6: Component ablation (backbone Qwen3-VL-8B). DIF = differentiable influence field; DP = dynamic propa-gation; CI = invariance; CF = counterfactual supervision. Results are means over three seeds; per-cell standard devia-tions range from 0.35 to 1.01. 
+
+# 6 Conclusion 
+
+InfluenceField equips MLLMs with a continuous differen-tiable field that propagates directed influence and admits field-level intervention. Our analysis separates two regimes: a nonlinear population result identifies the dependency graph of the complete finite-basis transition exactly under the stated conditions, while the representation remains determined only up to within-location diffeomorphisms. A linear specializa-tion supplies partial-coverage and finite-loss guarantees and characterizes the kernel-column intervention profile. Empir-ically, the objectives improve causal reasoning, robustness, and factual–counterfactual coherence, with controls attribut-ing the gains to the causal objectives specifically. Limi-tations: the nonlinear theorem assumes exact full-support population consistency and one-step transition separation; it identifies the complete transition graph rather than raw atten-tion weights. The quantitative finite-loss and coverage results remain linear, field-level edits approximate physical inter-ventions, and dense propagation is quadratic in the number of locations. Future work includes finite-sample nonlinear guarantees, Jacobian-calibrated influence parameterizations, locally banded fields, and embodied settings. Technical Appendix 
+
+This appendix provides complete proofs for the identifiability results stated in Section 4. Appendix A fixes notation and for-malizes the losses. Appendix B proves the nonlinear popula-tion result (Theorem 1) and its finite-loss equivariance bound. Appendix C proves linear observational non-identifiability (Lemma 1). Appendix D proves exact identifiability from full interventional coverage (Theorem 2). Appendix E gives the exact characterization of partial coverage. Appendix F proves the finite-loss result (Proposition 2) with explicit con-stants and an explicit regime of validity. Appendix G proves the field-structured mixing results (Theorem 3). Appendix H gives protocols and complete results, Appendix I implemen-tation details, Appendix J additional results, and Appendix K further discussion. 
+
+# A Notation and Formal Setup 
+
+Model. The latent state Zt ∈ RK evolves as Zt+1 = A∗Zt
+
+with A∗ ∈ RK×K ; supp( A∗) is the true directed graph (cy-cles allowed). Observations are Xt = g(Zt) with g injective. The learner encodes F t = h(Xt) and rolls out F t+1 = ˆAF t.The assumptions below instantiate the linear interventional causal-representation setting studied by Squires et al. [22], Ahuja et al. [9] and Buchholz et al. [23], specialized to a temporal transition operator as in Lippe et al. [19]. 
+
+Assumptions. 
+
+(A1) Linear latent dynamics Zt+1 = A∗Zt.(A2) The composite encoding is linear and invertible: F t =
+
+HZ t for some unknown H ∈ GL( K).(A3) The training initial-state distribution spans RK : Σ0 := 
+
+E[Z0(Z0)⊤] ≻ 0.(A4) For each node i ∈ [K] there is an intervention experiment 
+
+Ei = ( Z0,i , v i): the environment applies do( Zi = vi) at step 0 to initial state Z0,i , with vi̸ = Z0,i i , and rolls out under A∗. The learner knows the site correspondence and forms ˜F 0,i = F 0,i + ( wi − F 0,i i )ei for a scalar wi of its choice. (A5) A∗ is nonsingular. (A6) Zero population loss (exact-recovery sections only). 
+
+Losses. Write ˜Z0,i = Z0,i + ( vi − Z0,i i )ei and ˜Zk,i =
+
+A∗k ˜Z0,i . The factual one-step population loss and the per-node one-step counterfactual losses are 
+
+Lf := E ˆAHZ 0 − HA ∗Z0 22
+
+,
+
+Lc,i := ˆA ˜F 0,i − HA ∗ ˜Z0,i 22
+
+.
+
+(20) Throughout, ∥·∥ 2 on matrices is the spectral norm, ∥·∥ F the Frobenius norm, σmin (·) the smallest singular value, and κ(·)
+
+the condition number. 
+
+Relation to the trained objective. Equation (9) averages over rollout depth and examples and normalizes each field error by KC ; the training loader may additionally average nonuni-formly over intervention sites. The losses in Eq. (20) are unnormalized one-step population errors, and the finite-loss theorem requires their maximum over sites. Consequently, no dimension-free inequality identifies its ε with the re-ported scalar Lcf . In Appendix H.4 we instead measure, with one fixed normalization used on both sides of the analysis, 
+
+ε = max {L f , max i Lc,i } directly. 
+
+Lf has no direct counterpart in Eq. (7) . Proposition 4 assumes a bound on the one-step factual field loss 
+
+E ˆAF 0 − F 1 2
+
+. The trained objective of Eq. (7) contains no term that penalizes this quantity directly; it is controlled only indirectly, through Llm , Linv and the k ≥ 1 terms of Lcf .We therefore measure Lf explicitly at every checkpoint rather than inferring it from the training loss. All statements in this section are moreover about population losses; no empirical-to-population generalization argument is supplied, and the synthetic protocol uses a held-out evaluation set large enough that the Monte-Carlo error on ε is negligible relative to the reported spread. 
+
+# B Nonlinear Transition Identifiability 
+
+We now prove Theorem 1. Throughout this section, Z =
+
+QKi=1 Zi and Y = QKi=1 Yi are open connected product do-mains, q : Z → Y is a C1 diffeomorphism, and f ∗ : Z → Z 
+
+and ˆf : Y → Y are C1. For each i, the map Ri replaces zi by a fixed anchor ai ∈ Z i, while the continuous map z 7 → Qiq(z)
+
+changes only block i in learned coordinates. The factual and each paired pre-intervention source distribution have support 
+
+Z, including all original values of the intervened coordinate. Thus zero population field-state residuals imply the point-wise identities below by continuity. 
+
+Lemma 2 (Nonlinear factual ambiguity) . If ˆf ◦ q = q ◦ f ∗,then for every C1 diffeomorphism M : Y → Y ,
+
+qM = M ◦ q, ˆfM = M ◦ ˆf ◦ M −1
+
+satisfy ˆfM ◦ qM = qM ◦ f ∗. The block transition graph is therefore not identifiable from factual trajectories in general. Proof. The equality follows by direct substitution. To see that graph support need not be invariant, take f ∗(z1, z 2) = (λ1z1, λ 2z2) with λ1̸ = λ2 and M (z1, z 2) = ( z1 + z2, z 2).Then 
+
+M ◦ f ∗ ◦ M −1(y1, y 2) = ( λ1y1 + ( λ2 − λ1)y2, λ 2y2),
+
+which contains the cross-edge 2 → 1 although f ∗ does not. 
+
+Lemma 3 (Rollout consistency implies intervention equiv-ariance) . Assume Eqs. (12) and (13) . If ˆf is left-cancellable for Qiq(z) and q(Riz), then 
+
+Qiq(z) = q(Riz) for every z ∈ Z and i ∈ [K]. (21) 
+
+Proof. Applying Eq. (12) to Riz gives 
+
+ˆf (q(Riz)) = q(f ∗(Riz)) .
+
+Equation (13) gives the same right-hand side for ˆf (Qiq(z)) .Left-cancellability yields Eq. (21). If the edited state is su-pervised directly, Eq. (21) is the supervision condition and no cancellability assumption is needed. Proof of Theorem 1. Lemma 3 shows that q(Riz) differs from q(z) only in learned block i. Hence 
+
+qj (Riz) = qj (z) (j̸ = i). (22) Fix z−i and choose arbitrary s, t ∈ Z i. Applying Eq. (22) to 
+
+(z−i, s ) and (z−i, t ) gives 
+
+qj (z−i, s ) = qj (z−i, a i) = qj (z−i, t ).
+
+Thus qj is independent of zi whenever i̸ = j. Repeating this for all i yields qj (z) = ψj (zj ). The Jacobian Dq is therefore block diagonal. Since q is a diffeomorphism, every diagonal block Dψ j is nonsingular. Global injectivity and surjectivity of q on the product domains imply that each ψj
+
+is a diffeomorphism. Differentiating ˆf (q(z)) = q(f ∗(z)) gives 
+
+D ˆf (q(z)) Dq (z) = Dq (f ∗(z)) Df ∗(z).
+
+Both instances of Dq are invertible and block diagonal. Ex-tracting block (j, i ) after right-multiplication by Dq (z)−1
+
+proves the displayed identity. Left and right multiplication by nonsingular matrices preserves rank and, in particular, whether a block is zero. Taking the condition of being nonzero somewhere on Z establishes graph equality. 
+
+Corollary 1 (Calibrated multi-step rollout) . For every super-vised anchor edit and every k ≥ 1 whose trajectory remains in Z, ˆf k(Qiq(z)) = q(( f ∗)k(Riz)) .
+
+For a new target a ∈ Z i, the same conclusion holds when the learned replacement value is ψi(a).Proof. By Lemma 3, the edited initial state equals q(Riz).The result follows by induction from factual consistency. 
+
+Proof of Proposition 1. The residual definitions give 
+
+ˆf (Qiq(z)) − ˆf (q(Riz)) = ri
+
+> c
+
+(z) − ri 
+
+> f
+
+(z).
+
+The inverse-Lipschitz inequality and the triangle inequality imply 
+
+μ∥Qiq(z) − q(Riz)∥ ≤ ∥ ri
+
+> c
+
+(z)∥ + ∥ri 
+
+> f
+
+(z)∥.
+
+After squaring, use (a+b)2 ≤ 2a2+2 b2. Because Qi changes only block i, the off-target blocks of Qiq(z) − q(Riz) are exactly qj (z) − qj (Riz), j̸ = i. Taking expectations proves the second claim. If step-0 alignment is supervised directly, the same off-target sum is bounded by the squared alignment residual itself, so no inverse-Lipschitz factor is needed. 
+
+Why this is not a nonlinear support bound. Small function-value error does not control derivatives without additional regularity. For example, uniformly small high-frequency per-turbations can have derivatives bounded away from zero. Turning Proposition 1 into Jacobian-support recovery would therefore require derivative-level control and a beta-min con-dition. The finite-dimensional linear specialization in Ap-pendix F admits a parameter bound because these additional difficulties disappear. 
+
+Finite samples. Without a restricted function class, finitely many factual and intervened states cannot imply global non-linear identification: in dimension at least two, a smooth diffeomorphism can be chosen to equal the identity in neigh-borhoods of all finitely many supervised states while mixing coordinates elsewhere. The full-support condition in (N2) is therefore not a finite-sample generalization claim. 
+
+# C Observational Non-Identifiability 
+
+Proof of Lemma 1. For (i), zero loss means 
+
+E ( ˆA′H′ − H′A∗)Z0 2
+
+= 0 .
+
+By (A3), for any M ,
+
+E M Z 0 2 = tr( M Σ0M ⊤)
+
+≥ λmin (Σ 0) ∥M ∥2 
+
+> F
+
+.
+
+Hence zero loss holds if and only if ˆA′H′ = H′A∗. As 
+
+H′ ranges over GL( K), ˆA′ ranges over the full orbit; conversely every such pair attains zero loss. For (ii), take 
+
+A∗ = diag( λ1, λ 2), λ1̸ = λ2; conjugation by an upper or lower triangular shear introduces, respectively, either orienta-tion of a cross-edge while preserving all factual trajectories. Thus these graph properties are not similarity-invariant in general. Exceptional matrices such as scalar multiples of the identity have a trivial similarity orbit. For (iii), write A∗ = P DP −1 with D real diagonal. Tak-ing H′ = P −1 gives ˆA′ = D.
+
+# D Exact Identifiability from Full Coverage 
+
+Proof of Theorem 2. Step 1. Zero factual loss and (A3) give 
+
+ˆA = HA ∗H−1.
+
+Step 2. Fix i. Zero counterfactual loss means ˆA ˜F 0,i =
+
+HA ∗ ˜Z0,i ; substituting ˆA = HA ∗H−1 and multiplying by 
+
+(HA ∗)−1 (invertible by (A5)), 
+
+H−1 ˜F 0,i = ˜Z0,i . (23) With ai := wi − (HZ 0,i )i and bi := vi − Z0,i i̸ = 0 we have 
+
+˜F 0,i = HZ 0,i + aiei and ˜Z0,i = Z0,i + biei; substituting and cancelling Z0,i ,
+
+ai H−1ei = bi ei. (24) Since bi̸ = 0 , ai̸ = 0 and H−1ei = ( bi/a i)ei.
+
+Step 3. By (A4) this holds for every i, so H−1, hence H,is diagonal, giving (i) and (ii). 
+
+Step 4. For any field-space coordinate intervention on 
+
+SI ⊆ [K], diagonality of H makes H−1 ˜F 0 a latent co-ordinate intervention ˜Z0, and ˆAk ˜F 0 = HA ∗k ˜Z0 = H ˜Zk
+
+for all k ≥ 1.
+
+Corollary 2. Zero one-step counterfactual loss for Ei implies zero k-step counterfactual loss for all k ≥ 1.Unknown site correspondence. If the learner may intervene on coordinate π(i) for an unknown bijection π, Step 2 forces 
+
+H−1eπ(i) ∝ ei, so H−1 is a monomial matrix: identifiability up to permutation and node-wise scaling, the standard am-biguity class in nonlinear ICA and causal disentanglement [10, 16, 17, 22]. In InfluenceField the shared spatial indexing removes the permutation. E Partial Coverage 
+
+Let S ⊆ [K] be the covered set, U = [ K] \ S, coordinates ordered with S first. 
+
+Theorem 4 (Solution set) . Under (A1)–(A3), (A5), (A6), with experiments only for i ∈ S, the zero-loss solution set is exactly SS = {(H, ˆA) : ˆA = HA ∗H−1, H −1 =   C P  
+
+> 0Q
+
+}
+
+with C diagonal invertible, Q ∈ GL( U ), P free. Proof. (⊆) Zero factual loss forces ˆA = HA ∗H−1; zero counterfactual loss for i ∈ S forces (24), i.e. H−1ei =
+
+ciei, so the S-columns of H−1 are ciei: (H−1)U S = 0 and 
+
+(H−1)SS = C = diag( ci). Invertibility gives Q ∈ GL( U ),
+
+ci̸ = 0 . ( ⊇) Given such H, set ˆA = HA ∗H−1 and choose 
+
+wi with ai = bi/c i; then (24) and (23) hold. 
+
+Proposition 3 (Induced ambiguity) . For (H, ˆA) ∈ S S ,
+
+ˆASS = C−1(A∗ 
+
+> SS
+
+− P Q −1A∗ 
+
+> U S
+
+)C, 
+
+ˆASU = C−1
+
+A∗ 
+
+> SS
+
+P + A∗ 
+
+> SU
+
+Q
+
+− P Q −1(A∗ 
+
+> U S
+
+P + A∗ 
+
+> U U
+
+Q)
+
+
+
+,
+
+ˆAU S = Q−1A∗ 
+
+> U S
+
+C, ˆAU U = Q−1(A∗ 
+
+> U S
+
+P + A∗ 
+
+> U U
+
+Q).
+
+(25) 
+
+Theorem 5 (What survives, and when) . Let (H, ˆA) ∈ S S .(i) (Prediction, unconditional.) For interventions on covered nodes the rollouts are exact: ˆAk ˜F 0 = H ˜Zk. No such guarantee holds for interventions touching U .(ii) (Structure, conditional.) If A∗ 
+
+> U S
+
+= 0 (S closed under descendants), then ˆASS = C−1A∗ 
+
+> SS
+
+C and ˆAU S = 0 
+
+for every solution. The blocks ˆASU and ˆAU U are not identified. (iii) (Failure without the condition.) If A∗
+
+> U S
+
+̸ = 0 the SS block is not identified. (iv) (Necessity of coverage.) For generic A∗, full identification of supp( A∗) requires S = [ K].Proof. (i) Repeat Step 4 of the proof of Theorem 2 using 
+
+H−1ej = cj ej for j ∈ S. For j ∈ U the column H−1ej is not proportional to ej .(ii) Set A∗ 
+
+> U S
+
+= 0 in (25). (iii) Take Q = I, P = t p q ⊤ with q⊤A∗
+
+> U S
+
+̸ = 0 ; then 
+
+ˆASS = C−1(A∗ 
+
+> SS
+
+− t p (q⊤A∗ 
+
+> U S
+
+)) C is a nonconstant affine family in t, changing support for all but finitely many t.(iv) Let U̸ = ∅. If A∗
+
+> U S
+
+̸ = 0 , (iii) breaks the SS block. If A∗ 
+
+> U S
+
+= 0 , consider instead the SU block: by (25) with 
+
+Q = I, ˆASU = C−1(A∗ 
+
+> SS
+
+P − P A ∗ 
+
+> U U
+
++ A∗ 
+
+> SU
+
+), and P 7 →
+
+A∗ 
+
+> SS
+
+P − P A ∗ 
+
+> U U
+
+is the Sylvester operator, which is invertible exactly when A∗ 
+
+> SS
+
+and A∗ 
+
+> U U
+
+share no eigenvalue — the generic case. Hence ˆASU ranges over all of RS×U as P
+
+varies and is completely unidentified. Either way supp( A∗)
+
+is not recovered. 
+
+Why the case analysis in (iv) is necessary. When A∗ 
+
+> U S
+
+= 0 
+
+and |U | = 1 , the blocks ˆASS , ˆAU S and the scalar ˆAU U are all identified, so an argument confined to those blocks cannot establish (iv); non-identifiability there is carried entirely by 
+
+ˆASU , which is what the Sylvester argument addresses. 
+
+Corollary 3 (Identified pairs) . Under partial coverage with descendant-closed S, the ordered pairs (j, i ) whose edge sta-tus is identified are exactly S × S together with the structural zeros S → U ; edges from U into S and pairs within U are unidentified. With |S| = cK the identified fraction of ordered pairs is c2 + c(1 − c) = c (the same value if the diagonal is excluded from both counts). Remark 1 (How to read the fraction c). Two caveats. First, the 
+
+c(1 − c)K2 pairs in the S → U block are identified because 
+
+A∗ 
+
+> U S
+
+= 0 was assumed , not because the learner discovered them; a reader who declines to credit assumed-away structure should compare against the conservative value c2 instead, and we report both in Table 10. Second, c is a fraction of 
+
+determined pairs ; edge F1 is a precision–recall statistic over a sparse edge set. The two are different quantities and a learner may exceed c by getting undetermined pairs right through sparsity bias. We therefore plot c as a reference line, never as a predicted F1. 
+
+# F Approximate Identifiability under Finite Loss 
+
+Additional assumptions. 
+
+(A3 ′) Σ0 ⪰ λI , λ > 0.(A4 ′) δ ≤ | bi| ≤ R and Z0,i  
+
+> 2
+
+≤ R for all i.(N) ∥H∥2 = 1 ; then H−1 
+
+> 2
+
+= κ := κ(H) and σmin (H) = 1/κ .Write s := σmin (A∗) > 0, a := ∥A∗∥2, and define 
+
+η0 := 1 + R√λ , Cτ := η0 
+
+> s
+
++ 4Rs√λ ,C∗ := 32 3 a√K C τ + 43 · R√λ . (26) 
+
+Proposition 4 (Explicit finite-loss bound) . Assume (A1), (A2), (A3 ′), (A4 ′), (A5), (N). Suppose Lf ≤ ε and Lc,i ≤ ε
+
+for every i ∈ [K], and ε ≤ ε0 with ε0 as in Eq. (33) . Then there is a diagonal invertible D with 
+
+D−1 ˆAD − A∗
+
+> F
+
+≤ C∗ κ(H)3
+
+√εδ . (27) 
+
+Proof. Step 1. Let M := ˆAH − HA ∗. Then 
+
+Lf = tr( M Σ0M ⊤) ≥ λ ∥M ∥2 
+
+> F
+
+,
+
+so ∥M ∥F ≤ pε/λ . Defining ∆ := ˆA − HA ∗H−1 =
+
+M H −1 gives 
+
+∥∆∥F ≤ κpε/λ. (28) 
+
+Step 2. Fix i. Expanding ˆA ˜F 0,i − HA ∗ ˜Z0,i = M Z 0,i +
+
+ai ˆAe i − biHA ∗ei and using Lc,i ≤ ε and Z0,i ≤
+
+R, ai ˆAe i − biHA ∗ei ≤ η0
+
+√ε. Substituting ˆAe i =
+
+HA ∗ui + ∆ ei with ui := H−1ei and using σmin (HA ∗) ≥
+
+s/κ ,
+
+∥aiui − biei∥ ≤ κs
+
+
+
+η0
+
+√ε + |ai| κpε/λ 
+
+
+
+=: τi. (29) Step 3. Note 1 ≤ ∥ ui∥ ≤ κ. Impose (S1) κ2√εs√λ ≤ 12 , (S2 ′) √ε ≤ sR η0 κ . (30) From (29), |ai| ≤ | bi| + τi ≤ R + κη 0
+
+> s
+
+√ε + 12 |ai| by (S1), so |ai| ≤ 2R + 2η0κs
+
+√ε ≤ 4R by (S2 ′). Feeding this back into (29) and using κ ≥ 1,
+
+τi ≤ ¯τ := 
+
+ η0
+
+s + 4Rs√λ
+
+
+
+κ2√ε = Cτ κ2√ε. (31) Impose (S3) ¯τ ≤ δ/ 2. Then |ai|κ ≥ | bi| − τi ≥ δ/ 2, so 
+
+|ai| ≥ δ/ (2 κ).
+
+Step 4. Dividing (29) by |ai|,
+
+ui − bi 
+
+> ai
+
+ei ≤ 2κ¯τδ =: ρ = 2 Cτ
+
+κ3√εδ . (32) Let γi := ( ui)i, ri := ui −γiei, so ∥ri∥ ≤ ρ and |γi| ≥ 1−ρ.Impose (S4) ρ ≤ min { 14 , 38√K }. Then H−1 = Γ + ˜R with 
+
+Γ = diag( γi), ˜R F
+
+≤ √Kρ , Γ−1 
+
+> 2
+
+≤ 4/3, κ(Γ) ≤ 43 κ.
+
+Step 5. With D := Γ−1 and ˜E := ˜RΓ−1, we have 
+
+˜E F
+
+≤ 43
+
+√Kρ ≤ 12 and 
+
+ΓHA ∗H−1Γ−1 = A∗ + ( I + ˜E)−1 A∗ ˜E − ˜EA ∗.
+
+The correction has Frobenius norm at most 16 3 a√Kρ .Adding κ(Γ) ∥∆∥F and using δ ≤ R and κ ≥ 1 gives (27). The threshold collects (S1)–(S4): 
+
+ε0 := min 
+
+n s√λ
+
+> 2κ2
+
+2
+
+,
+
+ sR η0κ
+
+2
+
+,
+
+ δ 
+
+> 2Cτκ2
+
+2
+
+,
+
+ δ min { 14 , 38√K } 
+
+> 2Cτκ3
+
+2o
+
+.
+
+(33) 
+
+Sharpness of (S2 ′). Condition (S2 ′) is what secures the κ3
+
+rate. Weakening it to √ε ≤ 1 leaves |ai| ≤ 2R + 2 η0κ/s , a bound carrying a factor κ; propagated through (29) this gives 
+
+¯τ = Θ( κ3√ε) and ρ = Θ( κ4√ε/δ ), i.e. only a κ4 rate. (S2 ′)removes the κ from the |ai| bound at the cost of one extra term in ε0.
+
+Corollary 4 (Support recovery) . If additionally 
+
+min  
+
+> (j,i )∈supp( A∗)
+
+|A∗
+
+> ji
+
+| ≥ β, C∗κ3
+
+√εδ < β
+
+2 ,
+
+then entrywise thresholding of D−1 ˆAD at level β/ 2 recovers 
+
+supp( A∗) exactly. The threshold is conservative; what the experiment tests. 
+
+Eq. (33) is a sufficient condition and is numerically very small. For the simulator of Appendix H.4 ( K = 64 , λ = 1 ,
+
+R = 10 , δ = 1 , s = 0 .28 , a = 1 .15 ) one has Cτ ≈
+
+1.8 × 10 2 and, even at the optimistic value κ = 10 , ε0 ≈
+
+10 −14 , whereas the evaluated checkpoints have ε ∈ [3 .7 ×
+
+10 −3, 1.5 × 10 −1]. The finite-loss experiment therefore tests whether the functional form ∝ √ε describes the observed degradation; it does not verify the certified guarantee, which no trained checkpoint reaches. We state this explicitly rather than reporting the fit alone. Closing the gap would require either a substantially sharper ε0 or a simulator with κ(H)
+
+near 1.
+
+# G Field-Structured Mixing 
+
+Here K = N and Zt ∈ RK×C , Zt+1 = A∗Zt.
+
+Assumption 1 (B2) . F t = Wσ ZtΦ⊤, with Wσ ∈ RK×K
+
+the known row-normalized interpolation matrix of Eq. (2) 
+
+and Φ ∈ GL( C) an unknown channel map; ˆA acts on loca-tions. 
+
+Lemma 4 (Invertibility) . For σ > 0 and distinct grid points the unnormalized Gaussian kernel matrix is symmetric pos-itive definite; Wσ is a positive diagonal matrix times that matrix, hence invertible. 
+
+The spanning hypothesis in Theorem 3 means that the collection of columns {Zt
+
+> :,c
+
+} across factual states, times, and channels spans RK .
+
+Proof of Theorem 3. (i) ˆAW σ ZΦ⊤ = Wσ A∗ZΦ⊤ on a spanning set with Φ⊤ invertible gives ˆAW σ = Wσ A∗.(ii) With ˆA = Wσ A∗W −1 
+
+> σ
+
+, zero one-step loss is equivalent to 
+
+W −1 
+
+> σ
+
+˜F 0 = Z0Φ⊤ + ei c⊤, c⊤ := ( v⊤ − Z0
+
+> i, :
+
+)Φ ⊤̸ = 0 .
+
+(34) The kernel-profile class gives W −1 
+
+> σ
+
+˜F 0 = Z0Φ⊤ + eiy⊤, so (34) holds iff y⊤ = c⊤. The hard-replacement class gives 
+
+Z0Φ⊤ + ( W −1 
+
+> σ
+
+ei)˜ y⊤ and would require (W −1 
+
+> σ
+
+ei)˜ y⊤ =
+
+eic⊤; these rank-one matrices have non-parallel column fac-tors, since W −1 
+
+> σ
+
+ei = μe i would force Wσ ei = μ−1ei, con-tradicting strict positivity of Wσ ei for K ≥ 2.(iii) Zero loss forces yj = Φ dj on a basis, so 
+
+Φ = [ y1 · · · yC ][ d1 · · · dC ]−1.
+
+What does the work in (i). Claim (i) is immediate once Wσ is known and invertible. The substantive architecture-specific content is the intervention geometry in (ii) and the shared-channel calibration statement in (iii). Both depend on As-sumption 1; we do not treat that factorization as a property guaranteed by the deployed nonlinear encoder. 
+
+Lemma 5 (Exact loss floor for hard interventions) . In the setting of Theorem 3(ii), put B := Wσ A∗, u := W −1 
+
+> σ
+
+ei.Then 
+
+min 
+
+> ˜y
+
+ˆA ˜F 0 − Wσ A∗ ˜Z0Φ⊤ 2
+
+> F
+
+= ∥c∥2 ∥Be i∥2 sin 2 ∠(Bu, Be i),
+
+which is bounded below by σmin (B)2 sin 2 ∠(u, e i) ∥c∥2 >
+
+0.Proof. The loss can be written as 
+
+B(u˜y⊤ − eic⊤) 2 
+
+> F
+
+= (Bu )˜ y⊤ − (Be i)c⊤ 2 
+
+> F
+
+.
+
+Minimizing over ˜y projects (Be i)c⊤ onto {(Bu )z⊤}, leav-ing the stated residual. The lower bound follows from 
+
+∥BX ∥F ≥ σmin (B) ∥X∥F and the argument of Theo-rem 3(ii). The lower bound is loose; report the exact value. On the 
+
+14 × 14 grid at σ = 1 (grid units) one has σmin (Wσ ) ≈
+
+3.1 × 10 −4 and sin 2 ∠(u, e i) ≈ 0.89 at an interior site, so the lower bound of Lemma 5 is of order 10 −8 ∥c∥2 — six orders of magnitude below the measured floor. The bound proves positivity but explains nothing quantitative. Table 11 therefore reports the exact minimum of Lemma 5 alongside the optimized value, and any discrepancy between them is optimizer error, not theory. 
+
+Lemma 6 (Convex blend vs. kernel profile) . With mask 
+
+mk = e−∥ pk −pi∥2/2σ2
+
+, Eq. (6) gives 
+
+FI = F + m  v⊤ − Fi, :
+
+ − diag( m) ( F − 1Fi, :)
+
+| {z }
+
+> =: Rblend
+
+,
+
+with 
+
+∥Rblend ∥F = X
+
+> k
+
+m2 
+
+> k
+
+∥Fk, : − Fi, :∥2
+
+!1/2
+
+.
+
+This residual vanishes identically when F is constant on the support of m. The centered variant FI = F + m(v⊤ − Fi, :)
+
+has no residual. Proof. Row k of the blend is Fk, : + mk(v⊤ − Fi, :) −
+
+mk(Fk, : − Fi, :); stack rows. 
+
+Remark 2 (Two gaps in the correspondence, and their sizes) .
+
+(a) Residual scaling. On a quasi-uniform d-dimensional grid in the interior regime h ≪ σ ≪ diam(Ω) , write LF for the spatial Lipschitz constant. Then 
+
+∥Rblend ∥F ≤ LF
+
+X
+
+> k
+
+m2 
+
+> k
+
+∥pk − pi∥2
+
+!1/2
+
+.
+
+Because F = Wσ ZΦ⊤ is kernel-smoothed, LF =
+
+O(σ−1 ¯Z), where ¯Z := max k Zk, :Φ⊤ . The mask covers 
+
+Θ(( σ/h )d) grid points, and 
+
+X
+
+> k
+
+m2 
+
+> k
+
+∥pk − pi∥2
+
+!1/2
+
+= Θ 
+
+
+
+σ(σ/h )d/ 2
+
+.
+
+Therefore the upper bound scales as ∥Rblend ∥F =
+
+O( ¯Z(σ/h )d/ 2). This bound does not imply monotone growth, but importantly it does not guarantee that the resid-ual shrinks as the bandwidth increases. The residual is ex-actly zero in the locally constant case, and the centered vari-ant removes it for every σ. (b) Normalization. The identity 
+
+m ∝ Wσ ei requires the row-sum normalizer of Eq. (2) to be constant, which holds on a uniform periodic grid but not on the finite 14 × 14 grid, where boundary rows have smaller normalizers. Even the centered variant is therefore only ap-proximately the kernel-column profile near the boundary. We report 
+
+max  
+
+> i
+
+∥m/ ∥m∥ − Wσ ei/ ∥Wσ ei∥∥ 
+
+in Appendix H.4. 
+
+Lemma 7 (Kronecker factorization) . In column-major vec-torization vec( F ) = (Φ ⊗ Wσ )vec( Z), so H = Φ ⊗ Wσ and 
+
+κ(H) = κ(Φ) κ(Wσ ).Vectorized dimension. Under the column-major convention of Lemma 7, the mixing operator acts on RKC . Conse-quently, when the vectorized field is substituted into Propo-sition 4, the factor √K in C∗ is replaced by √KC ; for 
+
+C = 256 , this contributes a factor of 16 .
+
+Lemma 8 (Bandwidth growth) . On a one-dimensional pe-riodic grid of K points with spacing h and period L = Kh ,with the periodized Gaussian kernel, W is symmetric cir-culant and positive definite with Fourier eigenvalues λℓ =√2πσ h
+
+P 
+
+> q∈Z
+
+exp[ − σ2 
+
+> 2
+
+( 2πℓ L + 2πq h )2]. For even K, comparing zero and Nyquist frequencies gives 
+
+κ(W ) ≥ 12 eπ2σ2/(2 h2) 
+
+1 − e−4π2σ2/h 2 
+
+,
+
+so κ(W ) = eΩ( σ2/h 2). On a separable d-dimensional pe-riodic grid W (d) = W ⊗d and κ(W (d)) = κ(W )d. Row normalization on the periodic grid is a positive scalar and leaves κ unchanged. 
+
+Ω, not Θ. Lemma 8 proves only a lower-growth statement. To keep the numerical comparison inside its assumptions, Table 12, panel (a), reports κ(W per  
+
+> σ
+
+) for the same separable periodic idealization used in the proof, computed from the Fourier/Poisson formula with h = 1 . Consequently the re-ported sequence grows as eΩ( σ2/h 2) by construction; it is not a relabeling of a finite-grid implementation proxy. 
+
+Which theorem predicts the bandwidth curve. Under As-sumption 1 the learner knows Wσ . Redoing the finite-loss argument with that knowledge and setting M := ˆAW σ −
+
+Wσ A∗ gives 
+
+W −1 
+
+> σ
+
+ˆAW σ − A∗
+
+> F
+
+≤ W −1  
+
+> σ2
+
+∥M ∥F
+
+= O κ(Wσ )√ε .
+
+This is the first power of κ, with no δ factor. The κ3 rate of Proposition 4 applies only to a learner that does not exploit the known mixing. Our synthetic learner estimates ˆA freely and never inverts a supplied Wσ , so Proposition 4 is the applicable statement and Table 12, panel (a), is read against 
+
+κ3; a system that used W −1 
+
+> σ
+
+analytically should be compared against κ1 instead. 
+
+# H Experimental Protocols and Complete Results 
+
+H.1 Hyperparameters and Infrastructure 
+
+Table 7 lists the full configuration. Architecture settings match the main text (field grid 14 × 14 , C = 256 , four heads, 
+
+T = 3 , σ = 1 .0 with the intervention-mask bandwidth tied to σ). Hyperparameter Value                            
+
+> Architecture
+> Field grid size 14 ×14
+> Field channel dimension 256 Directional attention heads 4Propagation depth ( T)3Gaussian bandwidth ( σ)1.0
+> Training
+> Optimizer AdamW Learning rate 1×10 −4
+> Weight decay 0.01 Batch size 32 Pretraining epochs 15 (6 + 4 + 5, by stage) Fine-tuning epochs 5Warmup ratio 0.05 Gradient clipping 1.0 Dropout 0.1
+> Loss weights
+> λ1(cross-environment invariance) 0.3
+> λ2(counterfactual evolution) 0.5
+> λ3(sparsity) 0.01
+> λ4(smoothness) 0.001
+
+Table 7: Hyperparameters of InfluenceField. The intervention-mask bandwidth is tied to the interpola-tion bandwidth σ (Theorem 3) rather than being a free hyperparameter. 
+
+H.2 Reporting Conventions 
+
+Unless otherwise stated, trainable downstream results sum-marize three runs and synthetic-identifiability results sum-marize five. On CausalVQA [14], category scores are per-category accuracies; Reasoning and All are pooled accu-racies over the 505 non-descriptive and all 793 questions, respectively. OOD is the unweighted per-run mean over the four shifts, and Drop is the same run’s in-domain All ac-curacy minus OOD. Table captions specify whether a re-ported deviation is computed across runs or, for the MAG average rows, across pooled backbone–run observations. API baselines use independent frame-sampling and prompt-order seeds with deterministic decoding. Published results are tran-scribed from their cited sources, whereas any recomputed baseline is explicitly identified as our reproduction. 
+
+H.3 OOD Split Construction and Full Results 
+
+The four controlled evaluation shifts are derived from the CausalVQA validation pool. Scene Shift (n=214 ) changes background and viewpoint configurations. Composition Shift 
+
+(n=189 ) evaluates object–action combinations not repre-sented in the corresponding training combinations. Tem-plate Shift (n=793 ) rephrases questions using held-out sur-face templates while preserving their semantics. Interven-tion Shift (n=176 ) changes intervention-type–target com-binations, including operations applied to target categories for which that operation was not used during counterfactual training. The exact construction scripts, split manifests, and holdout lists accompany the code. We compare against GPT-4o [36], Gemini 2.5 Flash [37], InternVL2.5 [38], LLaVA-OneVision [39], Perception-LM [40], Qwen2.5-VL [41] and Qwen3-VL-8B [35], the last of which is also our backbone. Table 8 reports the complete per-shift OOD results, and Table 9 gives the corresponding de-composition for the control variants. The main CausalVQA, NExT-QA, coherence, control, and component-ablation re-sults appear in Tables 1, 2, 5, 3, and 6, respectively. 
+
+H.4 Synthetic Identifiability Protocols 
+
+Simulator. K = 64 locations on an 8 × 8 grid are ar-ranged in four ordered blocks of 16. Within-block directed edges are sampled with probability 0.12 and between-block edges from earlier to later blocks with probability 0.06 .Nonzero off-diagonal weights are sampled from the two in-tervals [−0.8, −0.25] and [0 .25 , 0.8] . The diagonal is set to 
+
+2.0 before rescaling to spectral radius 0.90 , and draws with 
+
+σmin (A∗) < 0.15 are rejected. 
+
+Coverage and alignment. The 25% and 50% covered sets are the last one and last two blocks and are verified to be closed under descendants. Alignment uses the diagonal ma-trix D = diag( ex1 , . . . , e xK ) with x1 = 0 . We optimize it with L-BFGS, ten restarts, and gradient tolerance 10 −10 ; the edge threshold is β/ 2 = 0 .041 .
+
+Finite-loss evaluation. Twenty checkpoints per seed are evaluated, giving N = 100 raw observations. The reported 
+
+ε is the maximum of the factual loss and all per-site counter-factual losses. Across all N = 100 raw observations, aligned error is approximately linear in √ε (R2 = 0 .97 ). Mean √ε
+
+values of 0.06 , 0.12 , 0.21 , and 0.38 in four display bins corre-spond to aligned errors of 0.09 , 0.16 , 0.28 , and 0.50 , respec-tively. Table 10 reports coverage recovery and the matched full-coverage baselines, Table 12 the bandwidth-conditioning comparison, and Table 11 the intervention-loss analysis. 
+
+Nonlinear-dynamics variants. The tanh variant replaces the transition by Zt+1 = tanh( A∗Zt) and the MLP variant by a two-layer network of width 128 initialized so its Jaco-bian at the data mean equals A∗; both keep the intervention interface and evaluation identical, and edge F1 is computed against supp( A∗) of the generating Jacobian. 
+
+Baseline adaptation. CITRIS [19] and CausalVAE [18] are given the same latent dimension K, the same per-node intervention indicators, and the same rendered observations and training budget; their learned latent transition (CITRIS) or decoder-derived adjacency (CausalVAE) is aligned to A∗
+
+with the same diagonal-scaling procedure and threshold used for our learner, so the comparison isolates the representation, not the evaluation pipeline. 
+
+Mask fidelity. The maximum normalized-profile deviation is 0.012 ± 0.003 for interior sites and 0.086 ± 0.011 for boundary sites. 
+
+Additional diagnostics. Cross-seed stability of ˆG is 0.91 ±
+
+0.024 with Lcf versus 0.43 ± 0.056 without it; operational-influence agreement is Spearman ρ = 0 .74 ± 0.039 , and direction agreement is 82 .0 ± 1.3% .Method In-d. Scene Comp. Templ. Interv. OOD Drop ↓
+
+GPT-4o 51 .0 ± 0.83 45 .1 ± 0.66 44 .6 ± 0.25 42 .3 ± 0.33 41 .6 ± 0.86 43 .4 ± 0.42 7.6 ± 0.52 
+
+Gemini 2.5 Flash 61 .7 ± 0.36 57 .5 ± 0.29 53 .9 ± 1.04 55 .8 ± 1.04 52 .6 ± 0.82 55 .0 ± 0.74 6.8 ± 0.38 
+
+InternVL2.5 47 .5 ± 0.47 42 .9 ± 0.90 40 .7 ± 1.46 41 .4 ± 1.39 38 .6 ± 0.38 40 .9 ± 0.98 6.6 ± 0.52 
+
+LLaVA-OneVision 45 .3 ± 0.45 40 .5 ± 0.46 38 .0 ± 0.55 38 .3 ± 0.62 36 .2 ± 0.23 38 .3 ± 0.35 7.1 ± 0.59 
+
+Perception-LM 50 .1 ± 1.04 45 .0 ± 1.17 42 .6 ± 1.21 42 .7 ± 0.87 40 .6 ± 1.57 42 .7 ± 1.19 7.4 ± 0.66 
+
+Qwen2.5-VL 49 .1 ± 0.47 44 .7 ± 0.46 42 .0 ± 0.85 42 .2 ± 0.61 40 .0 ± 0.55 42 .2 ± 0.05 6.9 ± 0.50 
+
+Qwen3-VL-8B 54 .3 ± 0.74 48 .9 ± 0.90 47 .4 ± 1.14 47 .5 ± 0.49 44 .0 ± 1.66 47 .0 ± 0.99 7.3 ± 0.55 
+
+InfluenceField 67 .4 ± 0.49 62 .8 ± 0.86 61 .6 ± 0.50 61 .9 ± 0.64 59 .6 ± 1.01 61 .5 ± 0.73 5.9 ± 0.63 
+
+Table 8: Complete OOD results (%), mean ± standard deviation over three runs. OOD is the unweighted mean of the four splits and Drop is in-domain minus OOD, both computed per run before rounding. 
+
+Variant Scene Comp. Templ. Interv. OOD Drop ↓
+
+Full model 62 .8 ± 0.86 61 .6 ± 0.50 61 .9 ± 0.64 59 .6 ± 1.01 61 .5 ± 0.73 5.9 ± 0.63 
+
+C1 matched Transf. 54 .0 ± 0.75 51 .7 ± 1.28 52 .1 ± 0.36 50 .0 ± 0.53 51 .9 ± 0.64 7.2 ± 0.32 
+
+C2 no causal losses 57 .5 ± 0.39 55 .5 ± 0.64 56 .0 ± 0.70 53 .2 ± 0.29 55 .6 ± 0.29 7.3 ± 0.36 
+
+C3 symmetrized 58 .8 ± 0.62 56 .7 ± 1.19 57 .1 ± 1.44 54 .5 ± 0.83 56 .8 ± 0.94 7.0 ± 0.71 
+
+C3 transposed 53 .5 ± 0.80 51 .5 ± 0.48 52 .4 ± 0.34 49 .4 ± 0.40 51 .7 ± 0.25 7.6 ± 0.47 
+
+C3 random frozen 51 .6 ± 1.27 49 .5 ± 1.22 49 .5 ± 1.35 47 .5 ± 1.94 49 .5 ± 1.39 8.3 ± 0.68 
+
+C4 shuffled CF 58 .7 ± 1.29 56 .7 ± 1.14 57 .1 ± 0.99 54 .5 ± 1.36 56 .8 ± 1.18 7.2 ± 0.71 
+
+Frozen- ˆG rollout 62 .9 ± 2.13 60 .8 ± 0.56 61 .1 ± 1.06 59 .1 ± 1.72 61 .0 ± 1.36 6.1 ± 0.66 
+
+α = 1 (no refine) 62 .3 ± 1.22 59 .6 ± 1.02 60 .3 ± 0.96 58 .2 ± 1.15 60 .1 ± 1.03 6.2 ± 0.32 
+
+α = 1 + frozen- ˆG 61 .9 ± 0.41 59 .7 ± 0.70 59 .9 ± 0.34 57 .1 ± 0.91 59 .6 ± 0.57 6.3 ± 0.33 
+
+Table 9: Per-split OOD results for every control variant. OOD and Drop are derived per run from the same arrays as Table 3, so the Drop column reproduces Table 3 exactly. 
+
+Intervention coverage (%) Metric / method 0 25 50 100 Ident. fraction c 0.00 0.25 0.50 1.00 Conserv. fraction c2 0.00 0.06 0.25 1.00 Overall F1 0.16 ±0.019 0.34 ±0.017 0.52 ±0.013 0.91 ±0.021 
+
+Within-cov. F1 — 0.85 ±0.030 0.88 ±0.027 0.91 ±0.021 
+
+Tanh dyn. 0.15 ±0.024 0.31 ±0.035 0.47 ±0.041 0.83 ±0.022 
+
+MLP dyn. 0.14 ±0.031 0.28 ±0.049 0.43 ±0.027 0.76 ±0.043 
+
+Matched baselines (100% coverage only) 
+
+CITRIS — — — 0.74 ±0.039 
+
+CausalVAE — — — 0.58 ±0.057 
+
+Table 10: Coverage versus recovery, five seeds. The two frac-tion rows are exact combinatorial quantities (Corollary 3, Remark 1), not predicted F1 values; at 100% coverage the overall and within-covered rows are the same statistic. CIT-RIS and CausalVAE are evaluated only at full coverage un-der matched intervention information; their scores should be compared with the 100% Overall F1 of InfluenceField. 
+
+H.5 Sensitivity Analyses 
+
+Table 12 jointly reports bandwidth conditioning, downstream bandwidth sensitivity, and the propagation-depth sweep. To-gether they show that the selected σ = 1 and T = 3 settings balance accuracy, conditioning, and computational cost. Profiling uses batch size 1, 16 frames, bfloat16, one A100 80 GB GPU, 20 warm-up iterations, and 100 synchronized 
+
+Intervention class ( σ = 1 .0) One-step loss Hard row replacement, exact minimum 0.059 ± 0.0024 
+
+Hard row replacement, optimized 0.061 ± 0.0027 
+
+Kernel-profile mask, optimized 0.007 ± 0.0012 
+
+Ideal additive kernel-column class, theory 0 exactly 
+
+Table 11: One-step intervention losses on the synthetic simu-lator, reported as mean ± standard deviation over five seeds. For hard-row replacement, the exact minimum is computed in closed form using Lemma 5; the optimized hard-row and kernel-profile rows report the achieved losses. The ideal ad-ditive kernel-column class has zero theoretical minimum un-der Theorem 3(ii), whereas the residual kernel-profile loss reflects optimization error and the boundary effect described in Remark 2(b). timed iterations. Under the same loading and precision con-figuration, InfluenceField increases latency from 0.98 to 
+
+1.05 s, corresponding to a 7% overhead relative to Qwen3-VL-8B. 
+
+H.6 Multimodal Causal Discovery 
+
+Table 13 reports the complete six-method comparison on the MAG benchmark [8] across four feature-provider backbones — GPT-4o [36], Gemini 2.0 [42], LLaMA 4 [43], and Grok-2v [44] — including node-level (NP/NR/NF), edge-level (AP/AR/AF), and ESHD metrics. The comparison methods are META, Pairwise and Triplet prompting, COAT [11], and (a) Bandwidth sensitivity and conditioning                                                                     
+
+> σ/h 0.5 1.0 2.0 4.0
+> κ(Wper
+> σ)3.03 4.8×10 33.5×10 16 9.5×10 67
+> κ(Φ) 1.35 ±0.04 1.38 ±0.04 1.42 ±0.05 1.47 ±0.05
+> κ(Hper )4.09 ±0.11 6.67 ±.19 ×10 34.96 ±.16 ×10 16 1.40 ±.05 ×10 68
+> Edge F1 0.93 ±0.043 0.90 ±0.055 0.78 ±0.046 0.56 ±0.043
+> CausalVQA All (%) 66 .5±0.48 67 .4±0.49 65 .6±0.81 63 .1±0.45
+> (b) Propagation-depth sensitivity
+> TAnt. Ctrf. Hypo. Plan. Reas. All Lat. (s) 046.8 55.7 53.2 66.4 54.7 62.0 1.00 149.7 58.3 56.8 69.9 57.8 65.0 1.02 251.5 60.1 59.0 72.0 59.7 66.5 1.04 352.5 61.0 60.5 73.2 60.8 67.4 1.05 452.3 60.8 60.2 73.0 60.6 67.1 1.08
+
+Table 12: Sensitivity to field bandwidth and propagation depth. (a) The periodic-grid condition numbers are computed from Lemma 8; κ(Φ) , κ(Hper ), and Edge F1 summarize five-seed synthetic runs, while CausalVQA accuracy is the mean over three runs. The σ = 1 .0 downstream mean matches Table 1. (b) Accuracy and latency versus rollout depth; T = 0 retains field construction and the causal objectives but disables propagation, which is why it exceeds the DIF-only row of Table 6. MLLM-CD [8]. Their MAG entries are transcribed from Ta-ble 1 of Li et al. [8]; InfluenceField is evaluated using the same metric definitions. On MAG, the backbone-averaged NF/AF/ESHD values are 0.89 /0.57 /13 .42 for MLLM-CD and 0.93 /0.64 /11 .10 for InfluenceField. Pairwise and Triplet do not perform factor identification, so their node-level en-tries are marked “–”. Table 14 separately reports our three-run, per-backbone reproduction of MLLM-CD alongside In-fluenceField on Lung Cancer; it is not a six-method table. The MLLM-CD entries in that table are recomputed rather than transcribed from the originally published table. 
+
+H.7 Failure Analysis 
+
+Two annotators independently labeled 164 residual er-rors, with a third annotator adjudicating disagreements: 45 (27 .4% ) involved spatially ambiguous intervention targets, 31 ( 18 .9% ) had effective horizons exceeding T , 24 ( 14 .6% )involved occluded or off-screen interactions, and 64 ( 39 .0% )had other or mixed causes. The first three regimes account for 61 .0% in aggregate. 
+
+H.8 Numerical Consistency 
+
+OOD and Drop are computed per run from unrounded val-ues as defined in Appendix H.2. The finite-loss display bins summarize the 100 checkpoint observations described in Appendix H.4, whereas the failure-analysis percentages are computed from the integer annotation counts in Ap-pendix H.7. Aggregation of discovery results follows the scope stated in each table caption. All values are rounded only for display. 
+
+# I Implementation Details 
+
+I.1 Lightweight Projection Heads 
+
+InfluenceField and the applicable lightweight task head are trained together with the limited decoder components speci-fied below; all remaining backbone modules are frozen. The 
+
+discovery head mean-pools directed-influence features for each candidate variable pair and passes them through a two-layer MLP ( 512 → 256 → 3 with GELU). It classifies each ordered pair as no edge , forward , or backward . The QA head 
+
+uses the fused representation from Sec. 3.5. A linear map projects the propagated field into token-embedding space, and the result is prepended to the language decoder as a 
+
+16 -token soft prompt. 
+
+I.2 Backbone Freezing Strategy 
+
+The visual encoder is fully frozen. During stage 3 and down-stream fine-tuning, the final two language-decoder trans-former blocks and the decoder output projection are updated together with InfluenceField and the applicable task head; all other backbone modules remain frozen. This restricted up-date preserves most of the pretrained vision–language repre-sentation while allowing the decoder to use the field-derived tokens. 
+
+I.3 Three-Stage Progressive Training 
+
+Training follows the schedule of Sec. 3.5. Stage 1 (field grounding, 6 epochs, CLEVRER [33]): language modeling with Llm + λ3Lsp + λ4Lsm only, so the field learns a stable spatial representation before any causal objective is applied. 
+
+Stage 2 (structure refinement, 4 epochs, CLEVRER): adds 
+
+λ1Linv over environment pairs of the same scene, in the spirit of invariance-based causal discovery [32, 34]; nuisance fac-tors vary through color jitter and background substitution, while viewpoint perturbation is excluded because it changes the field’s spatial indexing (Sec. 3.5). Stage 3 (counterfac-tual refinement, 5 epochs, CITRIS [19] and Causal3DIdent [34]): adds λ2Lcf using ground-truth intervention pairs; the target field Fk 
+
+> gt
+
+is produced by an EMA copy of the encoder (decay 0.999 ) under stop-gradient (Eq. (9)). Downstream LLM Method NP ↑ NR ↑ NF ↑ AP ↑ AR ↑ AF ↑ ESHD ↓
+
+GPT-4o META 0.45 ±0.08 0 .52 ±0.06 0 .48 ±0.07 0 .72 ±0.05 0 .37 ±0.06 0 .49 ±0.04 24 .33 ±3.51 
+
+Pairwise – – – 0.56 ±0.10 0 .33 ±0.11 0 .41 ±0.11 43 .33 ±6.43 
+
+Triplet – – – 0.33 ±0.06 0 .37 ±0.06 0 .35 ±0.06 61 .67 ±5.77 
+
+COAT 0.78 ±0.19 0 .37 ±0.13 0 .49 ±0.15 0 .37 ±0.32 0 .19 ±0.17 0 .25 ±0.22 18 .67 ±2.52 
+
+MLLM-CD 0.83 ±0.11 0 .85 ±0.06 0 .84 ±0.09 0 .69 ±0.05 0 .41 ±0.06 0 .51 ±0.04 15 .33 ±2.31 
+
+InfluenceField 0.89 ±0.07 0 .92 ±0.04 0 .91 ±0.05 0 .77 ±0.03 0 .49 ±0.04 0 .60 ±0.03 12 .64 ±1.88 
+
+Gemini 2.0 META 0.71 ±0.07 0 .63 ±0.06 0 .67 ±0.07 0 .69 ±0.08 0 .41 ±0.13 0 .51 ±0.11 18 .67 ±2.31 
+
+Pairwise – – – 0.49 ±0.09 0 .56 ±0.11 0 .51 ±0.06 30 .00 ±2.00 
+
+Triplet – – – 0.41 ±0.02 0 .59 ±0.13 0 .48 ±0.05 32 .00 ±2.00 
+
+COAT 0.85 ±0.13 0 .41 ±0.06 0 .51 ±0.09 0 .69 ±0.10 0 .26 ±0.06 0 .37 ±0.05 16 .00 ±1.00 
+
+MLLM-CD 0.86 ±0.05 0 .89 ±0.00 0 .87 ±0.03 0 .76 ±0.08 0 .52 ±0.13 0 .60 ±0.06 14 .00 ±3.46 
+
+InfluenceField 0.91 ±0.04 0 .93 ±0.03 0 .92 ±0.02 0 .82 ±0.05 0 .60 ±0.08 0 .67 ±0.04 11 .58 ±2.41 
+
+LLaMA 4 META 0.51 ±0.06 0 .41 ±0.06 0 .45 ±0.05 0 .81 ±0.17 0 .26 ±0.06 0 .39 ±0.07 21 .67 ±0.58 
+
+Pairwise – – – 0.50 ±0.17 0 .30 ±0.06 0 .36 ±0.04 34 .67 ±6.66 
+
+Triplet – – – 0.66 ±0.32 0 .30 ±0.06 0 .38 ±0.04 34 .33 ±7.77 
+
+COAT 1.00 ±0.00 0 .41 ±0.06 0 .58 ±0.07 0 .89 ±0.19 0 .30 ±0.06 0 .44 ±0.10 14 .67 ±1.15 
+
+MLLM-CD 1.00 ±0.00 0 .85 ±0.06 0 .92 ±0.04 0 .62 ±0.08 0 .59 ±0.06 0 .60 ±0.04 13 .33 ±0.58 
+
+InfluenceField 1.00 ±0.00 0 .90 ±0.04 0 .95 ±0.02 0 .69 ±0.06 0 .65 ±0.04 0 .67 ±0.03 10 .92 ±0.47 
+
+Grok-2v META 0.56 ±0.11 0 .44 ±0.00 0 .49 ±0.04 0 .75 ±0.00 0 .33 ±0.00 0 .46 ±0.00 20 .33 ±3.06 
+
+Pairwise – – – 0.35 ±0.02 0 .33 ±0.00 0 .34 ±0.01 28 .33 ±11 .37 
+
+Triplet – – – 0.32 ±0.02 0 .33 ±0.00 0 .33 ±0.01 30 .33 ±12 .34 
+
+COAT 1.00 ±0.00 0 .37 ±0.17 0 .53 ±0.18 0 .17 ±0.29 0 .07 ±0.13 0 .10 ±0.18 16 .33 ±1.15 
+
+MLLM-CD 1.00 ±0.00 0 .85 ±0.06 0 .92 ±0.04 0 .79 ±0.21 0 .44 ±0.00 0 .56 ±0.06 11 .00 ±2.65 
+
+InfluenceField 1.00 ±0.00 0 .90 ±0.04 0 .95 ±0.02 0 .85 ±0.16 0 .50 ±0.04 0 .63 ±0.04 9.26 ±1.97 
+
+Average META 0.56 ±0.12 0 .50 ±0.10 0 .52 ±0.10 0 .74 ±0.10 0 .34 ±0.09 0 .46 ±0.07 21 .25 ±3.11 
+
+MLLM-CD 0.92 ±0.10 0 .86 ±0.05 0 .89 ±0.06 0 .72 ±0.12 0 .49 ±0.10 0 .57 ±0.06 13 .42 ±2.68 
+
+InfluenceField 0.95 ±0.07 0 .91 ±0.03 0 .93 ±0.04 0 .78 ±0.09 0 .56 ±0.07 0 .64 ±0.04 11 .10 ±2.05 
+
+Table 13: Complete six-method causal factor identification and structure recovery on MAG across four backbone MLLMs. Each backbone-specific entry is the mean ± sample standard deviation over three runs. In the final three rows, the mean and sample standard deviation are computed by pooling the 12 backbone–run observations (four backbones × three runs), rather than from the four displayed backbone means.                                                                           
+
+> Backbone Method NF ↑AF ↑ESHD ↓
+> GPT-4o MLLM-CD 0.895 ±0.026 0 .685 ±0.027 5 .66 ±0.37
+> Gemini 2.0 MLLM-CD 0.902 ±0.012 0 .700 ±0.019 4 .85 ±0.64
+> LLaMA 4 MLLM-CD 0.924 ±0.012 0 .650 ±0.017 5 .39 ±0.34
+> Grok-2v MLLM-CD 0.879 ±0.021 0 .686 ±0.014 6 .10 ±0.49
+> Average MLLM-CD 0.90 0.68 5.50
+> GPT-4o InfluenceField 0.979 ±0.014 0 .762 ±0.012 3 .25 ±0.32
+> Gemini 2.0 InfluenceField 0.939 ±0.020 0 .709 ±0.029 4 .48 ±0.58
+> LLaMA 4 InfluenceField 0.915 ±0.011 0 .719 ±0.025 4 .68 ±0.51
+> Grok-2v InfluenceField 0.927 ±0.011 0 .731 ±0.015 4 .79 ±0.63
+> Average InfluenceField 0.94 0.73 4.30
+
+Table 14: Per-backbone Lung Cancer comparison be-tween our reproduction of MLLM-CD and InfluenceField. Backbone-specific entries are mean ± standard deviation over three runs, and Average is the unweighted mean of the four backbone means. The MLLM-CD entries are recom-puted under the evaluation pipeline used in this paper and are not values quoted directly from Li et al. [8]. 
+
+(5 epochs): task fine-tuning with all losses active. All field modules remain differentiable end-to-end across stages. 
+
+I.4 Intervention Operations 
+
+Three intervention types instantiate Eq. (6), all using the same kernel mask whose bandwidth is tied to the interpo-lation bandwidth σ. Object removal replaces the target with a learnable null state trained to represent absence. Attribute modification applies a lightweight two-layer transformation conditioned on the requested change. Custom interventions 
+
+accept an arbitrary target value v ∈ RC supplied by the caller. Factual and counterfactual trajectories then share the same transition operator and readout. 
+
+I.5 Training and Inference Procedures 
+
+Algorithms 1 and 2 summarize one training step and coun-terfactual inference. 
+
+I.6 Complexity 
+
+With K = 196 field locations ( 14 × 14 ), channel dimension 
+
+C = 256 , and propagation depth T = 3 , each propagation step costs O(K2C) to form the dense affinity matrix and 
+
+O(K2C) for dense influence transport; the location-wise projections cost O(KC 2). The total field overhead across T
+
+steps is therefore 
+
+O T (K2C + KC 2) .Algorithm 1: InfluenceField training step 
+
+Require: video X, question q, answer y; paired environment 
+
+X′ (stage ≥ 2); intervention pair (I, {Fk
+
+> gt
+
+}) (stage ≥ 3); stage-dependent weights λ1.. 4 
+
+> 1:
+
+{zi} ← VisualEncoder( X); F0 ← P 
+
+> i
+
+wi(p) ϕ(zi)
+
+▷ Eq. (1)  
+
+> 2:
+
+for t = 0 to T − 1 do  
+
+> 3:
+
+ˆGt ← DirectionalInfluence( Ft) ▷ Eqs. (3)–(4)  
+
+> 4:
+
+Ft+1 ← α( ˆGt)⊤Ft + (1 − α)eFt ▷ Eq. (5)  
+
+> 5:
+
+end for  
+
+> 6:
+
+o ← Readout(CrossAttn( FT , L, L)) ; L ←Llm (o, y ) + λ3Lsp + λ4Lsm  
+
+> 7:
+
+if stage ≥ 2 then  
+
+> 8:
+
+L += λ1 Linv (FT , F′T ) 
+
+> 9:
+
+end if  
+
+> 10:
+
+if stage ≥ 3 then  
+
+> 11:
+
+F0 
+
+> I
+
+← I (F0) ▷ Eq. (6)  
+
+> 12:
+
+roll out Fk 
+
+> I
+
+= T k(F0 
+
+> I
+
+) with the same operator; L += 
+
+λ2 Lcf ({Fk 
+
+> I
+
+}, {Fk
+
+> gt
+
+}) 
+
+> 13:
+
+end if  
+
+> 14:
+
+update trainable parameters by ∇L 
+
+Algorithm 2: Counterfactual inference 
+
+Require: video X, counterfactual query (q, I) 
+
+> 1:
+
+construct F0 and the factual rollout FT as in Algorithm 1  
+
+> 2:
+
+F0 
+
+> I
+
+← I (F0); roll out FT 
+
+> I
+
+with the same transition operator  
+
+> 3:
+
+return oI ← Readout(CrossAttn( FT 
+
+> I
+
+, L, L)) ; option-ally contrast with the factual o for “what changed” queries The sigmoid gate attenuates weak edges but, without an explicitly implemented top-k or sparse operator, does not reduce this worst-case complexity. At the grid size used here, the measured overhead remains small relative to the 8B backbone, consistent with the matched latency profile in Appendix H.5. 
+
+# J Additional Results 
+
+J.1 Hard-Subset Analysis 
+
+Table 15 evaluates the CausalVQA subset on which the bare backbone is weakest, selected as the bottom difficulty quartile within each category on a held-out calibration split. Planning (+15 .5) and Hypothetical ( +10 .2) improve most and Coun-terfactual least ( +1 .8); the aggregate Reasoning gain is +9 .4,smaller than on the full benchmark, so the hardest questions remain hard for both models. 
+
+J.2 Published NExT-QA Baselines 
+
+For historical context, the primary CaKE-LM report [46] gives zero-shot NExT-QA validation accuracies of 
+
+35 .28 /34 .71 /36 .89 /34 .77 for Causal/Why/How/All with HGA and 35 .70 /35 .31 /36 .81 /34 .85 with CoMem. These results use the original report’s different Causal/Why/How                    
+
+> Method Ant. Ctrf. Hypo. Plan. Reas. Qwen3-VL-8B 21.8 38.9 42.6 34.5 31.1 InfluenceField 30.1 40.7 52.8 50.0 40.5
+> ∆+8.3 +1.8 +10.2 +15.5 +9.4
+
+Table 15: Accuracy (%) on the hard subset of CausalVQA. taxonomy and video-QA training pipeline and are therefore not directly matched to Table 2. 
+
+J.3 Relation to MLLM-CD 
+
+MLLM-CD [8] is the closest discovery pipeline: it also queries multimodal models for causal statements over vari-able pairs. It differs in three ways that Table 13 isolates. First, MLLM-CD aggregates pairwise textual judgments, whereas InfluenceField reads structure from a trained influence opera-tor, so its statements are constrained to be mutually consistent under propagation. Second, MLLM-CD has no intervention channel; our counterfactual objective supplies the directional signal that pairwise prompting lacks, which is where the AF gains concentrate. Third, ESHD improves most on MAG, whose larger graph punishes locally plausible but globally inconsistent edge sets. 
+
+# K Additional Discussion 
+
+From correlational to causal representations. The fail-ure mode that motivates this work is architectural, not merely statistical: a correlational encoder can satisfy factual training objectives while encoding structure only up to the similarity orbit of Lemma 1, and no amount of factual data escapes that orbit. This is the representational form of the interventional-data requirement that underlies causal representation learn-ing [1, 15]. The interventional objectives are therefore not regularizers but the source of the causal content; the controls of Table 3 (C2 vs. full) measure exactly this gap. 
+
+Continuous fields versus discrete graphs. Discrete graph modules, and slot- or object-centric factorizations more gen-erally [28, 47], commit to a node set before learning begins; a continuous field, in the spirit of neural field representa-tions [30, 31], defers that commitment, letting intervention supervision determine which spatial regions behave as causal units. The cost is conditioning: the same kernel that makes the field differentiable makes its inversion ill-conditioned as 
+
+σ grows (Lemma 8, Table 12, panel (a)), which is why the bandwidth is a theory-relevant hyperparameter rather than a stylistic choice. References 
+
+[1] Judea Pearl. Causality . Cambridge University Press, 2009. [2] Meiqi Chen, Bo Peng, Yan Zhang, and Chaochao Lu. CELLO: Causal evaluation of large vision-language models. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing ,2024. [3] Bin Lin, Yang Ye, Bin Zhu, Jiaxi Cui, Munan Ning, Peng Jin, and Li Yuan. Video-LLaVA: Learning united visual representation by alignment before projection. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 2024. [4] Muhammad Maaz, Hanoona Rasheed, Salman Khan, and Fahad Khan. Video-ChatGPT: Towards detailed video understanding via large vision and language mod-els. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics , 2024. [5] Zhiyuan Li, Heng Wang, Dongnan Liu, Chaoyi Zhang, Ao Ma, Jieting Long, and Weidong Cai. Multimodal causal reasoning benchmark: Challenging multimodal large language models to discern causal links across modalities. In Findings of the Association for Compu-tational Linguistics: ACL 2025 , 2025. [6] Jusheng Zhang, Kaitong Cai, Yijia Fan, Jian Wang, and Keze Wang. CF-VLM: Counterfactual vision-language fine-tuning. In Advances in Neural Information Pro-cessing Systems , 2025. [7] Xinmiao Hu, Chun Wang, Ruihe An, ChenYu Shao, Xiaojun Ye, Sheng Zhou, and Liangcheng Li. Causal-LLaVA: Causal disentanglement for mitigating hallu-cination in multimodal large language models, 2025. [8] Jin Li, Shoujin Wang, Qi Zhang, Feng Liu, Tongliang Liu, Longbing Cao, Shui Yu, and Fang Chen. Revealing multimodal causality with large language models. In 
+
+Advances in Neural Information Processing Systems ,2025. [9] Kartik Ahuja, Divyat Mahajan, Yixin Wang, and Yoshua Bengio. Interventional causal representation learning. In Proceedings of the 40th International Con-ference on Machine Learning , pages 372–407, 2023. [10] Sebastien Lachapelle, Pau Rodriguez, Yash Sharma, Katie E. Everett, Rémi Le Priol, Alexandre Lacoste, and Simon Lacoste-Julien. Disentanglement via mech-anism sparsity regularization: A new principle for non-linear ICA. In Proceedings of the First Conference on Causal Learning and Reasoning , 2022. [11] Chenxi Liu, Yongqiang Chen, Tongliang Liu, Ming-ming Gong, James Cheng, Bo Han, and Kun Zhang. Discovery of the hidden world with large language models. In Advances in Neural Information Processing Systems , 2024. [12] Aneesh Komanduri, Karuna Bhaila, and Xintao Wu. CausalVLBench: Benchmarking visual causal reason-ing in large vision-language models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , 2025. [13] Wenxin Ma, Chenlong Wang, Ruisheng Yuan, et al. CausalSpatial: A benchmark for object-centric causal spatial reasoning, 2026. [14] Aaron Foss, Chloe Evans, Sasha Mitts, Koustuv Sinha, Ammar Rizvi, and Justine T. Kao. CausalVQA: A physically grounded causal reasoning benchmark for video models, 2025. [15] Bernhard Schölkopf, Francesco Locatello, Stefan Bauer, Nan Rosemary Ke, Nal Kalchbrenner, Anirudh Goyal, and Yoshua Bengio. Toward causal representa-tion learning. Proceedings of the IEEE , 109(5):612– 634, 2021. [16] Aapo Hyvarinen, Hiroaki Sasaki, and Richard Turner. Nonlinear ICA using auxiliary variables and general-ized contrastive learning. In Proceedings of the 22nd International Conference on Artificial Intelligence and Statistics , 2019. [17] Ilyes Khemakhem, Diederik P. Kingma, Ricardo Pio Monti, and Aapo Hyvarinen. Variational autoencoders and nonlinear ICA: A unifying framework. In Proceed-ings of the 23rd International Conference on Artificial Intelligence and Statistics , 2020. [18] Mengyue Yang, Furui Liu, Zhitang Chen, Xinwei Shen, Jianye Hao, and Jun Wang. CausalVAE: Disentan-gled representation learning via neural structural causal models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021. [19] Phillip Lippe, Sara Magliacane, Sindy Löwe, Yuki M. Asano, Taco Cohen, and Stratis Gavves. CITRIS: Causal identifiability from temporal intervened se-quences. In International Conference on Machine Learning , 2022. [20] Phillip Lippe, Sara Magliacane, Sindy Löwe, Yuki M. Asano, Taco Cohen, and Efstratios Gavves. BISCUIT: Causal representation learning from binary interac-tions. In Proceedings of the Thirty-Ninth Conference on Uncertainty in Artificial Intelligence , volume 216 of Proceedings of Machine Learning Research , pages 1263–1273, 2023. [21] Johann Brehmer, Pim De Haan, Phillip Lippe, and Taco Cohen. Weakly supervised causal representation learn-ing. In Advances in Neural Information Processing Systems , volume 35, 2022. [22] Chandler Squires, Anna Seigal, Salil S. Bhate, and Car-oline Uhler. Linear causal disentanglement via inter-ventions. In Proceedings of the 40th International Con-ference on Machine Learning , 2023. [23] Simon Buchholz, Goutham Rajendran, Elan Rosen-feld, Bryon Aragam, Bernhard Schölkopf, and Pradeep Ravikumar. Learning linear causal representations from interventions under general nonlinear mixing. In 
+
+Advances in Neural Information Processing Systems ,volume 36, pages 45419–45462, 2023. [24] David Ha and Jürgen Schmidhuber. World models, 2018. [25] Danijar Hafner, Timothy Lillicrap, Ian Fischer, Ruben Villegas, David Ha, Honglak Lee, and James Davidson. Learning latent dynamics for planning from pixels. In 
+
+Proceedings of the 36th International Conference on Machine Learning , 2019. [26] Danijar Hafner, Timothy P. Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning be-haviors by latent imagination. In International Confer-ence on Learning Representations , 2020. [27] Leena Chennuru Vankadara, Philipp Michael Faller, Michaela Hardt, Lenon Minorics, Debarghya Ghosh-dastidar, and Dominik Janzing. Causal forecasting: Generalization bounds for autoregressive models. In 
+
+Proceedings of the Thirty-Eighth Conference on Uncer-tainty in Artificial Intelligence , volume 180 of Proceed-ings of Machine Learning Research , pages 2002–2012, 2022. [28] Zhongwei Yu, Jingqing Ruan, and Dengpeng Xing. Learning causal dynamics models in object-oriented environments. In Proceedings of the 41st International Conference on Machine Learning , 2024. [29] John Gkountouras, Matthias Lindemann, Phillip Lippe, Efstratios Gavves, and Ivan Titov. Language agents meet causality – bridging LLMs and causal world mod-els. In The Thirteenth International Conference on Learning Representations , 2025. [30] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, Ravi Ramamoorthi, and Ren Ng. NeRF: Representing scenes as neural radiance fields for view synthesis. Communications of the ACM , 65 (1):99–106, 2021. [31] Albert Pumarola, Enric Corona, Gerard Pons-Moll, and Francesc Moreno-Noguer. D-NeRF: Neural ra-diance fields for dynamic scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021. [32] Jonas Peters, Peter Bühlmann, and Nicolai Mein-shausen. Causal inference by using invariant predic-tion: Identification and confidence intervals. Journal of the Royal Statistical Society Series B , 78(5):947–1012, 2016. [33] Kexin Yi, Chuang Gan, Yunzhu Li, Pushmeet Kohli, Ji-ajun Wu, Antonio Torralba, and Joshua B. Tenenbaum. CLEVRER: Collision events for video representation and reasoning. In International Conference on Learn-ing Representations , 2020. [34] Julius von Kügelgen, Yash Sharma, Luigi Gre-sele, Wieland Brendel, Bernhard Schölkopf, Michel Besserve, and Francesco Locatello. Self-supervised learning with data augmentations provably isolates con-tent from style. In Advances in Neural Information Processing Systems , 2021. [35] Shuai Bai, Yuxuan Cai, Ruizhe Chen, et al. Qwen3-VL technical report, 2025. [36] OpenAI. GPT-4o system card, 2024. [37] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next gen-eration agentic capabilities, 2025. [38] Zhe Chen, Weiyun Wang, Yue Cao, Yangzhou Liu, Zhangwei Gao, Erfei Cui, Jinguo Zhu, Shenglong Ye, Hao Tian, Zhaoyang Liu, et al. Expanding perfor-mance boundaries of open-source multimodal models with model, data, and test-time scaling. arXiv preprint arXiv:2412.05271 , 2024. [39] Bo Li, Yuanhan Zhang, Dong Guo, et al. LLaVA-OneVision: Easy visual task transfer. Transactions on Machine Learning Research , 2025. [40] Jang Hyun Cho, Andrea Madotto, Effrosyni Mavroudi, Triantafyllos Afouras, Tushar Nagarajan, Muhammad Maaz, Yale Song, Tengyu Ma, Shuming Hu, Suyog Jain, et al. PerceptionLM: Open-access data and models for detailed visual understanding. In Advances in Neu-ral Information Processing Systems , volume 38, pages 23475–23537, 2025. [41] Shuai Bai, Keqin Chen, Xuejing Liu, et al. Qwen2.5-VL technical report, 2025. [42] Google DeepMind. Introducing gemini 2.0: Our new AI model for the agentic era. https://deepmind.google, 2024. Accessed: 2025-08-04. [43] Meta AI. The llama 4 herd: The beginning of a new era of natively multimodal AI innovation. https://ai.meta. com, 2025. Accessed: 2025-06-01. [44] xAI. Grok-2 beta release. https://x.ai/news/grok-2, 2024. Accessed: 2025-01-15. [45] Junbin Xiao, Xindi Shang, Angela Yao, and Tat-Seng Chua. NExT-QA: Next phase of question-answering to explaining temporal actions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021. [46] Hung-Ting Su, Yulei Niu, Xudong Lin, Winston H. Hsu, and Shih-Fu Chang. Language models are causal knowledge extractors for zero-shot video question an-swering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Work-shops , pages 4951–4960, 2023. [47] Francesco Locatello, Dirk Weissenborn, Thomas Un-terthiner, et al. Object-centric learning with slot atten-tion. In Advances in Neural Information Processing Systems , 2020.

@@ -1,0 +1,1699 @@
+Title: One Step, One Lead: Mitigating Higher-Order Interference in Multi-Domain Reinforcement Learning via Cross-Step Control
+
+URL Source: https://arxiv.org/pdf/2609.06469v1
+
+Published Time: Wed, 09 Sep 2026 01:12:08 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+# One Step, One Lead: Mitigating Higher-Order Interference in Multi-Domain Reinforcement Learning via Cross-Step Control 
+
+## Zihan Lin 1,2,3*† , Xiaohan Wang 2*‡ , Jie Cao 1, Jiajun Chai 2,Guojun Yin 2‡, Wei Lin 2, Ran He 1‡
+
+> 1
+
+## MAIS&NLPR, Institute of Automation, Chinese Academy of Sciences 
+
+> 2
+
+## Meituan, Beijing 
+
+> 3
+
+## School of Advanced Interdisciplinary Sciences, University of Chinese Academy of Sciences 
+
+Abstract 
+
+Reinforcement learning (RL) across multiple domains can broaden the reasoning capabilities of large language models (LLMs), yet joint training often degrades individual-domain performance and can destabilize optimization. Existing work typically diagnoses such interference from a single-step view using first-order gradient alignment or curvature-based proxies. We show that this view can miss a critical form of sequential interference: same-point domain gradients may remain nearly orthogonal even when consecutive realized updates partially reverse one another in output space. We further show that consecutive token log-probability footprints recover this interaction directly from adjacent checkpoints as a local second-order interaction in output space, without explicitly reconstructing same-step curvature. Building on this insight, we propose OSOL, which designates a focus domain at each iteration, uses the preceding checkpoint footprint to rank token-level rebound risk, and applies a drift-ranked, adaptively scaled correction within the standard GRPO update. Our analysis shows that this correction suppresses the targeted cross-step output backtracking component. Controlled studies further show that cross-step backtracking is more strongly associated with subsequent task damage than same-point gradient diagnostics, while the preceding footprint ranks future rebound risk more accurately than Hessian-based proxies. On Qwen3-30B-A3B, OSOL reaches a domain-macro average of 0.4822 , improving by 5.7% over the strongest compared baseline, without explicit higher-order differentiation. 
+
+# 1 Introduction 
+
+Reinforcement learning (RL) has been widely used to improve the reasoning capabilities of large language models (LLMs) in individual domains Shao et al. [2024], Lin et al. [2026a], Yu et al. [2026]. However, joint training across heterogeneous domains often yields uneven domain-wise gains and can even destabilize training Cai et al. [2026], Yang et al. [2026b], Li et al. [2025]. The resulting degradation can be strongly domain dependent, as illustrated by the gap between mixed-domain and single-domain GRPO in Figure 1. Such interference limits the ability of RL to improve a broad set of capabilities within a single foundation model. We investigate how mixed-domain updates interact along the training trajectory and how this interference can be controlled without introducing auxiliary expert models or reward signals beyond those already used by the underlying RL training Lin et al. [2026b], Liu et al. [2026]. Explaining this domain-dependent degradation requires identifying which interactions among heterogeneous up-dates are associated with subsequent capability degradation. Existing approaches mainly analyze and control such interference within a single training step, either by comparing first-order gradients or by estimating higher-order cur-vature Yu et al. [2020], Liu et al. [2021], Yang et al. [2026a]. However, our controlled study shows that same-point first-order gradient alignment does not reliably reflect the task damage caused by the subsequent update, as shown in Figure 2(a). Nine of 16 replicates have positive gradient cosine (i.e., are aligned), yet aligned cases can still incur substantial task damage. This result indicates that same-point alignment alone is insufficient for diagnosing sequential   
+
+> *Both authors contributed equally to this research.
+> †Work was done during an internship at Meituan.
+> ‡Corresponding authors: wangxiaohan17@meituan.com ,yinguojun02@meituan.com ,ran.he@ia.ac.cn
+
+1arXiv:2609.06469v1 [cs.LG] 6 Sep 2026 0 50 100 150           
+
+> Training step
+> 0.36 0.42 0.48 0.54 0.60
+> Validation accuracy
+> Mathematics
+> 060 120 180
+> Training step
+> 0.12 0.16 0.20 0.24 0.28
+> Validation accuracy
+> Code
+> 080 160 240
+> Training step
+> −10 010 20 30
+> Validation reward
+> Chat
+> 080 160 240
+> Training step
+> 0.64 0.72 0.80 0.88
+> Validation accuracy
+> Instruction following
+> Single-domain GRPO Mixed-domain GRPO
+
+Figure 1: Mixed-domain GRPO leaves substantial domain-specific headroom relative to isolated training. Val-idation trajectories of Qwen3-4B trained with GRPO either separately on each domain or jointly on the four-domain mixture. Clear gaps emerge in Mathematics, Chat, and Instruction Following, with a smaller separation in Code, high-lighting the domain dependence of joint-training degradation. interference. This limitation has motivated higher-order approaches, which use curvature to estimate how one domain update changes the effect of another Liang et al. [2026], Yang et al. [2026a]. However, expanding the parameter cov-erage of a Hessian proxy yields only modest gains in token-level rebound identification while substantially increasing peak GPU memory, revealing an unfavorable trade-off between estimation quality and computational cost, as shown in Figure 2(b,c). The limited improvement under broader coverage suggests that increasing parameter coverage within a local curvature approximation recovers only limited additional information relative to the realized checkpoint trajec-tory. Together, these findings motivate us to move beyond gradient and curvature estimates constructed within a single step and instead examine the actual token log-probability footprints left by consecutive updates along the training trajectory. Building on this cross-step view, we show that adjacent token footprints reveal how consecutive updates interact in task-conditioned output space and provide a principled signal for reducing the resulting cross-step output backtracking. This motivates OSOL, which designates a focus domain at each iteration and converts the preceding token footprint into fine-grained history corrections within the standard GRPO update. These corrections are derived directly from the token-level policy shift left by the preceding update, requiring neither auxiliary supervision nor explicit higher-order derivatives. On Qwen3-30B-A3B, OSOL reaches a domain-macro average of 0.4822 , improving by 5.7% over MGS, the strongest baseline, while also outperforming CGPO. The main contributions of this paper are summarized as follows: 1) We introduce a cross-step view of higher-order interference in multi-domain policy optimization, shifting the analysis from same-point gradient relations and the curvature sensitivity of isolated parameter displacements to the mixed interaction between consecutive updates in task-conditioned output space. We prove that the inner product of the token log-probability footprints induced by the preceding update and the current base update locally recovers this interaction under the empirical output Fisher, making it observable from adjacent checkpoints without explicitly constructing the Fisher matrix. We further show that opposing token movements give this interaction a direct trajectory interpretation as cross-step output backtracking. 2) Building on this analysis, we propose OSOL an online cross-step controller integrated into the standard policy gradient update. At each iteration, it designates a focus domain, forms a normalized task-weighted base coefficient, and computes token-level drift from the log-probability difference of the response tokens across adjacent checkpoints; negative drift defines the intervention set, its rank determines relative penalty strength, and adaptive scaling keeps the residual at a controlled fraction of the current base-coefficient dispersion. The resulting residual is added directly to the objective, and we prove that it contracts the targeted negative-to-positive backtracking component under a local response condition. 3) Empirical evaluations validate both the diagnostic and optimization benefits of the cross-step view. In con-trolled studies, cross-step backtracking mass correlates positively with subsequent task damage ( ρs = 0 .40 , 95% bootstrap CI [0 .05 , 0.69] ), whereas same-point global and module diagnostics yield correlations of −0.19 and −0.22 ,respectively. Checkpoint-footprint ranking also improves rebound ROC-AUC from 0.498 for the Hessian proxy to 
+
+0.567 . In full multi-domain training on Qwen3-30B-A3B, OSOL improves the domain-macro average by 5.7% over MGS, the strongest compared baseline, while also outperforming curvature-guided CGPO. Ablations further show 2−0.10 −0.05 0.00 0.05      
+
+> First-order gradient cosine
+> 012345
+> Task interference (×10 −4 ) 9/16 aligned
+> 2.5 10.0 20.0
+> Parameter coverage (%)
+> 0.50 0.55 0.60 0.65
+> Candidate ROC-AUC  Hessian proxy Checkpoint footprint 2.5 10.0 20.0
+> Parameter coverage (%)
+> 20 30 40 50
+> Peak GPU memory (GB)
+> 27 34 44 Hessian proxy
+
+Figure 2: Same-point alignment misses sequential damage, while broader curvature estimation remains costly. 
+
+(a) Positive same-point gradient cosine does not preclude substantial task damage after the subsequent domain update; circles highlight high-damage aligned cases. (b, c) Expanding Hessian-proxy parameter coverage modestly improves token-level rebound identification but increases peak GPU memory. that equalizing the focus and non-focus weights or replacing drift-ranked token weights with random weights reduces the domain-macro average by 51 .4% and 50 .8% , respectively. 
+
+# 2 Related Work 
+
+Recent studies of RL post-training across heterogeneous reasoning domains report asymmetric transfer, domain degra-dation, task-dependent gradient imbalance, and sensitivity to data composition and training order [Cheng et al., 2026, Li et al., 2025, Wu et al., 2026, Yang et al., 2026b]. Existing optimization methods mainly balance task contributions or coordinate gradients evaluated at the same checkpoint. Adaptive weighting methods balance gradient magnitudes or task convergence rates [Chen et al., 2018, Gong et al., 2024], while multi-objective methods seek Pareto-efficient, bargaining-based, or balanced-progress solutions [Sener and Koltun, 2018, Navon et al., 2022, Liu et al., 2023]. PC-Grad and CAGrad instead modify conflicting task gradients before aggregation [Yu et al., 2020, Liu et al., 2021]. Recent LLM-specific RL methods instantiate these ideas through module-level gradient surgery, adaptive task weight-ing and sampling, and transfer-aware curricula [Cai et al., 2026, Ramesh et al., 2026, Yang et al., 2026c]. These approaches primarily regulate task contributions or same-step gradient interactions, but do not directly model interfer-ence between consecutive mixed-domain updates. Characterizing such cross-step interaction connects three relevant perspectives: second-order sensitivity, output-space policy geometry, and checkpoint-based observability. Influence functions estimate sensitivity to infinitesimal training perturbations through inverse-Hessian information [Koh and Liang, 2017]. Recent local-perturbation theory models cross-domain damage through the curvature of an earlier-domain objective under a later displacement [Yang et al., 2026a], while CGPO uses cross-domain curvature information to shape multi-domain policy updates [Liang et al., 2026]. Natural-gradient and trust-region methods provide a complementary policy-geometry view, where the Fisher metric and policy KL quantify local changes in the action distribution [Amari, 1998, Kakade, 2001, Schulman et al., 2015, Martens, 2020]. Work on the empirical Fisher cautions against treating it as a generic substitute for an arbitrary objective Hessian [Kunstner et al., 2019]. Checkpoint-based influence estimation further shows how stored checkpoints can expose training effects along the optimization trajectory [Pruthi et al., 2020]. Existing curvature-based analyses typically characterize isolated update sensitivity and can be costly to apply online at LLM scale. In contrast, we focus on the directly observable interaction between consecutive updates in task-conditioned output space. 
+
+# 3 Cross-Step Dynamics 
+
+We use a token log-probability footprint to denote the vector of log-probability changes that a parameter update induces on a fixed set of realized response-token coordinates. Each coordinate (xi, a i) pairs a realized token ai with its prefix context xi. Accordingly, task-conditioned output space refers here to the vector of token log-probabilities evaluated on such coordinates from the domain being analyzed. We now formalize the mixed output interaction between the preceding realized update and the current base update in this output space. Consider 
+
+θk−1
+
+> δk−1
+
+−−−−→ θk
+
+> δ0
+> k
+
+−−→ θ0
+
+> k+1
+
+, (1) 3where δk−1 := θk − θk−1 is the preceding realized update and δ0 
+
+> k
+
+:= θ0 
+
+> k+1
+
+− θk is the current base update before the OSOL correction. Focusing on the mixed output interaction between adjacent updates makes the relevant geometry checkpoint-observable, token-resolved, and amenable to online control. 
+
+## 3.1 Output Geometry 
+
+Let Ek = {(xi, a i)}Ni=1 denote eligible response-token coordinates from the domain selected for cross-step control at iteration k, which we call the focus domain ; Section 4 gives its role in the training update and Section 4.1 specifies the implementation-level eligibility rule. Let ℓk(θ) := [log πθ (ai | xi)] Ni=1 collect the corresponding token log-probabilities. Define the output KL on these focus-domain token contexts 
+
+Dk(δ) := 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+DKL (πθk (· | xi) ∥ πθk +δ (· | xi)) . (2) For φi,a := ∇ log πθk (a | xi) and φi := φi,a i , define 
+
+F k := 1
+
+N
+
+X
+
+> i
+
+Ea∼πθk (·| xi)[φi,a φ⊤
+
+> i,a
+
+], Fk := 1
+
+N
+
+X
+
+> i
+
+φiφ⊤ 
+
+> i
+
+. (3) The first, which we call the output Fisher, averages score outer products over the full next-token distribution at each context. The second is the empirical output Fisher obtained from the response tokens actually realized in the rollout [Amari, 1998, Martens, 2020, Kunstner et al., 2019]. This distinction lets the KL geometry be defined over the policy distribution while keeping the cross-step interaction observable on realized tokens. 
+
+Lemma 1 (Task-conditioned output Hessian) . Under the local regularity conditions in Appendix C.1, 
+
+Dk(0) = 0 , ∇D k(0) = 0, ∇2Dk(0) = F k, Dk(δ) = 12 δ⊤F kδ + O(∥δ∥3). (4) Thus the relevant geometry is the exact local Hessian of output KL—the metric underlying natural-gradient and trust-region policy optimization [Kakade, 2001, Schulman et al., 2015]—rather than an identification of the complete objective Hessian with the Fisher. Proofs are in Appendices C.3 and C.4. On the same realized coordinates, define the preceding footprint and the current base footprint 
+
+u := ℓk(θk) − ℓk(θk−1), d0 := ℓk(θ0
+
+> k+1
+
+) − ℓk(θk). (5) 
+
+Theorem 1 (Checkpoint token–Fisher duality) . If ∥δk−1∥, ∥δ0
+
+> k
+
+∥ = O(η), then 
+
+1
+
+N u⊤d0 = δ⊤
+
+> k−1
+
+Fkδ0 
+
+> k
+
++ O(η3). (6) The inner product of the preceding and current base footprints therefore exposes the mixed output interaction be-tween the preceding realized update and the current base update under the empirical output Fisher. Both footprints are defined on the same realized token coordinates, while the online controller needs only the already available preceding footprint u. The coordinatewise expansion and explicit finite-step error are given in Appendices D.1–D.3. 
+
+Token Backtracking. The interaction has the exact path interpretation 
+
+Γ( u, d) := − 1
+
+N u⊤d = ∥u∥2 + ∥d∥2 − ∥ u + d∥2
+
+2N . (7) Hence Γ > 0 measures stepwise output motion that is canceled in the net displacement. Together with Theorem 1, 
+
+Γ( u, d0) = −δ⊤
+
+> k−1
+
+Fkδ0 
+
+> k
+
++ O(η3), (8) which gives the mixed output interaction a direct trajectory interpretation. Appendix D.5 decomposes the global quantity as Γ = Rev − Align , where Rev = B− + B+ separates token reversals from aligned motion. The nonpositive history correction used by OSOL has a monotone reduction guarantee for the negative-to-positive component; see Appendix F.1. We therefore define the controlled backtracking mass as 
+
+B−(u, d) := 1
+
+N
+
+X
+
+> i:ui<0
+
+(−ui)[ di]+, (9) which captures negative-to-positive rebound: a token log-probability decreased by the preceding update and immedi-ately increased by the next one. 43.2 Backtracking Control 
+
+OSOL applies a nonpositive residual on Ck := {i ∈ E k : ui < 0}. Let ξi ≤ 0 denote its effective post-clipping change to the policy coefficient; monotonicity of scalar clipping preserves this sign (Appendix E.1). 
+
+Lemma 2 (History-conditioned PPO penalty) . For zi := log( πθ (ai | xi)/π θk (ai | xi)) , the token-level loss difference at the PPO anchor satisfies 
+
+J OSOL  
+
+> i
+
+(zi) − J 0 
+
+> i
+
+(zi) = −ezi ξi, ∂zi (J OSOL  
+
+> i
+
+− J 0 
+
+> i
+
+) zi=0 = −ξi ≥ 0. (10) Thus gradient descent adds a history-conditioned penalty against increasing the selected likelihood ratios. Ap-pendix E.2 derives the result from the clipped PPO surrogate [Schulman et al., 2017]. Let ΦE := [ φ1, . . . , φN ] and KE := Φ⊤E ΦE , where KE is the token-gradient similarity matrix and captures cross-token coupling induced by shared model parameters. In the local policy-gradient model, the correction induces 
+
+h := Φ⊤E δrk = η
+
+|R| KE ξ, (11) where h is the correction footprint. Because all tokens share model parameters, a negative coefficient correction does not by itself guarantee a negative log-probability change for every selected token: cross-token interactions in KE can alter the local response. The following sufficient condition requires each selected token’s own local response to dominate the aggregate cross-token effect. 
+
+Lemma 3 (Residual-to-output sign transfer) . Under the local dominance condition in Appendix E.4, hi ≤ 0 for the selected coordinates. 
+
+Under this condition, the nonpositive coefficient correction transfers to a nonpositive output-space correction on the selected tokens. Appendix E.4 gives the exact condition and its extension to the locally preconditioned optimizer response. 
+
+Proposition 1 (Backtracking contraction) . If hi ≤ 0 on Ck, then 
+
+∆ctrl  
+
+> k
+
+:= B−(u, d0) − B −(u, d0 + h) ≥ 0. (12) 
+
+For the corrected footprint dOSOL with ∥δrk∥ = O(η),
+
+B−(u, dOSOL ) ≤ B −(u, d0) − ∆ctrl  
+
+> k
+
++ O(η3). (13) The proof and explicit finite-step remainder are in Appendices E.5 and E.6. The theory therefore closes an observable-to-controllable loop: output KL identifies the local geometry, the preceding and current base footprints expose the mixed output interaction, token signs localize backtracking, and the history-conditioned penalty contracts the negative-to-positive component targeted by OSOL. 
+
+# 4 Method Design 
+
+One Step, One Lead. Each mixed-domain update designates exactly one domain fk as the focus domain ; the re-maining domains are non-focus domains . The focus domain receives a larger task weight in the base GRPO coefficient, and only its eligible response tokens receive the history-based correction. The non-focus domains remain in the same update with smaller task weights, so the method prioritizes one domain without discarding the others. A training schedule selects the focus domain at each iteration. At iteration k, OSOL samples the standard mixed-domain rollout batch from πθk and rescores the same realized eligible focus-domain tokens with the frozen preceding checkpoint θk−1. The resulting drift defines the intervention set ( ui < 0), its rank determines relative strength, and τ sets the batchwise scale. The residual is then added to the existing GRPO coefficient and optimized with the unchanged clipped policy objective. Thus OSOL modifies the update signal rather than introducing a separate auxiliary loss. All history-dependent quantities are stop-gradient. The focus assignment determines where the checkpoint controller is evaluated; it does not alter the definition of the underlying group-relative reward signal. 54.1 Update History 
+
+Let Ag 
+
+> i
+
+be the GRPO group-normalized trajectory advantage broadcast to token i, and let src( i) denote its domain. With focus and non-focus weights wf > w nf , the task-weighted base coefficient is 
+
+Abase  
+
+> i
+
+= ciAg 
+
+> i
+
+, ci = wsrc( i)
+
+Zk
+
+, Zk = wf N f 
+
+> k
+
++ wnf N nf 
+
+> k
+
+N f 
+
+> k
+
++ N nf 
+
+> k
+
+, (14) where N f 
+
+> k
+
+and N nf  
+
+> k
+
+are focus- and non-focus-token counts. The normalization keeps the coefficient scale comparable as the designated focus changes. The history residual is added after this weighting and is not multiplied by ci again. Let Ek contain current focus-domain response tokens with nonzero trajectory-level GRPO advantage. On each realized coordinate (xi, a i), compute 
+
+ui = log πθk (ai | xi) − log πθk−1 (ai | xi), Ck = {i ∈ E k : ui < 0}. (15) Thus u is the preceding footprint on the current rollout coordinates, not a prediction of the next update. Both check-points score the same (xi, a i) pairs, so the comparison requires no token matching or auxiliary model. A token belongs to Ck when the previous mixed-domain step reduced its current realized log-probability. This defines the negative-drift candidate set on which a nonpositive correction monotonically suppresses negative-to-positive rebound (Appendix F.1). 
+
+## 4.2 Residual Construction 
+
+For i ∈ C k, let rank 0(ui) be the ascending zero-based rank and set 
+
+pi = rank 0(ui) + 12
+
+|C k| , ¯ri = rmin + clip( pi, p lo , p hi ) − plo 
+
+phi − plo 
+
+(rmax − rmin ), (16) with ¯ri = 0 off Ck. We use (plo , p hi , r min , r max ) = (0 .1, 1, −1, 0) , assigning stronger penalties to more negative drift. This ordering is locally optimal for allocating a fixed collection of penalty levels to active rebound coordinates (Appendix F.2). Using ranks rather than raw drift magnitudes also reduces sensitivity to batch-to-batch scale changes and isolated extreme log-probability shifts. Define the supported profile and its adaptive scale by 
+
+qi := ¯ ri1{i ∈ C k}, (17) 
+
+κk := τ std Ek (Abase )std Ek (q) , rOSOL  
+
+> i
+
+:= κkqi. (18) Whenever the statistics are nondegenerate, 
+
+std Ek (rOSOL ) = τ std Ek (Abase ). (19) The standard setting uses τ = 0 .03 . Hence τ controls the residual relative to the current base-coefficient scale rather than to the raw scale of the preceding drift. Numerical fallback and the code-level gate and mask are specified in Appendix F.3–F.4. The final policy coefficient is eAi = clip  Abase  
+
+> i
+
++ rOSOL  
+
+> i
+
+, −3, 3 . (20) With ωi(θ) := πθ (ai | xi)/π θold (ai | xi), it is optimized by the unchanged clipped surrogate [Schulman et al., 2017]: 
+
+LOSOL (θ) = −E
+
+"
+
+1
+
+|R| 
+
+X
+
+> i∈R
+
+min 
+
+
+
+ωi(θ) eAi, clip( ωi(θ), 1 − ϵc, 1 + ϵc) eAi
+
+#
+
+. (21) Thus, OSOL converts the preceding token drift into a tokenwise history-conditioned correction within the standard GRPO objective. 65 Experiments 
+
+## 5.1 Setup 
+
+Models and baselines. We evaluate OSOL on Qwen3-30B-A3B and Qwen3-8B-Base. On both backbones, we compare against the pre-RL base model, standard GRPO [Guo et al., 2025], GRPO +KL 0.001 as a conservative-update baseline, MGS [Cai et al., 2026] as a first-order module-level gradient-surgery baseline, and CGPO [Liang et al., 2026] as a curvature-guided multi-domain optimization baseline. All methods follow the same evaluation protocol. Complete main-training and generation settings are summarized in Appendix F.5. 
+
+Training data. We construct a training dataset mixture covering four domains: mathematics, code generation, in-struction following (IF), and open-ended chat (Chat). The mathematics and code examples are quality-filtered subsets of the NVIDIA Nemotron Post-Training Dataset v2 [Basant et al., 2025]. For Chat, we use the WildChat-IF subset provided by MGS, which is derived from the Tulu 3 WildChat-IF dataset. For IF, we use AllenAI’s RLVR-IFeval, whose prompts contain programmatically verifiable constraints. Each domain contributes 7.5K training examples, resulting in a balanced mixture across all four domains. 
+
+Evaluation. We evaluate mathematical reasoning on AIME 2024, AIME 2025, and AMC 2023; code generation on LiveCodeBench; IF on IFBench; and Chat on WildBench-Hard and CreativeWriting v3. For AIME, AMC, and LiveCodeBench, we report avg@8. WildBench-Hard and CreativeWriting v3 are reported on their normalized scales. Because the training mixture contains four equally represented domains, we use a domain-macro average as the pri-mary aggregate metric. We first average benchmarks within mathematics and Chat, then assign equal weight to the four domain scores. This prevents a domain from receiving greater aggregate weight solely because it is represented by more benchmarks. 
+
+## 5.2 Main Results 
+
+Table 1: Main results on the Qwen3-30B-A3B mixture-of-experts backbone. Math averages AIME24, AIME25, and AMC23 avg@8; Code uses LiveCodeBench avg@8; IF uses IFBench strict-prompt accuracy; Chat averages normalized WildBench-Hard and CreativeWriting v3 scores. Domain Avg. is the unweighted mean of the four domain scores. Higher is better. Best and second-best values are bolded and underlined.                                   
+
+> Method Math Code IF Chat Domain Avg.
+> Base model 0.5312 0.3310 0.2100 0.6392 0.4279 GRPO 0.5632 0.2603 0.2066 0.6900 0.4300 GRPO +KL 0.001 0.5538 0.2540 0.1900 0.7271 0.4312 MGS 0.5757 0.3858 0.2000 0.6625 0.4560 CGPO 0.5670 0.3835 0.2067 0.6541 0.4528 OSOL (ours) 0.5822 0.4529 0.1933 0.7003 0.4822
+
+Mixture-of-experts backbone. Table 1 shows that MGS and CGPO achieve domain-macro averages of 0.4560 and 0.4528 on Qwen3-30B-A3B, respectively, substantially exceeding standard GRPO at 0.4300. OSOL further reaches 0.4822, improving over MGS, the strongest baseline, by 0.0262 points or 5.7%. OSOL attains the best scores in mathematics and code and ranks second in Chat, while its IF score remains below the pre-RL base model. These results demonstrate that cross-step control improves over both first-order gradient surgery and curvature-guided optimization on a sparsely activated mixture-of-experts backbone. 
+
+Dense backbone. On Qwen3-8B-Base, Table 2 shows that OSOL achieves the highest domain-macro average of 0.3735. This corresponds to an improvement of 0.0224 points (6.4%) over standard GRPO and 0.0035 points (0.9%) over GRPO +KL 0.001 , the strongest compared baseline. OSOL achieves the highest mathematics score and ranks 7Table 2: Main results on Qwen3-8B-Base. Domain definitions and averaging follow Table 1. Higher is better. Best and second-best values are bolded and underlined.                                   
+
+> Method Math Code IF Chat Domain Avg.
+> Base model 0.1316 0.1751 0.1433 0.4466 0.2241 GRPO 0.2906 0.2119 0.2733 0.6284 0.3511 GRPO +KL 0.001 0.2750 0.2249 0.3000 0.6802 0.3700 MGS 0.2948 0.0883 0.2833 0.6401 0.3266 CGPO 0.3094 0.1828 0.2567 0.6623 0.3528 OSOL (ours) 0.3111 0.2173 0.2933 0.6723 0.3735
+
+second in code, IF, and Chat. GRPO +KL 0.001 remains slightly stronger in these three domains, while its lower mathematics score results in a smaller equal-domain average. The aggregate result therefore reflects a favorable cross-domain trade-off despite the absence of uniform per-domain dominance. Table 3: Ablation results on Qwen3-8B-Base. OSOL without history residual retains the one-step-one-lead focus structure while removing the checkpoint-history correction; the remaining variants ablate focus weighting, drift-based ranking, or token-level allocation.                              
+
+> Method Math Code IF Chat Domain Avg. OSOL without history residual 0.2996 0.2114 0.2966 0.6324 0.3600 Equal task weights 0.0615 0.0202 0.2467 0.3978 0.1815 Response-level residual 0.3202 0.2021 0.3000 0.6338 0.3640 Random residual 0.0698 0.0390 0.2400 0.3866 0.1838 OSOL (ours) 0.3111 0.2173 0.2933 0.6723 0.3735
+
+## 5.3 Ablation Analysis 
+
+The matched OSOL without history residual variant retains the same one-step-one-lead focus schedule and asymmetric focus–non-focus base weighting while setting the checkpoint-history residual to zero. It reaches a domain-macro average of 0.3600, above standard GRPO at 0.3511 (Table 2) but 0.0135 below the full method at 0.3735. This comparison clarifies the role of the one-step-one-lead structure in the full design: focus scheduling and asymmetric weighting establish a structured cross-step trajectory with a designated focus domain, while the checkpoint-history residual uses the preceding update to counter sequential rebound. The full method improves over this structure-only baseline by 3.8%, indicating that focus scheduling alone does not account for the observed gain. The remaining ablations isolate how this cross-step correction is implemented. Equal task weights keeps the focus-restricted residual but removes asymmetric base weighting, reducing the domain-macro average to 0.1815 ( −51 .4% ); Random residual keeps the correction pathway but replaces drift-based token ranking with random weights, yielding 0.1838 ( −50 .8% ). The large degradations indicate that the history correction depends on both the focus-domain weighting and the preceding footprint used to localize the correction. Response-level residual retains both the one-step-one-lead structure and checkpoint signal but removes token-specific allocation within each response, reaching 0.3640. The full token-level method further improves this score by 0.0095 points (2.6%), mainly through gains in code and Chat. Together, the ablations support the intended decomposition of OSOL: one-step-one-lead organizes the cross-step trajectory, checkpoint drift localizes rebound risk, and token-level allocation applies the correction at the granularity where that risk is observed. 8Attention Query proj. Key proj. Value proj. Output proj. Gate proj. Up proj. Down proj. Norm 
+
+> Layer 35 component
+> −0.4 −0.2 0.0 0.2 0.4
+> Normalized signed contribution
+> −0.1 0.0
+> Global cosine
+> 179 97 281 23 239 307 11 157 263 251 293 331 347 127 113 41 167 199 101 67 191 131 37 211 223 53 83 269 149 311 227 79
+> Seed (low to high task interference)
+> 05Task interference (×10 −4 )
+
+Figure 3: Layer-35 signed gradient contributions expose cancellation hidden by the global cosine. Columns are seeds ordered by observed task interference; opposing module contributions can cancel under global aggregation. 1 5 10 20       
+
+> Selected tokens (%)
+> 0.2 0.4 0.6 0.8
+> Rebound precision
+> Hessian proxy Checkpoint footprint
+> 1510 20
+> Selected tokens (%)
+> 0.50 0.75 1.00 1.25
+> Precision / random
+> ROC-AUC Avg. precision
+> 0.4 0.5 0.6 0.7
+> Ranking quality
+> 0.508 0.617 0.549 0.625 0.557 0.636
+> Hessian (raw grad.) Hessian (actual update) Checkpoint footprint
+
+Figure 4: Checkpoint history provides a stronger token-level rebound signal than Hessian-based proxies. Checkpoint-footprint ranking improves precision and enrichment across candidate fractions (left) and remains superior in ROC-AUC and average precision even when the Hessian proxy uses the realized optimizer update (right). 
+
+## 5.4 Mechanism Analysis 
+
+Section 3 characterizes cross-step backtracking using two consecutive token footprints, whereas the online controller must act before the current update is completed and therefore observes only the preceding footprint u. We therefore evaluate whether u alone contains sufficient information to identify tokens likely to rebound under the next update. As shown in Figure 5, within the negative-drift candidate set, checkpoint-footprint ranking achieves 0.567 ROC-AUC and 0.627 average precision, compared with 0.498 and 0.579 for the Hessian proxy, while improving top-5% precision from 0.551 to 0.661 ; the non-token-resolved global reference yields the expected ROC-AUC of 0.500 . These results indicate that preceding negative drift provides an informative token-level ranking of future rebound risk. Figure 3 further explains why this information can be obscured by global gradient aggregation: large opposing module-level contributions, particularly in MLP projections, cancel to produce near-zero global cosine values despite substantially different levels of task interference. Figure 4 further evaluates the robustness of the token-level ranking. Checkpoint-footprint ranking remains stronger across selected candidate fractions from 1% to 20% , with the largest advantage among the highest-ranked candidates, supporting the drift-ranked token allocation in Eq. (16). On the three-seed control subset, replacing the raw gradient with the realized optimizer displacement improves the Hessian proxy’s ROC-AUC from 0.508 to 0.549 , but checkpoint ranking remains higher at 0.557 . Together, these results show that the preceding checkpoint footprint provides a direct pre-update signal for identifying rebound-prone tokens and allocating OSOL’s correction strength without explicit Hessian estimation. 96 Conclusion 
+
+Multi-domain RL can suffer sequential interference even when same-point gradients appear weakly conflicting. We in-troduced a cross-step view in which adjacent checkpoint footprints expose the mixed output-space interaction between consecutive updates and give harmful reversals a direct interpretation as cross-step output backtracking. Building on this view, OSOL designates a focus domain and adds a drift-ranked, scale-normalized token-level history residual to the standard GRPO coefficient, requiring neither auxiliary supervision nor explicit higher-order differentiation. Our analysis characterizes when this correction contracts the targeted backtracking component. Controlled studies show that cross-step backtracking is more strongly associated with subsequent task damage than same-point gradient diag-nostics, while the preceding checkpoint footprint identifies future token rebound more effectively than Hessian-based proxies. On Qwen3-30B-A3B and Qwen3-8B-Base, OSOL achieves domain-macro averages of 0.4822 and 0.3735, with relative gains of 5.7% and 0.9% over the strongest compared baselines, respectively. Ablations further verify the importance of focus–non-focus base weighting, drift-guided localization, and token-level allocation. Together, these results support cross-step output-space regulation as a practical first-order approach to mitigating interference in multi-domain policy optimization. 10 References 
+
+Shun-Ichi Amari. Natural gradient works efficiently in learning. Neural computation , 10(2):251–276, 1998. Aarti Basant, Abhijit Khairnar, Abhijit Paithankar, Abhinav Khattar, Adithya Renduchintala, Aditya Malte, Akhiad Bercovich, Akshay Hazare, Alejandra Rico, Aleksander Ficek, et al. Nvidia nemotron nano 2: An accurate and efficient hybrid mamba-transformer reasoning model. arXiv preprint arXiv:2508.14444 , 2025. Min Cai, Yu Liang, Longzheng Wang, Yan Wang, Yueyang Zhang, Long Xia, Zhiyuan Sun, Xi Ye, and Daiting Shi. Advancing general-purpose reasoning models with modular gradient surgery. arXiv preprint arXiv:2602.02301 ,2026. Zhao Chen, Vijay Badrinarayanan, Chen-Yu Lee, and Andrew Rabinovich. Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks. In International conference on machine learning , pages 794– 803. PMLR, 2018. Jorge Zhoujun Cheng, Shibo Hao, Tianyang Liu, Fan Zhou, Yutao Xie, Feng Yao, Yuexin Bian, Nilabjo Dey, Yonghao Zhuang, Yuheng Zha, et al. Revisiting reinforcement learning for llm reasoning from a cross-domain perspective. 
+
+Advances in Neural Information Processing Systems , 38, 2026. Zi Gong, Hang Yu, Cong Liao, Bingchang Liu, Chaoyu Chen, and Jianguo Li. Coba: Convergence balancer for multitask finetuning of large language models. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 8063–8077, 2024. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. Wassily Hoeffding. Probability inequalities for sums of bounded random variables. Journal of the American statistical association , 58(301):13–30, 1963. Arthur Jacot, Franck Gabriel, and Cl´ ement Hongler. Neural tangent kernel: Convergence and generalization in neural networks. Advances in neural information processing systems , 31, 2018. Sham M Kakade. A natural policy gradient. Advances in neural information processing systems , 14, 2001. Pang Wei Koh and Percy Liang. Understanding black-box predictions via influence functions. In International con-ference on machine learning , pages 1885–1894. PMLR, 2017. Frederik Kunstner, Philipp Hennig, and Lukas Balles. Limitations of the empirical fisher approximation for natural gradient descent. Advances in neural information processing systems , 32, 2019. Yu Li, Zhuoshi Pan, Honglin Lin, Mengyuan Sun, Conghui He, and Lijun Wu. Can one domain help others? adata-centric study on multi-domain reasoning via reinforcement learning. arXiv preprint arXiv:2507.17512 , 2025. Xize Liang, Lin Yang, Jie Wang, Rui Liu, Yang Lu, Jinliang Zeng, Hanzhu Chen, Dong Li, and Jianye Hao. Boosting multi-domain reasoning of llms via curvature-guided policy optimization. In The Fourteenth International Confer-ence on Learning Representations , 2026. Zihan Lin, Xiaohan Wang, Jie Cao, Jiajun Chai, Li Wang, Xiaodong Lu, Wei Lin, Ran He, and Guojun Yin. Resrl: Boosting llm reasoning via negative sample projection residual reinforcement learning, 2026a. URL https: //arxiv.org/abs/2605.00380 .Zihan Lin, Xiaohan Wang, Jie Cao, Jiajun Chai, Guojun Yin, Wei Lin, and Ran He. Rest: Reshaping token-level policy gradients for tool-use large language models. In The Fourteenth International Conference on Learning Representations , 2026b. URL https://openreview.net/forum?id=gNZlaKRWki .Bo Liu, Xingchao Liu, Xiaojie Jin, Peter Stone, and Qiang Liu. Conflict-averse gradient descent for multi-task learning. Advances in neural information processing systems , 34:18878–18890, 2021. 11 Bo Liu, Yihao Feng, Peter Stone, and Qiang Liu. Famo: Fast adaptive multitask optimization. Advances in Neural Information Processing Systems , 36:57226–57243, 2023. Dengcan Liu, Fengkai Yang, Xiaohan Wang, Shurui Yan, Jiajun Chai, Jiahao Li, Yikun Ban, Zhendong Mao, Wei Lin, and Guojun Yin. Cdrrm: Contrast-driven rubric generation for reliable and interpretable reward modeling. arXiv preprint arXiv:2603.08035 , 2026. James Martens. New insights and perspectives on the natural gradient method. Journal of Machine Learning Research ,21(146):1–76, 2020. Aviv Navon, Aviv Shamsian, Idan Achituve, Haggai Maron, Kenji Kawaguchi, Gal Chechik, and Ethan Fetaya. Multi-task learning as a bargaining game. arXiv preprint arXiv:2202.01017 , 2022. Yurii Nesterov. Introductory lectures on convex optimization: A basic course , volume 87. Springer Science & Business Media, 2013. Jorge Nocedal and Stephen J Wright. Numerical optimization . Springer, 2006. Garima Pruthi, Frederick Liu, Satyen Kale, and Mukund Sundararajan. Estimating training data influence by tracing gradient descent. Advances in Neural Information Processing Systems , 33:19920–19930, 2020. Shyam Sundhar Ramesh, Xiaotong Ji, Matthieu Zimmer, Sangwoong Yoon, Zhiyong Wang, Haitham Bou Ammar, Aurelien Lucchi, and Ilija Bogunovic. Multi-task grpo: Reliable llm reasoning across tasks. arXiv preprint arXiv:2602.05547 , 2026. John Schulman, Sergey Levine, Pieter Abbeel, Michael Jordan, and Philipp Moritz. Trust region policy optimization. In International conference on machine learning , pages 1889–1897. PMLR, 2015. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. Ozan Sener and Vladlen Koltun. Multi-task learning as multi-objective optimization. Advances in neural information processing systems , 31, 2018. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. 
+
+arXiv preprint arXiv:2402.03300 , 2024. Richard S Sutton, David McAllester, Satinder Singh, and Yishay Mansour. Policy gradient methods for reinforcement learning with function approximation. Advances in neural information processing systems , 12, 1999. Runzhe Wu, Ankur Samanta, Ayush Jain, Scott Fujimoto, Jeongyeol Kwon, Ben Kretzu, Youliang Yu, Kaveh Hassani, Boris Vidolov, and Yonathan Efroni. Imbalanced gradients in rl post-training of multi-task llms. In Findings of the Association for Computational Linguistics: EACL 2026 , pages 3137–3150, 2026. Lei Yang, Siyu Ding, and Deyi Xiong. A local perturbation theory for cross-domain interference and recovery in multi-domain rl. arXiv preprint arXiv:2606.02398 , 2026a. Wang Yang, Shouren Wang, Chaoda Song, Chuang Ma, Xinpeng Li, Nengbo Wang, Kaixiong Zhou, Vipin Chaudhary, and Xiaotian Han. When domains interact: Asymmetric and order-sensitive cross-domain effects in reinforcement learning for reasoning. arXiv preprint arXiv:2602.01365 , 2026b. Yongjin Yang, Jiarui Liu, Yinghui He, Lezhen Zhang, Bernhard Sch¨ olkopf, and Zhijing Jin. Transferability for general reasoning: An automated curriculum for multi-domain rlvr. arXiv preprint arXiv:2606.25178 , 2026c. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al. Dapo: An open-source llm reinforcement learning system at scale. Advances in Neural Information Processing Systems , 38:113222–113244, 2026. Tianhe Yu, Saurabh Kumar, Abhishek Gupta, Sergey Levine, Karol Hausman, and Chelsea Finn. Gradient surgery for multi-task learning. Advances in neural information processing systems , 33:5824–5836, 2020. 12 A Controlled Diagnostic Study Protocols 
+
+This section provides the complete protocols for the two controlled studies used to motivate and analyze OSOL. Both studies instantiate adjacent updates explicitly, preserve the optimizer state across the two steps, and evaluate every diagnostic against quantities measured from the realized checkpoint trajectory. The first study evaluates which replicate-level signal best explains downstream cross-domain interference. The second evaluates which token-level signal best identifies tokens whose preceding output movement is reversed by the next update. 
+
+## A.1 Common model, data, and one-step optimization 
+
+Model and data. We use Qwen3-4B as the policy in both studies. Math prompts are sampled from the math portion of the same filtered NVIDIA Nemotron Post-Training Dataset v2 mixture used for the main experiments, and chat prompts are sampled from the MGS-provided WildChat-IF subset. Math generations are scored by the task verifier and chat generations are scored by Skywork-Reward-Llama-3.1-8B-v0.2. For each prompt, we sample four responses with temperature 1.0 and nucleus threshold p = 0 .95 . Prompts are truncated to at most 1,024 tokens and responses to at most 512 tokens. We disable explicit thinking-mode prompting so that all diagnostics are computed under the same response format. 
+
+Advantages and updates. Within each four-response group, rewards are standardized to produce the GRPO trajec-tory advantage. If every response in a group receives the same verifier reward, we use a unit coefficient for that group, yielding a deterministic nonzero one-step update while preserving the sampled response distribution. Chat groups use reward-model scores and have nonzero within-group variation in the analyzed runs. Each replicate performs two con-secutive AdamW steps with learning rate 10 −6, weight decay 0.1, (β1, β 2) = (0 .9, 0.999) , numerical constant 10 −8,and gradient-norm clipping at 1.0. Computation uses bfloat16, and log probabilities are accumulated over response tokens with padding coordinates masked as appropriate. 
+
+Controlled output-facing subspace. The repeated gradient, optimizer, and finite-difference evaluations are carried out in an output-facing parameter subspace consisting of the final transformer block and the language-model head. This subspace contains 100 ,930 ,816 parameters, or 2.51% of Qwen3-4B, and is shared by the compared diagnostics in the primary studies. The coverage control in Appendix A.4 expands this subspace to the final four and final eight transformer blocks while retaining the language-model head. This design permits exact replicate-level replay of gra-dients, optimizer displacements, and token log probabilities while keeping the policy, sampled trajectories, rewards, and evaluation targets matched. 
+
+## A.2 Study I: same-point diagnostics and realized task interference 
+
+Replicate construction. We construct 32 independent replicates from a common initial checkpoint θ0. Randomness across replicates comes from prompt selection and response sampling; the initial policy and all optimization hyperpa-rameters are fixed. Each replicate uses two math update prompts and two chat update prompts, with four responses per prompt. In addition, it samples two math prompts for the token-motion probe and two disjoint math prompts for the damage probe. The update, motion-probe, and damage-probe prompt sets are mutually disjoint within a replicate. Starting from θ0, we first apply the math update and then the chat update: 
+
+θ0
+
+> math update
+
+−−−−−−−→ θ1
+
+> chat update
+
+−−−−−−→ θ2. (22) Math responses and both math probe sets are sampled at θ0. After the math step, chat responses are sampled from 
+
+θ1, scored by the reward model, and used for the θ1 → θ2 update. To obtain a same-point gradient comparison without changing the realized chat trajectories, the fixed θ1 chat responses, rewards, and advantages are replayed at θ0
+
+when computing the chat gradient. The same AdamW optimizer instance is retained across the math and chat steps, matching the stateful sequential-update dynamics. 
+
+Independent interference target. Let Pdmg denote the held-out math damage probe. We measure the effect of the chat update by the change in fixed-response token negative log likelihood: 
+
+Damage math ←chat := LNLL (θ2; Pdmg ) − L NLL (θ1; Pdmg ). (23) 13 A positive value indicates that the chat step increases math-probe NLL. Because Pdmg is disjoint from the update and motion probes, the dependent variable is not reused in any diagnostic score. 
+
+Same-point global and module diagnostics. Using the fixed update batches, define the descent directions at θ0 as 
+
+vm := −∇L m(θ0), vc := −∇L c(θ0). (24) The global first-order diagnostic is 
+
+sglobal =
+
+
+
+− ⟨vm, vc⟩∥vm∥2∥vc∥2
+
+
+
+> +
+
+. (25) For the module diagnostic, partition the output-facing subspace into attention projections, MLP projections, normal-ization parameters, and the language-model head. If v(g)m and v(g)c are the directions in group g, define 
+
+smodule =
+
+P 
+
+> g
+
+[−⟨ v(g)m , v(g)c ⟩]+
+
+P 
+
+> g
+
+|⟨ v(g)m , v(g)c ⟩| . (26) This normalized negative dot-product mass retains opposing module contributions that cancel in the aggregate inner product. 
+
+Cross-step backtracking diagnostic. On the disjoint math motion probe Pmot , we evaluate the same realized re-sponse tokens at all three checkpoints. For token i, let 
+
+ui = log πθ1 (ai | xi) − log πθ0 (ai | xi), di = log πθ2 (ai | xi) − log πθ1 (ai | xi). (27) The backtracking mass used in Figure 6 is 
+
+srev = 1
+
+|R mot |
+
+X
+
+> i∈R mot
+
+1{ui < 0} [−uidi]+ = 1
+
+|R mot |
+
+X
+
+> i∈R mot
+
+(−ui)[ di]+ 1{ui < 0}, (28) where Rmot contains response-token coordinates. The diagnostic therefore records the mass of positive rebound fol-lowing a negative preceding movement, using the realized optimizer steps rather than a virtual parameter perturbation. 
+
+Statistical analysis. Each replicate contributes one value of Damage math ←chat and one value for each diagnostic. We use Spearman rank correlation as the primary association statistic and display a Theil–Sen trend in the scatter plots. Confidence intervals are obtained with 50 ,000 paired replicate bootstrap resamples. The same resampled replicate indices are used when comparing two diagnostics, so the reported correlation gains are paired differences rather than differences between independently estimated intervals. We additionally recompute each correlation after removing every replicate once. The resulting leave-one-replicate-out ranges are reported in Figure 8. 
+
+Observed diagnostic ordering. The global and module diagnostics have correlations of −0.19 and −0.22 with downstream interference, whereas backtracking mass reaches ρs = 0 .40 with a 95% bootstrap interval of [0 .05 , 0.69] .Its paired correlation gains are +0 .59 over the global diagnostic and +0 .63 over the module diagnostic. The sign and ordering are preserved under every leave-one-replicate-out recomputation. Figure 3 further decomposes the same replicates and shows how positive and negative module contributions disappear under global aggregation. 
+
+## A.3 Study II: token-level rebound identification 
+
+Causal triplets and token table. The second study uses eight independent seeds and the same Qwen3-4B one-step configuration. Each seed samples two math prompts and two chat prompts with four responses per prompt. The math step produces θ1 from θ0. Chat responses are then sampled from θ1, scored by the reward model, and used both as the token probe and as the update batch that produces θ2. Therefore, ui and di in Eq. (27) are evaluated on the exact token coordinates responsible for the second update. We retain chat response tokens with nonzero trajectory-level advantage: 
+
+E = {i : i is a response token , A i̸ = 0 }. (29) 14 The checkpoint-history candidate set and realized rebound label are 
+
+C = {i ∈ E : ui < 0}, yi = 1{ui < 0, d i > 0}, qi = ( −ui)[ di]+. (30) The paper-facing comparison is conditioned on C: it asks which negative-drift tokens are most likely to rebound under the subsequent unregulated update. Across the eight seeds, 22 .6% of eligible tokens enter C, and the mean rebound prevalence within C is 57 .8% .
+
+Checkpoint-footprint score. Within C, the raw checkpoint score is [−ui]+. The rank-based score used by OSOL sorts candidate drifts in ascending order and assigns 
+
+pi = rank 0(ui) + 1 /2
+
+|C| , sckpt  
+
+> i
+
+= 1 − clip( pi, 0.1, 1) − 0.10.9 , (31) with score zero outside C. More negative drift receives a larger score, while the strongest decile shares the maximum score. This is the same ordering and quantile profile used by the online controller before batchwise scale normalization. 
+
+Finite-difference Hessian proxy. We compare checkpoint history with a token-level curvature proxy constructed on the same fixed chat trajectories, rewards, and advantages. Let Lloc c be the unclipped local policy-gradient surrogate on this fixed chat batch, and let 
+
+vm := −∇L m(θ0), vc := −∇L loc c (θ0). (32) For selected parameters θS , choose 
+
+α = ϵ ∥θS ∥2
+
+∥vm∥2
+
+(33) and estimate the directional Hessian-vector product by the centered difference 
+
+h ≈ ∇L loc c (θ0 + αvm) − ∇L loc c (θ0 − αvm)2α . (34) The main sweep uses ϵ ∈ { 10 −5, 3×10 −5, 10 −4, 3×10 −4}; the primary score uses the pre-specified summary entry at ϵ = 10 −4. Define 
+
+θm = θ0 + αvm, θpred = θm + α(vc − αh). (35) For probe token i, write ℓi(θ) := log πθ (ai | xi). The virtual math displacement and curvature-adjusted predicted chat displacement are 
+
+∆m 
+
+> i
+
+= ℓi(θm) − ℓi(θ0), ∆pred  
+
+> i
+
+= ℓi(θpred ) − ℓi(θm), (36) and the Hessian ranking score is 
+
+sH 
+
+> i
+
+= [ −∆m 
+
+> i
+
+∆pred  
+
+> i
+
+]+. (37) All virtual log probabilities are computed on the same tokenized probe batch. We also record the induced forward policy KL for each virtual displacement, providing an output-space check on the numerical perturbation scale. 
+
+Ranking metrics and uncertainty. For every seed, we compute receiver operating characteristic area under the curve (ROC-AUC), average precision, and precision among the top-ranked 1% , 2% , 5% , 10% , and 20% of candidates. Enrichment is precision divided by the within-candidate rebound prevalence. Average precision is evaluated at unique score thresholds, and when a top-k boundary intersects tied scores, we report expected precision under uniform tie breaking. We first compute each metric independently for each seed and then report the seed mean with a two-sided 95% Student-t interval. Paired gains use the per-seed difference between checkpoint-footprint and Hessian scores before aggregation. 
+
+Primary comparison. Within negative-drift candidates, checkpoint-footprint ranking obtains 0.567 ROC-AUC, 
+
+0.627 average precision, and 0.661 top-5% precision, compared with 0.498 , 0.579 , and 0.551 for the Hessian proxy. The paired gains in ROC-AUC and average precision are 0.069 and 0.048 , respectively. Across selected candidate fractions, checkpoint ranking remains above the Hessian proxy in both precision and enrichment, with the clearest separation when only a small fraction of candidates is selected by OSOL. 15 A.4 Hessian controls and computational measurements 
+
+Realized-update direction. To separate curvature approximation from direction mismatch, we repeat the Hessian construction on seeds {11 , 23 , 37 } after replacing vm with the selected-parameter optimizer displacement θ1 −θ0. The finite-difference procedure and token target remain unchanged. This increases Hessian ROC-AUC from 0.508 to 0.549 
+
+and average precision from 0.617 to 0.625 ; checkpoint footprint remains highest at 0.557 and 0.636 , respectively. 
+
+Parameter-coverage sweep. We repeat the curvature proxy with the language-model head plus the final one, four, or eight transformer blocks, corresponding to 2.51% , 10 .04% , and 20 .07% of model parameters. Each configuration uses the same three seeds and finite-difference scales {3×10 −5, 10 −4}. Peak GPU memory is measured by the maximum CUDA allocation during the complete diagnostic run. Mean peak memory rises from 26 .6 to 33 .8 and 43 .5 GB, while Hessian ROC-AUC changes from 0.508 to 0.511 and 0.534 . Checkpoint-footprint ROC-AUC on the matching trajectories is 0.557 , 0.577 , and 0.583 .
+
+Finite-difference scale sweep. Finally, we retain all eight primary seeds and recompute the finite-difference diag-nostic for ϵ ∈ { 10 −5, 3×10 −5, 10 −4, 3×10 −4}. For each scale we record the HVP norm and the forward policy KL induced by the virtual math step, the displacement induced by the negative HVP term, and predicted next step. These measurements produce Figure 9 and quantify how the numerical probe scale changes the output-space displacement being evaluated. 16 Global scalar Hessian proxy Checkpoint footprint   
+
+> 0.45 0.50 0.55 0.60 0.65
+> ROC-AUC
+> 0.500 0.498 0.567
+> Hessian proxy Checkpoint footprint
+> 0.45 0.50 0.55 0.60 0.65 0.70
+> Average precision
+> 0.579 0.627
+> Hessian proxy Checkpoint footprint
+> 0.4 0.5 0.6 0.7
+> Precision @ top 5%
+> 0.551 0.661
+
+Figure 5: Rebound identification within negative-drift candidates. The checkpoint footprint outperforms the Hessian proxy in ROC-AUC, average precision, and top-5% precision; the non-token-resolved global scalar is included as a 0.5 ROC-AUC reference. Error bars show 95% confidence intervals. 
+
+# B Additional Diagnostic Evidence 
+
+This section expands the controlled analyses in Appendix A and clarifies what each diagnostic reveals about cross-step interference. Study I evaluates realized two-step backtracking after both updates have occurred and asks whether it is associated with downstream task damage; this is a post-update diagnostic question rather than the pre-update token-ranking problem used by the online controller. Study II examines the numerical behavior of the finite-difference Hessian proxy used as a token-level comparator. Together, the analyses separate three conceptually distinct ques-tions: whether same-point gradients order realized damage, whether the observed diagnostic ordering is stable across replicates, and whether explicit curvature estimation provides a numerically stable route to token-level interaction information. 
+
+Cross-step backtracking is more closely associated with realized task damage. Figure 6 compares the three replicate-level diagnostics from Study I against the held-out math damage measured after the subsequent chat update. The same-point global conflict score has Spearman correlation ρs = −0.19 with damage, while the module-level conflict mass gives ρs = −0.22 . These negative estimates should not be interpreted as evidence that gradient conflict is beneficial; rather, within this controlled setting, neither same-point score provides a useful positive ordering of which subsequent updates damage the held-out math probe more strongly. This remains true even for the module diagnostic, which preserves opposing module contributions that disappear in the global inner product. By contrast, the realized cross-step backtracking mass reaches ρs = 0 .40 with a 95% bootstrap CI of [0 .05 , 0.69] : replicates in which the second update more strongly reverses the output movement of the first tend to exhibit larger downstream damage. Importantly, the backtracking score is computed on the motion probe, whereas damage is measured on a disjoint held-out probe (Appendix A.2); the association therefore does not arise from evaluating the same token set twice. The result supports the central diagnostic claim of the paper: the interaction between two realized updates in output space is more strongly associated with sequential task damage than same-checkpoint gradient geometry alone. 
+
+Paired uncertainty favors the trajectory-based diagnostic. Figure 7 makes the uncertainty comparison explicit. The left panel reports the bootstrap intervals of the three Spearman correlations: the intervals for the global and module diagnostics include zero, while the interval for backtracking mass lies on the positive side. More importantly, the right panel compares the diagnostics pairwise using identical bootstrap resamples of the 32 replicates. Backtracking mass improves correlation by +0 .59 over the global score (95% CI [0 .05 , 1.06] ) and by +0 .63 over the module score (95% CI [0 .03 , 1.15] ). Because these are paired differences, the comparison controls for replicate-to-replicate variation rather than contrasting two independently estimated confidence intervals. Combined with the module decomposition in Figure 3, this result also separates two phenomena: module-level decomposition can reveal cancellation hidden by a global cosine, but retaining that cancellation information alone is still insufficient to match the realized two-step backtracking signal in explaining downstream damage. The added value therefore comes from observing the trajectory interaction itself, not merely from computing a more granular same-point gradient statistic. 
+
+The diagnostic ordering is not driven by a single replicate. The controlled study contains 32 replicates, so we additionally assess sensitivity to individual runs rather than relying on the aggregate correlation alone. Figure 8 recomputes each Spearman correlation after removing one replicate at a time. Across all 32 leave-one-out subsets, 17 0.000 0.025 0.050 0.075 0.100 
+
+> Global conflict score
+> −2 0246
+> Task interference (×10 −4 )
+
+ρs = −0.19 [−0.50, 0.15]     
+
+> 0.00 0.25 0.50 0.75 1.00
+> Module conflict mass
+
+ρs = −0.22 [−0.58, 0.16]    
+
+> 2345
+> Cross-step backtracking mass ( ×10 −5 )
+
+ρs = 0.40 [0.05, 0.69] Figure 6: Replicate-level association between interference diagnostics and realized task damage. Same-point global and module scores do not positively order the subsequent damage, whereas cross-step backtracking mass shows a positive association ( ρs = 0 .40 , 95% bootstrap CI [0 .05 , 0.69] ). The backtracking and damage measurements use disjoint probes. −0.50 −0.25 0.00 0.25 0.50 0.75         
+
+> Spearman ρwith task interference
+> Global first-order Module conflict mass Backtracking mass
+> -0.19 [-0.50, 0.15] -0.22 [-0.58, 0.16] 0.40 [0.05, 0.69]
+> 0.0 0.2 0.4 0.6 0.8 1.0 1.2
+> Correlation gain ( Δρs)
+> Backtracking mass − Global Backtracking mass − Module
+> +0.59 [0.05, 1.06] +0.63 [0.03, 1.15]
+
+Figure 7: Uncertainty and paired correlation gains for the three Study I diagnostics. Left: bootstrap estimates of Spear-man correlation with task damage. Right: paired gains from replacing the same-point global or module diagnostic with cross-step backtracking mass. Both paired intervals remain positive. the global score remains negative in [−0.26 , −0.15] , the module conflict mass remains negative in [−0.31 , −0.16] ,and backtracking mass remains positive in [0 .35 , 0.49] . Thus every deletion preserves both the sign pattern and the ordering of the three diagnostics. This analysis is not a substitute for an independent replication study, but it rules out the simpler explanation that the positive backtracking correlation, or the gap to the same-point baselines, is caused by one unusually influential replicate. 
+
+Finite-difference curvature introduces a consequential probe-scale choice. Figure 9 examines the finite-difference scale ϵ used to construct the Hessian-vector-product proxy in Study II. The left panel shows that the estimated HVP norm changes markedly at the smallest probe scale and then becomes flatter as ϵ increases. The right panel shows the corresponding output-space effect: the policy KL induced by the virtual focus step, the Hessian reaction, and the resulting predicted next step all increase by orders of magnitude over the same sweep. Hence ϵ affects not only the numerical value of the curvature estimate but also the size of the virtual policy displacement on which the token-ranking proxy is evaluated. This introduces an additional sensitivity for online use: changing the probe scale changes the effective output-space regime of the diagnostic even when the underlying checkpoint and trajectories are fixed. The checkpoint-footprint signal used by OSOL does not require this additional finite-difference probe; it is measured directly from the log-probability change between realized adjacent checkpoints. Figure 9 therefore complements the accuracy and memory controls in Appendix A.4: the limitation of the Hessian route is not only computational cost, but also the need to choose a numerical perturbation scale whose effect propagates into the policy-space quantity being 18 −0.2 0.0 0.2 0.4 0.6 
+
+Leave-one-replicate-out Spearman ρ
+
+Global first-order Module conflict mass Backtracking mass 
+
+[-0.26, -0.15] [-0.31, -0.16] [0.35, 0.49] Figure 8: Leave-one-replicate stability of the Study I correlations. Each point recomputes Spearman ρ after removing one replicate; horizontal ranges summarize all 32 deletions. The sign and ordering of the diagnostics are preserved throughout. ranked. 10 −5 10 −4    
+
+> Finite-difference scale ε
+> 23456
+> Finite-difference HVP norm
+> 10 −5 10 −4
+> Finite-difference scale ε
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> 10 1
+> Induced policy KL
+> Virtual focus step Hessian reaction Predicted next step
+
+Figure 9: Sensitivity of the finite-difference Hessian proxy to the probe scale ϵ. Left: the estimated HVP norm varies with ϵ. Right: the induced policy KL of the virtual focus step, Hessian reaction, and predicted next step changes by orders of magnitude, showing that the probe scale also changes the output-space displacement being evaluated. Taken together, these controls sharpen the mechanism evidence without changing the role assigned to each study in the main text. Study I shows that realized cross-step backtracking is a stronger post-update diagnostic of task damage than same-point gradient scores. Study II shows that finite-difference curvature introduces an additional probe-scale choice whose effect propagates into the output-space quantity used for token ranking. The online controller instead uses the preceding checkpoint footprint, which is already available before the next update and whose rebound-ranking ability is evaluated in Section 5.4. The results are therefore complementary: realized two-step backtracking characterizes the interaction that occurred, while the preceding footprint provides the pre-update information used to determine the intervention set. 19 C Output-Space Geometry 
+
+## C.1 Notation and local regularity 
+
+Fix iteration k and the eligible focus coordinates Ek = {(xi, a i)}Ni=1 . For an arbitrary action a at context xi, define 
+
+ℓi,a (θ) := log πθ (a | xi), φi,a := ∇ℓi,a (θk). (38) For the realized action ai, abbreviate 
+
+ℓi(θ) := ℓi,a i (θ), φi := φi,a i , ℓk(θ) := [ ℓ1(θ), . . . , ℓ N (θ)] ⊤. (39) Collect the realized scores into 
+
+Φk := [ φ1, . . . , φN ] ∈ RP ×N , Kk := Φ⊤ 
+
+> k
+
+Φk ∈ RN ×N . (40) Then 
+
+Fk = 1
+
+N ΦkΦ⊤ 
+
+> k
+
+, F k = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Ea∼πθk (·| xi)[φi,a φ⊤
+
+> i,a
+
+]. (41) We use the following local conditions, standard for Taylor and trust-region analyses [Nesterov, 2013, Nocedal and Wright, 2006]. 1. The policy support is fixed in a neighborhood Nk of θk, and ℓi,a is three times continuously differentiable on 
+
+Nk.2. There are constants G, L, M < ∞ such that, for every relevant (i, a ) and θ ∈ N k,
+
+∥∇ ℓi,a (θ)∥ ≤ G, ∥∇ 2ℓi,a (θ)∥op ≤ L, ∥∇ 3ℓi,a (θ)∥op ≤ M. (42) 3. The line segments joining θk−1, θk, θ0
+
+> k+1
+
+, and the locally corrected endpoint remain in Nk.4. The adjacent displacements satisfy 
+
+∥δk−1∥ ≤ aη, ∥δ0
+
+> k
+
+∥ ≤ bη, ∥δrk∥ ≤ cr η (43) for constants a, b, c r independent of η.The checkpoint identity in Appendix D is deterministic for the realized token coordinates and does not require inde-pendence across them. Sampling assumptions enter only when interpreting Fk as an estimator of F k.
+
+## C.2 Relation to objective-Hessian perturbation analyses 
+
+Prior local-perturbation work studies damage to an earlier task objective after a later domain update. Around an approximately stationary earlier-task checkpoint, Taylor expansion makes the objective-Hessian quadratic term dom-inant [Yang et al., 2026a]; curvature-guided multi-domain optimization similarly motivates explicit or approximate curvature information [Liang et al., 2026]. These results explain why same-point gradient cosine can miss sequential interference, but their primary object is the self-quadratic sensitivity of one displacement under an objective Hessian. Our analysis changes both the scalar function and the interaction being studied. We expand the task-conditioned output KL in Eq. (2), whose exact Hessian at the anchor is the Fisher matrix, and then evaluate the mixed output interaction between the preceding realized displacement and the current base displacement. Consequently, Eq. (6) is a bilinear second-order term in output geometry, not an identification of the complete objective Hessian with the Fisher. This output-space choice follows natural-gradient and trust-region policy optimization [Amari, 1998, Kakade, 2001, Schulman et al., 2015, Martens, 2020], while making the interaction observable through checkpoint log-probabilities. 20 C.3 Proof that task-conditioned output KL has Fisher Hessian 
+
+For one context xi, write 
+
+Di(δ) := DKL (πθk (· | xi) ∥ πθk +δ (· | xi)) . (44) Let pi(a) := πθk (a | xi). Since the first distribution is fixed with respect to δ,
+
+Di(δ) = X
+
+> a
+
+pi(a) log pi(a) − X
+
+> a
+
+pi(a)ℓi,a (θk + δ). (45) At δ = 0, the two distributions coincide, so 
+
+Di(0) = 0 . (46) Differentiating Eq. (45), 
+
+∇δ Di(δ) = − X
+
+> a
+
+pi(a)∇ℓi,a (θk + δ). (47) At the anchor, X
+
+> a
+
+pi(a)φi,a = X
+
+> a
+
+πθk (a | xi)∇ log πθk (a | xi) = X
+
+> a
+
+∇πθk (a | xi) = ∇1 = 0. (48) Therefore 
+
+∇Di(0) = 0. (49) Differentiate the normalization identity once more. For each action, 
+
+∇2πθ (a | xi) = πθ (a | xi) ∇2 log πθ (a | xi) + ∇ log πθ (a | xi)∇ log πθ (a | xi)⊤ . (50) Summing over a gives zero because P 
+
+> a
+
+πθ (a | xi) = 1 . Evaluated at θk,
+
+− X
+
+> a
+
+pi(a)∇2ℓi,a (θk) = X
+
+> a
+
+pi(a)φi,a φ⊤
+
+> i,a
+
+. (51) On the other hand, differentiating Eq. (47) gives 
+
+∇2Di(0) = − X
+
+> a
+
+pi(a)∇2ℓi,a (θk). (52) Combining Eqs. (51) and (52), 
+
+∇2Di(0) = Ea∼πθk (·| xi)[φi,a φ⊤
+
+> i,a
+
+]. (53) Averaging over i proves Eq. (4). This is the standard Fisher–KL identity [Amari, 1998, Martens, 2020]. 
+
+## C.4 Explicit KL Taylor remainder and mixed derivative 
+
+Apply multivariate Taylor expansion to Dk at 0. Since its value and gradient vanish, 
+
+Dk(δ) = 12 δ⊤∇2Dk(0)δ + RKL (δ). (54) Under the third-derivative bound in Eq. (42), the integral or Lagrange remainder satisfies 
+
+|RKL (δ)| ≤ MD
+
+6 ∥δ∥3 (55) for a local constant MD . Substituting Eq. (4) into Eq. (54) proves the local expansion stated in Lemma 1. The cubic order follows from local Hessian Lipschitzness or, equivalently here, a locally bounded third derivative [Nesterov, 2013, Nocedal and Wright, 2006]. For two directions δ1 and δ2, define Q(s, t ) := Dk(sδ1 + tδ2). The chain rule gives 
+
+∂2Q∂s∂t s=t=0 
+
+= δ⊤ 
+
+> 1
+
+F kδ2. (56) Equivalently, polarization of the Fisher quadratic form yields 
+
+2δ⊤ 
+
+> 1
+
+F kδ2 = ∥δ1 + δ2∥2 
+
+> Fk
+
+− ∥ δ1∥2 
+
+> Fk
+
+− ∥ δ2∥2 
+
+> Fk
+
+, (57) where ∥δ∥2 
+
+> Fk
+
+:= δ⊤F kδ.21 D Checkpoint Observability of Mixed Output Interaction 
+
+This section derives the preceding and current base footprints on the same realized token coordinates and proves that their product recovers the mixed output interaction under the empirical output Fisher up to cubic local error. 
+
+## D.1 Taylor expansion of the preceding checkpoint footprint 
+
+Recall θk−1 = θk − δk−1. For each realized coordinate, 
+
+ui = ℓi(θk) − ℓi(θk − δk−1). (58) Taylor expansion of ℓi(θk − δk−1) around θk gives 
+
+ℓi(θk − δk−1) = ℓi(θk) − φ⊤ 
+
+> i
+
+δk−1 + 12 δ⊤
+
+> k−1
+
+∇2ℓi(θk − tiδk−1)δk−1 (59) for some ti ∈ (0 , 1) . Hence 
+
+ui = φ⊤ 
+
+> i
+
+δk−1 + eui , (60) where 
+
+eui := − 12 δ⊤
+
+> k−1
+
+∇2ℓi(θk − tiδk−1)δk−1, |eui | ≤ L
+
+2 ∥δk−1∥2. (61) In vector form, 
+
+u = Φ⊤ 
+
+> k
+
+δk−1 + eu. (62) 
+
+## D.2 Taylor expansion of the current base footprint 
+
+The current base update ends at θ0 
+
+> k+1
+
+= θk + δ0
+
+> k
+
+. Therefore 
+
+d0 
+
+> i
+
+= ℓi(θk + δ0
+
+> k
+
+) − ℓi(θk). (63) Taylor expansion around θk gives 
+
+d0 
+
+> i
+
+= φ⊤ 
+
+> i
+
+δ0 
+
+> k
+
++ edi , (64) with 
+
+edi := 12 (δ0
+
+> k
+
+)⊤∇2ℓi(θk + t′
+
+> i
+
+δ0
+
+> k
+
+)δ0
+
+> k
+
+, |edi | ≤ L
+
+2 ∥δ0
+
+> k
+
+∥2. (65) Thus 
+
+d0 = Φ⊤ 
+
+> k
+
+δ0 
+
+> k
+
++ ed. (66) 
+
+## D.3 Proof of checkpoint token–Fisher duality 
+
+Multiplying Eqs. (60) and (64) coordinatewise gives 
+
+uid0 
+
+> i
+
+= ( φ⊤ 
+
+> i
+
+δk−1)( φ⊤ 
+
+> i
+
+δ0
+
+> k
+
+)+ ( φ⊤ 
+
+> i
+
+δk−1)edi + ( φ⊤ 
+
+> i
+
+δ0
+
+> k
+
+)eui + eui edi . (67) Averaging the leading term, 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+(φ⊤ 
+
+> i
+
+δk−1)( φ⊤ 
+
+> i
+
+δ0
+
+> k
+
+) = δ⊤
+
+> k−1
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+φiφ⊤
+
+> i
+
+!
+
+δ0 
+
+> k
+
+= δ⊤
+
+> k−1
+
+Fkδ0
+
+> k
+
+. (68) Using |φ⊤ 
+
+> i
+
+δ| ≤ G∥δ∥ and Eqs. (61)–(65), the total error satisfies 
+
+1
+
+N u⊤d0 − δ⊤
+
+> k−1
+
+Fkδ0 
+
+> k
+
+≤ GL 
+
+2 ∥δk−1∥∥ δ0
+
+> k
+
+∥2
+
++ GL 
+
+2 ∥δ0
+
+> k
+
+∥∥ δk−1∥2
+
++ L2
+
+4 ∥δk−1∥2∥δ0
+
+> k
+
+∥2.
+
+(69) 22 Under Eq. (43), the first two terms are O(η3) and the last is O(η4), proving Theorem 1. Equation (69) also states the finite-step approximation explicitly in addition to the asymptotic form. 
+
+## D.4 Population and empirical Fisher 
+
+The checkpoint identity is deterministic in the realized empirical output metric Fk, while the Hessian of the full action-distribution KL is F k. This distinction is important because empirical Fisher matrices should not be identified with arbitrary objective Hessians [Kunstner et al., 2019]. If each realized ai is sampled from the anchor policy conditionally on xi, then 
+
+E[Fk | x1, . . . , x N ] = F k. (70) For fixed directions δ1, δ2, define 
+
+Zi := ( φ⊤ 
+
+> i
+
+δ1)( φ⊤ 
+
+> i
+
+δ2). (71) Let 
+
+F k,i := Ea∼πθk (·| xi)[φi,a φ⊤
+
+> i,a
+
+]. (72) Then 
+
+δ⊤ 
+
+> 1
+
+Fkδ2 = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Zi, E[Zi | xi] = δ⊤ 
+
+> 1
+
+F k,i δ2. (73) If ∥φi∥ ≤ G, then 
+
+|Zi| ≤ G2∥δ1∥∥ δ2∥. (74) Under conditional independence, Hoeffding’s inequality [Hoeffding, 1963] gives, with probability at least 1 − δ,
+
+δ⊤ 
+
+> 1
+
+(Fk − F k)δ2 ≤ G2∥δ1∥∥ δ2∥
+
+r 2 log(2 /δ )
+
+N . (75) Combining Eqs. (69) and (75) yields 
+
+1
+
+N u⊤d0 = δ⊤
+
+> k−1
+
+F kδ0 
+
+> k
+
++ O(η3) + Op
+
+ η2
+
+√N
+
+
+
+. (76) For autoregressive trajectories, the deterministic empirical identity remains unchanged; only the optional population concentration argument is applied at the trajectory level or through an appropriate martingale bound. 
+
+## D.5 Path cancellation and token-level backtracking 
+
+For arbitrary vectors u, d ∈ RN ,
+
+∥u + d∥2 = ∥u∥2 + ∥d∥2 + 2 u⊤d. (77) Rearranging proves Eq. (7). Its left-hand side is the sum of the two stepwise squared path lengths minus the squared net displacement, divided by two; it is positive when the two output motions exhibit net cancellation. For the coordinatewise decomposition, define 
+
+Align( u, d) := 1
+
+N
+
+X
+
+> i
+
+[uidi]+, Rev( u, d) := 1
+
+N
+
+X
+
+> i
+
+[−uidi]+. (78) Since every scalar x satisfies x = [ x]+ − [−x]+,
+
+1
+
+N u⊤d = Align( u, d) − Rev( u, d), Γ( u, d) = Rev( u, d) − Align( u, d). (79) Therefore 
+
+[Γ( u, d)] + = [Rev − Align] + ≤ Rev . (80) Token-level backtracking avoids cancellation between aligned and opposing coordinates. It decomposes into the two sign components 
+
+Rev( u, d) = 1
+
+N
+
+X
+
+> i:ui<0
+
+(−ui)[ di]+
+
+| {z }
+
+> B−(u,d)
+
++ 1
+
+N
+
+X
+
+> i:ui>0
+
+ui[−di]+
+
+| {z }
+
+> B+(u,d)
+
+. (81) The first component is the negative-to-positive rebound controlled by OSOL. 23 E From Residual Coefficients to Backtracking Control 
+
+This section proves the control chain used in the main text: the constructed residual remains nonpositive after coef-ficient clipping, acts as a PPO likelihood-ratio penalty, induces a correction footprint through the token kernel, and contracts the targeted backtracking component. 
+
+## E.1 Effective coefficient correction after clipping 
+
+The method constructs rOSOL  
+
+> i
+
+≤ 0 on Ck and rOSOL  
+
+> i
+
+= 0 outside it; the complete rank and scale construction is given in Appendix F.3. Set 
+
+A0 
+
+> i
+
+:= clip( Abase  
+
+> i
+
+, −Amax , A max ),
+
+eAi := clip( Abase  
+
+> i
+
++ rOSOL  
+
+> i
+
+, −Amax , A max ), ξi := eAi − A0 
+
+> i
+
+. (82) The scalar clipping map is monotone nondecreasing. Hence 
+
+ξi ≤ 0. (83) It is also 1-Lipschitz, so 
+
+|ξi| ≤ | rOSOL  
+
+> i
+
+|. (84) Final coefficient clipping therefore never reverses the penalty direction and can only attenuate its magnitude. If 
+
+rOSOL  
+
+> i
+
+= 0 , then ξi = 0 .
+
+## E.2 Proof of the history-conditioned PPO penalty 
+
+Define the token log-ratio and likelihood ratio 
+
+zi(θ) := log πθ (ai | xi)
+
+πθk (ai | xi) , ωi(θ) := ezi(θ). (85) At the anchor, zi = 0 and ωi = 1 , which lies in the interior of the PPO clipping interval. In a local neighborhood, the token losses therefore reduce to the unclipped likelihood-ratio form [Schulman et al., 2017]: 
+
+J 0 
+
+> i
+
+(zi) = −ezi A0 
+
+> i
+
+, J OSOL  
+
+> i
+
+(zi) = −ezi (A0 
+
+> i
+
++ ξi). (86) Subtracting, 
+
+J OSOL  
+
+> i
+
+(zi) − J 0 
+
+> i
+
+(zi) = −ezi ξi = ezi |ξi| ≥ 0. (87) Differentiating with respect to zi and evaluating at the anchor gives 
+
+∂(J OSOL  
+
+> i
+
+− J 0 
+
+> i
+
+)
+
+∂z i zi=0 
+
+= −ξi ≥ 0, (88) which proves Lemma 2. Gradient descent therefore adds a penalty against increasing zi on the selected support. The result is independent of the sign of A0 
+
+> i
+
+because it concerns the incremental term induced by ξi.
+
+## E.3 Base update and correction footprint 
+
+Partition the response-token score matrix into focus and non-focus blocks, Φf and Φnf . In the local unclipped policy-gradient model [Sutton et al., 1999, Schulman et al., 2017], the base mixed update is 
+
+δ0 
+
+> k
+
+= η
+
+|R| 
+
+ Φf A0f + Φnf A0nf 
+
+ . (89) Let ΦE contain the scores of eligible focus coordinates. Their first-order base footprint is 
+
+d0 = Φ⊤E δ0 
+
+> k
+
++ O(η2)= η
+
+|R| 
+
+ Φ⊤E Φf A0f + Φ⊤E Φnf A0nf 
+
+ + O(η2). (90) 24 Thus d0 already includes the complete focus- and non-focus-domain contribution to the base update; the control argument does not remove or isolate non-focus contributions. The effective OSOL correction is supported on eligible focus tokens: 
+
+δrk = η
+
+|R| ΦE ξ. (91) Its correction footprint is 
+
+h := Φ⊤E δrk = η
+
+|R| KE ξ, KE := Φ⊤E ΦE . (92) This is the standard first-order function-space motion induced by a Jacobian Gram matrix [Jacot et al., 2018]. Freezing the optimizer preconditioner at iteration k as a positive-semidefinite matrix Pk gives the local preconditioned response 
+
+h = η
+
+|R| Φ⊤E PkΦE ξ. (93) The preconditioned token kernel remains positive semidefinite. For AdamW, Pk approximates the local change in the optimizer update with its moment state frozen at iteration k; together with the unclipped PPO model at the anchor, this captures the first-order effect of the correction rather than the full clipped PPO–AdamW trajectory. 
+
+## E.4 Residual-to-output sign transfer 
+
+From Eq. (92), for i ∈ C k,
+
+hi = η
+
+|R| 
+
+(KE )ii ξi + X  
+
+> j∈C k, j ̸=i
+
+(KE )ij ξj
+
+ . (94) A sufficient local self-response condition is 
+
+(KE )ii |ξi| ≥ X  
+
+> j∈C k, j ̸=i
+
+(KE )ij ξj . (95) Since (KE )ii = ∥φi∥2 ≥ 0 and ξi ≤ 0, the diagonal term is nonpositive. Under Eq. (95), 
+
+(KE )ii ξi + X 
+
+> j̸=i
+
+(KE )ij ξj ≤ − (KE )ii |ξi| + X 
+
+> j̸=i
+
+(KE )ij ξj
+
+≤ 0,
+
+(96) which proves Lemma 3. The condition holds automatically for a diagonal token kernel and under weighted diagonal dominance on the selected coordinates. Coordinatewise nonpositivity is sufficient but not necessary. Using 
+
+[x + y]+ − [x]+ =
+
+Z 10
+
+1{x + ty > 0} y dt (97) for almost every (x, y ), the exact first-order backtracking change is 
+
+B−(u, d0 + h) − B −(u, d0)= 1
+
+N
+
+Z 10
+
+X
+
+> i∈C k
+
+(−ui)1{d0 
+
+> i
+
++ th i > 0}hi dt. (98) Hence the weaker aggregate condition 
+
+X
+
+> i∈C k
+
+(−ui)1{d0 
+
+> i
+
++ th i > 0}hi ≤ 0, t ∈ [0 , 1] , (99) is sufficient for contraction even if a small number of individual hi are positive because of cross-token coupling. 25 E.5 Proof of first-order backtracking contraction 
+
+For i ∈ C k, ui < 0. Under hi ≤ 0, monotonicity of the positive-part function gives 
+
+[d0 
+
+> i
+
++ hi]+ ≤ [d0 
+
+> i
+
+]+. (100) Multiplying by −ui > 0, summing, and dividing by N yields 
+
+B−(u, d0 + h) ≤ B −(u, d0). (101) The nonnegative difference is exactly the control gain in Eq. (12). For the selected-coordinate signed interaction, 
+
+1
+
+N
+
+X
+
+> i∈C k
+
+ui(d0 
+
+> i
+
++ hi) − 1
+
+N
+
+X
+
+> i∈C k
+
+uid0
+
+> i
+
+= 1
+
+N
+
+X
+
+> i∈C k
+
+uihi ≥ 0,
+
+(102) because both factors are nonpositive. Strict inequality holds whenever ui < 0 and hi < 0 on at least one selected coordinate. 
+
+## E.6 Finite-step control gain 
+
+The local proof uses first-order footprints. The corrected footprint is 
+
+dOSOL := ℓk(θk + δ0 
+
+> k
+
++ δrk) − ℓk(θk). (103) Taylor expansion around θk gives 
+
+dOSOL = d0 + h + er , ∥er ∥∞ = O(η2). (104) Since x 7 → [x]+ is 1-Lipschitz, 
+
+B−(u, dOSOL ) − B −(u, d0 + h)
+
+≤ 1
+
+N
+
+X
+
+> i∈C k
+
+(−ui)|eri | ≤ ∥u∥1
+
+N ∥er ∥∞ = O(η3), (105) because ∥u∥1/N = O(η). Therefore 
+
+B−(u, dOSOL ) ≤ B −(u, d0 + h) + O(η3)= B−(u, d0) − ∆ctrl  
+
+> k
+
++ O(η3), (106) which proves Eq. (13). This form retains the controller’s first-order reduction explicitly and separates it from the cubic deviation incurred by observing a finite checkpoint step. 
+
+# F Design Principles and Code-Faithful Construction 
+
+The preceding sections establish how a nonpositive effective coefficient becomes a backtracking-reducing output cor-rection. This section derives the three design choices used to construct that coefficient: penalty-only support, rank-based allocation, and batchwise scale normalization. 
+
+## F.1 Why OSOL uses the penalty-only support 
+
+The full tokenwise backtracking statistic is symmetric in the sign patterns ui < 0, d i > 0 and ui > 0, d i < 0.A symmetric controller would apply a nonpositive correction after negative drift and a nonnegative correction after positive drift. OSOL restricts the correction to the negative-drift candidate set because a nonpositive correction has a 26 monotone backtracking-reduction property there and does not introduce a positive reward based only on checkpoint history. For an arbitrary nonpositive output-space correction vi ≤ 0, define 
+
+bi(vi) := [ −ui(di + vi)] +. (107) If ui < 0,
+
+bi(vi) = ( −ui)[ di + vi]+ ≤ (−ui)[ di]+ = bi(0) . (108) If ui > 0,
+
+bi(vi) = ui[−di − vi]+ ≥ ui[−di]+ = bi(0) . (109) Thus a nonpositive correction is backtracking-reducing on {ui < 0} but can increase backtracking on {ui > 0}.For any v ⪯ 0, define its negative-drift projection 
+
+v− 
+
+> i
+
+:= 
+
+(
+
+vi, ui < 0,
+
+0, ui ≥ 0. (110) Applying Eqs. (108)–(109) coordinatewise gives 
+
+Rev( u, d + v−) ≤ Rev( u, d + v). (111) This identifies {ui < 0} as the support on which a nonpositive correction cannot increase backtracking; Lemma 3 connects this support to the implemented coefficient correction. Suppressing the complementary pattern ui > 0, d i < 0 would require a positive coefficient correction ξ+ 
+
+> i
+
+> 0. At the PPO anchor, 
+
+J + 
+
+> i
+
+− J 0 
+
+> i
+
+= −ezi ξ+ 
+
+> i
+
+, ∂(J + 
+
+> i
+
+− J 0 
+
+> i
+
+)
+
+∂z i zi=0 
+
+= −ξ+ 
+
+> i
+
+< 0, (112) so gradient descent treats the historical signal as an additional reward-like incentive. This changes the role of history in four ways. 
+
+Historical-drift self-reinforcement. A preceding positive movement would itself trigger an additional positive co-efficient, making the same direction more likely to continue even when the new rollout provides no confirming reward evidence. A transient checkpoint displacement can thereby become a persistent optimization preference. 
+
+Positive feedback on sampling noise. The measured drift contains finite-rollout, optimizer, and checkpoint vari-ability. A positive residual maps a noisy positive realization into another positive update, creating a feedback loop that amplifies rather than damps the historical fluctuation. 
+
+Persistent elevation of incorrect tokens. A token probability can rise because of incidental generalization, cross-token coupling, or an update that benefits another domain. Historical sign alone does not certify correctness; rewarding every previous increase can repeatedly elevate a token whose current reward evidence is weak or adverse. 
+
+Conflict with the current GRPO advantage. When Abase  
+
+> i
+
+< 0, a positive history residual cancels part of the current reward-grounded negative coefficient and can even reverse its sign. The update would then prefer historical motion over the latest within-group reward comparison. This penalty-only design avoids introducing a new positive incentive solely from checkpoint history. It can atten-uate a likelihood increase, but it cannot create a positive incentive absent from the current GRPO coefficient. This asymmetry is therefore a control design rather than an omission: OSOL uses the candidate set with a monotone backtracking-reduction guarantee while preserving the current reward as the sole source of positive reinforcement. 27 F.2 Rank-optimal local allocation 
+
+Write a nonpositive output correction as vi = −ei with ei ≥ 0. For ui < 0, the exact reduction in scalar backtracking is [−uidi]+ − [−ui(di − ei)] + = ( −ui) ([ di]+ − [di − ei]+)= ( −ui) min {ei, [di]+}. (113) When di > 0 and 0 ≤ ei ≤ di, the reduction is linear: 
+
+[−uidi]+ − [−ui(di − ei)] + = ( −ui)ei, (114) so the marginal reduction per unit penalty is −ui.
+
+Proposition 2 (Rank-optimal local allocation) . Consider active rebound coordinates with ui < 0 and di > 0. Let 
+
+{ei} be a fixed multiset of unsaturated penalty levels satisfying 0 ≤ ei ≤ min j dj , so every level is feasible on every active coordinate. The total local reduction 
+
+∆B− = 1
+
+N
+
+X
+
+> i
+
+(−ui)ei (115) 
+
+is maximized by assigning larger ei to more negative ui.
+
+Proof. Let −ui ≥ − uj but ei < e j . Swapping the two penalty levels changes the objective by 
+
+1
+
+N [( −ui)ej + ( −uj )ei − (−ui)ei − (−uj )ej ] = 1
+
+N
+
+ (−ui) − (−uj )(ej − ei) ≥ 0. (116) Repeatedly eliminating such inversions produces a co-monotone assignment without decreasing the reduction. Hence stronger penalties should be assigned to more negative preceding drift. □
+
+Proposition 2 supplies the allocation principle behind Eq. (16). The quantile map implements the optimal ordering without using raw drift magnitude, is robust to isolated extremes, and separates relative allocation from the common scale chosen by τ . Under the diagonal self-response approximation hi ≃ αiξi with positive, locally comparable αi,the same ordering transfers from coefficient penalties to the correction footprint. 
+
+## F.3 Code-faithful residual construction 
+
+The base coefficient is 
+
+Abase  
+
+> i
+
+= ciAg 
+
+> i
+
+, ci = wsrc( i)
+
+Zk
+
+, (117) where Zk is given by Eq. (14). The history residual is not multiplied by ci again. The eligible set Ek contains response-token coordinates from the current focus domain whose trajectory-level GRPO advantage is nonzero, and 
+
+Ck = {i ∈ E k : ui < 0}. (118) For nk := |C k| > 0, sort candidate drifts in ascending order and assign 
+
+pi = rank 0(ui) + 1 /2
+
+nk
+
+. (119) The clipped affine profile is 
+
+¯ri = rmin + clip( pi, p lo , p hi ) − plo 
+
+phi − plo 
+
+(rmax − rmin ), (120) with ¯ri = 0 off Ck. Since ascending rank is monotone, 
+
+ui ≤ uj < 0 =⇒ ¯ri ≤ ¯rj ≤ 0. (121) For (plo , p hi , r min , r max ) = (0 .1, 1, −1, 0) ,
+
+¯ri = −1 + clip( pi, 0.1, 1) − 0.10.9 . (122) 28 The implementation retains an explicit global gate gk ≥ 0 and focus mask λi ∈ [0 , 1] :
+
+qi = gkλi ¯ri. (123) In the standard configuration, gk = 1 and λi = 1 on the eligible focus coordinates, so Eq. (123) reduces to the conceptual profile in Eq. (17). The explicit terms are retained in code to support scheduling and masking without changing the core method. 
+
+Policy objective. After forming eAi in Eq. (20), define 
+
+ωi(θ) := πθ (ai | xi)
+
+πθold (ai | xi) . (124) The controller uses the unchanged clipped surrogate [Schulman et al., 2017]: 
+
+LOSOL (θ) = −E
+
+"
+
+1
+
+|R| 
+
+X
+
+> i∈R
+
+min 
+
+
+
+ωi(θ) eAi, clip( ωi(θ), 1 − ϵc, 1 + ϵc) eAi
+
+#
+
+. (125) No auxiliary objective is introduced; OSOL changes only the coefficient supplied to the existing policy update. 
+
+## F.4 Adaptive scale identity and degenerate cases 
+
+Let 
+
+κk = τ σA
+
+σq
+
+, σA := std Ek (Abase ), σq := std Ek (q). (126) When σA or σq is nonfinite, or σq falls below the implementation threshold, the method sets κk = 0 . Otherwise, 
+
+rOSOL  
+
+> i
+
+= κkqi = κkgkλi ¯ri ≤ 0, (127) and homogeneity of standard deviation gives 
+
+std Ek (rOSOL ) = κkstd Ek (q) = τ std Ek (Abase ). (128) Thus std Ek (rOSOL )std Ek (Abase ) = τ. (129) The identity is a batchwise scale normalization: τ fixes residual dispersion relative to base-advantage dispersion. Because noncandidate zeros remain in the eligible-set statistic, a sparse candidate set concentrates that dispersion on fewer coordinates, whereas a dense set distributes it more broadly. If Ck = ∅ or the scale statistics are degenerate, 
+
+κk = 0 and OSOL reduces exactly to the base mixed-domain objective. 
+
+## F.5 Main-Training Reproducibility Details 
+
+Table 4 summarizes the training, generation, and OSOL-specific settings used in the main experiments. Let D denote the four training domains. At trainer step k, the focus domain is sampled uniformly from the domains other than the preceding focus, 
+
+fk ∼ Unif( D \ { fk−1}) . (130) The no-repeat constraint prevents one domain from leading two consecutive updates, while random selection avoids imposing a fixed domain order. All four domains remain in the mixed-domain batch; the sampled focus domain determines the asymmetric base weight and the response tokens eligible for history correction. Each trainer step contains 128 prompts and eight sampled responses per prompt, yielding 1,024 rollout trajectories before optimization. Unless otherwise specified, the optimization and rollout settings follow the standard GRPO configuration in verl v0.5.0. The preceding checkpoint is used only to rescore the same realized focus-domain token coordinates sampled by the current policy. All checkpoint-derived quantities are treated as fixed coefficients during optimization, and gradients are not propagated through θk−1. The resulting history residual is added to the task-weighted GRPO coefficient before applying the standard clipped policy objective. 29 Table 4: Main-training and generation settings. The prompt batch size is counted before rollout expansion. 
+
+Setting Configuration Model backbones Qwen3-30B-A3B and Qwen3-8B-Base Training domains Mathematics, code generation, instruction following, and open-ended Chat Training examples 7.5K examples per domain Focus-domain schedule Uniform random sampling from D \ { fk−1}; consecutive steps cannot use the same focus domain Prompt batch size 128 prompts per trainer step Rollouts per prompt 8Rollout trajectories per step 1,024 Training duration 15 epochs Optimizer AdamW, β1 = 0 .9, β2 = 0 .999 , weight decay 0.01 
+
+Learning rate 1 × 10 −6 with a constant schedule and no warmup PPO epochs 1 per rollout batch PPO clip ratio 0.2 (symmetric clipping to [0 .8, 1.2] )Sampling temperature 1.0 Top-p / Top-k 1.0 / −1 (no nucleus or top-k truncation) Maximum response length 8,192 tokens Chat reward model Skywork-Reward-Llama-3.1-8B-v0.2, following the Chat reward config-uration used by MGS History checkpoint The frozen preceding checkpoint θk−1
+
+Eligible history tokens Focus-domain response tokens with nonzero trajectory-level GRPO ad-vantage Negative-drift candidates Tokens satisfying ui < 0
+
+Rank-profile parameters (plo , p hi , r min , r max ) = (0 .1, 1, −1, 0) 
+
+Residual scale τ = 0 .03 
+
+Final coefficient range [−3, 3] 
+
+30
