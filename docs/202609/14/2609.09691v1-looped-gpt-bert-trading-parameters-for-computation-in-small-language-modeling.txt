@@ -1,0 +1,313 @@
+Title: Looped GPT-BERT: Trading Parameters for Computation in Small Language Modeling
+
+URL Source: https://arxiv.org/pdf/2609.09691v1
+
+Published Time: Thu, 10 Sep 2026 00:32:22 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Looped GPT-BERT: Trading Parameters for Computation in Small Language Modeling 
+
+Tingshuo Fan Hongtao Mu Tianyu Zhou Hansen Liu Tao Ji #
+
+College of Foreign Languages and Literature, Fudan University  
+
+> tsfan24@m.fudan.edu.cn taoji@fudan.edu.cn
+
+Abstract 
+
+When training data are limited, increasing pa-rameter count is not the only way to improve language-model performance. A small param-eter set, when repeatedly applied, can also deliver comparable performance. We study Looped GPT-BERT in the BabyLM 2026 Strict-small setting, combining GPT-BERT’s masked next-token and causal language-modeling ob-jectives with depth-wise parameter sharing. We train on a preprocessed 7.48M-word En-glish corpus and compare objective ratios, non-looped and looped architectures, and loop counts. Our final 4 × 12 model uses four phys-ical layers for twelve recurrent traversals and contains 12.18M parameters. The BabyLM 2026 leaderboard reports an Overall Average of 35.42 and an NLP Average of 48.48. Com-pared with public BabyLM 10M Strict-small GPT-2 and GPT-BERT baselines, it achieves comparable performance on selected linguis-tic and downstream metrics, including BLiMP and GLUE, with fewer parameters. The loop ablations show that additional recurrent com-putation can improve training and preserve strong performance on selected linguistic tasks, whereas poorer performance on other tasks may reveal an inherent limitation of the looped de-sign: using only a few physical layers restricts the model’s representational space. 
+
+1 Introduction 
+
+Language-model performance has commonly im-proved through jointly scaling model size, data, and training computation. Scaling-law studies describe predictable power-law relations between loss, pa-rameter count, data, and compute (Kaplan et al., 2020), while compute-optimal analyses emphasize that parameter and token budgets should be allo-cated jointly (Hoffmann et al., 2022). These results largely concern much larger autoregressive models, where model capacity and per-example computa-tion grow together. Under constrained data and 
+
+> #Corresponding author.
+
+parameter budgets, however, they need not: re-peatedly applying the same parameters can create a deeper computational path without proportion-ally increasing the number of learned weights. We therefore ask whether recurrent computation in-duced by shared parameters can compensate for reduced physical depth and parameter capacity in low-resource language-model pretraining. The BabyLM Challenge provides a controlled setting for this question by restricting pretrain-ing text to a developmentally plausible scale and evaluating linguistic, downstream, and human-like behavior (Warstadt et al., 2023). We work in the BabyLM 2026 Strict-small track on a cleaned 7.48M-word English corpus. Our starting point is GPT-BERT (Charpentier and Samuel, 2024), which trains masked next-token prediction (MNTP) and causal language modeling (CLM) in one Trans-former parameter stack. It consequently supports both bidirectional masked prediction and autore-gressive scoring or generation. This hybrid objec-tive gives a further dimension to study: when the backbone is looped, does the relative amount of masked and causal supervision change the capabil-ities the architecture acquires? We introduce depth-wise recurrent parameter sharing on top of GPT-BERT. Universal Transform-ers repeatedly share transformations along depth (Dehghani et al., 2019), and ALBERT shows that cross-layer sharing can substantially reduce en-coder parameters (Lan et al., 2020). Most directly, Looped Transformers inject a fixed input and the prior loop state into a shared backbone, increas-ing effective computational depth through itera-tion (Yang et al., 2024). Their strongest evidence, however, comes from in-context algorithm-learning tasks such as linear functions, decision trees, and neural-network regression. Natural-language pre-training must simultaneously acquire lexical knowl-edge, syntactic regularities, world knowledge, and discourse state; whether those computations can arXiv:2609.09691v1 [cs.CL] 9 Sep 2026 be supported by repeated shared layers remains an open empirical question. We address three questions: how the BERT:GPT training ratio changes the training objective and downstream abilities; whether effective depth formed by repeatedly applying a small number of physical layers can retain language ability with substantially fewer parameters; and whether train-ing and downstream tasks continue to benefit as the number of loops increases. We summarize our contributions as follows: • We introduce Looped GPT-BERT, combining GPT-BERT’s hybrid MNTP/CLM objective with depth-wise recurrent parameter sharing. • We study how the BERT:GPT objective ratio af-fects training and downstream behavior in the looped architecture. • We compare a 12-layer non-looped model with four physical layers applied 1/3/6/12 times, show-ing how recurrent computation closes the gap from fewer learned layers and where additional loops yield diminishing returns. • We evaluate the final model in the BabyLM Chal-lenge, where its 12.18M parameters achieve com-parable performance to public Strict-small base-lines on linguistic and downstream tasks. 
+
+2 Related Work 
+
+Data-Efficient LM Pretraining BabyLM shifts attention from performance under web-scale train-ing to learning efficiency under a controlled data budget. The first challenge showed that architec-ture, pretraining objective, preprocessing, and cur-riculum can all substantially affect small-model performance, with no single approach dominating every downstream task (Warstadt et al., 2023; Hu et al., 2024). Subsequent work further found that the effect of data composition depends on model scale: a genre mixture suitable for one model size need not be optimal for another (Yam and Paek, 2024). Other BabyLM studies explore variation sets, child-inspired data and vocabulary choices, explicit linguistic information, and self-distillation as complementary routes to sample-efficient pre-training (Haga et al., 2024; Ghanizadeh and Dousti, 2024; Edman et al., 2024; Nair et al., 2024). These approaches primarily improve sample efficiency through data selection, ordering, or objectives. Complementarily, we study parameter efficiency: keeping the training corpus and model width fixed, we replace part of the independently parameterized depth with repeated computation through shared physical layers. 
+
+Hybrid Causal and Masked Modeling CLM predicts the next token from left context, whereas conventional MLM predicts selected tokens at their own positions from bidirectional context. The two objectives therefore assign different meanings to the same output position in a decoder-style model. GPT-BERT resolves this mismatch with MNTP (Charpentier and Samuel, 2024): when token xk+1 
+
+is masked, supervision is shifted left so that the hid-den state at position k predicts the original xk+1 .Consequently, causal and masked examples share a single next-token vocabulary projection and loss in-terface. GPT-mode rows retain their original tokens and use a lower-triangular attention mask; MNTP-mode rows corrupt selected input tokens, permit bidirectional attention, and compute loss only at the corresponding shifted next-token positions. Each training row is assigned one mode, rather than re-ceiving both losses. AntLM similarly combines causal and masked language-modeling objectives in a BabyLM setting, alternating between them during training (Yu et al., 2024). 
+
+Recurrent Depth and Parameter Sharing Uni-versal Transformers update representations recur-rently along depth while retaining parallel com-putation over sequence positions (Dehghani et al., 2019); ALBERT uses cross-layer parameter shar-ing primarily for parameter efficiency and shows that the sharing strategy affects downstream be-havior (Lan et al., 2020). Looped Transformers use the recurrence zt+1 = f (x + zt), where x is a fixed input embedding, zt is the loop state, and 
+
+f is a shared Transformer backbone (Yang et al., 2024). This makes effective computational depth grow with loop count while the parameter count is governed mainly by the number of physical layers. Kohli et al. (2026) provide a more direct natural-language reference: recurrent-depth Transformers can improve systematic generalization and depth extrapolation in implicit multi-hop reasoning, but excessive loops can also reduce prediction qual-ity through overthinking. Neither line of work establishes that shared loops are uniformly suit-able for lexical, syntactic, world-knowledge, and discourse-state learning. We therefore compare equal-application and equal-parameter configura-tions across linguistic and state-tracking tasks. Cleaning operation Before After Style and grammar normalization                 
+
+> Where are you at? Where are you?
+> Disfluency removal a pound, or a hundred pounds today, is not the same A hundred pounds today is not worth the same amount later.
+> Short-content filtering Right. Removed when it lacks independent semantic content. Case normalization LET’S GIVE IT UP FOR DANNY TANNER Let’s give it up for Danny Tanner.
+> Structural-noise removal === Bullet the Blue Sky === Header removed; article text retained. Stage-direction removal I’ll be right back. [leaves room.] I’ll be right back.
+> Speaker normalization *MOT: more what? *CHI: more tapioca. A: More what? B: More tapioca.
+> Consecutive-turn merging B: Yeah. B: I’m in Texas. B: Yeah, I’m in Texas.
+> Duplicate removal Repeated or near-identical sentences One normalized instance.
+
+Table 1: Representative corpus-cleaning operations. Examples are shortened for presentation. 
+
+3 Method 
+
+3.1 Corpus Preparation and Tokenization 
+
+We construct our training corpus by selecting and cleaning six source corpora: BNC Spoken, CHILDES, Project Gutenberg, OpenSubtitles, Sim-ple English Wikipedia, and Switchboard. The re-sulting new_data1 corpus is produced by our rule-based normalization and filtering pipeline, which removes redundancy, short or low-quality content, case and structural noise, and normal-izes dialogue formatting. The preprocessing code and source files are available in our preprocess-ing repository. Table 1 summarizes the operations and representative input–output examples. After cleaning, the six selected corpora yield 7,482,189 whitespace-delimited words. We use this complete post-cleaning corpus directly for pretraining rather than adding or padding data to reach the 10M-word upper bound. Their source-wise counts are reported in Table 2 .We use two byte-pair encoding (BPE) tokenizers. The official 16k GPT-BERT tokenizer is used only for early non-looped ratio experiments, while the 8k tokenizer trained on the new_data1 corpus is used for the main and loop experiments. BPE provides a subword representation that can handle words beyond a fixed vocabulary (Sennrich et al., 2016). We choose the 8k vocabulary as a parameter-allocation trade-off for this small-data setting: with hidden size 384, its tied embedding table contains 
+
+8,192 × 384 ≈ 3.15 M parameters. In our corpus, reducing the vocabulary from 16k to 8k increases the measured fertility from 1.4381 to 1.4787 tokens per whitespace-delimited word, a 2.82% increase. This indicates a modest change in word-level con-text coverage for the fixed 128-token input, while avoiding a larger embedding allocation.         
+
+> Source Words BNC Spoken 619,847 CHILDES 1,779,027 Gutenberg 2,502,709 OpenSubtitles 1,174,391 Simple Wikipedia 1,386,065 Switchboard 20,150 Total 7,482,189
+
+Table 2: Word counts after preprocessing. 
+
+3.2 Hybrid GPT-BERT Objective 
+
+Let x = ( x1, . . . , x T ) be a token sequence and 
+
+θ the shared model parameters. For GPT-mode rows, a causal attention mask is used and every non-padding next token is supervised: 
+
+LGPT = − 
+
+> T−1
+
+X
+
+> t=1
+
+log pθ(xt+1 | x≤t). (1) For BERT-mode rows, predictable positions are sampled with a masking probability that decreases linearly from 0.3 to 0.15. Of the selected tokens, 80% are replaced by the mask token, 10% by a ran-dom token, and 10% are left unchanged. Bidirec-tional attention is permitted. The target is shifted to the preceding hidden-state position so that it remains aligned with the decoder-style next-token head. If ˜x denotes the corrupted input, the objective is 
+
+LBERT = − X
+
+> t∈M
+
+log pθ(xt | ˜x\t). (2) Only shifted positions corresponding to selected masks contribute to this loss; all other labels are set to the ignore index. Thus, unmasked BERT positions never enter the loss. A batch-level ratio of rB : rG assigns complete rows to the two modes, and the optimized objective averages valid super-vised tokens with a z-loss regularizer weighted by 10 −4. Our final setting uses 1:3 , so one quarter of rows use MNTP and three quarters use CLM. 
+
+3.3 Looped Transformer Backbone 
+
+The non-looped baseline contains twelve inde-pendent Transformer layers. The looped back-bone instead contains four independently param-eterized physical layers, each with attention and feed-forward sublayers. Each loop adds the static token representation x to the preceding loop state 
+
+zt and applies the same four-layer stack Fθ:
+
+z0 = 0 ,zt+1 = Fθ(x + zt), t = 0 , . . . , L − 1. (3) Thus, zt+1 is the final representation produced by the current traversal and is simply carried into the next pass; it is not an additional network operation. Within physical layer i, attention and feed-forward transformations are applied sequentially: 
+
+u(i) 
+
+> t
+
+= DWA i,A 
+
+
+
+h(i) 
+
+> t
+
++ Attn i(h(i) 
+
+> t
+
+)
+
+
+
+,h(i+1)  
+
+> t
+
+= DWA i,F 
+
+
+
+u(i) 
+
+> t
+
++ FFN i(u(i) 
+
+> t
+
+)
+
+
+
+.
+
+(4) GPT-BERT’s dynamic weighted accumulation (DWA) is a learnable short-range residual mixer, not an additional recurrent state. We restrict DWA to representation fusion within each physical layer and reinitialize it on every loop; information across loops is carried exclusively by zt. A 4 × L model therefore has four sets of Transformer parameters but performs 4L layer applications. The 4 × 3,
+
+4 × 6, and 4 × 12 variants perform 12, 24, and 48 layer applications, respectively, while keeping the same parameter count. This “effective depth” counts layer applications only: repeatedly applying shared parameters is not equivalent to a non-shared Transformer with the same number of layers. 
+
+3.4 Training Configuration Table 3 lists the main configuration. Beyond the structural hyperparameters shown there, optimiza-tion uses LAMB (You et al., 2020), a peak learning rate of 0.0141, a minimum learning rate of 0.00141, and cosine decay for 2,600 steps followed by a con-stant minimum rate. We select the peak learning rate and decay horizon through the controlled stud-ies in Section 5. All pretraining and fine-tuning runs use random seed 42.                   
+
+> Hyperparameter Value Physical layers 4Loop iterations 12 Hidden size 384 FFN size 1,280 Attention heads 6Vocabulary 8,192 Maximum sequence length 128 Batch size per GPU 32 Number of GPUs 8Global batch (tokens) 32,768 Epochs 10 Optimizer LAMB Peak learning rate 0.0141 Decay steps 2,600 Minimum learning rate 0.00141 Gradient clipping 2.0 Parameters 12.18M
+
+Table 3: Main pretraining configuration. 
+
+4 Experiments 
+
+4.1 Evaluation Protocol 
+
+We follow the BabyLM 2026 Strict-small eval-uation pipeline. The final checkpoint receives the full evaluation: the zero-shot suite includes BLiMP and BLiMP Supplement minimal-pair syn-tax judgments (Warstadt et al., 2020), EWoK world knowledge (Ivanova et al., 2024), Entity Tracking, COMPS conceptual properties, Glob-alPIQA commonsense reasoning, Reading, and Age of Acquisition (AoA). Fine-tuning covers BoolQ, MNLI, MRPC, MultiRC, QQP, RTE, and WSC, the GLUE/SuperGLUE-style natural-language-understanding subset used by the chal-lenge (Wang et al., 2019). We report the leader-board aggregates, where NLP Average pools NLP tasks and Human-like Average includes Reading, AoA, and related measures. We use the official causal backend for all reported GPT-BERT results. Beyond the final main revision, we retain in-termediate checkpoints at one-million-word inter-vals from chck_1M through chck_10M , and at ten-million-word intervals from chck_20M through 
+
+chck_70M . We run the official fast evaluation on each of these checkpoints. The ten-epoch training run contains approximately 74.8M word presenta-tions, so chck_70M is the last complete ten-million-word milestone. The final model and all interme-diate revisions are released in one public Hugging Face repository. 
+
+4.2 BabyLM 2026 Leaderboard Results Table 4 reports the final 4 × 12 Looped GPT-BERT alongside two publicly released BabyLM Strict-small references: the official GPT-2 baseline and Model Params Context Overall NLP BLiMP Sup. EWoK Entity COMPS GPIQA GLUE Official GPT-2 baseline 124M 512 37.38 48.99 65.23 57.25 50.63 19.10 51.81 35.09 63.80 Official GPT-BERT causal-focus 31M 128 →512 28.46 35.64 71.66 63.21 49.49 – – – 65.13 Looped GPT-BERT (ours) 12.18M 128 35.42 48.48 71.19 55.06 49.10 15.78 51.01 34.67 62.55 
+
+Table 4: BabyLM 2026 Strict-small leaderboard comparison on aggregate and selected task-level metrics. “Context” denotes the maximum training sequence length, “Sup.” denotes BLiMP Supplement, “Entity” denotes Entity Tracking, “GPIQA” denotes GlobalPIQA, and “GLUE” denotes the official (Super)GLUE aggregate. Dashes indicate results not reported for the corresponding public entry. Aggregate scores for entries with unreported tasks are not directly comparable. the GPT-BERT causal-focus baseline. The leader-board snapshot was accessed on July 21, 2026. 1
+
+With 12.18M parameters, the final model is sub-stantially smaller than both public references. It reaches 71.19 on BLiMP, compared with 65.23 for GPT-2 and 71.66 for GPT-BERT causal-focus, while its GLUE aggregate is 62.55, compared with 63.80 and 65.13. This pattern illustrates the trade-off studied here: at the cost of additional compu-tation, repeated application of shared layers can retain strong performance on selected tasks with a smaller independently parameterized model, with gains varying across tasks. 
+
+4.3 Effect of the BERT:GPT Ratio 
+
+We examine the BERT:GPT ratio under two tok-enizers. The official 16k tokenizer is used for early non-looped ratio exploration, whereas the 8k tok-enizer trained on the new_data1 corpus is used for all main and loop experiments. The 15:1 config-uration is BERT-heavy, 1:1 is balanced, and 1:3 is GPT-heavy. The two settings test whether the ratio trend is consistent; they are not used to compare tokenizer quality. Tables 5 and 6 report the prin-cipal 8k comparison, including training endpoints and available zero-shot results.          
+
+> BERT :G PT Params Loss Acc. 1:1 29.9M 3.9925 30.03 1:3 29.9M 3.3625 36.47
+
+Table 5: Non-looped training results across objec-tive ratios with the custom 8k tokenizer. For context, Table 7 reports the corresponding early experiments with the official 16k tokenizer. Increasing the proportion of GPT rows lowers the final mixed training loss in both tokenizer settings, with 1:3 giving the strongest endpoint.             
+
+> 1https://huggingface.co/spaces/ BabyLM-community/BabyLM-Leaderboard-2026
+> BERT :G PT BLiMP Sup. COMPS Entity 1:1 63.77 55.06 50.87 38.66
+> 1:3 70.54 57.19 51.41 22.87
+
+Table 6: Non-looped zero-shot results across ob-jective ratios with the custom 8k tokenizer.         
+
+> BERT :G PT Final loss Token accuracy 15:1 4.0039 33.42 1:1 3.9711 31.50 1:3 3.7925 32.37
+
+Table 7: Non-looped training results across objec-tive ratios with the official 16k tokenizer. The 1:3 ratio improves BLiMP, BLiMP Supple-ment, and COMPS under the 8k tokenizer, but re-duces Entity Tracking from 38.66 to 22.87. This pattern suggests that objective mixing changes the distribution of learned capabilities rather than merely the aggregate loss. More CLM supervision repeatedly trains left-to-right next-token prediction and is therefore closely aligned with sequential gen-eration, local dependencies, and causal syntactic scoring. More MNTP supervision requires recon-structing a target from both sides of its context and may better support integrating multiple positions and relations, which is useful for tracking entities and their states. We therefore use 1:3 as the main configuration for subsequent loop experiments tar-geting generative and syntactic ability. 
+
+4.4 Effect of Looped Depth 
+
+We first examine training loss and token accuracy under the 1:3 objective. Figure 1 plots how these two measures change over training for the 12-layer non-looped model and for four-layer models with 
+
+1, 3, 6, or 12 applications per forward pass. The 
+
+4 × 3 and 12-layer non-looped models both execute twelve layer applications per forward pass, while BERT :G PT = 1:3 Metric Non-loop 4 × 1 4 × 3 4 × 6 4 × 12                                                                           
+
+> BLiMP 70.54 65.08 71.21 70.49 71.19 BLiMP Sup. 57.19 55.90 55.73 55.37 55.06 COMPS 51.41 51.21 51.40 51.69 51.01 Entity Tracking 22.87 17.38 16.47 28.66 15.78 Eye Tracking 8.61 8.62 7.85 8.62 8.25 Self-paced Reading 4.03 3.88 3.68 4.16 4.24
+> BERT :G PT = 1:1 Metric Non-loop 4×14×34×64×12
+> BLiMP 63.77 62.28 64.45 69.38 64.21 BLiMP Sup. 55.06 57.03 54.96 56.11 56.07 COMPS 50.87 50.44 50.95 51.42 50.03 Entity Tracking 38.66 17.52 16.60 13.10 17.15 Eye Tracking 7.86 7.64 7.88 7.62 7.55 Self-paced Reading 3.80 3.84 3.57 3.56 3.63
+
+Table 8: Zero-shot comparison across objective ratios and loop counts. the looped model uses only four independently pa-rameterized layers. The 4 × 1 control is visibly less stable at the beginning of training: it maintains a higher loss and lower token accuracy than the models with repeated layer applications. Increasing the loop count lowers the training loss and generally raises token accuracy, bringing the looped models closer to the 12-layer non-looped trajectory. The largest improvement occurs when moving from 4 × 1 to 
+
+4 × 3; the changes from 4 × 3 to 4 × 6 and from 
+
+4 × 6 to 4 × 12 are smaller. Thus, repeated compu-tation recovers much of the training behavior of the non-looped model, while additional loops provide diminishing returns. We next turn to the zero-shot task results in Ta-ble 8 . The table compares the 12-layer non-looped model with four physical layers applied 1, 3, 6, or 
+
+12 times, using BERT:GPT ratios of 1:3 in the up-per block and 1:1 in the lower block. Under 1:3 ,increasing the loop count from 4 × 1 to 4 × 3 sub-stantially improves BLiMP, from 65.08 to 71.21, slightly exceeding the non-looped score of 70.54. Increasing the depth beyond 4×3 does not produce a consistent additional gain: BLiMP is 70.49 for 
+
+4 × 6 and 71.19 for 4 × 12 . Under 1:1 , 4 × 6 gives the highest BLiMP score (69.38), compared with 63.77 for the non-looped model and 62.28–64.45 for the other looped settings. Overall, the looped models preserve or improve several syntactic and reading-related scores despite using fewer indepen-dently parameterized layers, while the effect of recurrent depth varies across tasks. Unlike the syntactic measures above, Entity Tracking is more sensitive to parameter sharing. Overall, the looped variants are weaker than the corresponding non-looped model on this task, with one exception: under 1:3 , 4 × 6 reaches 28.66, compared with 22.87 for the non-looped model. Even in this setting, the score falls to 15.78 with 
+
+4 × 12 , so the additional computation from six to twelve applications does not preserve the 4 × 6 im-provement. Under 1:1 , all looped variants remain below the non-looped score of 38.66, with scores between 13.10 and 17.52. One possible explanation is that entity tracking requires distinguishing and updating multiple entities, their states, and state changes (Kim and Schuster, 2023). Reusing four attention/FFN parameter sets rather than twelve independent sets may leave less representational space for the layer-specific transformations needed to maintain multiple entities and relations. This contrast suggests that recurrent depth can compen-sate for reduced parameterization on some linguis-tic tasks, but cannot uniformly replace the represen-tational flexibility of independently parameterized layers. Considering both downstream performance and inference cost, 4 × 6 is a practical intermedi-ate configuration, but the table also shows that the preferred loop depth depends on the objective ratio and task. 
+
+4.5 Inference Cost 
+
+We measure inference cost for the 12-layer non-looped model and the 4×3, 4×6, and 4×12 looped models with the same batch size of 32, sequence length of 128, 20 warmup steps, and 100 timed forward passes on one RTX 3090. As shown in Ta-ble 9 , 4 × 3 is better than the 12-layer non-looped model on every measured systems metric: it has lower latency, higher token throughput, and lower peak memory use. Increasing the loop count from 
+
+4×3 to 4×6 and 4×12 roughly doubles the latency at each step, while throughput decreases and mem-ory use increases. Considering both downstream performance and inference speed, 4 × 6 provides a practical compromise: it is slower than 4 × 3 but performs better on some downstream tasks, while remaining substantially faster than 4 × 12 .
+
+5 Optimization Ablations 
+
+5.1 Selecting the Peak Learning Rate 
+
+We first select a peak learning rate that lowers the training objective quickly without producing clear instability. Before full training, we run four-epoch non-looped sweeps at 0.0075, 0.01, 0.0141, and 0.02 with all other settings fixed. As Ta-1 2 3 4 5 6 7 8 9 10 
+
+> Epoch
+> 3.50 3.75 4.00 4.25
+> Training loss
+
+Loss          
+
+> 12345678910
+> Epoch
+> 25.0 27.5 30.0 32.5 35.0 37.5
+> Token accuracy (%)
+
+Token accuracy    
+
+> 12-layer non-loop 4x3 4x6 4x12
+
+Figure 1: Training loss and token accuracy for the 8k-tokenizer, 1:3 objective across loop depths. The looped models use four physical layers; the non-looped model uses twelve independently parameterized layers.                    
+
+> Model Latency (ms) Tokens/s Memory (GiB) 12-layer non-loop 58 70,571 0.68
+> 4×355 74,128 0.51
+> 4×6108 37,966 0.72
+> 4×12 212 19,295 1.15
+
+Table 9: Inference speed measured with batch size 32, sequence length 128, 20 warmup steps, and 100 timed forward passes on one RTX 3090. 
+
+ble 10 shows, the first three settings decrease stably, whereas 0.02 degrades after approximately step 600 and produces gradient-norm spikes. Although 0.01 has the highest final token accuracy, 0.0141 achieves the lowest final loss (3.6847) and is se-lected as the peak learning rate for the main experi-ments. This sweep provides a preliminary learning-rate choice based on the non-looped model and does not fully optimize the rate for looped models. We examine the effect of decay speed on training stability separately below.           
+
+> Peak LR Final loss Final accuracy 0.0075 3.7442 32.66 0.0100 3.6931 33.07
+> 0.0141 3.6847 32.95 0.0200 4.5864 22.84
+
+Table 10: Four-epoch peak learning-rate sweep. 
+
+5.2 Learning-Rate Decay and Stability 
+
+We select two candidate decay lengths from the training budget: 4,080 steps spans the full optimizer-step budget of the run, whereas 2,600 steps reaches the minimum earlier and remains there for the rest of training. With total train-ing steps fixed, lr_schedule_steps determines how quickly cosine decay reaches its minimum: asmaller value decays earlier and remains at the min-imum longer, while a larger value retains a higher learning rate later in training. We compare these decay rates in 4 × 6 and 4 × 12 models. The main 2,600-step schedule reaches 10% of the peak learn-ing rate and then holds 0.00141; the slower 4,080-step schedule maintains a higher learning rate into the later stages. Because shared physical layers are repeatedly applied across loops, the effect of one parameter update can be propagated through mul-tiple layer applications. A high early learning rate may therefore amplify update oscillations, while earlier decay may help shared parameters enter a useful region more smoothly. 
+
+Figure 2 shows that the 2,600-step schedule has its clearest advantage in early and middle training: loss declines faster and token accuracy rises sooner. Earlier decay, however, can reduce the opportunity to explore alternative parameter regions and leave the model near a suboptimal solution. The 4,080-step schedule gradually catches up later, consistent with its higher late-stage learning rate preserving additional exploration. Nevertheless, the 2,600-step curves are smoother overall and show no clear final-metric disadvantage. We therefore choose 2,600 steps as a practical compromise between sta-bility and late-stage exploration under the current compute budget and single-seed setting, not as a schedule that is uniformly superior at every point in training. 1 2 3 4 5 6 7 8 9 10 
+
+> Epoch
+> 3.4 3.6 3.8 4.0 4.2 4.4
+> Training loss
+
+Loss          
+
+> 12345678910
+> Epoch
+> 25.0 27.5 30.0 32.5 35.0 37.5
+> Token accuracy (%)
+
+Token accuracy 
+
+> 4x6, 2600 steps 4x6, 4080 steps 4x12, 2600 steps 4x12, 4080 steps
+
+Figure 2: Training loss and token accuracy for the learning-rate decay ablation. Solid and dashed lines denote 2,600-step and 4,080-step decay, respectively; colors distinguish 4 × 6 and 4 × 12 .
+
+5.3 Qualitative Generation Examples 
+
+The causal interface also supports open-ended com-pletion. Table 11 presents selected completions from the final 1:3 , 4 × 12 model using temperature 0.9, top-k 40, top-p 0.95, and seed 42. The ex-amples illustrate locally coherent continuation and appropriate termination in short responses; they are qualitative examples rather than a controlled generation evaluation.     
+
+> Prompt Sampled completion
+> I want to eat some dinner, all right? After the rain stopped, the children began to run for a walk. She put the toy in the drawer, and gave the doll a glass of milk. The bird flew over the mountains and in the morning the rain came in.
+
+Table 11: Selected sampled completions from the final 1:3 , 4 × 12 model. 
+
+6 Conclusion 
+
+We combine GPT-BERT’s hybrid CLM/MNTP training with depth-wise recurrent parameter shar-ing to study a “fewer parameters, more computa-tion” language-model design under BabyLM Strict-small constraints. Reusing four physical layers for twelve loops yields a 12.18M-parameter model whose training objective is close to that of a 29.9M non-looped model. The final model reaches 71.19 on BLiMP and 62.55 on GLUE, compared with 71.66 and 65.13 for the official GPT-BERT causal-focus reference, despite its smaller parameter bud-get. On the reported task-level metrics, looped models preserve or improve selected syntactic abil-ities, while Entity Tracking becomes weaker as a result of parameter sharing. The ablations fur-ther show that gains from additional loops saturate quickly and differ across tasks. Looped GPT-BERT is therefore an architecture with clear advantages and limitations: under constrained data and param-eter budgets, it can support syntactic understanding and generation, but its objective ratio and recurrent depth require further adjustment. 
+
+Limitations 
+
+• Data and tokenizer. The main experiments use one cleaned corpus and one 8k tokenizer. We do not independently ablate raw data, rule-based cleaning, alternative cleaning procedures, and tokenization. • Training variance. Each model is trained with a single random seed, so sub-percentage-point differences may fall within training variance. • Compute matching. The 4 × 12 model performs substantially more layer applications and com-putation than the 12-layer non-looped baseline. This is a parameter-efficiency study, not a FLOP-matched comparison. • Objective mixing. Changing the B ERT :G PT ra-tio also changes supervision density and attention visibility; mixed training losses are therefore not perfectly homogeneous across ratios. • Capability boundary. The final model is weak on AoA and Entity Tracking, indicating limited cognitive-similarity and state-tracking ability. • Scope. Our conclusions are limited to approxi-mately 12M parameters, a 7.48M-word corpus, ten epochs, and a maximum sequence length of 128; they should not be directly extrapolated to larger models or longer contexts. 
+
+Ethics Statement 
+
+The model uses English text supplied by, or derived from, the BabyLM Challenge and introduces no newly collected personal data. The sources include books, subtitles, encyclopedic text, and dialogue, so they may retain social biases or inappropriate content from the original material; automated clean-ing cannot guarantee their removal. Cleaning may also remove dialectal, conversational, or minority-language patterns and introduce stylistic prefer-ences through normalization. This small model is intended for research and should not be deployed directly in high-stakes applications. 
+
+Reproducibility Statement 
+
+The Hugging Face repository contains the fi-nal model and sixteen intermediate checkpoints. The main revision stores the final model; 
+
+chck_1M –chck_10M are one-million-word check-points, and chck_20M –chck_70M are ten-million-word checkpoints. It also includes configura-tion_gpt_bert.py , modeling_gpt_bert.py , and tok-enizer files, allowing the model to be loaded with 
+
+trust_remote_code=True .2 Training configurations and scripts are available in the accompanying code repository, 3 and the data-cleaning workflow is doc-umented separately. 4
+
+Acknowledgments 
+
+The authors thank the reviewers for their helpful comments and suggestions, as well as the BabyLM organizers for maintaining the datasets, evaluation pipeline, and leaderboard. This work was partially funded by the National Natural Science Foundation of China (No. 62506079). 
+
+References 
+
+Lucas Georges Gabriel Charpentier and David Samuel. 2024. GPT or BERT: Why not both? In The 2nd BabyLM Challenge at the 28th Conference on Com-putational Natural Language Learning , pages 262– 283, Miami, FL, USA. Association for Computa-tional Linguistics. 
+
+> 2https://huggingface.co/Survivor613/ BabyLM2026-Strict-Small-looped_GPT-BERT
+> 3https://github.com/Survivor613/ BabyLM-2026
+> 4https://github.com/JT-Ushio/ babylm26-nlp-spring
+
+Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob Uszkoreit, and Lukasz Kaiser. 2019. Universal transformers. In International Conference on Learn-ing Representations .Lukas Edman, Lisa Bylinina, Faeze Ghorbanpour, and Alexander Fraser. 2024. Are BabyLMs second lan-guage learners? In The 2nd BabyLM Challenge at the 28th Conference on Computational Natural Lan-guage Learning , pages 166–173, Miami, FL, USA. Association for Computational Linguistics. Mohammad Amin Ghanizadeh and Mohammad Javad Dousti. 2024. Towards data-efficient language mod-els: A child-inspired approach to language learning. In The 2nd BabyLM Challenge at the 28th Confer-ence on Computational Natural Language Learning ,pages 22–27, Miami, FL, USA. Association for Com-putational Linguistics. Akari Haga, Akiyo Fukatsu, Miyu Oba, Arianna Bisazza, and Yohei Oseki. 2024. BabyLM challenge: Exploring the effect of variation sets on language model training efficiency. In The 2nd BabyLM Chal-lenge at the 28th Conference on Computational Nat-ural Language Learning , pages 252–261, Miami, FL, USA. Association for Computational Linguistics. Jordan Hoffmann, Sebastian Borgeaud, Arthur Men-sch, Elena Buchatskaya, Trevor Cai, Eliza Ruther-ford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. 2022. Train-ing compute-optimal large language models. In Ad-vances in Neural Information Processing Systems ,volume 35, pages 30016–30030. Michael Y. Hu, Aaron Mueller, Candace Ross, Adina Williams, Tal Linzen, Chengxu Zhuang, Leshem Choshen, Ryan Cotterell, Alex Warstadt, and Ethan Gotlieb Wilcox. 2024. Findings of the sec-ond BabyLM challenge: Sample-efficient pretraining on developmentally plausible corpora. In The 2nd BabyLM Challenge at the 28th Conference on Com-putational Natural Language Learning , pages 1–21, Miami, FL, USA. Association for Computational Lin-guistics. Anna A. Ivanova, Aalok Sathe, Benjamin Lipkin, Un-nathi Kumar, Setayesh Radkani, Thomas H. Clark, Carina Kauf, Jennifer Hu, R. T. Pramod, Gabriel Grand, et al. 2024. Elements of world knowledge (EWoK): A cognition-inspired framework for eval-uating basic world knowledge in language models. 
+
+arXiv preprint arXiv:2405.09605 .Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 .Najoung Kim and Sebastian Schuster. 2023. Entity tracking in language models. In Proceedings of the 61st Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 3835–3855, Toronto, Canada. Association for Com-putational Linguistics. Harsh Kohli, Srinivasan Parthasarathy, Huan Sun, and Yuekun Yao. 2026. Loop, think, & generalize: Implicit reasoning in recurrent-depth transformers. 
+
+arXiv preprint arXiv:2604.07822 .Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, and Radu Soricut. 2020. ALBERT: A lite BERT for self-supervised learning of language representations. In Interna-tional Conference on Learning Representations .Aakarsh Nair, Alina Hancharova, Mayank Kumar, and Ali Gharaee. 2024. BabyLM challenge: Experiment-ing with self-distillation and reverse-distillation for language model pre-training on constrained datasets. In The 2nd BabyLM Challenge at the 28th Confer-ence on Computational Natural Language Learning ,pages 28–36, Miami, FL, USA. Association for Com-putational Linguistics. Rico Sennrich, Barry Haddow, and Alexandra Birch. 2016. Neural machine translation of rare words with subword units. In Proceedings of the 54th Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 1715–1725. Association for Computational Linguistics. Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman. 2019. GLUE: A multi-task benchmark and analysis plat-form for natural language understanding. In Interna-tional Conference on Learning Representations .Alex Warstadt, Aaron Mueller, Leshem Choshen, Ethan Wilcox, Chengxu Zhuang, Juan Ciro, Rafael Mos-quera, Bhargavi Paranjape, Adina Williams, Tal Linzen, and Ryan Cotterell. 2023. Findings of the BabyLM challenge: Sample-efficient pretraining on developmentally plausible corpora. In Proceedings of the BabyLM Challenge at the 27th Conference on Computational Natural Language Learning , pages 1–34, Singapore. Association for Computational Lin-guistics. Alex Warstadt, Alicia Parrish, Haokun Liu, Anhad Mo-hananey, Wei Peng, Sheng-Fu Wang, and Samuel R. Bowman. 2020. BLiMP: The benchmark of linguis-tic minimal pairs for English. Transactions of the Association for Computational Linguistics , 8:377– 392. Hong Meng Yam and Nathan Paek. 2024. What should baby models read? exploring sample-efficient data composition on model performance. In The 2nd BabyLM Challenge at the 28th Conference on Com-putational Natural Language Learning , pages 284– 291, Miami, FL, USA. Association for Computa-tional Linguistics. Liu Yang, Kangwook Lee, Robert Nowak, and Dimitris Papailiopoulos. 2024. Looped transformers are bet-ter at learning learning algorithms. In International Conference on Learning Representations .Yang You, Jing Li, Jonathan Hseu, Xiaodan Song, James Demmel, and Cho-Jui Hsieh. 2020. Large batch optimization for deep learning: Training BERT in 76 minutes. In International Conference on Learning Representations .Xinru Yu, Bin Guo, Shiwei Luo, Jie Wang, Tao Ji, and Yuanbin Wu. 2024. AntLM: Bridging causal and masked language models. In The 2nd BabyLM Chal-lenge at the 28th Conference on Computational Nat-ural Language Learning , pages 324–331, Miami, FL, USA. Association for Computational Linguistics.

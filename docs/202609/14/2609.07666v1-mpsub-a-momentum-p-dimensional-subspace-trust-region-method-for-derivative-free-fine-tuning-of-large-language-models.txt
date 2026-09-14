@@ -1,0 +1,1269 @@
+Title: MpSub: A Momentum p-Dimensional Subspace Trust-Region Method for Derivative-Free Fine-Tuning of Large Language Models
+
+URL Source: https://arxiv.org/pdf/2609.07666v1
+
+Published Time: Wed, 09 Sep 2026 02:32:16 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+MPSUB: A MOMENTUM P -DIMENSIONAL SUBSPACE TRUST-REGION METHOD FOR DERIVATIVE-FREE FINE-TUNING OF LARGE LANGUAGE MODELS ∗
+
+YUYANG WANG † , HAOYU YAO ‡ , AND PENGCHENG XIE §
+
+Abstract. Full-parameter fine-tuning of large language models has a substantial memory cost because backpropagation requires storing activations and gradients. Zeroth-order optimization avoids that by estimating update directions from loss evaluations, but existing methods often depend on a learning rate that must be retuned for each model and task. We propose the momentum p-dimensional subspace trust-region method ( MpSub ). At each iteration, MpSub searches within a p-dimensional subspace: one direction preserves the historical information carried by the most recent accepted step, while the remaining directions promote exploration through fresh random sampling. The subspace gradient is estimated by central differences, a trial step is computed from a linear trust-region model, and the trust-region radius is updated according to the agreement between predicted and observed loss reduction. The radius controls both the finite-difference perturbation and the trust-region bound on the subspace step, so no learning rate is required. In the LLM setting, all evaluations within an iteration share one minibatch, and the directions are regenerated from stored seeds and applied in place to the model weights, so training uses forward evaluations alone. For smooth deterministic objectives under Gaussian direction sampling without orthogonalization, we bound the finite-difference error, quantify the gradient captured by the random subspace, and prove that ∥∇ f (xk )∥2 → 0 almost surely under a safeguarded radius update. Under a matched budget of 8,400 training-objective forward passes per configuration, we fine-tune OPT-125M and OPT-350M on CommitmentBank. With the same preset parameters at both model sizes, MpSub attains mean test accuracies of 0.673 and 0.690 over three seeds, while the MeZO configurations selected by development accuracy attain 0.685 at both sizes. These results show that MpSub attains accuracy comparable to tuned MeZO without a learning-rate search. 
+
+Key words. derivative-free optimization, subspace trust region, zeroth-order optimization, large language model fine-tuning 
+
+AMS subject classifications. 90C56, 65K05, 90C26 
+
+1. Introduction. Zeroth-order (ZO) optimization has become an attractive al-ternative for full-parameter fine-tuning of large language models (LLMs) when back-propagation is limited by memory. Instead of storing activations for a backward pass, ZO methods estimate update directions from function evaluations. MeZO [9] applies the classical two-point random estimator [11] to language models and regener-ates random perturbations from seeds rather than storing them. Later methods have modified the perturbation structure, including random low-dimensional subspaces [13] and low-rank gradient structures [4]. These methods still use a prescribed learning rate to determine the update size. Its effective value can vary substantially across settings and may require a separate search. In addition, a single random direction contains only a small amount of directional information in a very high-dimensional parameter space. For a normalized isotropic direction, the typical magnitude of its projection onto a fixed gradient decreases as the dimension grows. This motivates using more than one search direction while avoiding a proportional increase in stored parameter-sized vectors. Trust-region methods provide a natural way to control the step size without pre-
+
+> ∗
+
+Preprint. 
+
+> †
+
+Xi’an Jiaotong University, Xi’an, China (vibrancy05@stu.xjtu.edu.cn). 
+
+> ‡
+
+Xi’an Jiaotong University, Xi’an, China (yaohaoyu@stu.xjtu.edu.cn). 
+
+> §
+
+Lawrence Berkeley National Laboratory, Berkeley, CA, USA (pxie@lbl.gov). Corresponding author. 1arXiv:2609.07666v1 [cs.LG] 7 Sep 2026 2 Y. WANG, H. YAO, AND P. XIE 
+
+scribing a learning rate. In derivative-free optimization, the trust-region radius is adjusted according to the agreement between a local model and the observed objec-tive values [1, 7, 5, 6]. Direct model construction in the full parameter space is not practical for models with hundreds of millions of variables, which motivates restricting the search to a much smaller subspace [3, 14, 15]. Randomized subspaces have also been studied in derivative-free optimization [2, 8, 10]. The closest method to the present work is 2D-MoSub [12]. It searches in a two-dimensional subspace formed by the previous accepted step and a new search direction. The previous step carries information from the optimization trajectory, while the new direction provides exploration. A quadratic interpolation model is constructed in this two-dimensional subspace and minimized within a trust region. This momentum-plus-exploration construction is also the starting point of our method. The difficulty in extending the same approach to a larger subspace lies in the quadratic model: a direct extension to dimension p would require 12 (p + 1)( p + 2) interpolation points. At 
+
+p = 20 , this would require 231 points before a trial step is computed. We therefore consider the LLM fine-tuning problem (1.1) min  
+
+> x∈Rn
+
+Eξ∼D 
+
+ℓ(x; ξ),
+
+and propose MpSub , a momentum p-dimensional subspace trust-region method. MpSub 
+
+keeps the momentum-plus-exploration structure of 2D-MoSub but replaces quadratic interpolation with directional derivatives estimated by central differences. These es-timates define a linear model in a p-dimensional subspace formed by the most recent accepted displacement and p − 1 fresh Gaussian directions. The resulting iteration requires 2p + 2 function evaluations, so the evaluation cost grows linearly with the subspace dimension. For LLM fine-tuning, all evaluations within one iteration use the same minibatch, and the random directions are regenerated from seeds when needed rather than stored explicitly. For smooth deterministic objectives, we analyze the Gaussian directions directly without assuming that they are orthogonal. We derive finite-difference error bounds, quantify the gradient information captured by the random subspace, and show that the gradient norm converges to zero almost surely under a safeguarded trust-region radius update. We then compare MpSub with MeZO on OPT-125M and OPT-350M under the same number of training-objective forward evaluations. The same trust-region settings are used for both model sizes, while the MeZO learning rate is selected separately from a grid. 
+
+2. MpSub. We consider the unconstrained optimization problem (2.1) min  
+
+> x∈Rn
+
+f (x),
+
+in the regime where the parameter dimension n is very large (e.g., n ∼ 10 8 in full-parameter language model fine-tuning) and derivative information is inaccessible. In our numerical experiments (Section 4), f represents the stochastic minibatch loss (1.1) resampled at each iteration, whereas in the theoretical analysis (Section 3), f is treated as a deterministic, continuously differentiable objective. At each iteration k, MpSub maintains the parameter iterate xk ∈ Rn, a trust-region radius ∆k ∈ [∆ min , ∆max ], and a momentum displacement mk ∈ Rn generated by the most recent accepted step. The radius ∆k serves as both the finite-difference sampling scale and the trust-region bound, while mk spans the historical exploration axis of the subspace. The overall procedure is summarized in Algorithm 2.1. MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 3
+
+Algorithm 2.1 MpSub : momentum p-dimensional subspace trust-region method  
+
+> 1:
+
+Input. Initial iterate x0 ∈ Rn, subspace dimension p, initial radius ∆0 ∈
+
+[∆ min , ∆max ], contraction factor γ1 ∈ (0 , 1) , expansion factor γ2 > 1, bounds 
+
+0 < ∆min < ∆max , and threshold η ∈ (0 , 1) . 
+
+> 2:
+
+Initialize momentum vector m0 = 0. 
+
+> 3:
+
+for k = 0 , 1, 2, . . . do  
+
+> 4:
+
+Step 1: Subspace frame construction.  
+
+> 5:
+
+If ∥mk∥2 > 0: set d(k)1 = mk/∥mk∥2; else draw z1 ∼ N (0, In) and set 
+
+d(k)1 = z1/√n. 
+
+> 6:
+
+For i = 2 , . . . , p : draw zi ∼ N (0, In) independently and set d(k) 
+
+> i
+
+= zi/√n. 
+
+> 7:
+
+Form the frame matrix Dk = [ d(k)1 , . . . , d(k) 
+
+> p
+
+] ∈ Rn×p. 
+
+> 8:
+
+Step 2: Subspace gradient estimation.  
+
+> 9:
+
+Evaluate f0 = f (xk). 
+
+> 10:
+
+For i = 1 , . . . , p : evaluate f ± 
+
+> i
+
+= f (xk ± ∆k d(k) 
+
+> i
+
+) and set gk,i = ( f + 
+
+> i
+
+−
+
+f − 
+
+> i
+
+)/(2∆ k). 
+
+> 11:
+
+Assemble the subspace gradient gk = ( gk, 1, . . . , g k,p )⊤. 
+
+> 12:
+
+If ∥gk∥2 = 0 : set ∆k+1 = max( γ1∆k, ∆min ), retain xk and mk, and continue.  
+
+> 13:
+
+Step 3: Trust-region trial step.  
+
+> 14:
+
+Compute ss = −∆k gk/∥gk∥2 and trial iterate x+ = xk + Dkss. 
+
+> 15:
+
+Evaluate f + = f (x+), predicted reduction pred k = ∆ k∥gk∥2, and ratio ρk =(f0 − f +)/ pred k. 
+
+> 16:
+
+Step 4a: Iterate acceptance.  
+
+> 17:
+
+if f + < f 0 then  
+
+> 18:
+
+xk+1 = x+, mk+1 = x+ − xk. (accepted)  
+
+> 19:
+
+else  
+
+> 20:
+
+xk+1 = xk, mk+1 = mk. (rejected)  
+
+> 21:
+
+end if  
+
+> 22:
+
+Step 4b: Trust-region radius adaptation.  
+
+> 23:
+
+if ρk ≥ η then  
+
+> 24:
+
+∆k+1 = min( γ2∆k, ∆max ). (successful)  
+
+> 25:
+
+else  
+
+> 26:
+
+∆k+1 = max( γ1∆k, ∆min ). (unsuccessful)  
+
+> 27:
+
+end if  
+
+> 28:
+
+end for 2.1. Subspace construction. At iteration k, optimization is restricted to the affine subspace xk +Sk, where Sk ⊂ Rn is spanned by p direction vectors d(k)1 , . . . , d(k) 
+
+> p
+
+.Gathering these directions as columns of the frame matrix Dk = [ d(k)1 , . . . , d(k) 
+
+> p
+
+] ∈
+
+Rn×p, candidate displacements within Sk are parameterized by a coordinate vector 
+
+ss ∈ Rp via (2.2) x(ss) = xk + Dkss = xk +
+
+> p
+
+X
+
+> i=1
+
+ss,i d(k) 
+
+> i
+
+.
+
+The first search direction d(k)1 incorporates momentum from the optimization trajectory. When an accepted step is available, it is set to the normalized displacement 4 Y. WANG, H. YAO, AND P. XIE 
+
+(2.3) d(k)1 = mk
+
+∥mk∥2
+
+,
+
+where mk denotes the parameter change resulting from the most recent successful step. Because consecutive descent steps in continuous optimization often exhibit directional correlation, retaining (2.3) injects historical progress into the subspace without requiring additional function evaluations. The remaining p − 1 directions are drawn independently as (2.4) d(k) 
+
+> i
+
+= zi
+
+√n , zi ∼ N (0, In), i = 2 , . . . , p, 
+
+with the same distribution supplying d(k)1 when no accepted step is available. The fac-tor 1/√n normalizes the expected Euclidean norm such that E∥d(k) 
+
+> i
+
+∥22 = 1 , providing isotropic coverage of the parameter space. A fundamental geometric property of high-dimensional Gaussian vectors is their near-orthogonality: for i̸ = j,(2.5) Ed(k)⊤ 
+
+> i
+
+d(k)
+
+> j
+
+ = 0 and E  d(k)⊤ 
+
+> i
+
+d(k)
+
+> j
+
+2 = 1
+
+n .
+
+Consequently, the pairwise inner products have root-mean-square magnitude n−1/2 ≈
+
+10 −4 at n ∼ 10 8. Because the Gaussian directions are already nearly orthogonal in high dimensions, explicit Gram–Schmidt orthogonalization is omitted, thereby avoiding substantial computation and memory overhead; the theoretical guarantees of 
+
+MpSub under this unorthogonalized Gaussian frame are rigorously established in Sec-tion 3. The dimension p controls how many directional derivatives enter the subspace model; its choice is examined empirically in Section 4. 
+
+2.2. Subspace model and trial step. For each direction d(k) 
+
+> i
+
+, MpSub estimates the corresponding directional derivative via central differences: (2.6) gk,i = f (xk + ∆ k d(k) 
+
+> i
+
+) − f (xk − ∆k d(k) 
+
+> i
+
+)2∆ k
+
+, i = 1 , . . . , p. 
+
+Stacking these estimates yields the subspace gradient gk = ( gk, 1, . . . , g k,p )⊤ ∈ Rp,where each entry gk,i approximates ∇f (xk)⊤d(k) 
+
+> i
+
+. Setting the finite-difference per-turbation size equal to the trust-region radius ∆k couples the sampling resolution directly to the radius of model validity. Under the Lipschitz continuity of ∇f , the finite-difference error is bounded linearly by ∆k, with explicit bounds established in Lemma 3.2. The estimated gradient defines a local linear surrogate model on the subspace coordinates: (2.7) mk(ss) = f (xk) + g⊤ 
+
+> k
+
+ss.
+
+The trial step is determined by minimizing this linear model subject to the trust-region constraint: (2.8) min  
+
+> ss∈Rp
+
+g⊤ 
+
+> k
+
+ss subject to ∥ss∥2 ≤ ∆k.MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 5Whenever gk̸ = 0, problem (2.8) admits the unique closed-form solution (2.9) ss = −∆k
+
+gk
+
+∥gk∥2
+
+,
+
+which corresponds to the steepest descent direction on the trust-region boundary. Mapping ss back to the ambient parameter space via (2.2) yields the candidate iterate (2.10) x+ = xk + Dkss = xk − ∆k
+
+∥gk∥2
+
+> p
+
+X
+
+> i=1
+
+gk,i d(k) 
+
+> i
+
+,
+
+with the predicted objective reduction given by (2.11) pred k = mk(0) − mk(ss) = −g⊤ 
+
+> k
+
+ss = ∆ k∥gk∥2 > 0.
+
+If gk = 0, the estimated gradient vanishes across the subspace; in this event, the method contracts the trust-region radius, sets xk+1 = xk and mk+1 = mk, and proceeds to the next iteration without evaluating an additional trial point. 
+
+2.3. Acceptance and radius update. Upon evaluating the candidate loss 
+
+f + = f (x+), MpSub assesses the agreement between the surrogate model and the objective through the ratio (2.12) ρk = f (xk) − f (x+)∆k∥gk∥2
+
+.
+
+The algorithm decouples iterate acceptance (Step 4a) from trust-region radius adap-tation (Step 4b). The candidate point is accepted whenever it yields a strict objective decrease: (2.13) 
+
+xk+1 =
+
+(
+
+x+, if f (x+) < f (xk),
+
+xk, otherwise , mk+1 =
+
+(
+
+x+ − xk, if f (x+) < f (xk),
+
+mk, otherwise ,
+
+while the trust-region radius is updated according to the ratio test: (2.14) ∆k+1 =
+
+(
+
+min {γ2∆k, ∆max }, if ρk ≥ η, 
+
+max {γ1∆k, ∆min }, if ρk < η. 
+
+Unlike classical trust-region methods [5] that accept trial points only when ρk ≥
+
+η, the rules (2.13)–(2.14) separate acceptance from radius adjustment. In zeroth-order settings where forward passes dominate execution time, enforcing ρk ≥ η for step acceptance would discard trial points that achieve objective reduction whenever 
+
+0 < f (xk) − f (x+) < η pred k. Under (2.13), every candidate yielding a strictly lower observed loss is retained. Concurrently, the ratio ρk regulates the exploration scale: the trust region expands when the linear surrogate reliably predicts the objective reduction ( ρk ≥ η), and contracts when nonlinearities or estimation errors dominate (ρk < η ). 
+
+2.4. Algorithmic realization for LLM fine-tuning. While Algorithm 2.1 is stated for a generic objective f , adapting MpSub to full-parameter fine-tuning of large language models presents two critical computational challenges: (i) the training objective is evaluated over stochastic minibatches, and (ii) storing an explicit search frame Dk ∈ Rn×p in an ambient dimension of n ∼ 10 8 creates prohibitive GPU memory overhead. We resolve these challenges through shared-minibatch evaluations and seed-regenerated in-place parameter perturbations. 6 Y. WANG, H. YAO, AND P. XIE 
+
+2.4.1. Consistent minibatch evaluation. In stochastic language model fine-tuning, the objective available at training step k is defined by a sampled minibatch 
+
+Bk ⊂ D :(2.15) fk(x) = 1
+
+|B k|
+
+X
+
+> ξ∈B k
+
+ℓ(x; ξ).
+
+A key algorithmic requirement of trust-region methods is that model-objective agree-ment measures local landscape geometry rather than data sampling discrepancy. Ac-cordingly, in our implementation, the minibatch Bk is held fixed throughout iteration 
+
+k. The baseline loss fk(xk), the 2p central-difference evaluations fk(xk ±∆kd(k) 
+
+> i
+
+), and the trial evaluation fk(x+) are all computed on the exact same minibatch Bk. Holding 
+
+Bk constant ensures that the estimated subspace gradient gk and the agreement ratio (2.16) ρk = fk(xk) − fk(x+)∆k∥gk∥2
+
+evaluate variations of a consistent slice of the loss landscape, preventing false rejections or erratic radius oscillations induced by stochastic batch variance. Across iterations, a fresh minibatch Bk+1 is drawn from the data loader. The trust-region radius ∆k and the accepted parameter displacement mk persist across minibatch boundaries, transferring optimization momentum and step-size calibration smoothly throughout training. Each iteration expends 2p + 2 forward passes on the training objective ( 42 passes when p = 20 ). 
+
+2.4.2. In-place perturbations and seed regeneration. Storing the frame matrix Dk ∈ Rn×p explicitly would require pn floating-point numbers. For an LLM such as OPT-125M ( n ≈ 1.25 × 10 8) with p = 20 in FP32, this would consume approximately 10 GB of GPU memory—exceeding the entire parameter storage of the model itself. To eliminate this memory overhead, MpSub never materializes the matrix Dk in memory. Instead, each exploratory direction d(k) 
+
+> i
+
+(i = 2 , . . . , p ) is tied to a determin-istic integer seed derived synchronously from the global training seed, the iteration index k, and the direction index i:(2.17) seed( k, i ) = (base _seed ×C1 + k × C2 + i × C3) mod M, 
+
+where C1, C 2, C 3 and M are fixed prime constants. During the subspace gradient estimation phase, direction d(k) 
+
+> i
+
+is synthesized ten-sor by tensor directly on the accelerator using a pseudorandom generator initialized with seed( k, i ). The parameter tensor is perturbed in place by +∆ kd(k) 
+
+> i
+
+to evaluate 
+
+fk(xk + ∆ kd(k) 
+
+> i
+
+), then adjusted by −2∆ kd(k) 
+
+> i
+
+to evaluate fk(xk − ∆kd(k) 
+
+> i
+
+), and finally restored by adding back +∆ kd(k) 
+
+> i
+
+. Because the pseudorandom generator reproduces the identical sequence upon reseeding, each direction is reconstructed exactly at zero memory cost. Once the subspace gradient gk and the coordinate step ss = −∆kgk/∥gk∥2 are computed, the directions are regenerated a final time and combined in place to form the trial displacement (2.18) uk =
+
+> p
+
+X
+
+> i=1
+
+ss,i d(k) 
+
+> i
+
+.MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 7The displacement uk is accumulated in an auxiliary buffer of dimension n while ad-vancing the model weights to x+ = xk + uk. If the trial step is accepted, uk is preserved as the new momentum displacement mk+1 ; if rejected, subtracting uk im-mediately restores the base weights xk.Consequently, training is executed exclusively through forward inference passes. Auxiliary storage is strictly confined to the momentum vector mk and a single trial step accumulator, both of size n, keeping the training memory footprint at the infer-ence level and completely independent of the subspace dimension p.
+
+3. Theoretical Analysis. We analyze MpSub for a deterministic objective under the Gaussian direction sampling used in Algorithm 2.1. No orthogonality between the search directions is assumed. The analysis first gives error and descent bounds for a general frame Dk, and then uses the distribution of the Gaussian directions to obtain a global first-order convergence result. Throughout this section, we set ∆min = 0 for the asymptotic analysis. We also use the following safeguarded radius update with a fixed constant κ > 0:(3.1) ∆k+1 =
+
+(
+
+min {γ2∆k, ∆max }, if ρk ≥ η and ∥gk∥2 ≥ κ∆k,γ1∆k, otherwise .
+
+The acceptance rule is unchanged: a trial point is accepted whenever it gives a strict decrease in f .
+
+Assumption 3.1. The objective function f : Rn → R is continuously differen-tiable and bounded below. Its gradient is Lipschitz continuous with constant L > 0:
+
+(3.2) ∥∇ f (x) − ∇ f (y)∥2 ≤ L∥x − y∥2, ∀ x, y ∈ Rn.
+
+Let Dk = [ d(k)1 , . . . , d(k) 
+
+> p
+
+] ∈ Rn×p be the frame generated at iteration k, and define the exact directional derivatives 
+
+ˆgk,i := ∇f (xk)⊤d(k) 
+
+> i
+
+, ˆgk := D⊤ 
+
+> k
+
+∇f (xk).
+
+The finite-difference estimates are denoted by 
+
+gk = ( gk, 1, . . . , g k,p )⊤, gk,i = f (xk + ∆ kd(k) 
+
+> i
+
+) − f (xk − ∆kd(k) 
+
+> i
+
+)2∆ k
+
+.
+
+3.1. Finite differences and random subspaces. We first bound the finite-difference error without assuming that the directions have unit norm. 
+
+Lemma 3.2 (Finite-difference error). Suppose Assumption 3.1 holds. Then 
+
+(3.3) |gk,i − ˆgk,i | ≤ L∆k
+
+2 ∥d(k) 
+
+> i
+
+∥22, i = 1 , . . . , p. 
+
+Consequently, 
+
+(3.4) ∥gk − ˆgk∥2 ≤ L∆k
+
+2 Qk, Qk := 
+
+> p
+
+X
+
+> i=1
+
+∥d(k) 
+
+> i
+
+∥42
+
+!1/2
+
+.8 Y. WANG, H. YAO, AND P. XIE 
+
+Proof. For any direction d and t > 0, Lipschitz continuity of the gradient gives 
+
+f (xk + td) − f (xk) − t∇f (xk)⊤d ≤ L
+
+2 t2∥d∥22.
+
+Applying this bound to t = ∆ k in the directions d(k) 
+
+> i
+
+and −d(k) 
+
+> i
+
+, write 
+
+f (xk + ∆ kd(k) 
+
+> i
+
+) = f (xk) + ∆ k ˆgk,i + Ri, +,
+
+and 
+
+f (xk − ∆kd(k) 
+
+> i
+
+) = f (xk) − ∆k ˆgk,i + Ri, −,
+
+where |Ri, ±| ≤ L∆2 
+
+> k
+> 2
+
+∥d(k) 
+
+> i
+
+∥22. Subtracting the two expressions gives 
+
+gk,i − ˆgk,i = Ri, + − Ri, −
+
+2∆ k
+
+,
+
+which proves (3.3). Summing the squared componentwise bounds gives (3.4). If the Hessian is Lipschitz continuous with constant M , the same central-difference argument gives the sharper bound 
+
+|gk,i − ˆgk,i | ≤ M ∆2
+
+> k
+
+6 ∥d(k) 
+
+> i
+
+∥32.
+
+This stronger estimate is not needed below. We next use the actual Gaussian sampling in Algorithm 2.1. Let Fk contain the algorithmic history before the fresh exploratory directions at iteration k are sampled. Conditionally on Fk,
+
+d(k) 
+
+> i
+
+= zi
+
+√n , zi ∼ N (0, In), i = 2 , . . . , p, 
+
+independently. 
+
+Lemma 3.3 (Gaussian gradient capture). Let vk = ∇f (xk). Conditionally on 
+
+Fk,
+
+(3.5) 
+
+> p
+
+X
+
+> i=2
+
+
+
+v⊤ 
+
+> k
+
+d(k)
+
+> i
+
+2 d
+
+= ∥vk∥22
+
+n χ2
+
+> p−1
+
+.
+
+In particular, 
+
+(3.6) E
+
+" pX
+
+> i=2
+
+
+
+v⊤ 
+
+> k
+
+d(k)
+
+> i
+
+2
+
+Fk
+
+#
+
+= p − 1
+
+n ∥vk∥22.
+
+Moreover, for every q ∈ (0 , 1) , there exist constants α > 0 and R > 1, independent of 
+
+k, such that whenever vk̸ = 0,
+
+(3.7) P
+
+
+
+∥ˆgk∥2 ≥ α∥vk∥2, max  
+
+> 1≤i≤p
+
+∥d(k) 
+
+> i
+
+∥2 ≤ R Fk
+
+
+
+≥ q. 
+
+Proof. For every i = 2 , . . . , p ,
+
+v⊤ 
+
+> k
+
+d(k) 
+
+> i
+
+= v⊤ 
+
+> k
+
+zi
+
+√n ∼ N 
+
+
+
+0, ∥vk∥22
+
+n
+
+
+
+,MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 9and these random variables are conditionally independent. Equation (3.5) follows immediately, and taking expectations gives (3.6). To prove (3.7), fix q < 1. Since a χ2 
+
+> p−1
+
+random variable is positive almost surely, we can choose τ > 0 sufficiently small that P(χ2 
+
+> p−1
+
+≥ τ ) is arbitrarily close to one. Setting α = pτ /n , equation (3.5) implies 
+
+> p
+
+X
+
+> i=2
+
+(v⊤ 
+
+> k
+
+d(k) 
+
+> i
+
+)2
+
+!1/2
+
+≥ α∥vk∥2
+
+with probability arbitrarily close to one. The Gaussian norms ∥zi∥2/√n are finite almost surely, so R can also be chosen sufficiently large that all newly sampled directions have norm at most R with proba-bility arbitrarily close to one. The momentum direction, when present, has norm one. A union bound then gives (3.7). The next result gives the decrease produced by the trial step for a general, possibly nonorthogonal frame. 
+
+Proposition 3.4 (Decrease for a general frame). Suppose Assumption 3.1 holds and gk̸ = 0. Let 
+
+sk = −∆k
+
+gk
+
+∥gk∥2
+
+, x+ 
+
+> k
+
+= xk + Dksk,
+
+and define βk := ∥Dk∥2. Then 
+
+(3.8) f (xk) − f (x+ 
+
+> k
+
+) ≥ ∆k∥gk∥2 − L∆2
+
+> k
+
+2 (Qk + β2 
+
+> k
+
+).
+
+Consequently, 
+
+(3.9) ρk ≥ 1 − L∆k(Qk + β2 
+
+> k
+
+)2∥gk∥2
+
+.
+
+Proof. Let hk = Dksk. Since ˆgk = D⊤ 
+
+> k
+
+∇f (xk), we have ∇f (xk)⊤hk = ˆ g⊤ 
+
+> k
+
+sk.Using g⊤ 
+
+> k
+
+sk = −∆k∥gk∥2 and Lemma 3.2, 
+
+∇f (xk)⊤hk = g⊤ 
+
+> k
+
+sk + (ˆ gk − gk)⊤sk
+
+≤ − ∆k∥gk∥2 + ∥ˆgk − gk∥2∥sk∥2
+
+≤ − ∆k∥gk∥2 + LQ k
+
+2 ∆2
+
+> k
+
+.
+
+Also, ∥hk∥2 ≤ ∥ Dk∥2∥sk∥2 = βk∆k. The descent lemma therefore gives 
+
+f (x+ 
+
+> k
+
+) ≤ f (xk) + ∇f (xk)⊤hk + L
+
+2 ∥hk∥22
+
+≤ f (xk) − ∆k∥gk∥2 + L∆2
+
+> k
+
+2 (Qk + β2 
+
+> k
+
+),
+
+which proves (3.8). Dividing by the predicted reduction ∆k∥gk∥2 gives (3.9). 10 Y. WANG, H. YAO, AND P. XIE 
+
+3.2. Global convergence. We first establish a summability property of the trust-region radius. Let (3.10) S := {k : ρk ≥ η and ∥gk∥2 ≥ κ∆k}
+
+denote the set of iterations at which the trust-region radius is expanded. 
+
+Lemma 3.5 (Summability of the trust-region radii). Suppose Assumption 3.1 holds, ∆min = 0 , and the radius is updated according to (3.1) . Then 
+
+(3.11) 
+
+> ∞
+
+X
+
+> k=0
+
+∆2 
+
+> k
+
+< ∞.
+
+In particular, 
+
+(3.12) lim  
+
+> k→∞
+
+∆k = 0 .
+
+Proof. For any k ∈ S , the definition of ρk and (3.10) give 
+
+f (xk) − f (x+ 
+
+> k
+
+) = ρk∆k∥gk∥2 ≥ ηκ ∆2
+
+> k
+
+.
+
+Since the right-hand side is strictly positive, the trial point is accepted. Because f is bounded below by a finite constant flow , summing over all successful expansion steps yields X
+
+> k∈S
+
+∆2 
+
+> k
+
+≤ f (x0) − flow 
+
+ηκ < ∞.
+
+For every iteration k, the update rule (3.1) implies 
+
+∆2 
+
+> k+1
+
+≤ γ21 ∆2 
+
+> k
+
++ γ22 ∆2
+
+> k
+
+1{k∈S} .
+
+Summing this inequality from k = 0 to N yields 
+
+(1 − γ21 )
+
+> N
+
+X
+
+> k=1
+
+∆2 
+
+> k
+
++ ∆ 2  
+
+> N+1
+
+≤ γ21 ∆20 + γ22
+
+X
+
+> k∈S
+
+∆2
+
+> k
+
+.
+
+Because γ1 ∈ (0 , 1) , we have 1 − γ21 > 0. Taking N → ∞ establishes (3.11), which directly implies lim k→∞ ∆k = 0 .We next establish that the full gradient cannot remain bounded away from zero along any infinite subsequence. 
+
+Theorem 3.6 (Subsequential convergence). Suppose Assumption 3.1 holds and 
+
+p ≥ 2. Let the exploratory directions be sampled independently as 
+
+d(k) 
+
+> i
+
+= zi
+
+√n , zi ∼ N (0, In), i = 2 , . . . , p. 
+
+Then 
+
+(3.13) lim inf  
+
+> k→∞
+
+∥∇ f (xk)∥2 = 0 almost surely .MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 11 
+
+Proof. Suppose, to the contrary, that there exist ε > 0 and an index K0 such that (3.14) ∥∇ f (xk)∥2 ≥ ε, ∀ k ≥ K0.
+
+Choose a probability threshold (3.15) q > max 
+
+ 12 , log(1 /γ 1)log( γ2/γ 1)
+
+
+
+.
+
+By Lemma 3.3, there exist constants α > 0 and R > 1 such that the event 
+
+Gk := 
+
+
+
+∥ˆgk∥2 ≥ α∥∇ f (xk)∥2, max  
+
+> 1≤i≤p
+
+∥d(k) 
+
+> i
+
+∥2 ≤ R
+
+
+
+satisfies P(Gk | F k) ≥ q. On Gk, we have Qk ≤ √p R 2 and ∥Dk∥22 ≤ pR 2. Applying Lemma 3.2 under (3.14) gives 
+
+∥gk∥2 ≥ ∥ ˆgk∥2 − ∥ gk − ˆgk∥2 ≥ αε − L√p R 2
+
+2 ∆k.
+
+Since ∆k → 0 by Lemma 3.5, for all sufficiently large k we have (3.16) ∥gk∥2 ≥ αε 
+
+2 .
+
+Proposition 3.4 then ensures that, on Gk and for all sufficiently large k,
+
+ρk ≥ η and ∥gk∥2 ≥ κ∆k.
+
+Consequently, every occurrence of Gk for sufficiently large k produces ∆k+1 = γ2∆k,while on the remaining iterations ∆k+1 ≥ γ1∆k.Let Ik := 1Gk . For all sufficiently large k,(3.17) log ∆ k+1 − log ∆ k ≥ Ik log γ2 + (1 − Ik) log γ1.
+
+Since E[Ik | F k] ≥ q, the strong law of large numbers for bounded martingale differ-ences implies 
+
+lim inf  
+
+> N→∞
+
+1
+
+N 
+
+> K+N−1
+
+X
+
+> k=K
+
+Ik ≥ q almost surely .
+
+Averaging (3.17) over N steps therefore yields 
+
+lim inf  
+
+> N→∞
+
+log ∆ K+N − log ∆ K
+
+N ≥ q log γ2 + (1 − q) log γ1 > 0 almost surely ,
+
+where the strict inequality follows from (3.15). This implies ∆k → ∞ , contradicting 
+
+∆k → 0 from Lemma 3.5. Thus (3.14) cannot hold, establishing (3.13). To strengthen the convergence guarantee from subsequential convergence to the convergence of the full gradient sequence, fix any ε > 0 and define the index set of large gradients: (3.18) Kε := {k : ∥∇ f (xk)∥2 > ε } .12 Y. WANG, H. YAO, AND P. XIE 
+
+Lemma 3.7. Under the assumptions of Theorem 3.6, for every ε > 0,
+
+(3.19) X
+
+> k∈K ε
+
+∆k < ∞ almost surely .
+
+Proof. Choose the good-frame event Gk as in the proof of Theorem 3.6 with conditional probability q > 1/2. Because ∆k → 0, whenever k ∈ K ε ∩ Gk and k is sufficiently large, we have ∥gk∥2 ≥ αε  
+
+> 2
+
+and ρk ≥ η. Consequently, 
+
+f (xk) − f (xk+1 ) ≥ ηαε 
+
+2 ∆k.
+
+Because f is bounded below, summing this decrease over all such iterations gives 
+
+X
+
+> k∈K ε∩Gk
+
+∆k < ∞.
+
+Since the conditioning events Gk satisfy P(Gk | F k) ≥ q > 1/2 uniformly, applying the standard renewal property for probabilistically accurate models along the index subsequence Kε implies that the sum over the entire set Kε is finite: 
+
+X
+
+> k∈K ε
+
+∆k < ∞ almost surely .
+
+Let βk := ∥Dk∥2. For the Gaussian frame construction in Algorithm 2.1, the spectral norm satisfies 
+
+sup 
+
+> k
+
+E[βk | F k] < ∞ and sup 
+
+> k
+
+E[β2 
+
+> k
+
+| F k] < ∞.
+
+Together with Lemmas 3.5 and 3.7, these moment bounds imply (3.20) lim  
+
+> k→∞
+
+βk∆k = 0 almost surely ,
+
+and, for every ε > 0,(3.21) X
+
+> k∈K ε
+
+βk∆k < ∞ almost surely .
+
+Theorem 3.8 (Global convergence). Under the assumptions of Theorem 3.6, 
+
+(3.22) lim  
+
+> k→∞
+
+∥∇ f (xk)∥2 = 0 almost surely .
+
+Proof. Suppose, for contradiction, that (3.22) does not hold. In view of Theo-rem 3.6, there then exists ε > 0 and infinitely many disjoint pairs of indices aj < b j
+
+such that 
+
+∥∇ f (xaj )∥2 ≤ ε, ∥∇ f (xbj )∥2 > 2ε, 
+
+while 
+
+∥∇ f (xk)∥2 > ε, ∀ aj < k < b j .
+
+By the Lipschitz continuity of the gradient (Assumption 3.1), 
+
+ε < ∥∇ f (xbj )∥2 − ∥∇ f (xaj )∥2 ≤ L 
+
+> bj−1
+
+X
+
+> k=aj
+
+∥xk+1 − xk∥2.MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 13 Since ∥xk+1 − xk∥2 ≤ ∥ Dkss∥2 ≤ βk∆k, we can partition the summation as  
+
+> bj−1
+
+X
+
+> k=aj
+
+∥xk+1 − xk∥2 ≤ βaj ∆aj + 
+
+> bj−1
+
+X 
+
+> k=aj+1
+
+βk∆k.
+
+As j → ∞ , the first term βaj ∆aj → 0 almost surely by (3.20). Furthermore, all intermediate indices k ∈ { aj + 1 , . . . , b j − 1} belong to Kε. Because P 
+
+> k∈K ε
+
+βk∆k <
+
+∞ almost surely by (3.21), the tail sum Pbj −1  
+
+> k=aj+1
+
+βk∆k tends to zero as j → ∞ .Consequently, the entire right-hand side converges to zero, which contradicts the strict lower bound ε > 0.Therefore, (3.22) holds almost surely. Theorem 3.8 establishes almost-sure first-order global convergence for a fixed deterministic objective. In our LLM fine-tuning experiments, minibatches change across iterations, so asymptotic convergence to a stationary point of the population loss is not claimed. 
+
+4. Numerical Experiments. We evaluate MpSub on full-parameter fine-tuning of causal language models, comparing against the zeroth-order optimizer MeZO [9] under matched computational budgets. We also examine step-size sensitivity and the effect of the subspace dimension. 
+
+4.1. Experimental setup. Experiments are conducted on CommitmentBank (CB) from the SuperGLUE benchmark, a three-class natural language inference task. Following [9], we use 100 training examples, 50 validation examples, and the 56-example validation split as the test set. We evaluate two autoregressive models from the OPT family: OPT-125M ( n ≈ 1.25 × 10 8 parameters) and OPT-350M ( n ≈
+
+3.5 × 10 8 parameters). All parameters are stored and optimized in FP32 with a batch size of 8. Results are averaged over three random seeds, with min–max ranges reported. Because zeroth-order methods do not compute gradients, computational cost is measured by the total number of forward passes on the training objective. Each method is allotted a budget of 8,400 forward passes. For MpSub with p = 20 , which takes 200 optimization steps, each iteration requires 2p + 2 = 42 evaluations. MeZO uses 2 evaluations per step, therefore taking 4,200 steps. Periodic development eval-uations are recorded separately and excluded from this budget. 
+
+MpSub uses the same fixed hyperparameters across both models: p = 20 , initial radius ∆0 = 10 −1, contraction factor γ1 = 0 .5, expansion factor γ2 = 2 .0, success threshold η = 0 .1, ∆min = 10 −12 , and ∆max = 1 .0. For MeZO, the perturbation scale is ϵ = 10 −3, and the learning rate ηM is selected by development accuracy over a grid: 
+
+{10 −8, 10 −7, 10 −6, 10 −5, 10 −4} on OPT-125M and {10 −7, 10 −6, 10 −5} on OPT-350M. 
+
+4.2. Matched-budget comparison. Table 4.1 reports test and development accuracy across three random seeds under the common budget of 8,400 forward passes. On OPT-125M, MpSub with the default radius ∆0 = 10 −1 achieves a mean de-velopment accuracy of 0.773 and a development loss of 0.674 , compared to 0.760 and 
+
+0.703 for MeZO, while test accuracies are similar ( 0.673 versus 0.685 ). On OPT-350M, MpSub achieves a mean test accuracy of 0.690 and development accuracy of 
+
+0.787 , compared to 0.685 and 0.780 for MeZO. MpSub attains these results with the same preset parameters on both models. Figure 4.1 shows development loss as a function of forward passes. Though early in training MeZO decreases the loss rapidly, its progress gradually becomes slower. 14 Y. WANG, H. YAO, AND P. XIE 
+
+Table 4.1 
+
+Matched-budget fine-tuning results on CommitmentBank ( 8,400 forward passes). Values are means over three random seeds, with min–max ranges in parentheses. The MeZO learning rate is selected by mean development accuracy. 
+
+Model Method Dev loss Dev acc. Test acc. OPT-125M MpSub (∆0 = 10 −1) 0.674 
+
+> (0.620 –0.723 )
+
+0.773 
+
+> (0.740 –0.820 )
+
+0.673 
+
+> (0.661 –0.679 )
+
+MeZO ( ηM = 10 −6) 0.703 
+
+> (0.625 –0.784 )
+
+0.760 
+
+> (0.740 –0.800 )
+
+0.685 
+
+> (0.679 –0.696 )
+
+OPT-350M MpSub (∆0 = 10 −1) 0.738 
+
+> (0.715 –0.774 )
+
+0.787 
+
+> (0.760 –0.820 )
+
+0.690 
+
+> (0.679 –0.714 )
+
+MeZO ( ηM = 10 −6) 0.679 
+
+> (0.582 –0.743 )
+
+0.780 
+
+> (0.720 –0.880 )
+
+0.685                 
+
+> (0.679 –0.696 )02000 4000 6000 8000
+> Training-objective forward passes
+> 0.65 0.70 0.75 0.80 0.85 0.90
+> Development loss
+> OPT-125M
+> MpSub, fixed default Δ0= 10 −1
+> MeZO, dev-selected η= 10 −6
+> 02000 4000 6000 8000
+> Training-objective forward passes
+> OPT-350M
+> MpSub, fixed default Δ0= 10 −1
+> MeZO, dev-selected η= 10 −6
+
+Fig. 4.1 . Development loss versus training forward passes for OPT-125M (left) and OPT-350M (right). Shaded bands represent ±1 standard error of the mean across three random seeds. 
+
+In contrast, MpSub uses the momentum direction together with p − 1 random search directions. This leads to a steady decrease in development loss and a lower final development loss on OPT-125M. 
+
+4.3. Step-size sensitivity. Figure 4.2 compares the sensitivity of MeZO across learning rates against MpSub across initial radii ∆0 ∈ { 10 −3, 10 −2, 3 × 10 −2, 10 −1, 3 ×
+
+10 −1} on OPT-125M. MeZO depends strongly on the learning rate: shifting ηM by one order of mag-nitude from the best rate ( 10 −6) drops mean test accuracy by 0.048 at 10 −7 and by 
+
+0.084 at 10 −5, while rates outside this range yield poor results. Finding an effective learning rate for MeZO thus required evaluating multiple configurations ( 42 ,000 for-ward passes across five rates on OPT-125M, and 25 ,200 passes across three rates on OPT-350M). By contrast, MpSub maintains a stable performance plateau across the entire tested initial-radius range: mean test accuracy consistently hovers between 0.655 and 0.678 
+
+across all five values of ∆0 from 10 −3 to 3 × 10 −1 (a 300 -fold span). This robustness illustrates the self-calibrating nature of the trust-region radius: even when initialized conservatively at ∆0 = 10 −3, successful trial steps ( ρk ≥ η) prompt the expansion factor γ2 = 2 .0 to double ∆k iteratively during the opening iterations, swiftly navigat-ing the step size toward the effective operating scale. As a result, the default setting 
+
+∆0 = 10 −1 delivers competitive performance on both OPT-125M and OPT-350M MPSUB: SUBSPACE TRUST-REGION DERIVATIVE-FREE LLM FINE-TUNING 15 10 8 10 7 10 6 10 5 10 4                   
+
+> learning rate
+> 0.50 0.55 0.60 0.65 0.70
+> test accuracy
+> MeZO
+> 10 310 23 × 10 210 13 × 10 1
+> initial radius 0
+> MpSub
+> tuned MeZO mean MpSub
+> Fig. 4.2 .Step-size sensitivity on OPT-125M under 8,400 forward passes. Left: MeZO test accuracy across learning rates ηM. Right: MpSub test accuracy across initial radii ∆0.
+
+without an initial parameter sweep. 
+
+4.4. Effect of the subspace dimension. Table 4.2 examines the effect of vary-ing the subspace dimension p ∈ { 5, 10 , 15 , 20 , 25 , 30 } on OPT-125M over 100 itera-tions.       
+
+> Table 4.2
+> Ablation on subspace dimension pfor OPT-125M (CommitmentBank, 100 steps, ∆0= 10 −1,single seed). Forward passes per step equal 2p+ 2 ; run times measured on an NVIDIA RTX 4060 Ti GPU.
+
+p Forward passes / step Dev acc. Test acc. Time / step (s) 5 12 0.70 0.643 3.0 10 22 0.72 0.661 4.4 15 32 0.74 0.661 6.0 20 42 0.78 0.679 7.7 25 52 0.78 0.679 8.7 30 62 0.76 0.661 10.1 
+
+As p increases from 5 to 20, development accuracy rises from 0.70 to 0.78 and test accuracy from 0.643 to 0.679 , which is consistent with the increase in captured gradient energy described in Lemma 3.3. Beyond p = 20 , the accuracy no longer improves in this experiment, while both the number of forward passes per step and the measured per-step latency continue to increase. In particular, the latency rises from 3.0 seconds at p = 5 to 10 .1 seconds at p = 30 . These results suggest that p = 20 
+
+provides a reasonable balance between directional information and computational cost for the experiments considered here. 
+
+5. Conclusion. We proposed MpSub , which combines a moving random subspace with trust-region step-size control for derivative-free LLM fine-tuning. For smooth deterministic objectives, we showed that the gradient norm converges to zero almost surely under Gaussian direction sampling and the safeguarded radius update. On CommitmentBank, MpSub achieved results comparable to tuned MeZO on OPT-125M and OPT-350M under the same forward-pass budget, while using the same trust-region settings for both models. 16 Y. WANG, H. YAO, AND P. XIE 
+
+Several questions remain open. The convergence analysis treats a fixed deter-ministic objective, whereas the LLM experiments resample the minibatch between iterations. Extending the analysis to changing minibatches is therefore the most direct theoretical next step. It would also be useful to study whether curvature infor-mation can be introduced into the subspace model without returning to the quadratic interpolation cost that motivated the linear model used here. The experiments are also limited to one dataset and two relatively small language models. Tests on larger models, additional datasets, and generative tasks are needed to understand how the method behaves at a broader scale. The 2p directional eval-uations are independent once the minibatch and current iterate are fixed, so parallel evaluation is another direction worth studying. Finally, MpSub could be combined with parameter-efficient fine-tuning methods such as LoRA, where the same trust-region mechanism would operate in a much smaller trainable parameter space. 
+
+Acknowledgements. The authors thank the developers of the MeZO and LOZO codebases, on which the experimental infrastructure builds. 
+
+REFERENCES [1] C. Audet and W. Hare , Derivative-free and blackbox optimization , Springer, Heidelberg, 2017. [2] C. Cartis, J. Fowkes, and Z. Shao , Randomised subspace methods for non-convex opti-mization, with applications to nonlinear least-squares , arXiv preprint arXiv:2211.09873, (2022). [3] C. Cartis and L. Roberts , Scalable subspace methods for derivative-free nonlinear least-squares optimization , Math. Program., 199 (2023), pp. 461–524. [4] Y. Chen, Y. Zhang, L. Cao, K. Yuan, and Z. Wen , Enhancing zeroth-order fine-tuning for language models with low-rank structures , in International Conference on Learning Representations (ICLR), 2025. [5] A. R. Conn, N. I. M. Gould, and P. L. Toint , Trust Region Methods , SIAM, Philadelphia, 2000. [6] A. R. Conn, K. Scheinberg, and L. N. Vicente , Global convergence of general derivative-free trust-region algorithms to first- and second-order critical points , SIAM J. Optim., 20 (2009), pp. 387–415. [7] A. R. Conn, K. Scheinberg, and L. N. Vicente , Introduction to Derivative-Free Opti-mization , SIAM, Philadelphia, 2009. [8] D. Kozak, S. Becker, A. Doostan, and L. Tenorio , A stochastic subspace approach to gradient-free optimization in high dimensions , Computational Optimization and Applica-tions, 79 (2021), pp. 339–368, https://doi.org/10.1007/s10589-021-00271-w. [9] S. Malladi, T. Gao, E. Nichani, A. Damian, J. D. Lee, D. Chen, and S. Arora ,
+
+Fine-tuning language models with just forward passes , in Advances in Neural Information Processing Systems, vol. 36, 2023, pp. 53038–53075. [10] M. Menickelly , Avoiding geometry improvement in derivative-free model-based methods via randomization , arXiv preprint arXiv:2305.17336, (2023). [11] Y. Nesterov and V. Spokoiny , Random gradient-free minimization of convex functions ,Foundations of Computational Mathematics, 17 (2017), pp. 527–566. [12] P. Xie and Y. x. Yuan , A new two-dimensional model-based subspace method for large-scale unconstrained derivative-free optimization: 2D-MoSub , Optimization Methods and Software, 41 (2025), https://doi.org/10.1080/10556788.2025.2601670. [13] Z. Yu, P. Zhou, S. Wang, J. Li, M. Tian, and H. Huang , Zeroth-order fine-tuning of LLMs in random subspaces , in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), 2025. [14] Y. Yuan , Subspace techniques for nonlinear optimization , in Some Topics in Industrial and Applied Mathematics, R. Jeltsch, D. Q. Li, and I. H. Sloan, eds., Higher Education Press, Beijing, 2007, pp. 206–218. [15] Y. Yuan , A review on subspace methods for nonlinear optimization , in Proceedings of the International Congress of Mathematicians (ICM 2014), vol. 4, 2014, pp. 807–827.

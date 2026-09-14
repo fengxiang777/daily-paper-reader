@@ -1,0 +1,587 @@
+Title: ECOKV: Geometry-Aware KV Cache Eviction via Complementary Diversity Metrics
+
+URL Source: https://arxiv.org/pdf/2609.06663v1
+
+Published Time: Wed, 09 Sep 2026 01:24:19 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# ECOKV: Geometry-Aware KV Cache Eviction via Complementary Diversity Metrics 
+
+# Chin Ting Hsu 1 Yu-Syuan Xu 1,2 Ling Zou 1
+
+# Hsien-Kai Kuo 2 Wen-Huang Cheng 11National Taiwan University 2MediaTek Inc. 
+
+# Abstract 
+
+Although multimodal Large Language Models (MLLMs) ex-cel in diverse tasks, their scalability remains limited by the memory and computational overhead of KV cache storage. Recent KV cache eviction approaches incorporate a cosine similarity-based diversity metric with importance metrics to selectively retain critical key-value pairs. However, cosine similarity involves normalization that discards magnitude information, and it often yields uniformly high similarity values across layers due to the anisotropy property of hid-den representations. In our study ECOKV, we rigorously de-construct the capabilities of existing diversity metrics. Mov-ing beyond simple measurement, we propose a geometry-aware composite metric that jointly leverages Euclidean distance and cosine similarity to capture token diversity from complementary perspectives. Furthermore, we use these two metrics to estimate the redundancy level of each attention head, allowing adaptive weighting between diver-sity and importance scores during token selection. Finally, we demonstrate that the observation window commonly em-ployed to preserve recent tokens can be substantially re-duced, thereby allocating more cache capacity to informa-tive tokens and yielding consistent improvements. Exten-sive experiments demonstrate that ECOKV achieves state-of-the-art performance under various compression ratios and can be seamlessly integrated with existing KV cache eviction methods. We further analyze the relationship be-tween importance and diversity, and examine redundancy patterns across layers and attention heads. 
+
+# 1. Multimodal Large Language Model Effi-ciency 
+
+Multimodal large language models (MLLMs) [46–48] have gained widespread attention for their ability to process and reason over multimodal inputs, including text, images, and audio, while providing contextually relevant responses. In the realm of computer vision, they have been widely adopted in various tasks, including visual question answer-ing [2, 18], image captioning [10, 12], and object detec-tion [15, 51]. Recent advances have enabled the process-ing of increasingly long and complex inputs [3, 37]. How-ever, this progress introduces substantial computational and memory overhead, making inference efficiency a critical concern. To address this challenge, KV cache eviction methods [13, 20] offer a training-free alternative that re-duces memory usage and inference latency while preserving model capability, by selectively removing redundant key-value pairs from the KV cache. Early KV cache eviction algorithms are primarily de-signed for Large Language Models (LLMs). They perform top-K selection within a fixed budget, retaining key-value pairs by importance scores estimated via accumulated attention score [49], average attention scores within an observation window [23], or approximated by heuristic metrics such as Key Norm (KNorm) [7] or Value Norm (VNorm) [17]. To account for the varying information density across layers and attention heads, subsequent work explores dynamic budget allocation frameworks that support adaptive and fine-grained budget sharing [4, 8]. Recently, diversity-aware criteria have been incorporated to improve coverage of the retained key-value set and mitigate redundancy [6, 33], yielding better preservation of the token distribution under constrained memory budgets. Recent studies have begun exploring KV cache eviction for MLLMs [22, 27, 42–44]. These works observe that visual tokens often exhibit higher redundancy than text tokens, motivating strategies that prioritize the preservation of text tokens or leverage diversity metrics to identify and remove redundant visual tokens. Despite these advances, existing diversity-based meth-ods mostly rely on cosine similarity over normalized em-beddings, which introduces a fundamental geometric limi-tation. Recent studies [11, 24] have highlighted the issue of anisotropy, where high-dimensional transformer embed-1arXiv:2609.06663v1 [cs.CL] 6 Sep 2026 Figure 1. Distribution of layer-wise key cosine similarities in Qwen2-VL-7B-Instruct. Cosine similarity remains consistently high across all layers. 
+
+dings concentrate within a narrow cone, resulting in uni-formly high cosine similarity scores. As illustrated in Fig-ure 1, cosine similarity produces consistently high aver-age similarity scores across layers, exposing its tendency to overestimate redundancy and potentially corrupt eviction decisions. Moreover, cosine similarity operates on normal-ized vectors, thereby losing magnitude information. Rely-ing on a single, biased metric without jointly accounting for complementary geometric information can lead to incorrect token prioritization during eviction, while overestimation of redundancy may induce an undue preference for diversity over importance across layers. Euclidean distance offers a potential measure of token diversity by capturing magni-tude information in token representations. However, lack-ing explicit directional information, it has shown inferior performance for token diversity assessment in prior LLM studies [33]. Consequently, each metric captures distinct information while having inherent limitations, and the po-tential benefits of combining them into a composite metric remain largely unexplored. To address the limitations, we propose Geometry-Aware KV Cache Eviction via Complementary Diversity Metrics (ECOKV), a novel eviction framework that integrates Eu-clidean distance and cosine similarity to capture richer ge-ometric information for token diversity. Specifically, we introduce a Euclidean-based diversity metric that measures the distance between each key and the global average, fol-lowed by normalization to facilitate its integration with a cosine-similarity-based metric. Furthermore, we employ Euclidean distance to capture layer-wise redundancy while mitigating its unbounded scale issue. In addition, previ-ous methods inherit the observation window size of 32 from [23], which has not been thoroughly examined for MLLMs under tight memory budgets. With a small cache budget, the observation window consumes a substantial portion of the cache, leaving fewer tokens for selection. We therefore evaluate different observation window sizes and find that smaller windows consistently improve performance by al-locating more budget to our token selection strategy. Extensive experiments validate that ECOKV achieves state-of-the-art performance across multiple multimodal benchmarks and compression ratios, integrating seamlessly with existing eviction frameworks. We further analyze the relative weighting between Euclidean distance and cosine similarity, the effect of observation window size, and the layer-wise correlation between importance and diversity, offering insights into where diversity plays a critical role in key-value selection. Our key contributions are: • (i) We provide in-depth analysis on different diversity metrics and their impact on model performance • (ii) We introduce a head-adaptive key diversity and redun-dancy estimator that jointly leverages Euclidean distance and cosine similarity to dynamically adjust diversity con-tribution across attention heads • (iii) We observe that a reduced observation window strat-egy can improve performance under tight budget con-straints • (iv) We achieve state-of-the-art performance on multi-model question answering benchmarks, and provide di-verse empirical analysis on the choice of diversity imple-mentation and the relation between different metrics 
+
+# 2. Related Work 
+
+2.1. LLM-based KV Cache Eviction 
+
+Recent work has explored KV cache eviction to reduce the memory overhead of long-context inference in LLMs [1, 9, 20, 25, 39, 50]. H2O [49] identifies a small subset of tokens that dominate attention and prioritizes them as heavy hitters. SnapKV [23] shows that only a subset of prompt tokens carries essential information for generation and compresses the KV cache by retaining representative tokens. They as-sess the importance of keys and values using the observa-tion window located at the end of the prompts. Subsequent works adopt these ideas and explore dynamic budget allo-cation across attention layers and heads. PyramidKV [4] reveals that the attention is diffuse in the early layers and gradually concentrates in the deep layers, thereby allocating more cache in the lower layers and less in the higher ones. AdaKV [8] finds that attention heads exhibit diverse con-centration patterns and dynamically allocates cache bud-gets across heads accordingly. Another research direction investigates the estimation of token importance to deter-mine which key-value pairs should be retained. InfiniPot-V [17] uses VNorm (value norm) as an importance proxy and introduces adaptive pooling to model spatial locality patterns across layers. Alternatively, [7] proposes KNorm (key norm) as the importance indicator, demonstrating that different components of KV representations can serve as ef-fective signals for identifying important tokens. 2For diversity-based assessment, KeyDiff [33] proposes an attention-free cache eviction method based on key similarity. R-KV [5] balances redundancy and importance with a hyperparameter λ and performs eviction during decoding. ManifoldKV [6] ranks tokens solely based on their Euclidean distance to the key centroid, overlooking both token importance and directional information such as cosine similarity. Although they achieve decent perfor-mance in LLMs, directly applying them to MLLMs can lead to a performance drop due to distinct modality-specific characteristics. 
+
+2.2. MLLM-based KV Cache Eviction 
+
+For MLLMs KV cache eviction, recent work aims to rec-ognize the different characteristics between text and vision tokens. LOOK-M [42] observes that models often prioritize more textual attention over image features, inspiring them to prioritize text KV pairs during eviction. MEDA [43] extends the idea by introducing a dynamic layer-wise KV cache allocation mechanism. SparseMM [44] uses an an-chor task to identify visual heads and allocates them a larger budget, as they are primarily responsible for processing vi-sual information. SimiCache [29] first applies K-means clustering, followed by similarity-based clustering to group similar keys, and then merges them through a weighted sum. MadaKV [21] allocates separate budgets for different modalities and dynamically adjusts the budget size based on modality complexity across layers. MixKV [27] mixes importance with diversity and dynamically determines the weight of each metric. These methods acknowledge the high redundancy of vision tokens, but either overlook diver-sity or rely on incomplete geometric information, leading to inaccurate diversity estimation. 
+
+2.3. Similarity Metrics in Transformers 
+
+Similarities between tokens or hidden embeddings are fre-quently used in LLMs and MLLMs research [6, 27, 33]. Cosine similarity is believed to capture semantic-level sim-ilarity and is therefore commonly used in NLP research [30, 34]. However, it sometimes performs worse than other ap-proaches [14, 16]. [38] proposes that cosine similarity is implicitly controlled by regularization when learning deep models. In fact, cosine similarity in transformers is inher-ently high across various settings, a phenomenon known as anisotropy [11, 24]. In addition to cosine similarity, Eu-clidean distance is also adopted in some papers. For exam-ple, [40] shows that using a distance-based Euclidean metric yields a similarity measure less biased by the dimensional-ity of the hidden-state. For MLLMs KV Cache eviction, recent research [27, 29] inherits the assumption from LLMs and continues to use cosine similarity as the primary metric. In our paper, we propose using both Euclidean and cosine similarity metrics, which complement each other, to demon-strate that both are important for assessing token diversity in MLLMs. 
+
+# 3. Preliminary 
+
+Inference in LLMs and MLLMs can be divided into two stages: the prefilling stage and the decoding stage. The prefilling stage processes the entire input prompt, while the decoding stage autoregressively generates new tokens. During the prefilling stage, for each transformer layer, the input x ∈ RT ×d is projected through learnable weight matrices Wq ∈ Rd×dq , Wk ∈ Rd×dk , and Wv ∈ Rd×dv to obtain the query Q, key K, and value V representations for self-attention which is computed as: 
+
+Q = x · Wq , K = x · Wk, V = x · Wv ,
+
+Attention (Q, K, V ) = softmax 
+
+ QK ⊤
+
+√dk
+
+
+
+V
+
+To avoid recomputing K and V at each decoding step, the KV cache retains these representations across the en-tire generation process. However, as input context lengths grow, the KV cache size increases linearly with the se-quence length, imposing substantial memory overhead and computational cost. To mitigate this, KV cache eviction methods selectively remove less informative key-value pairs to maintain a bounded cache size while preserving model performance. Let Kl,h = {Kl,h i }Ti=1 and V l,h = {V l,h i }Ti=1 denote the keys and values at layer l and attention head h, re-spectively, where T denotes the sequence length. We de-fine a scoring function S(Kl,h i , V l,h i ) that assigns a scalar score to each key-value pair, retaining only the top-K pairs with the highest scores. The selected subset is defined as: 
+
+ˆKl,h , ˆV l,h = {Kl,h i , V l,h i | S (Kl,h i , V l,h i ) ∈ Top-k }Ti=1 ,which is subsequently used to compute self-attention. The scoring function S typically quantifies either impor-tance or diversity. Importance-based scoring employs an observation window of the most recent N key-value pairs to assess the importance of remaining pairs, preserving the window unconditionally due to recency and relevance. Diversity-based scoring assigns higher scores to outlier tokens to promote semantic diversity in the retained set. Combining both criteria, the final set of preserved key-value pairs is given by: 
+
+ˆKl,h , ˆV l,h =
+
+n
+
+Kl,h i , V l,h i S
+
+
+
+Kl,h i , V l,h i
+
+
+
+∈ Top-k
+
+oT −Ni=1 
+
+| {z }
+
+> diversity/importance-selected pairs
+
+∪
+
+n
+
+Kl,h i , V l,h i
+
+oTi=T −N +1 
+
+| {z }
+
+> observation window
+
+3Figure 2. (a) Cosine similarity remains consistently high across layers. (b) PCA projection of layer 0 keys. Although the embed-dings are not identical, their cosine is approximately 1.0. 
+
+where the first term contains the top-k selected pairs from the non-window tokens, and the second term corresponds to the observation window that is preserved in its entirety. 
+
+# 4. Diversity Metrics Analysis 
+
+Diversity metrics are widely adopted in token reduction and KV cache eviction methods to minimize information loss and mitigate redundancy within the retained subset. In the following paragraphs, we systematically analyze sev-eral commonly employed metrics for assessing token-level diversity, highlighting their respective strengths and limita-tions. 
+
+Cosine Similarity. Cosine similarity measures the angu-lar alignment between two vectors, making it sensitive to directional differences while remaining invariant to vector magnitudes. Given two vectors a, b , it is defined as: CosSim (a, b) = a · b
+
+∥a∥∥ b∥
+
+It is widely adopted in NLP research and is often re-garded as a proxy for semantic similarity between text to-kens. However, by operating on normalized vectors, cosine similarity discards magnitude information, providing only a partial geometric information of token diversity. Moreover, recent work [11, 24, 40] shows that high-dimensional embeddings in transformers tend to concen-trate within a narrow cone, leading to consistently high av-erage cosine similarity. Figure 2 illustrates the cosine sim-ilarity across layers in Qwen-7B-Instruct [45]. We observe that the average similarity exceeds 0.4 in all layers and ap-proaches 1.0 in the first layer. In contrast, PCA visualiza-tions of the first layers reveal that the token representations are not identical but remain well spread in space. This dis-crepancy highlights a key limitation: by ignoring magnitude information, cosine similarity can overestimate the similar-ity between embeddings. 
+
+Euclidean Distance. Euclidean distance measures the straight-line distance between two vectors, capturing differ-ences in both magnitude and position: ECD (a, b) = ∥a − b∥2 =
+
+q
+
+(a − b)⊤(a − b)
+
+Unlike cosine similarity, Euclidean distance operates on un-normalized vectors, thereby preserving magnitude informa-tion. This relationship can be made explicit by expanding the squared distance: ECD (a, b)2 = ∥a∥2 + ∥b∥2 − 2∥a∥∥ b∥ CosSim (a, b)
+
+This decomposition reveals that Euclidean distance jointly encodes vector magnitudes ( ∥a∥2, ∥b∥2) and directional re-lationship, capturing richer geometric information than co-sine similarity alone. Nonetheless, Euclidean distance is unbounded, which necessitates an additional mapping from distance to a normalized similarity measure. Furthermore, its scale can vary significantly across layers, making direct comparison of diversity between layers challenging. 
+
+# 5. Method 
+
+In this section, we propose a novel combined metric for MLLM KV Cache Compression by addressing two funda-mental challenges: (a) how to design diversity metrics that assign reliable scores to each key (Sec. 5.1), and (b) how to assess layer-wise redundancy and appropriately balance di-versity and importance scores (Sec. 5.2). Furthermore, we introduce our findings regarding observation window size adjustment in Sec. 5.3. 
+
+5.1. Key Diversity Score Assessment 
+
+As analyzed in the previous section, cosine similarity suf-fers from anisotropy and lacks magnitude information. To provide enriched geometry information for key diversity score assessment, we incorporate Euclidean distance-based diversity metric as a complementary counterpart to cosine similarity. Specifically, we compute the centroid ¯k of all key vectors and measure the Euclidean distance of each key 
+
+ki from the centroid: 
+
+¯k = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+ki, dE (i) = ki − ¯k 2 (1) where dE (i) denotes the Euclidean distance between key 
+
+ki and the centroid ¯k. A larger dE (i) indicates that ki de-viates more from the average representation, suggesting it carries more unique and non-redundant information. To eliminate the scale bias of Euclidean distance and map the distances to diversity scores from 0 to 1, we apply min-max normalization with a small constant ϵ for numeri-cal stability: 
+
+sE (i) = dE (i) − min( dE )max( dE ) − min( dE ) + ϵ (2) 4A higher sE (i) corresponds to a key that deviates more from the centroid, indicating a higher diversity contribution. Normalization will not change the relative order of the to-kens, but is crucial for the following combination with co-sine similarity-based scores. We then combine sE (i) with the cosine similarity-based diversity score sC (i) from [27] (details provided in supple-mentary section A.1), forming a unified diversity score that jointly captures both magnitude- and direction-aware infor-mation: 
+
+Sdiv (i) = α · sE (i) + (1 − α) · sC (i) (3) where α ∈ [0 , 1] is a combination coefficient that balances the contribution of magnitude-aware Euclidean diversity and direction-aware cosine diversity. Sdiv (i) is the diver-sity score for the ith key value pairs and will be further combined with the important score to derive the final selection priority. 
+
+5.2. Head-adaptive Redundancy Estimation 
+
+Next, we combine diversity-based scores with importance scores. Intuitively, layers or attention heads with higher re-dundancy should place greater emphasis on diversity to re-duce redundant KV pairs. However, high cosine similarity does not necessarily indicate high redundancy, as it is an in-herent property of transformer representations. Therefore, we design separate heuristics that combine different metrics to better approximate semantic-level diversity. We present the most effective approach here and defer alternative de-signs to supplementary section D. We propose a head-adaptive redundancy estimator that quantifies per-head redundancy by jointly leveraging Eu-clidean distance and cosine similarity to adaptively deter-mine the diversity weight λ for each attention head. For each attention head h, we compute the mean Eu-clidean distance DhE across all key vectors as a measure of the overall spread of the key distribution: 
+
+DhE = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+dhE (i) (4) where a larger DhE indicates lower redundancy and a smaller 
+
+DhE implies higher redundancy. DhE is then mapped to a normalized magnitude-aware redundancy score rE ∈ (0 , 1) 
+
+via a scaled sigmoid: 
+
+rE = 2 − 2 · σ
+
+ DhE
+
+τ
+
+
+
+(5) where τ is a temperature parameter controlling estimation sensitivity. We choose τ = √dk, as the average distance scales proportionally with the square root of the key dimen-sion. rE is then combined with the cosine similarity-based redundancy score rC from [27] (details provided in supple-mentary section A.1) to form a unified redundancy estimate that jointly captures magnitude and directional information: 
+
+λ = β · rE + (1 − β) · rC (6) where β ∈ [0 , 1] balances magnitude-aware and direction-aware contributions. More redundant heads receive a larger 
+
+λ to emphasize diversity-based selection, and less redun-dant heads receive a smaller λ to prioritize importance-based scoring. The complete algorithm for deriving S and λ is provided in supplementary section C, and sensitivity analyses of α
+
+and β are presented in Sec. 6.3. Before combination, the diversity score Sdiv is further scaled to match the magnitude of importance scores. 
+
+¯Sdiv = Sdiv − min max − min , ˜Sdiv = ¯Sdiv · mean (Simp )
+
+mean ( ¯ sC )
+
+where Simp denotes the importance score, computed by combining the ℓ2 norm of the value vector with the average attention score estimated over the observation window, fol-lowing previous works. The final score combines the scaled diversity score ˜Sdiv (i) and importance score Simp (i) with the head-adaptive weight λ:
+
+S(i) = λ · ˜Sdiv (i) + (1 − λ) · Simp (i) (7) The top-k pairs with the highest S(i) are retained for each attention head, enabling fine-grained adaptive eviction across layers and heads. 
+
+5.3. Minimized Observation Window 
+
+Previous work utilizes an observation window to assess the importance of each token. The token within the observation window is preserved, assuming that recent tokens are in-herently more important. However, across different bench-marks and modalities, the last few tokens are not always the most significant. Instead, arbitrarily keeping these tokens can reduce the budget for dynamic token selection. Our experiments show that reducing the observation window to a very small size—or even preserving only the most recent token—can lead to substantially better perfor-mance. To investigate this phenomenon, we conduct a de-tailed analysis of model performance across varying obser-vation window sizes and KV budgets, as well as token selec-tion distributions across benchmarks. The results demon-strate that a tiny observation window enables the KV cache eviction strategy to make more flexible and effective deci-sions about which tokens to retain, thereby improving uti-lization of the limited KV budget. 5Table 1. Performance comparison across benchmarks under different methods and models. 
+
+Methods DocVQA (%) OCRBench (%) TextVQA (%) ChartQA (%) TextCaps 
+
+256 128 64 256 128 64 256 128 64 256 128 64 256 128 64 
+
+LLaVA-NeXT-Mistral-7B 
+
+SnapKV 59.7 55.2 47.3 45.0 39.0 31.9 63.5 61.0 57.1 50.2 47.5 42.7 0.650 0.558 0.444 + MixKV 61.7 58.1 48.8 49.9 44.7 36.1 65.2 64.3 60.1 50.8 47.7 43.6 0.708 0.659 0.514 + ECOKV 62.7 60.8 56.9 49.7 48.4 43.7 65.5 65.1 63.0 52.5 51.5 48.8 0.792 0.721 0.678 
+
+∆baseline +1.0 +2.7 +8.1 -0.2 +3.7 +7.6 +0.3 +0.8 +2.9 +1.7 +3.8 +5.2 +0.084 +0.062 +0.164 PyramidKV 58.2 54.3 43.4 44.1 39.4 29.1 62.9 60.9 54.8 49.1 47.1 40.8 0.621 0.553 0.407 + MixKV 60.8 57.2 45.1 49.7 43.7 32.0 64.9 63.8 57.8 50.8 47.5 41.3 0.687 0.656 0.466 + ECOKV 61.5 59.0 56.1 48.9 46.9 44.1 65.1 63.9 62.0 51.2 50.7 49.3 0.720 0.702 0.662 
+
+∆baseline +0.7 +1.8 +11.0 -0.8 +3.2 +12.1 +0.2 +0.1 +4.2 +0.4 +3.2 +8.0 +0.033 +0.046 +0.196 AdaKV 59.6 55.9 48.7 45.1 40.4 32.8 62.9 60.5 56.9 50.4 47.8 44.6 0.646 0.566 0.440 + MixKV 61.3 58.3 50.8 49.8 44.9 36.6 65.3 63.7 59.6 50.9 48.5 45.2 0.704 0.660 0.509 + ECOKV 62.3 60.3 56.1 49.0 47.3 44.4 65.4 64.5 61.8 51.9 51.1 49.5 0.721 0.711 0.663 
+
+∆baseline +1.0 +2.0 +5.3 -0.8 +2.4 +7.8 +0.1 +0.8 +2.2 +1.0 +2.6 +4.3 +0.017 +0.051 +0.154 SparseMM 61.6 60.8 57.6 51.9 50.7 46.2 65.1 64.7 62.8 51.9 51.2 48.9 0.680 0.634 0.524 + MixKV 61.9 61.0 59.2 50.8 50.4 49.5 65.2 65.0 64.4 51.8 51.5 50.6 0.682 0.652 0.575 + ECOKV 61.9 61.5 61.7 51.1 50.3 48.3 65.2 64.9 64.6 51.8 51.2 50.6 0.693 0.683 0.667 
+
+∆baseline +0.0 +0.5 +2.5 +0.3 -0.1 -1.2 +0.0 -0.1 +0.2 +0.0 -0.3 +0.0 +0.011 +0.031 +0.092 FullKV 63.7 - - 52.7 - - 65.8 - - 52.9 - - 0.702 - -
+
+Qwen2-VL-7B-Instruct 
+
+SnapKV 88.0 80.1 66.5 77.3 71.9 62.4 80.3 77.5 69.9 81.3 79.6 75.5 1.360 1.142 0.794 + MixKV 90.5 82.6 67.9 79.3 75.4 66.0 81.9 80.6 72.5 81.6 81.2 77.6 1.470 1.342 0.878 + ECOKV 93.4 90.4 81.8 80.9 78.9 74.8 82.1 82.1 78.8 81.8 81.6 81.0 1.517 1.496 1.294 
+
+∆baseline +2.9 +7.8 +13.9 +1.6 +3.5 +8.8 +0.2 +1.5 +6.3 +0.2 +0.4 +3.4 +0.047 +0.154 +0.416 PyramidKV 81.7 74.0 59.9 74.5 67.9 56.8 78.3 74.6 65.3 81.1 79.2 73.5 1.115 0.951 0.569 + MixKV 84.0 76.3 60.8 76.6 72.6 58.4 80.4 77.1 67.0 81.3 80.7 75.5 1.348 1.119 0.633 + ECOKV 89.0 82.4 71.3 78.5 75.7 63.7 81.4 78.2 71.6 81.9 81.3 79.5 1.426 1.250 0.913 
+
+∆baseline +5.0 +6.1 +10.5 +1.9 +3.1 +5.3 +1.0 +1.1 +4.6 +0.6 +0.6 +4.0 +0.078 +0.181 +0.280 AdaKV 87.4 81.2 67.1 77.8 71.0 62.1 79.9 77.0 70.3 80.8 79.6 75.9 1.345 1.146 0.775 + MixKV 90.3 82.1 67.8 79.3 74.7 65.5 81.8 79.6 71.2 81.5 80.9 77.4 1.448 1.275 0.878 + ECOKV 93.1 90.5 82.7 81.1 79.3 74.9 82.2 81.7 78.7 81.8 81.6 80.4 1.490 1.456 1.301 
+
+∆baseline +2.8 +8.4 +14.9 +1.8 +4.6 +9.4 +0.4 +2.1 +7.5 +0.3 +0.7 +3.0 +0.042 +0.181 +0.423 SparseMM 93.5 91.5 84.9 81.2 79.0 74.3 82.0 81.6 77.3 82.0 81.5 80.1 1.482 1.430 1.038 + MixKV 93.8 92.7 86.4 82.0 81.0 77.1 82.0 82.0 80.9 81.6 81.8 81.4 1.480 1.459 1.303 + ECOKV 93.9 93.5 93.2 81.9 81.4 80.3 82.1 82.0 81.6 82.0 81.6 81.6 1.497 1.510 1.494 
+
+∆baseline +0.1 +0.8 +6.8 -0.1 +0.4 +3.2 +0.1 +0.0 +0.7 +0.4 -0.2 +0.2 +0.017 +0.051 +0.191 FullKV 93.8 - - 82.3 - - 82.1 - - 81.8 - - 1.477 - -
+
+# 6. Experiment 
+
+6.1. Experiment Setup 
+
+We evaluate our method on two multimodal large language models: LLaVA-NeXT-Mistral-7B [26] and Qwen2-VL-7B-Instruct [45]. For standard multimodal benchmarks, we assess performance on OCRBench [28], ChartQA [31], TextCaps [35], TextVQA [36], and DocVQA [32] fol-lowing the settings in previous works [27, 44]. We use LMMs-Eval [19] as a unified evaluation framework across all benchmarks. To demonstrate plug-and-play compati-bility, we integrate ECOKV with four state-of-the-art KV cache eviction methods: SnapKV [23], PyramidKV [4], AdaKV [8], and SparseMM [44]. We compare against MixKV [27] and full KV cache (FullKV) as baselines. Con-cise introductions of the baseline methods and how we in-tegrate ECOKV with them are provided in supplementary section A.1. The benchmark content and the score metrics reported are listed in supplementary section A.2. The hy-perparameters for evaluation are provided in supplementary section A.3. All experiments are conducted on NVIDIA GeForce RTX 4090 GPUs with 24GB memory. 6Table 2. Evaluation results on MP-DocVQA.                      
+
+> Methods Budget Size
+> 256 128 64 SnapKV 55.0 50.3 42.1 SnapKV + MixKV 56.2 51.7 42.8 SnapKV + ECOKV 58.0 56.1 51.3
+> PyramidKV 51.4 46.4 38.1 PyramidKV + MixKV 52.6 47.8 38.6 PyramidKV + ECOKV 55.5 51.5 44.5
+
+6.2. Main Results 
+
+6.2.1. Multimodal Question Answering Benchmarks 
+
+As shown in Table 1, our method achieves state-of-the-art performance and can be seamlessly incorporated with base-lines. The performance improvements are consistently ob-served across diverse benchmarks, model architectures, and budget settings. Notably, when the budget is set to 256, our approach already matches or even surpasses the per-formance of FullKV. Under more constrained budgets, our method significantly outperforms all baselines, demonstrat-ing its effectiveness in retaining critical information. We also report ∆baseline , which denotes the performance differ-ence between our approach and MixKV, to highlight the ad-vantage of our method over relying solely on a single cosine similarity metric. 
+
+6.2.2. Long-context VQA 
+
+We further evaluate our model’s ability on Long context VQA datasets: MP-DocVQA [41]. MP-DocVQA is a vi-sion question answering dataset that features multiple-page documents as input, which has a longer context length and requires accurate extraction of helpful information. The ex-periments are conducted on Qwen2-VL-7B-Instruct. As shown in Table 2, our method consistently outperforms baselines across different compression ratios, validating its effectiveness in long-context settings. 
+
+6.3. Ablation Studies 
+
+We conduct ablation studies to verify the effectiveness of the proposed components. The experiments are conducted on Qwen2-VL-7B-Instruct with SnapKV and PyramidKV to demonstrate consistency across different eviction frame-works, with ChartQA selected as the benchmark. 
+
+Effect of Combination Weight We investigate the weighting coefficients α and β, which balance Euclidean distance and cosine similarity in the diversity metric and re-dundancy estimator. As shown in Figure 3, β ≈ 0.6 consis-tently achieves strong performance, while optimal α varies   
+
+> Figure 3. Performance under different combination weights αand
+> β. Smaller window size is not applied to isolate gains from metric design.
+
+between baseline methods. Notably, the optimal combina-tion outperforms both pure Euclidean distance ( α = β = 0 )and pure cosine similarity ( α = β = 1 ) configurations, demonstrating their complementary geometric properties. Although the optimal weighting coefficients vary across models and benchmarks, a fixed setting of α = 0 .8 and 
+
+β = 0 .6 consistently achieves near-optimal performance, eliminating the need for exhaustive hyperparameter search. 
+
+Analysis of Observation Window Size We examine the effect of observation window size by evaluating three dif-ferent window sizes across various model and benchmark settings. As shown in Table 3, employing a tiny observa-tion window (window size = 4) or preserving only the most recent token (window size = 1) consistently yields better performance across different benchmarks and model archi-tectures. This supports our hypothesis that large observation windows consume the available budget, limiting the capac-ity for diversity- and importance-based selection. Notably, removing the observation window by only preserving and using the last query to assess importance scores still yields comparable or even superior result, indicating that the ob-servation window potentially limit the model’s capability. We provide fine-grained window size ablation studies and more analysis in supplementary section B.1. 
+
+Normalization Strategy To assess the robustness of our min-max normalization to outliers and alternative scaling strategies, we conduct additional ablations on Qwen2-VL-7B-Instruct using ChartQA with SnapKV. Specifically, we compare our original min-max normalization (Eq. 2) with winsorized min-max normalization and per-head MAD scaling (with temperature set to 1). Winsorized min-max normalization reduces the influence of extreme val-ues by clipping outliers, whereas MAD scaling provides a distribution-aware alternative based on the median abso-lute deviation. As shown in Table 4, all three strategies achieve comparable performance, suggesting that outliers do not have a significant impact on our method. 7Table 3. Reducing observation window size yields universal im-provement. 
+
+Window size 32 4 1OCR 68.1 74.8 73.6 ChartQA 79.1 81.0 80.9 TextVQA 74.4 78.8 80.2 (a) Qwen2-VL-7B-Instruct Window size 32 4 1OCR 36.2 43.7 39.7 ChartQA 43.8 48.8 49.0 
+
+TextVQA 60.1 63.0 62.8 
+
+(b) LLaVA-NeXT-Mistral-7B 
+
+Table 4. Comparison of different normalization methods under different cache budgets. 
+
+Method \Budget 256 128 64 
+
+Original min-max 81.8 81.6 81.0 
+
+1%-99% winsorized min-max 81.8 81.6 80.8 5%-95% winsorized min-max 81.7 81.6 80.8 MAD 81.7 81.6 80.9 
+
+Table 5. Average performance over 3 runs.                         
+
+> Method Cache (GB) Peak Memory (GB) Total Time (s) FullKV 0.438 20.574 20.459 SnapKV 0.003 20.140 16.536 SnapKV + MixKV 0.003 20.140 16.483 SnapKV + ECOKV 0.003 20.140 16.408 PyramidKV 0.004 20.140 16.662 PyramidKV + MixKV 0.004 20.140 16.550 PyramidKV + ECOKV 0.004 20.140 16.540
+
+Efficiency Analysis To evaluate efficiency, we construct synthetic inputs with a context length of 8192 tokens and measure key metrics, including cache size, peak memory usage, and total execution time for generating 512 output tokens. For each method, experiments are repeated three times, and we report the average results to ensure robust-ness. All methods are evaluated under identical hardware conditions to guarantee a fair comparison. The budget size is set to 64 for all methods except FullKV. As shown in Table 5, incorporating ECOKV achieves efficiency compa-rable to baseline methods. This is because the additional computational overhead introduced by Euclidean distance computation is minimal, and is partially offset by reduced computation due to the smaller window size. In addition to the synthetic results, we also provide efficiency results on the actual benchmark in supplemental material section B.3 to further validate ECOKV’s efficiency in practical settings. 
+
+Figure 4. Correlation between importance and diversity metrics. 
+
+6.4. Futher Analysis 
+
+Correlation Between Importance and Diversity. We analyze the correlation between importance and diversity scores to understand whether they provide complemen-tary or redundant signals for key-value selection. The experiment is conducted on Qwen2-VL-7B-Instruct using 100 randomly sampled test cases from ChartQA. Fig-ure 4 reports the average Spearman correlation between importance-based and diversity-based rankings across layers, ordered from early to late layers. We observe a generally low to moderate correlation, suggesting that importance and diversity metrics prioritize keys in different orders. In addition, the correlation is lower in intermediate layers, indicating that the diversity metric has the greatest influence on key-value selection in those layers, where relying solely on importance-based scoring would result in a less representative retained set. We provide results on OCRBench, TextVQA, and TextCaps in supplementary section B.4 and exhibit similar patterns, consistently supporting these findings. 
+
+# 7. Conclusion 
+
+We present ECOKV, a novel KV cache eviction method that integrates complementary diversity metrics to provide a richer geometric characterization of token diversity. We em-ploy the proposed composite metric to prioritize and retain critical key–value pairs, estimate layer-wise redundancy, and show that reducing the observation window can further improve performance under tight budget constraints. Ex-periments demonstrate that ECOKV consistently improves existing eviction methods across various benchmarks and compression ratios. Our analysis also validates the effec-tiveness of each component and the correlation between im-portance and diversity across layers. 8References 
+
+[1] Muhammad Adnan, Akhil Arunkumar, Gaurav Jain, Prashant J Nair, Ilya Soloveychik, and Purushotham Kamath. Keyformer: Kv cache reduction through key tokens selection for efficient generative inference. Proceedings of Machine Learning and Systems , 6:114–127, 2024. 2 [2] Stanislaw Antol, Aishwarya Agrawal, Jiasen Lu, Margaret Mitchell, Dhruv Batra, C Lawrence Zitnick, and Devi Parikh. Vqa: Visual question answering. In Proceedings of the IEEE international conference on computer vision , 2015. 1 [3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhao-hai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-VL technical report, 2025. 1 [4] Zefan Cai, Yichi Zhang, Bofei Gao, Yuliang Liu, Yucheng Li, Tianyu Liu, Keming Lu, Wayne Xiong, Yue Dong, Jun-jie Hu, et al. Pyramidkv: Dynamic kv cache compression based on pyramidal information funneling. arXiv preprint arXiv:2406.02069 , 2024. 1, 2, 6, 12 [5] Zefan Cai, Wen Xiao, Hanshi Sun, Yikai Zhang, Ke Wan, Yucheng Li, Yeyang Zhou, Li-Wen Chang, Jiuxiang Gu, Zhen Dong, et al. R-kv: Redundancy-aware kv cache com-pression for reasoning models. Advances in neural informa-tion processing systems , 38:60980–61005, 2026. 3 [6] Debajyoti Datta, Trishala Neeraj, Bibek Paudel, Vyom Sharma, and Subhabrata Mukherjee. Manifoldkv: Training-free kv cache compression via euclidean outlier detection. 
+
+arXiv preprint arXiv:2602.08343 , 2026. 1, 3 [7] Alessio Devoto, Yu Zhao, Simone Scardapane, and Pasquale Minervini. A simple and effective l 2 norm-based strategy for KV cache compression. In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Process-ing . Association for Computational Linguistics, 2024. 1, 2 [8] Yuan Feng, Junlin Lv, Yukun Cao, Xike Xie, and S Kevin Zhou. Ada-kv: Optimizing kv cache eviction by adaptive budget allocation for efficient llm inference. arXiv preprint arXiv:2407.11550 , 2024. 1, 2, 6, 12 [9] Yuan Feng, Junlin Lv, Yukun Cao, Xike Xie, and S Kevin Zhou. Identify critical kv cache in llm inference from an output perturbation perspective. arXiv preprint arXiv:2502.03805 , 2025. 2 [10] Taraneh Ghandi, Hamidreza Pourreza, and Hamidreza Mah-yar. Deep learning approaches on image captioning: A re-view. ACM Computing Surveys , 2023. 1 [11] Nathan Godey, ´ Eric Clergerie, and Benoˆ ıt Sagot. Anisotropy is inherent to self-attention in transformers. In Proceedings of the 18th Conference of the European Chapter of the Asso-ciation for Computational Linguistics (Volume 1: Long Pa-pers) , 2024. 1, 3, 4 [12] MD Zakir Hossain, Ferdous Sohel, Mohd Fairuz Shiratud-din, and Hamid Laga. A comprehensive survey of deep learn-ing for image captioning. ACM Computing Surveys (CsUR) ,2019. 1 [13] Jiantong Jiang, Peiyu Yang, Rui Zhang, and Feng Liu. To-wards efficient large language model serving: A survey on system-aware kv cache optimization. In Findings of the As-sociation for Computational Linguistics: ACL 2026 , pages 38450–38476, 2026. 1 [14] Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. Dense passage retrieval for open-domain question answering. In Proceedings of the 2020 conference on em-pirical methods in natural language processing (EMNLP) ,pages 6769–6781, 2020. 3 [15] Ravpreet Kaur and Sarbjeet Singh. A comprehensive review of object detection with deep learning. Digital Signal Pro-cessing , 2023. 1 [16] Omar Khattab and Matei Zaharia. Colbert: Efficient and effective passage search via contextualized late interaction over bert. In Proceedings of the 43rd International ACM SI-GIR conference on research and development in Information Retrieval , pages 39–48, 2020. 3 [17] Minsoo Kim, Kyuhong Shim, Jungwook Choi, and Simyung Chang. Infinipot-v: Memory-constrained KV cache com-pression for streaming video understanding. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 1, 2 [18] Jiayi Kuang, Ying Shen, Jingyou Xie, Haohao Luo, Zhe Xu, Ronghao Li, Yinghui Li, Xianfeng Cheng, Xika Lin, and Yu Han. Natural language understanding and inference with mllm in visual question answering: A survey. ACM Comput. Surv. , 2025. 1 [19] Bo Li*, Peiyuan Zhang*, Kaichen Zhang*, Fanyi Pu*, Xin-run Du, Yuhao Dong, Haotian Liu, Yuanhan Zhang, Ge Zhang, Chunyuan Li, and Ziwei Liu. Lmms-eval: Accel-erating the development of large multimoal models, 2024. 6, 13 [20] Haoyang Li, Yiming Li, Anxin Tian, Tianhao Tang, Zhan-chao Xu, Xuejia Chen, Nicole Hu, Wei Dong, Qing Li, and Lei Chen. A survey on large language model accel-eration based on kv cache management. arXiv preprint arXiv:2412.19442 , 2024. 1, 2 [21] Kunxi Li, Zhonghua Jiang, Zhouzhou Shen, Zhaode Wang, Chengfei Lv, Shengyu Zhang, Fan Wu, and Fei Wu. MadaKV: Adaptive modality-perception KV cache eviction for efficient multimodal long-context inference. In Proceed-ings of the 63rd Annual Meeting of the Association for Com-putational Linguistics (Volume 1: Long Papers) , Vienna, Austria, 2025. Association for Computational Linguistics. 3 [22] Kunxi Li, Zhonghua Jiang, Zhouzhou Shen, ZhaodeWang ZhaodeWang, Chengfei Lv, Shengyu Zhang, Fan Wu, and Fei Wu. Madakv: Adaptive modality-perception kv cache eviction for efficient multimodal long-context inference. In 
+
+Proceedings of the 63rd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,pages 13306–13318, 2025. 1 [23] Yuhong Li, Yingbing Huang, Bowen Yang, Bharat Venkitesh, Acyr Locatelli, Hanchen Ye, Tianle Cai, Patrick Lewis, and Deming Chen. SnapKV: Llm knows what you are looking for before generation. Advances in Neural Infor-
+
+9mation Processing Systems , 37:22947–22970, 2024. 1, 2, 6, 12 [24] Victor Weixin Liang, Yuhui Zhang, Yongchan Kwon, Ser-ena Yeung, and James Y Zou. Mind the gap: Understanding the modality gap in multi-modal contrastive representation learning. Advances in Neural Information Processing Sys-tems , 35:17612–17625, 2022. 1, 3, 4 [25] Akide Liu, Jing Liu, Zizheng Pan, Yefei He, Gholamreza Haffari, and Bohan Zhuang. Minicache: Kv cache com-pression in depth dimension for large language models. 
+
+Advances in Neural Information Processing Systems , 37: 139997–140031, 2024. 2 [26] Haotian Liu, Chunyuan Li, Yuheng Li, Bo Li, Yuanhan Zhang, Sheng Shen, and Yong Jae Lee. Llavanext: Improved reasoning, ocr, and world knowledge, 2024. 6 [27] Xuyang Liu, Xiyan Gui, Yuchao Zhang, and Linfeng Zhang. Mixing importance with diversity: Joint optimization for KV cache compression in large vision-language models. In The Fourteenth International Conference on Learning Represen-tations , 2026. 1, 3, 5, 6, 12 [28] Yuliang Liu, Zhang Li, Mingxin Huang, Biao Yang, Wenwen Yu, Chunyuan Li, Xu-Cheng Yin, Cheng-Lin Liu, Lianwen Jin, and Xiang Bai. OCRBench: on the hidden mystery of OCR in large multimodal models. Science China Informa-tion Sciences , 2024. 6, 12 [29] Yingen Liu, Fan Wu, Ruihui Li, Zhuo Tang, Xuyan Pan, and Kenli Li. Simicache: Rethinking kv cache compression via token similarity for mllms. IEEE Transactions on Multime-dia , 2026. 3 [30] Yash Mahajan, Matthew Freestone, Naman Bansal, Sathya-narayanan N Aakur, and Santu Karmaker. Revisiting word embeddings in the llm era. In Proceedings of the 14th Inter-national Joint Conference on Natural Language Processing and the 4th Conference of the Asia-Pacific Chapter of the As-sociation for Computational Linguistics , pages 2686–2717, 2025. 3 [31] Ahmed Masry, Xuan Long Do, Jia Qing Tan, Shafiq Joty, and Enamul Hoque. ChartQA: A benchmark for question answering about charts with visual and logical reasoning. In Findings of the association for computational linguistics: ACL 2022 , 2022. 6, 13 [32] Minesh Mathew, Dimosthenis Karatzas, and CV Jawahar. DocVQA: A dataset for VQA on document images. In Pro-ceedings of the IEEE/CVF winter conference on applications of computer vision , 2021. 6, 12 [33] Junyoung Park, Dalton Jones, Matthew J Morse, Raghavv Goel, Mingu Lee, and Chris Lott. KeyDiff: Key similarity-based kv cache eviction for long-context llm infer-ence in resource-constrained environments. arXiv preprint arXiv:2504.15364 , 2025. 1, 2, 3 [34] Nils Reimers and Iryna Gurevych. Sentence-bert: Sentence embeddings using siamese bert-networks. In Proceedings of the 2019 conference on empirical methods in natural lan-guage processing and the 9th international joint conference on natural language processing (EMNLP-IJCNLP) , pages 3982–3992, 2019. 3 [35] Oleksii Sidorov, Ronghang Hu, Marcus Rohrbach, and Amanpreet Singh. TextCaps: a dataset for image caption-ing with reading comprehension. In European conference on computer vision . Springer, 2020. 6, 13 [36] Amanpreet Singh, Vivek Natarajan, Meet Shah, Yu Jiang, Xinlei Chen, Dhruv Batra, Devi Parikh, and Marcus Rohrbach. Towards VQA models that can read. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , 2019. 6, 13 [37] Dingjie Song, Shunian Chen, Guiming Hardy Chen, Fei Yu, Xiang Wan, and Benyou Wang. Milebench: Benchmarking mllms in long context. ArXiv , abs/2404.18532, 2024. 1 [38] Harald Steck, Chaitanya Ekanadham, and Nathan Kallus. Is cosine-similarity of embeddings really about similarity? In 
+
+Companion Proceedings of the ACM Web Conference 2024 ,pages 887–890, 2024. 3 [39] Jiaming Tang, Yilong Zhao, Kan Zhu, Guangxuan Xiao, Baris Kasikci, and Song Han. Quest: query-aware sparsity for efficient long-context llm inference. In Proceedings of the 41st International Conference on Machine Learning , 2024. 2[40] Federico Tessari, Kunpeng Yao, and Neville Hogan. Sur-passing cosine similarity for multidimensional comparisons: Dimension insensitive euclidean metric. arXiv preprint arXiv:2407.08623 , 2024. 3, 4 [41] Rub` en Tito, Dimosthenis Karatzas, and Ernest Valveny. Hi-erarchical multimodal transformers for multipage docvqa. 
+
+Pattern Recognition , 144:109834, 2023. 7 [42] Zhongwei Wan, Ziang Wu, Che Liu, Jinfa Huang, Zhihong Zhu, Peng Jin, Longyue Wang, and Li Yuan. Look-M: Look-once optimization in kv cache for efficient multimodal long-context inference. In Findings of the Association for Compu-tational Linguistics: EMNLP 2024 , pages 4065–4078, 2024. 1, 3 [43] Zhongwei Wan, Hui Shen, Xin Wang, Che Liu, Zheda Mai, and Mi Zhang. Meda: Dynamic kv cache allocation for ef-ficient multimodal long-context inference. arXiv preprint arXiv:2502.17599 , 2025. 3 [44] Jiahui Wang, Zuyan Liu, Yongming Rao, and Jiwen Lu. Sparsemm: Head sparsity emerges from visual concept re-sponses in mllms. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pages 23177–23187, 2025. 1, 3, 6, 12 [45] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, et al. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 , 2024. 4, 6 [46] Zhengyuan Yang, Linjie Li, Kevin Lin, Jianfeng Wang, Chung-Ching Lin, Zicheng Liu, and Lijuan Wang. The dawn of lmms: Preliminary explorations with gpt-4v(ision). ArXiv ,2023. 1 [47] Shukang Yin, Chaoyou Fu, Sirui Zhao, Ke Li, Xing Sun, Tong Xu, and Enhong Chen. A survey on multimodal large language models. National Science Review , 2024. [48] Duzhen Zhang, Yahan Yu, Jiahua Dong, Chenxing Li, Dan Su, Chenhui Chu, and Dong Yu. MM-LLMs: Recent ad-vances in multimodal large language models. Findings of the Association for Computational Linguistics: ACL 2024 ,2024. 1 
+
+10 [49] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong Chen, Lianmin Zheng, Ruisi Cai, Zhao Song, Yuandong Tian, Christopher R´ e, Clark Barrett, et al. H2O: Heavy-hitter ora-cle for efficient generative inference of large language mod-els. Advances in Neural Information Processing Systems ,2023. 1, 2 [50] Xiabin Zhou, Wenbin Wang, Minyan Zeng, Jiaxian Guo, Xuebo Liu, Li Shen, Min Zhang, and Liang Ding. Dynam-icKV: Task-aware adaptive kv cache compression for long context llms. arXiv preprint arXiv:2412.14838 , 2024. 2 [51] Zhengxia Zou, Keyan Chen, Zhenwei Shi, Yuhong Guo, and Jieping Ye. Object detection in 20 years: A survey. Proceed-ings of the IEEE , 2023. 1 
+
+11 A. Experimental Setup Details 
+
+A.1. Baselines 
+
+We briefly introduce the mechanisms proposed in the baseline methods. We incorporate our ECOKV with these methods by replacing their scoring function S with our approach and reduce the observation window size to 4. • SnapKV [23]: SnapKV compresses KV caches by selecting clustered important KV positions for each attention head during the prefilling stage. They introduce the idea of an observation window and design a voting mechanism to determine the top-K important keys: 
+
+S =
+
+> N
+
+X
+
+> j=0
+
+wobs [: , j, :] , ˆK = Top k(S, k )
+
+The attention weight is calculated for each query in the observation window, and accumulated as the importance score S. Then the selected key-value pairs index ˆK is determined by top-K selection. They further perform pooling to prevent losing details while evicting less important tokens. • PyramidKV [4]: PyramidKV dynamically allocates cache budgets across layers as attention is more diffuse in early layers and con-centrated in late layers. They first allocate budgets for the top and bottom layers, which is bm−1 = btotal /(β ·
+
+m), b 0 = 2 · btotal /m − bm−1. For the middle layers, the budgets are calculated as follows: 
+
+bl = b0 − b0 − bm−1
+
+m − 1 × lβ is a hyperparameter that determines the shape of the pyramid. • AdaKV [8]: AdaKV reallocates budgets for attention heads within the same layer. They first concatenate attention weights across head as A = Cat ({Ai}), then perform top-K selection in A. After selecting the retained weights, they count the number of selected weights for each head i, and set the budget for each head accordingly. Aggregating budget within the same layer allows more dynamic allocation for attention heads. • SparseMM [44]: SparseMM utilizes OCRBench [28] to recognize visual heads, which actively contribute to visual understanding. For each attention head, the total budget blh is computed as follows: 
+
+blh = N + u + bscore ij 
+
+where N is set to 32, preserving keys within the ob-servation window. The term u denotes a uniformly allocated cache that occupies a small portion of the remaining budget and is evenly distributed across all attention heads. Finally, bscore ij determines the allocation of the remaining budget based on visual attention scores estimated from the inference on OCRBench. • MixKV [27]: MixKV combines the existing importance metric and the proposed cosine similarity-based diversity metric. They first derive the similarity between each normalized key and the global average: 
+
+KNi = Ki
+
+∥Ki∥ , μ = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+KNi
+
+sC (i) = −KNi · μ
+
+KNi denotes the normalized key. The diversity score for each key is computed by the dot product between the nor-malized key and the global average μ. The author then de-rives the off-diagonal average similarity to represent the redundancy level of the attention head: 
+
+rC = T 2|μ|2 − TT (T − 1) 
+
+The redundancy level then serves as the weight of diver-sity metric to combine with the importance metric. Be-fore combination, the diversity score sC is further scaled to match the magnitude of importance scores. 
+
+¯sC = sC − min max − min , ˜sC = ¯ sC · mean (Simp )
+
+mean ( ¯ sC )
+
+Where Simp denotes the importance score. The final ˜sC
+
+is then combined with the importance score. 
+
+A.2. Benchmarks 
+
+Our main experiments include the following benchmarks: • DocVQA [32]: The benchmark evaluates whether the model recognizes the text in the documents and correctly comprehends the content. We report the Average Nor-malized Levenshtein Similarity (ANLS) scores of the validation split with 5.35k test cases. • OCRBench [28]: The benchmark includes 1000 question-answer pairs evaluating the comprehen-sive ability of MLLMs, including Text Recognition, SceneText-Centric VQA, Document-Oriented VQA, Key 12 Table 6. Hyperparameters                       
+
+> Hyperparameters ECOKV Baselines
+> ratio 0.1 0.1 mask ratio 0.1 0.1 temperature 0.0 0.0 batch size 11
+> α0.8 -
+> β0.6 -window size 432 kernel size 55pooling average pool average pool fp16 TRUE TRUE
+
+Information Extraction, and Handwritten Mathematical Expression Recognition. We report the accuracy evalu-ated on the whole benchmark. • TextVQA [36]: The benchmark contains questions that require the model to read the image and perform reasoning. We report scores of the validation split with 5k test cases. • ChartQA [31]: The benchmark includes real-world charts and human-authored question-answer pairs that evaluate the models’ capability on logical and arithmetic operations. We utilize the test split with 2.5k test cases in total. • TextCaps [35]: The benchmark requires model to comprehend the text on the images and generate the corresponding captions. We report the CIDEr score on the validation set with 6.5k test cases. We utilize LMMs-Eval [19] to evaluate our models with the above benchmarks. 
+
+A.3. Hyperparameters 
+
+We provide the hyperparameters used for evaluation in Ta-ble 6. The ratio and mask ratio parameters are only re-quired by certain baseline methods, such as AdaKV and SparseMM. 
+
+A.4. Runtime 
+
+Our main experiments are conducted using LMMs-Eval [19] without sampling, ensuring deterministic results across repeated runs. We report the approximate runtime for each benchmark in GPU-hours under our experimental con-figuration in Table 7. The runtime is measured on machines equipped with RTX 4090 GPUs and may vary depending on the hardware and system workload during reproduction. 
+
+Table 7. Runtime in GPU-hours             
+
+> Benchmark LLaVA Runtime (GPU-hours) Qwen Runtime (GPU-hours)
+> DocVQA 1.42 4.63 OCRBench 0.23 0.15 TextVQA 1.22 0.88 ChartQA 0.28 0.16 TextCaps 1.01 0.92
+
+# B. Experimental Results and Analysis 
+
+B.1. Observation Window Analysis 
+
+Table 8. Performance under different window size.                                            
+
+> Methods Budgets Window size
+> 32 16 8421SNAP KV 256 81.8 81.8 81.8 81.8 81.7 81.8 128 80.9 81.5 81.5 81.6 81.7 81.8 64 79.1 80.0 80.7 81.0 81.0 80.9 PYRAMID KV 256 81.4 81.7 81.8 81.9 81.7 81.6 128 80.8 81.4 81.3 81.3 81.7 81.6 64 77.8 79.2 78.9 79.5 80.7 81.2
+
+Table 8 presents finer-grained ablation studies on obser-vation window size. The result further reveals that reducing the window size consistently improves performance under tight budget constraints (budget = 64 and 128 ). To better understand this phenomenon, we analyze the selection frequency of tokens within the last 32-token re-gion. Specifically, for each token position, we compute the frequency with which it is retained in the KV cache and average the statistics across all layers and attention heads. The experiment is conducted on 4 benchmarks, with 100 randomly sampled test cases. The budget size is set to 64. As illustrated in Figure 5, different benchmarks exhibit distinct token selection patterns, suggesting that the impor-tance of recent tokens varies across tasks and modalities. Furthermore, we observe that KV cache eviction algorithms naturally preserve recent tokens even without explicitly re-serving a large observation window. This finding indicates that enforcing a large fixed observation window is often un-necessary and can instead reduce the budget available for dynamically selected informative tokens. 
+
+B.2. Baselines with Tiny Observation Windows 
+
+We provide additional experiments by reducing the obser-vation window size for the baseline methods. The ex-periments are conducted on Qwen2-VL and evaluated on OCRBench. The results in Table 9 show that smaller ob-servation windows consistently improve baseline perfor-mance, confirming that this design choice is effective be-yond ECOKV. Moreover, under the same observation win-dow size, ECOKV still consistently outperforms the base-lines, demonstrating that our gains cannot be attributed 13 Table 9. Comparison of different KV cache eviction methods un-der different cache budgets. 
+
+Method \Budget 256 128 64 
+
+SnapKV (32) 77.3 71.9 62.4 SnapKV (4) 79.3 77.5 70.4 SnapKV + MixKV (32) 79.3 75.4 66.0 SnapKV + MixKV (4) 81.1 78.3 74.0 SnapKV + ECOKV 80.9 78.9 74.8 
+
+PyramidKV (32) 74.5 67.9 56.8 PyramidKV (4) 76.8 72.0 54.6 PyramidKV + MixKV (32) 76.6 72.6 58.4 PyramidKV + MixKV (4) 77.6 74.8 59.5 PyramidKV + ECOKV 78.5 75.7 63.7 
+
+Table 10. Comparison of cache size, peak memory usage, and total inference time.                         
+
+> Method Cache (GB) Peak Memory (GB) Total Time (s)
+> FullKV 0.0280 15.8299 1.0170 SnapKV 0.0034 15.8053 0.9464 SnapKV + MixKV 0.0034 15.8053 1.0543 SnapKV + ECOKV 0.0034 15.8053 1.0113 PyramidKV 0.0036 15.8054 0.9905 PyramidKV + MixKV 0.0036 15.8055 0.9928 PyramidKV + ECOKV 0.0036 15.8054 1.0392
+
+solely to a smaller observation window. 
+
+B.3. Efficiency analysis on real benchmark 
+
+We replaced the synthetic data with TextVQA and evaluated the efficiency in over 100 randomly sampled test cases. As shown in Table 10, ECOKV achieves efficiency comparable to baselines while requiring a smaller KV cache and lower peak memory than FullKV. The reduction in total inference time is modest because the benchmark produces relatively short outputs, resulting in limited decoding time. 
+
+B.4. Correlation between Importance and Diversity 
+
+Figure 6 provides additional correlation results between im-portance and diversity across various benchmarks, offering further evidence for the analysis presented in the main paper section 6.4. 
+
+B.5. Analysis of Diversity Weight 
+
+We visualize the diversity weight across layers by sampling 100 test cases from both OCRBench and ChartQA, and compute the average diversity weight. As shown in Figure 7 and Figure 8, we plot the layer-averaged weights under cosine similarity and ECOKV Euclidean distance-based metric ( rC and rE from main paper section 5.2), smoothed with a 3-layer simple moving average (SMA). The two 
+
+Table 11. Comparison of alternative global average implementa-tion. 
+
+Method \ Budget 256 128 64 SnapKV + ECOKV 80.9 78.9 74.8 SnapKV + ECOKV © 80.9 78.8 74.8 PyramidKV + ECOKV 78.5 75.7 63.7 PyramidKV + ECOKV © 78.5 75.8 62.8 
+
+Algorithm 1 Similarity and Redundancy Computation 
+
+Require: K ∈ RB×H×T ×D, observation window size N
+
+Ensure: Similarity S, redundancy λ 
+
+> 1:
+
+Tv ← T − N , Kv ← K:Tv
+
+Cosine:  
+
+> 2:
+
+KN ← Normalize (K), μ ← 1
+
+> T
+
+P 
+
+> t
+
+KNt 
+
+> 3:
+
+sC ← ( ˆKv μ⊤ + 1) /2 
+
+> 4:
+
+rC ← T ∥μ∥2−1 
+
+> T−1
+
+Euclidean:  
+
+> 5:
+
+¯k ← 1
+
+> T
+
+P 
+
+> i
+
+Ki, dE ← ∥ Kv − ¯k∥2 
+
+> 6:
+
+sE ← D−min max − min  
+
+> 7:
+
+rE ← 2 − 2 σ
+
+ DhE
+
+> τ
+
+
+
+Combine:  
+
+> 8:
+
+S ← αs E + (1 − α)sC 
+
+> 9:
+
+λ ← βr E + (1 − β)rC 
+
+> 10:
+
+return S, λ 
+
+metrics exhibit a similar overall trend across different benchmarks while differing in finer details, suggesting general consistency alongside layer-specific variations. These results also show that redundancy is relatively high in early layers, low in intermediate layers, and gradually increases toward the final layers. 
+
+B.6. Global Average Calculation Alternative 
+
+An alternative of computing the global average in Algo-rithm 1 Step 5 is to only average on non-window tokens. To compare with this alternative, we provide additional ab-lation studies on Qwen-2-VL, OCRBench: ( © indicates computing the centroid only on non-window tokens). The results in Table 11 show that the two variants exhibit similar behavior across settings, while our current implementation achieves slightly better performance. 
+
+# C. Algorithm 
+
+We present the overall algorithm for computing the simi-larity and redundancy scores in Algorithm 1. The output 
+
+Similarity S is a sequence of diversity scores corresponding to the input keys, while the redundancy λ is a scalar that quantifies the overall redundancy of the attention head. 14 Table 12. Standard deviation comparison 
+
+Methods Window size 
+
+256 128 64 Mean Euclidean distance 81.8 81.6 81.0 Standard deviation 81.8 81.6 80.8 
+
+# D. Head-adaptive Redundancy Estimation Al-ternatives 
+
+Beyond combining the Euclidean distance with cosine sim-ilarity, we design additional heuristics and evaluate their comparative performance. 
+
+D.1. Standard Deviation-based Approach 
+
+As standard deviation primarily estimates the average dis-tance to the mean, which is comparable to our Euclidean implementation in main paper section 5.2. The implemen-tation we use in the main approach can be derived as: 
+
+DE = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+ki − ¯k 2 = 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+q
+
+(ki − ¯k)2
+
+where ¯k is the mean of keys. We can also compute stan-dard deviation as: 
+
+Dstd =
+
+vuut 1
+
+T
+
+> T
+
+X
+
+> i=1
+
+(ki − ¯k)2
+
+To compare the two methods, we calculate the standard deviation of the keys and perform scaling as follows: 
+
+rstd = 1 − σ
+
+ Dstd 
+
+τ
+
+
+
+(8) where τ is a temperature parameter. A larger standard deviation indicates a more dispersed distribution, corre-sponding to higher diversity and lower redundancy. There-fore, we invert the scaled value to obtain a redundancy esti-mate. rstd is then used as the diversity weight. We conduct an ablation study by replacing the Eu-clidean distance with standard deviation and evaluate the resulting performance on ChartQA. As shown in Table 12, the standard-deviation-based approach achieves compara-ble performance overall, with a slight performance degra-dation at a budget size of 64. 15 Figure 5. The average selection rate of last 32 tokens across benchmark. 
+
+16 Figure 6. Correlation between importance and diversity across DocVQA, OCRBench, TextVQA, and TextCaps. 
+
+Figure 7. Diversity weight analysis: cosine similarity vs Euclidean distance on Qwen2-VL-7B-Instruct. 
+
+17 Figure 8. Diversity weight analysis: cosine similarity vs Euclidean distance on LLaVA-NEXT-Mistral-7B. 
+
+18

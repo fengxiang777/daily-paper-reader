@@ -1,0 +1,739 @@
+Title: Grounding Agent Memory: Environment-Probing Curation for Enterprise Agents
+
+URL Source: https://arxiv.org/pdf/2609.11060v1
+
+Published Time: Fri, 11 Sep 2026 00:31:41 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# Grounding Agent Memory: Environment-Probing Curation for Enterprise Agents 
+
+## Susheel Suresh ∗, Hazel Mak, Sahil Bhatnagar, Chhaya Methani, Alejandro Gutierrez Munoz 
+
+Microsoft Corporation One Microsoft Way, Redmond, WA 98052, USA 
+
+Abstract 
+
+Persistent memory is entering production-oriented agent plat-forms to help long-horizon agents accumulate experience across sessions. Yet a post-task curator agent restricted to completed trajectories can preserve errors, overgeneralize partial evidence, or retain stale knowledge. We introduce 
+
+environment-probing curation , a deployment-compatible ex-tension that gives an existing asynchronous curator agent least-privilege, read-only world tools to check, scope, and refresh candidate memories. It requires no model retraining and leaves the task agent, retriever, memory representation, and produc-tion write authority unchanged. In a production-like GitHub Copilot (GHCP) harness built on its SDK, we compare state-less execution, full in-context learning, GHCP + Mem , and 
+
+GHCP + Mem (w/ Env Probing) on CLBench database explo-ration and 90 adapted APEX management-consulting tasks. On CLBench, probing raises pass rate from 39% to 73% and pass-discounted reward from 8.60 to 22.60 while reducing queries from 8.8 to 4.7 per question and task-agent cost from $3.38 to $1.68. Across six APEX worlds, all 18 memory-versus-baseline mean reward comparisons are positive and task-agent tool calls fall by 16–75%; probing gives the best task-agent reward gain per dollar in five worlds. Probing also attains higher mean reward than GHCP + Mem on both Sonnet 4.6 and Opus 4.7 without schema drift. Environment prob-ing therefore turns existing agent-memory curation into an environment-informed, auditable process while preserving a compact task-time interface. 
+
+## 1 Introduction 
+
+Large language model (LLM) agents are moving beyond bounded task execution toward sustained work across ses-sions: implementing features in evolving codebases, analyz-ing enterprise data, and supporting customers through exter-nal applications. Success depends on accumulating feedback and, especially, knowledge of the latent environment struc-ture shared across related tasks. Stateless execution discards trajectories, observations, discoveries, and missteps at ev-ery session boundary, preventing experience from improving subsequent work (Asawa et al. 2026; He et al. 2026). A natural remedy is external memory, with three core op-erations: create records from prior interactions, update them as evidence accumulates, and recall relevant records during later execution (Hu et al. 2026; Park et al. 2023; Packer 
+
+> ∗
+
+Correspondence to sussuresh@microsoft.com .
+
+et al. 2023; Zhang et al. 2025; Ouyang et al. 2025). Designs range from full-context trajectory replay, per-trajectory sum-maries, and a mutable notepad to queryable indexes. Struc-tured records, relational encodings, hierarchical tiers, and reasoning-aware retrieval make the latter increasingly capa-ble (Chhikara et al. 2025; Xu et al. 2025; Kang et al. 2025; Shu et al. 2026; Ji, Li, and Hooi 2026). These ideas are en-tering practical agent stacks: Claude Managed Agents 1 and Microsoft Copilot Studio 2 expose memory features, while Mem0 and Zep support production-oriented memory work-flows (Anthropic 2026a; Microsoft 2026c; Mem0 2026; Zep 2026). Persistent state alone, however, does not guarantee con-tinual learning. CLBench shows that memory can encode spurious generalizations and stale beliefs under environment drift (Asawa et al. 2026); Xiong et al. (2026) identify er-ror propagation and misaligned experience replay. Post-task curation in Mem0, Claude Managed Agents Dreams, ACE, ReasoningBank, and ReMe operates over some combination of existing records, completed trajectories, feedback, and us-age signals (Chhikara et al. 2025; Anthropic 2026b; Zhang et al. 2025; Ouyang et al. 2025; Cao et al. 2026). This retrospective evidence boundary is fundamentally incomplete. A trajectory is a single, partial, and often mistake-laden observation of the environment. Its lemmas can (i) memorize an instance answer rather than its proce-dure, (ii) inherit an inefficient path, (iii) assert an unverifiable scope, (iv) leave blind spots in unvisited regions, or (v) go stale as the world changes. Deferring verification to task time forces the responding agent to spend scarce tool calls rechecking uncertain memories rather than directly solving the current task. We therefore propose environment-probing curation . Af-ter each task, the harness instantiates a post-task curator agent with memory CRUD; it receives the completed tra-jectory and grade after a non-writing distillation step, then uses read-only world tools to check candidate claims, test their scope across omitted states, re-enact procedures, and refresh stale entries before writing. This is consistent with 
+
+> 1
+
+Claude Managed Agents Memory: https://platform.claude. com/docs/en/managed-agents/memory. 
+
+> 2
+
+Copilot Studio Memory (preview): https://learn.microsoft. com/en-us/microsoft-copilot-studio/agents-experience/memory-overview. arXiv:2609.11060v1 [cs.AI] 10 Sep 2026 SEQUENTIAL TASK S ᵢ EXECUTION Prompt TASK S ᵢ
+
+> Task agent env + memory_read Answer TASK S ᵢ
+> Grade TASK S ᵢ
+> ... n 32Memory index id · lemma · usage metadata · embedding query q memory records ASYNCHRONOUS CURATION
+> τᵢ : raw trajectory dᵢ: optional distilled trajectory + grade g ᵢ
+> Curator agent CRUD tools memory_read() memory_create() memory_update() memory_delete() read-only environment tools
+
+Figure 1: Agent roles and tool boundaries for task Si. The horizontal dashed line separates sequential task execution from asynchronous curation. The task agent uses environ-ment tools and read-only memory. After task closure, the curator agent receives raw trajectory τi, distilled trajectory 
+
+di, and the grade; only the curator agent can write memory. The red dashed loop marks read-only probing. constructive accounts of episodic memory, where prior expe-rience is recombined to simulate possible and counterfactual events (Bartlett 1932; Schacter and Addis 2007; Schacter et al. 2012, 2015), and with interactive learning, where act-ing in an environment yields competence unavailable from passive observation alone (Sukhbaatar et al. 2018). The mechanism is readily incorporated into existing enter-prise agents. It requires no retraining and leaves the respond-ing agent, retriever, record representation, and production write authority unchanged. The asynchronous curator agent receives only a least-privilege, read-only subset of existing connectors or MCP tools (Microsoft 2026d,b). Probes re-main off the user-facing critical path and task budget, inherit platform authentication and auditing, and disappear without a safe read surface. Figure 1 isolates this boundary: only the asynchronous curator agent gains world tools. With the task-time memory interface and CRUD lifecycle fixed, in-cremental gains measure write-time evidence quality rather than added task-agent capacity. In our production-like GitHub Copilot (GHCP) harness, built on its SDK, each task gets a fresh agent session while a persistent index spans sessions and external tools expose the environment (GitHub 2026). Both benchmarks mirror deployed enterprise work: CLBench models data analy-sis over evolving organization-specific databases; adapted APEX contributes 90 consulting-analyst tasks across six heterogeneous document worlds (Asawa et al. 2026; Vid-gen et al. 2026). Environment probing raises CLBench pass rate from 39% to 73%, reward from 8.60 to 22.60, and cuts task-agent cost from $3.38 to $1.68. Across APEX, all 18 memory-versus-baseline mean reward comparisons are pos-itive and probing gives the best task-agent reward gain per dollar in five of six worlds. Our contributions are a diag-nosis of trajectory-only generalization failure, a deployment-compatible propose–probe–commit curator agent, and a cost-aware evaluation showing that environment-informed proce-dures improve correctness while eliminating repeated envi-ronment exploration. 
+
+## 2 Related Work 
+
+Agent memory extends retrieval-augmented generation from external knowledge corpora to experience accumulated by the agent itself (Lewis et al. 2020; Hu et al. 2026). We focus on prompt-based systems that leave model weights fixed and organize the literature by what they aim to transfer: persistent facts about a user or environment, and procedures learned from prior execution. 
+
+Factual memory. Early systems establish the basic create– store–recall lifecycle. Generative Agents retrieves episodes by recency, importance, and relevance, while MemGPT ex-poses OS-like memory tiers that the agent manages through tools (Park et al. 2023; Packer et al. 2023). Later work strengthens creation and maintenance: MemoryBank sum-marizes dialogue with forgetting, Mem0 reconciles new records through explicit CRUD decisions, MemoryOS sepa-rates short-, mid-, and long-term stores, and SeCom chooses coherent segments as the memory unit (Zhong et al. 2024; Chhikara et al. 2025; Kang et al. 2025; Pan et al. 2025). SimpleMem jointly filters low-density dialogue, normalizes temporal and referential content, and adapts retrieval across semantic, lexical, and symbolic indexes (Liu et al. 2026). Graph systems replace isolated records with linked episodic, semantic, temporal, or provenance-aware structures, improv-ing multi-hop recall and stale-fact invalidation (Xu et al. 2025; Jiménez Gutiérrez et al. 2024; Anokhin et al. 2024; Rasmussen et al. 2025; Ji, Li, and Hooi 2026; Shu et al. 2026). PlugMem bridges the factual and procedural classes with provenance-linked records and routed retrieval (Yang et al. 2026). 
+
+Procedural memory. Procedural systems distill behavior that can improve a later task. Reflexion writes verbal lessons from feedback, Synapse retrieves successful trajectory exem-plars, and ExpeL contrasts successes and failures to extract transferable insights (Shinn et al. 2023; Zheng et al. 2024; Zhao et al. 2024). Contextual replay buffers, dynamic cheat-sheets, and reusable reasoning templates compress prior ex-ecution at different granularities (Liu et al. 2025; Suzgun et al. 2025; Yang et al. 2024). Voyager turns environment feedback into executable skills, while Agent Workflow Mem-ory induces retrievable workflows (Wang et al. 2023, 2024). Recent systems make curation more deliberate: MemP ap-plies CRUD updates from execution feedback, ACE evolves playbooks through generation and reflection, ReasoningBank distills strategies from both successful and failed attempts, and ReMe adds validation, deduplication, utility pruning, and task-conditioned rewriting (Fang et al. 2026; Zhang et al. 2025; Ouyang et al. 2025; Cao et al. 2026). 
+
+Evidence boundary. These advances change memory content, representation, retrieval, or rewriting, but post-task curation still operates mainly over existing records, recorded trajectories, grades, and usage signals. Conse-quently, stronger reflection cannot recover states the task pol-icy never observed or determine whether a trajectory-derived rule remains true after environment drift. Our contribution is orthogonal: read-only world tools let either a factual or pro-cedural curator agent independently check a claim, re-enact a procedure, inspect omitted states, test scope, and refresh stale knowledge before writing. 
+
+## 3 Method 
+
+3.1 Online Setting and Task Agent 
+
+Let S = ( S1, . . . , S N ) be an online stream of related tasks in an environment whose state is Ei when task Si arrives. The environment can evolve as Ei+1 ∼ ∆( Ei), including changes that are not announced to the agent. Future tasks are hidden, task Si must close before Si+1 is revealed, and no task is revisited. Model parameters θ remain fixed and every task starts a fresh session. The task agent Aθ is this fresh LLM session. Its sole goal is to solve Si. It receives the task’s environment tools TEi ,such as database queries in CLBench or document, analysis, and artifact tools in APEX. In the stateless setting, no shared state is available to the agent while it solves successive tasks: each new session begins without access to earlier trajectories or discoveries. In the stateful setting, an external memory store Mi−1
+
+persists across sessions. The task agent has read-only access through memory_read ; the retriever R(·, Mi−1) returns a small set of records relevant to the task agent’s request. The agent has no memory create, update, or delete tool, so it cannot change shared memory during task execution. We write 
+
+τi = Aθ (Si; TEi , R(·, Mi−1)) , (1) with the retrieval argument omitted in the stateless setting. The raw trajectory τi contains the request, memory reads, action–observation pairs, and submitted answer. Terminal feedback gi arrives only after the task closes. The task-agent model, prompt, and environment tools are fixed across the memory conditions. 
+
+3.2 Post-Task Memory Curation 
+
+We now turn from reading memory during a task to creating and updating memory after it. The curator agent Cϕ is a separate LLM agent instantiated after the task agent submits its answer and gi becomes available. It is not a continuation of the task-agent session, does not answer Si, and cannot see future tasks. It receives the completed trajectory, terminal feedback, and relevant existing records. The curator agent has four memory tools: 
+
+memory_read , memory_create , memory_update ,and memory_delete . It is the only agent allowed to mutate M. At this stage of the method, the curator agent has no live task-environment tools; it reasons only over the completed-task evidence and the memory store. It can retrieve related records before writing, so new evidence is reconciled with existing memory rather than appended blindly. Each record carries a category, confidence, applica-bility scope, concise lemma, provenance, utility, and usage metadata. After curation, the committed store becomes Mi
+
+and is available when Si+1 begins. 
+
+Trajectory distillation. We apply the non-writing prepro-cessing transformation 
+
+di = Dψ (τi). (2) The distiller transforms the full raw trajectory τi into the distilled trajectory di. It retains the task, retrieved memo-ries, decisive observations, procedures, unresolved assump-tions, and answer, but receives no terminal feedback, mem-ory tools, or environment tools and cannot write memory. Appendix D.1 gives its prompt. The distilled trajectory di
+
+provides the compact primary view while τi remains avail-able as raw evidence. The system prompt for the curator agent in Appendix D.2 gives it one goal: maintain a small set of reliable, transferable, and actionable records that help future task agents solve re-lated tasks with fewer task-agent tool calls. It instructs the cu-rator agent to store reusable facts, procedures, relations, tool conventions, and scoped warnings rather than task answers or incidental values. Before writing, it considers evidential support, transfer value, scope, actionability, and overlap, then can create a record, update or merge one, narrow its scope, or delete it. It skips unsupported, redundant, trivial, or task-specific content, and a passing grade does not automatically validate every intermediate assumption. The shared user-message template (Appendix D.4) sup-plies the raw trajectory τi, distilled trajectory di, terminal feedback gi, and related records. The curator agent finishes before Si+1 is revealed, so future tasks cannot leak into mem-ory and partial writes cannot enter task execution. 
+
+3.3 Environment-Probing Curation 
+
+The left column of Figure 3 in Appendix E.1 presents rep-resentative records produced by the trajectory-only curator agent during the CLBench database-exploration runs. They make the retrospective evidence boundary described in Sec-tion 1 concrete: each source trajectory is a single, partial, and potentially mistake-laden observation. Consequently, one record preserves an incorrect aggregation and its an-swer without supplying the replacement procedure, another gives only a broad domain map while omitting the needed relation, and a third retains the removed attrs_g3 name after schema drift. In each case, memory transfers some prior knowledge but leaves the next task agent to establish whether it is actionable and current. Environment-probing curation addresses this evidence boundary. It keeps the task agent, retriever, distillation set-ting, curator agent, memory schema, and CRUD policy un-changed. Only after task closure does the pipeline give the curator agent a safe, read-only subset of the environment tools and a short instruction to probe when a candidate or existing record is uncertain. Figure 1 shows this added tool loop, and Appendix D.3 shows the two additions to the oth-erwise identical prompt for the curator agent. The curator agent follows a propose–probe–commit pro-cess. After proposing a candidate memory, it makes targeted read-only tool calls to investigate specific uncertainties, then uses the observations to create, revise, narrow, delete, or skip the record. Concretely, it can (i) distinguish an inciden-tal answer from a reusable relation, (ii) compare the observed procedure with a shorter path, (iii) test a claimed relation on another slice, (iv) check a procedure’s required precondi-tions, (v) inspect relevant states omitted by the task trajec-tory, or (vi) re-query the current environment when drift is suspected. Our hypothesis is that this limited read-only inter-action is an effective way to produce environment-informed memory records. In CLBench, probes inspect tables, join keys, encodings, or post-migration fields. In APEX, they inspect file loca-tions, document relevance, workbook contents, or tool con-ventions. In both cases, a probe evaluates a proposed mem-ory; it does not solve a future task. Probes cannot mutate the environment, enter the task trajectory, consume the task agent’s budget, or expose future tasks or labels. This read-only design avoids side effects and requires less authority than giving an asynchronous curator agent production write access. If no safe read surface exists, the curator agent falls back to trajectory-only curation. The side-by-side examples in Figure 3 (Appendix E.1) qualitatively illustrate more ac-tionable, environment-informed memory records. We next describe the experiments in Section 4 and report their results in Section 5. 
+
+## 4 Experiment Setup 
+
+Systems and benchmarks. We compare four GitHub Copilot (GHCP) systems: GHCP (No Memory), GHCP + Full ICL, GHCP + Mem, and GHCP + Mem (w/ Env Prob-ing). Full ICL prepends prior trajectories, while both memory systems expose the same memory_read interface; envi-ronment probing adds only read-only tools for the curator agent and the corresponding instructions. CLBench uses two schedules (Asawa et al. 2026). The primary 40-question drift 
+
+schedule hides a SQLite schema that changes after question 20, testing reuse and stale-memory repair. The 30-question 
+
+no-drift schedule fixes the schema, separating validation of stable joins and encodings from migration recovery; it eval-uates both memory systems on Sonnet 4.6 and Opus 4.7 with paired no-memory baselines. Both schedules hide joins and mix timestamp and price encodings; drift also renames fields and adds soft deletes. Adapted APEX contributes 90 management-consulting tasks from six shared document worlds, requiring PDF, XLSX, DOCX, and PPTX discov-ery, quantitative analysis, and MCP-style tools (Vidgen et al. 2026). The original benchmark and leaderboard are available at https://www.mercor.com/apex/apex-agents-leaderboard/. 
+
+Protocol and metrics. The primary CLBench and APEX experiments use gpt-5.4 ; within each experiment, the task agent, distiller, and curator agent share the same base model. CLBench uses five paired seeded runs for every configu-ration; APEX uses five runs per stateful configuration and three stateless runs. We report run-level means with 95% Student-t confidence intervals. The no-drift study holds the canonical 30-question order fixed and uses five paired runs per model–memory comparison; Appendix B details its un-certainty estimates. For task i, let pi ∈ { 0, 1} be its binary pass score and let qi be the number of task-agent tool calls counted by the benchmark. Its pass-discounted reward is 
+
+ri = pi
+
+
+
+1 − qi
+
+B
+
+
+
+. (3) We set B = 15 SQL-query calls for CLBench and B = 100 
+
+Archipelago tool calls for APEX. For tasks with multiple rubric criteria, we use a strict pass: pi = 1 only when every criterion passes, and pi = 0 otherwise. Thus, a failed task re-ceives zero, while a passing task receives more reward when it uses fewer task-agent tool calls. We also report pass rate, tool calls, tokens, and USD cost. Memory-management calls are excluded from qi, and task-agent cost excludes the sepa-rately tracked curation phase. Appendix B gives the complete evaluation and accounting details. 
+
+## 5 Results 
+
+5.1 CLBench 
+
+Table 1(a) shows that every memory configuration improves both correctness and pass-discounted reward over GHCP (No Memory). Pass rate rises from 39% to 61–73%, while total reward rises from 8.60 to 20.00–22.60, or 2.3–2.6 × the base-line. This is not a brute-force accuracy gain: queries fall from 8.8 to 3.0–5.6 per question and task-agent cost falls from $3.38 to $1.68–$2.01. Memory therefore makes the agent both more likely to pass and less likely to spend its budget rediscovering the schema, encodings, and tool conventions already encountered earlier in the stream. 
+
+Retention without prompt growth. GHCP + Full ICL confirms that prior trajectories contain useful signal and uses the fewest SQL queries, but consumes 5.42M input tokens because its context grows with the stream. GHCP + Mem re-trieves compact lemmas on demand, raises pass rate further to 70%, and uses 2.13M input tokens. Environment-probed memory reaches the highest pass rate and reward with only 1.69M input tokens. The two memory designs thus retain reusable experience without making task-time context pro-portional to deployment age. Figure 2(a) shows when the gains accrue. Environment probing already leads trajectory-only memory at the migra-tion boundary (0.541 versus 0.486 cumulative reward) and finishes at 0.565 versus 0.500; no memory ends at 0.215. The persistent post-migration lead is consistent with curator-side probes refreshing schema lemmas before later task sessions retrieve them, rather than making every task agent detect and repair drift independently. 
+
+No-drift cross-model results. Table 1(b) isolates memory from schema repair and shows gains across Sonnet 4.6 and Opus 4.7. GHCP + Mem improves over its paired baseline by 0.351 and 0.252, while environment-probed memory im-proves by 0.421 and 0.263, respectively. Probing achieves the highest mean reward on both models (0.748 and 0.721), and both memory systems finish above their paired no-memory curves in Figure 2(b–c). (a) 40-question GPT-5.4 schedule with schema drift                                                                                                             
+
+> Configuration Pass (%) Total reward Queries per question Input tokens Output tokens Task-agent cost GHCP (No Memory) 39 ±48.60 ±0.83 8.8±0.33.14M ±14 .5K 93 .4K ±9.3K $3 .38 ±0.70
+> GHCP + Full ICL 61 ±11 21 .39 ±3.83 3.0±0.25.42M ±569 .5K 20 .5K ±4.6K $2 .01 ±0.23
+> GHCP + Mem 70 ±16 20 .00 ±6.52 5.6±1.42.13M ±685 .2K 55 .9K ±22 .1K $1 .99 ±0.65
+> GHCP + Mem (w/ Env Probing) 73 ±522 .60 ±2.07 4.7±0.31.69 M±97 .8K45 .4K ±6.0K $1.68 ±0.14
+> (b) 30-question cross-model schedule without schema drift
+> Model Memory system Paired no-memory mean reward With-memory mean reward Lift Opus 4.7 GHCP + Mem 0.444 ±0.050 0.696 ±0.036 +0 .252
+> Opus 4.7 GHCP + Mem (w/ Env Probing) 0.458 ±0.048 0.721 ±0.062 +0.263
+> Sonnet 4.6 GHCP + Mem 0.322 ±0.054 0.673 ±0.097 +0 .351
+> Sonnet 4.6 GHCP + Mem (w/ Env Probing) 0.327 ±0.055 0.748 ±0.030 +0.421
+
+Table 1: CLBench results: (a) GPT-5.4 on 40-task drift (migration after task 20), reporting strict pass, total Equation 3 reward, SQL queries/task, tokens, and task-agent cost as means ± 95% Student-t confidence intervals over five paired independent runs; (b) fixed-order 30-task no drift, reporting paired baseline/memory mean reward ± standard deviation over five independent runs and their difference; calls exclude memory and tokens/cost exclude distillation/curation; bold marks highest pass/reward and lowest input/cost in (a), and highest reward/lift per model in (b). 
+
+5.2 Adapted APEX 
+
+Table 2 compares reward gain per task-agent dollar, with the underlying reward gain and cost shown in each cell. All 18 gains—six worlds by three memory systems—are positive. Appendix C reports absolute reward and task-agent tool calls. The largest reduction occurs where baseline discovery is most expensive: world 941eba66 falls from 71.6 tool calls to 17.7–19.3, while the indexed-memory systems reduce in-put consumption from 53.92M tokens to 6.56–7.67M and cost from $54.30 to $7–$9 per run. GHCP + Mem (w/ Env Probing) achieves the best task-agent reward gain per dollar in five of six worlds (Table 2); GHCP + Mem is marginally better in the remaining world. Full ICL can win raw reward in individual worlds, but its growing context makes those gains expensive and even costs more than the stateless baseline in one world. Across APEX difficulty levels, memory can preserve an answer with fewer tool calls, expose additional rubric ev-idence, or turn failure into success by leaving budget for the final computation. Tool reduction can therefore enable correctness, not just lower latency. 
+
+5.3 Why Memory and Probing Work 
+
+Memory amortizes environmental discovery. On drift CLBench, GHCP + Mem raises pass rate from 39% to 70% and total reward from 8.60 to 20.00 while reducing queries from 8.8 to 5.6 per task (Table 1). Across APEX, all 18 system-versus-baseline reward gains are positive, while task-agent calls fall from baseline means of 30.0–71.6 to 13.9– 28.4 (Table 3). Full ICL confirms that prior trajectories con-tain reusable information, but requires 5.42M CLBench in-put tokens, versus 2.13M for indexed memory and 1.69M with probing. Indexed records therefore preserve reusable schemas, relations, file maps, and procedures without carry-ing the full interaction history. 
+
+Probing makes records more actionable. The two indexed-memory conditions retain the same task-time model, tools, and read-only memory interface; probing provides ad-ditional environment evidence during curation. Relative to trajectory-only memory, probing raises drift CLBench re-ward from 20.00 to 22.60, lowers queries from 5.6 to 4.7, and reduces task-agent cost from $1.99 to $1.68. Without drift, mean reward rises from 0.673 to 0.748 on Sonnet and from 0.696 to 0.721 on Opus. 
+
+Qualitative analysis of memory records. Figure 3 com-pares representative records rather than one-to-one rewrites. Trajectory-only curation records an answer-anchored warn-ing: “Do not answer with AVG(items_g2.prc_usd) 
+
+over non-null rows; that produces about 52.96, but the bench-mark’s correct result is 96.23, so a different price field and/or row subset is required.” The probing curator instead records an executable procedure: “Join items_g2 to taxn_g2 
+
+on ref_id ; filter cat_lvl=1 and the exact cat_nm ;keep items_g2.prc>0 ; then compare against the filtered 
+
+AVG(prc) .” The same shift appears in the other records: a broad g1 /g2 /g3 map is contrasted with an explicit ref_id 
+
+join and aggregation grain, while stale “Use attrs_g3 ”becomes “Use product_attributes_g3 ” with brand filters and grouping. The right column thus specifies what a later agent should execute—source table, join key, filters, grain, and current schema—rather than only what failed or 1 5 10 15 20 25 30 35 40 Task position 0.0 0.2 0.4 0.6 0.8 1.0 Running-mean reward             
+
+> 0.215 0.500 0.565
+> migration
+> (a) GPT-5.4 (drift)
+> 1510 15 20 25 30 Task position
+> 0.673 0.748
+> (b) Sonnet 4.6 (no drift)
+> 1510 15 20 25 30 Task position
+> 0.696 0.721
+> (c) Opus 4.7 (no drift)
+> GHCP + Mem GHCP + Mem (w/ Env Probing) Pooled no-memory baseline Paired no-memory baselines
+
+Figure 2: CLBench learning curves in the main evaluation. Panel (a) shows GPT-5.4 on the 40-question drift schedule; the vertical marker denotes the migration after question 20, and the gray curve is the five-run paired baseline. Panels (b) and (c) show Sonnet 4.6 and Opus 4.7 on the 30-question no-drift schedule; same-color dashed lines are the paired no-memory rollouts. Solid curves are means over five stateful runs and bands show one standard deviation. Endpoints reproduce Table 1. 
+
+World [tier, N ]Full ICL Mem Probe 
+
+941eba66 
+
+[Easy, 15] 
+
+0.410 /$+7 .40 , $18 .04 0.858 /$+7 .44 , $8 .67 
+
+0.991 /$+7 .40 , $7 .47 
+
+d6c01a12 
+
+[Easy, 11] 
+
+0.047 /$+0 .58 , $12 .52 0.125 /$+1 .00 , $7 .95 
+
+0.142 /$+1 .23 , $8 .66 
+
+2a87e5cb 
+
+[Medium, 18] 
+
+0.108 /$+2 .64 , $24 .42 0.038 /$+0 .58 , $15 .36 
+
+0.184 /$+2 .35 , $12 .79 
+
+2f84c98b 
+
+[Medium, 17] 
+
+0.026 /$+0 .88 , $33 .79 0.110 /$+1 .99 , $18 .17 
+
+0.189 /$+3 .08 , $16 .28 
+
+d1b705c7 
+
+[Hard, 15] 
+
+0.116 /$+3 .45 , $29 .78 0.140 /$+2 .36 , $16 .93 
+
+0.172 /$+2 .46 , $14 .24 
+
+075ef4df 
+
+[Hard, 14] 
+
+0.103 /$+1 .47 , $14 .34 
+
+0.274 /$+1 .88 , $6 .88 0.271 /$+2 .13 , $7 .89 
+
+Table 2: APEX cost-adjusted efficiency (90 tasks): each world [difficulty, N ] cell shows pass-discounted reward gain over a three-run no-memory baseline per dollar of candidate task-agent cost (top), then gain and mean cost/run over five candidate runs (bottom); costs exclude distillation/curation, calculations use unrounded means, and bold marks the high-est ratio per world. where to search. Appendix E.1 gives the complete records; Appendices E.2 and E.3 connect them to task-time behavior. 
+
+The effect depends on the remaining evidence gap. 
+
+Probing improves over trajectory-only memory in five of six APEX worlds; the largest increments are +1 .77 in 
+
+2a87e5cb and +1 .09 in 2f84c98b , while 941eba66 
+
+changes by −0.04 (Table 2). Its additional no-drift gain is also larger on Sonnet ( +0 .075 ) than on Opus ( +0 .025 ). This variation is consistent with probing being most useful when a trajectory leaves a join, workbook location, or procedure unresolved, while adding little when the trajectory already supports an actionable record. Because uncertainty intervals overlap, we treat this as a mechanism interpretation rather than a resolved subgroup effect. 
+
+Matched trajectories connect records to behavior. In the matched CLBench task, no memory uses seven queries and fails, trajectory-only memory uses nine and passes, and prob-ing supplies a validated ref_id relation and passes in two (Appendix E.2). In hard APEX, no memory uses 96 calls and fails both criteria; trajectory-only memory transfers the revenue-per-head procedure and passes in 11, while a vali-dated workbook map reduces probing to six (Appendix E.3). These selected cases do not establish the aggregate effect, but they illustrate how reusable computations and environment-informed maps replace task-time rediscovery with direct ex-ecution. 
+
+## 6 Conclusion 
+
+Environment probing addresses a fundamental limit of post-task memory: a trajectory alone cannot establish that a les-son is correct, general, or current. Read-only world tools let the curator check lessons before they enter long-lived memory without expanding task-time capabilities. This iso-lates the improvement to write-time evidence quality rather than added task-agent capacity. Across CLBench and adapted APEX, probing improves reward while reducing repeated environment interaction and task-agent cost; its advantage persists across the GPT-5.4, Sonnet 4.6, and Opus 4.7 model families. For deployment, production stacks retain the model, task agent, retriever, record schema, and asyn-chronous CRUD lifecycle; only the curator gains least-privilege, read-only connector or MCP access. Probes add no write authority, remain off the critical path, and inherit platform authentication and auditing. References 
+
+Anokhin, P.; Semenov, N.; Sorokin, A.; Evseev, D.; Kravchenko, A.; Burtsev, M.; and Burnaev, E. 2024. Ari-Graph: Learning Knowledge Graph World Models with Episodic Memory for LLM Agents. arXiv:2407.04363. Anthropic. 2026a. Anthropic Claude Managed Agents Mem-ory Feature. Documentation: https://platform.claude.com/ docs/en/managed-agents/memory. Product announcement: https://claude.com/blog/claude-managed-agents-memory. Anthropic. 2026b. Claude Managed Agents Dreams. Re-search preview documentation: https://platform.claude.com/ docs/en/managed-agents/dreams. Asawa, P.; Glaze, C. M.; Orlanski, G.; Ramakrishnan, R.; Xu, B.; Biswal, A.; Chen, V. S.; Sala, F.; Zaharia, M.; and Gonzalez, J. E. 2026. Continual Learning Bench: Evaluating Frontier AI Systems in Real-World Stateful Environments. arXiv:2606.05661. Bartlett, F. C. 1932. Remembering: A Study in Experimen-tal and Social Psychology . The Cambridge Psychological Library. Cambridge: Cambridge University Press. Cao, Z.; Deng, J.; Yu, L.; Zhou, W.; Liu, Z.; Ding, B.; and Zhao, H. 2026. Remember Me, Refine Me: A Dynamic Pro-cedural Memory Framework for Experience-Driven Agent Evolution. In Findings of the Association for Computational Linguistics: ACL 2026 , 16803–16822. Chhikara, P.; Khant, D.; Aryan, S.; Singh, T.; and Yadav, D. 2025. Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory. In ECAI 2025 , volume 413 of 
+
+Frontiers in Artificial Intelligence and Applications , 2993– 3000. IOS Press. Fang, R.; Liang, Y.; Wang, X.; Wu, J.; Qiao, S.; Xie, P.; Huang, F.; Chen, H.; and Zhang, N. 2026. MemP: Exploring Agent Procedural Memory. In Findings of the Association for Computational Linguistics: ACL 2026 , 17490–17502. GitHub. 2026. GitHub Copilot SDK. Software and docu-mentation: https://github.com/github/copilot-sdk. He, Z.; Wang, Y.; Zhi, C.; Hu, Y.; Chen, T.-P.; Yin, L.; Chen, Z.; Wu, T. A.; Ouyang, S.; Wang, Z.; Pei, J.; McAuley, J.; Choi, Y.; and Pentland, A. 2026. MemoryArena: Benchmark-ing Agent Memory in Interdependent Multi-Session Agentic Tasks. arXiv:2602.16313. Hu, Y.; Liu, S.; Yue, Y.; Zhang, G.; Liu, B.; Zhu, F.; Lin, J.; Guo, H.; Dou, S.; Xi, Z.; Jin, S.; Tan, J.; Yin, Y.; Liu, J.; Zhang, Z.; Sun, Z.; Zhu, Y.; Sun, H.; Peng, B.; Cheng, Z.; Fan, X.; Guo, J.; Yu, X.; Zhou, Z.; Hu, Z.; Huo, J.; Wang, J.; Niu, Y.; Wang, Y.; Yin, Z.; Hu, X.; Liao, Y.; Li, Q.; Wang, K.; Zhou, W.; Liu, Y.; Cheng, D.; Zhang, Q.; Gui, T.; Pan, S.; Zhang, Y.; Torr, P.; Dou, Z.; Wen, J.-R.; Huang, X.; Jiang, Y.-G.; and Yan, S. 2026. Memory in the Age of AI Agents. arXiv:2512.13564. Ji, S.; Li, Y.; and Hooi, B. 2026. Memory Is Reconstructed, Not Retrieved: Graph Memory for LLM Agents. Accepted at ICML 2026, arXiv:2606.06036. Jiménez Gutiérrez, B.; Shu, Y.; Gu, Y.; Yasunaga, M.; and Su, Y. 2024. HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models. In Advances in Neural Information Processing Systems , volume 37, 59532–59569. Kang, J.; Ji, M.; Zhao, Z.; and Bai, T. 2025. Memory OS of AI Agent. arXiv:2506.06326. Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; Riedel, S.; and Kiela, D. 2020. Retrieval-Augmented Gen-eration for Knowledge-Intensive NLP Tasks. In Advances in Neural Information Processing Systems , volume 33, 9459– 9474. Liu, J.; Su, Y.; Xia, P.; Han, S.; Zheng, Z.; Xie, C.; Ding, M.; and Yao, H. 2026. SimpleMem: Efficient Lifelong Memory for LLM Agents. arXiv:2601.02553. Liu, Y.; Si, C.; Narasimhan, K. R.; and Yao, S. 2025. Contex-tual Experience Replay for Self-Improvement of Language Agents. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 14179–14198. Mem0. 2026. Mem0: AI Memory Layer for Agents and Applications. Website: https://mem0.ai/. Microsoft. 2026a. Agents Overview (Preview)— Microsoft Copilot Studio (New Experience). Documen-tation: https://learn.microsoft.com/en-us/microsoft-copilot-studio/agents-experience/overview. Microsoft. 2026b. Extend Your Agent with Model Context Protocol. Documentation: https://learn.microsoft.com/en-us/microsoft-copilot-studio/agent-extend-action-mcp. Microsoft. 2026c. Memory (Preview)—Microsoft Copilot Studio. Documentation: https://learn.microsoft.com/en-us/microsoft-copilot-studio/agents-experience/memory-overview. Microsoft. 2026d. Use Connectors in Microsoft Copilot Stu-dio Agents. Documentation: https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-connectors. Ouyang, S.; Yan, J.; Hsu, I.-H.; Chen, Y.; Jiang, K.; Wang, Z.; Han, R.; Le, L. T.; Daruki, S.; Tang, X.; Tirumalashetty, V.; Lee, G.; Rofouei, M.; Lin, H.; Han, J.; Lee, C.-Y.; and Pfister, T. 2025. ReasoningBank: Scaling Agent Self-Evolving with Reasoning Memory. arXiv:2509.25140. Packer, C.; Wooders, S.; Lin, K.; Fang, V.; Patil, S. G.; Stoica, I.; and Gonzalez, J. E. 2023. MemGPT: Towards LLMs as Operating Systems. arXiv:2310.08560. Pan, Z.; Wu, Q.; Jiang, H.; Luo, X.; Cheng, H.; Li, D.; Yang, Y.; Lin, C.-Y.; Zhao, H. V.; Qiu, L.; and Gao, J. 2025. On Memory Construction and Retrieval for Personalized Con-versational Agents. Introduces SeCom; published at ICLR 2025, arXiv:2502.05589. Park, J. S.; O’Brien, J. C.; Cai, C. J.; Morris, M. R.; Liang, P.; and Bernstein, M. S. 2023. Generative Agents: Interactive Simulacra of Human Behavior. In Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology , 1–22. Rasmussen, P.; Paliychuk, P.; Beauvais, T.; Ryan, J.; and Chalef, D. 2025. Zep: A Temporal Knowledge Graph Archi-tecture for Agent Memory. arXiv:2501.13956. Schacter, D. L.; and Addis, D. R. 2007. The Cognitive Neu-roscience of Constructive Memory: Remembering the Past and Imagining the Future. Philosophical Transactions of the Royal Society B: Biological Sciences , 362(1481): 773–786. Schacter, D. L.; Addis, D. R.; Hassabis, D.; Martin, V. C.; Spreng, R. N.; and Szpunar, K. K. 2012. The Future of Memory: Remembering, Imagining, and the Brain. Neuron ,76(4): 677–694. Schacter, D. L.; Benoit, R. G.; De Brigard, F.; and Szpunar, K. K. 2015. Episodic Future Thinking and Episodic Coun-terfactual Thinking: Intersections between Memory and De-cisions. Neurobiology of Learning and Memory , 117: 14–21. Shinn, N.; Cassano, F.; Berman, E.; Gopinath, A.; Narasimhan, K.; and Yao, S. 2023. Reflexion: Language Agents with Verbal Reinforcement Learning. In Advances in Neural Information Processing Systems , volume 36. Shu, Y.; Jonnalagedda, S. P.; Gao, X.; Gutiérrez, B. J.; Qi, W.; Das, K.; Sun, H.; and Su, Y. 2026. REMem: Reasoning with Episodic Memory in Language Agent. arXiv preprint arXiv:2602.13530 .Sukhbaatar, S.; Lin, Z.; Kostrikov, I.; Fergus, R.; and Szlam, A. 2018. Intrinsic Motivation and Automatic Curricula via Asymmetric Self-Play. In International Conference on Learning Representations .Suzgun, M.; Yuksekgonul, M.; Bianchi, F.; Jurafsky, D.; and Zou, J. 2025. Dynamic Cheatsheet: Test-Time Learning with Adaptive Memory. arXiv:2504.07952. Vidgen, B.; Mann, A.; Fennelly, A.; Stanly, J. W.; Rothman, L.; Burstein, M.; Benchek, J.; Ostrofsky, D.; Ravichandran, A.; Sur, D.; Venugopal, N.; Hsia, A.; Robinson, I.; Huang, C.; Varones, O.; Khan, D.; Haines, M.; Bridges, A.; Boyle, J.; Twist, K.; Richards, Z.; Mahapatra, C.; Foody, B.; and Nitski, O. 2026. APEX-Agents. arXiv:2601.14242. Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and Anandkumar, A. 2023. Voyager: An Open-Ended Embodied Agent with Large Language Models. arXiv:2305.16291. Wang, Z. Z.; Mao, J.; Fried, D.; and Neubig, G. 2024. Agent Workflow Memory. arXiv:2409.07429. Xiong, Z.; Lin, Y.; Xie, W.; He, P.; Liu, Z.; Tang, J.; Lakkaraju, H.; and Xiang, Z. 2026. How Memory Man-agement Impacts LLM Agents: An Empirical Study of Experience-Following Behavior. In Proceedings of the 64th Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , 623–645. San Diego, Cal-ifornia, United States: Association for Computational Lin-guistics. Xu, W.; Liang, Z.; Mei, K.; Gao, H.; Tan, J.; and Zhang, Y. 2025. A-MEM: Agentic Memory for LLM Agents. arXiv:2502.12110. Yang, K.; Chen, Z.; He, X.; Jiang, J.; Galley, M.; Wang, C.; Gao, J.; Han, J.; and Zhai, C. 2026. PlugMem: A Task-Agnostic Plugin Memory Module for LLM Agents. arXiv:2603.03296. Yang, L.; Yu, Z.; Zhang, T.; Cao, S.; Xu, M.; Zhang, W.; Gonzalez, J. E.; and Cui, B. 2024. Buffer of Thoughts: Thought-Augmented Reasoning with Large Language Mod-els. In Advances in Neural Information Processing Systems ,volume 37, 113519–113544. Zep. 2026. Zep: Agent Memory at Enterprise Scale. Website: https://www.getzep.com/. Zhang, Q.; Hu, C.; Upasani, S.; Ma, B.; Hong, F.; Kama-nuru, V.; Rainton, J.; Wu, C.; Ji, M.; Li, H.; Thakker, U.; Zou, J.; and Olukotun, K. 2025. Agentic Context Engineer-ing: Evolving Contexts for Self-Improving Language Mod-els. arXiv:2510.04618. Zhao, A.; Huang, D.; Xu, Q.; Lin, M.; Liu, Y.-J.; and Huang, G. 2024. ExpeL: LLM Agents Are Experiential Learners. In Proceedings of the AAAI Conference on Artificial Intelli-gence , volume 38, 19632–19642. Zheng, L.; Wang, R.; Wang, X.; and An, B. 2024. Synapse: Trajectory-as-exemplar prompting with memory for com-puter control. In International Conference on Learning Rep-resentations , volume 2024, 19036–19066. Zhong, W.; Guo, L.; Gao, Q.; Ye, H.; and Wang, Y. 2024. MemoryBank: Enhancing Large Language Models with Long-Term Memory. In Proceedings of the AAAI Confer-ence on Artificial Intelligence , volume 38, 19724–19731. A Implementation Details and Extensions 
+
+A.1 Runtime Architecture and Session Lifecycle 
+
+GitHub Copilot harness. We implement the runtime with the Python GitHub Copilot SDK, which exposes the same agent engine as GitHub Copilot CLI. Each containerized sandbox launches a headless Copilot CLI process in server mode, and the SDK communicates with it through JSON-RPC (GitHub 2026). An SDK session specifies the model, system instructions, custom tools, MCP servers, permission policy, and event callbacks. The callbacks provide the ordered model messages, tool calls, and observations used to construct each trajectory. 
+
+Per-task lifecycle. For task Si, the harness creates a fresh task-agent session with the environment tools and memory_read .The external index persists across tasks, but the task agent has no memory-write tool. In the reported runs, after the task closes, a fresh distiller session receives the raw trajectory τi—not terminal feedback—and produces the distilled trajectory di. Once feedback gi is available, another fresh session instantiates the curator agent with di, gi, and retrieved nearby memory records; the staged raw trajectory remains available as supporting evidence. The curator agent receives memory_read , memory_create ,
+
+memory_update , and memory_delete ; curation completes before Si+1 is exposed. The trajectory-only curator agent receives no task-environment tools. Its ordinary sandbox file readers can inspect the staged trajectory but cannot query the live benchmark world. The environment-probing curator agent uses the same model, inputs, memory CRUD tools, and core system prompt, while additionally receiving two probe-specific instructions and the task’s read-only tool subset. For CLBench this subset is the database query interface; for adapted APEX it is supplied through the read-only MCP configuration. Appendix D gives the compact prompt specifications and highlights the probing additions. 
+
+A.2 Enterprise Deployment Mapping 
+
+The SDK–server decomposition mirrors the production-oriented Microsoft Copilot Studio runtime, where an agent is configured from instructions, a selected model, knowledge and memory, callable tools and skills, and connected agents (Microsoft 2026a). Connectors can wrap enterprise APIs, while MCP servers expose callable tools and file-like resources such as API responses and document contents (Microsoft 2026d,b). Structured databases, document corpora, and enterprise applications can therefore all instantiate the environment-tool interface used by our curator agent. In such a deployment, probing does not require a second integration path. The asynchronous curator agent can be assigned a least-privilege, read-only subset of connectors or MCP tools already registered for the responding agent. Existing authentication, authorization, and audit boundaries remain in force, and the curator agent receives no production write authority. This makes the intervention compatible with increasingly common managed-memory abstractions (Microsoft 2026c) without retraining the model or changing the task-time agent. 
+
+## B Experimental and Evaluation Details 
+
+B.1 Benchmark Construction 
+
+CLBench database exploration. The primary CLBench stream contains 40 SQL questions over a hidden SQLite database (Asawa et al. 2026). The agent must discover tables, joins, encodings, and conventions through queries. Format traps include prices in dollars versus cents, epoch-millisecond versus ISO timestamps, and abbreviated column names. After question 20, an unannounced migration renames tables, splits columns, and introduces soft deletes, testing both schema transfer and repair of previously valid memory. The cross-model study instead uses the canonical 30-question, single-stage schedule without migration. 
+
+Adapted APEX Agents. APEX Agents contains 480 independent workplace tasks spanning management consulting, law, and financial analysis (Vidgen et al. 2026). We select the management-consulting subset and group questions by (domain, world_id) , turning each shared world into an ordered continual-learning stream. This yields six worlds and 90 questions, with 11–18 questions per world. Tasks require discovery across PDF, XLSX, DOCX, and PPTX files, including embedded images; quantitative analysis through code execution; and artifact production through MCP-style Archipelago tools. Grouping by world makes file locations, workbook layouts, tool conventions, and distinctions among hard-negative documents reusable across tasks. 
+
+B.2 Models and Run Protocol 
+
+The primary 40-question CLBench and adapted APEX studies use gpt-5.4 at xhigh reasoning effort for sessions of the task agent, distiller, and curator agent. The no-drift study uses Sonnet 4.6 at high effort and Opus 4.7 at xhigh effort for all applicable roles. Memory conditions use intfloat/e5-base-v2 embeddings. The primary CLBench study uses five independently shuffled, paired runs for every configuration. Adapted APEX uses five runs per stateful configuration and three stateless runs. Shuffles are seeded and shared across systems. Reported intervals are 95% Student-t intervals over run-level aggregates. The no-drift study instead holds the canonical 30-question order fixed; each model–memory comparison has five paired memory and GHCP (No Memory) runs, and uncertainty is the across-run standard deviation. B.3 Metrics and Accounting 
+
+For task i, let pi ∈ { 0, 1} be its binary pass score and let qi be the number of task-agent tool calls counted by the benchmark. CLBench has one correctness criterion. For tasks with multiple grader criteria, we use a strict pass: pi = 1 only when every criterion passes, and pi = 0 otherwise. We compute the primary pass-discounted reward ri using Equation 3, with B = 15 
+
+exploratory SQL queries for CLBench and B = 100 Archipelago tool calls for APEX. For trajectory diagnosis only, APEX also reports the fractional-criteria score rfrac  
+
+> i
+
+= ( ki/K i)(1 − qi/B ), where ki of Ki criteria pass. We report total reward as the sum of per-task rewards and mean reward as that total divided by the number of tasks. Memory-management and harness-internal calls are excluded from qi. Reported tokens and USD cost cover the task-agent response phase; usage by the distiller and curator agent is tracked separately. In addition to reward, we report pass rate, task-agent tool calls per question, and input/output tokens. At task position j, a learning-curve point is the across-run mean of the running mean reward through position j; shaded bands show one across-run standard deviation. 
+
+## C Per-World APEX Results 
+
+Table 3 reports the absolute rewards, task-agent tool calls, and confidence intervals underlying the compact gains in Table 2. This breakdown preserves the variation across difficulty tiers and document environments summarized in Section 5.                                                                                                                                                          
+
+> World [tier, N]Metric GHCP (No Memory) GHCP + Full ICL GHCP + Mem GHCP + Mem (w/ Env Probing)
+> 941eba66
+> [Easy, 15] Reward 1.12 ±0.52 8.51 ±1.58 8.56 ±0.64 8.52 ±2.01
+> Tool calls 71 .6±10 .717 .7±2.219 .3±1.119 .3±2.4
+> d6c01a12
+> [Easy, 11] Reward 2.30 ±0.67 2.88 ±1.01 3.29 ±0.51 3.52 ±0.50
+> Tool calls 40 .1±12 .624 .2±2.925 .8±1.725 .0±2.1
+> 2a87e5cb
+> [Medium, 18] Reward 0.48 ±1.07 3.12 ±2.10 1.06 ±0.88 2.83 ±1.53
+> Tool calls 33 .5±8.913 .9±2.321 .3±1.721 .0±1.5
+> 2f84c98b
+> [Medium, 17] Reward 6.52 ±0.60 7.40 ±2.48 8.51 ±3.08 9.60 ±1.33
+> Tool calls 30 .0±8.418 .5±4.725 .3±4.423 .6±0.8
+> d1b705c7
+> [Hard, 15] Reward 2.02 ±1.20 5.47 ±0.78 4.38 ±1.18 4.48 ±1.24
+> Tool calls 48 .1±9.118 .1±5.328 .4±1.625 .8±4.0
+> 075ef4df
+> [Hard, 14] Reward 2.96 ±2.37 4.43 ±1.56 4.84 ±0.34 5.09 ±1.86
+> Tool calls 45 .2±12 .614 .4±2.218 .4±2.717 .7±1.3
+
+Table 3: Absolute APEX results underlying Table 2: for each world [difficulty, N ], Reward is total strict pass-discounted reward and Tool calls are benchmark-counted task-agent Archipelago calls per question excluding memory/harness calls; values are run means ± 95% Student-t confidence intervals ( n = 3 for GHCP (No Memory), n = 5 otherwise), with highest reward and lowest calls bolded. 
+
+## D Prompt Templates 
+
+D.1 Distiller Preprocessing Prompt 
+
+The distiller is a pure preprocessing step enabled for both memory conditions in our experiments. It sees the completed raw trajectory, but not terminal benchmark feedback, and has no memory or environment tools. Its output is a compact evidence packet for the curator agent; it cannot create, update, or delete durable records. 
+
+System message.                                       
+
+> ROLE You are the non-writing trajectory distiller in acontinual-learning memory pipeline. BOUNDARY This is preprocessing only. You have no memory tools and must not create, update, delete, or propose durable memory records. You do not receive terminal benchmark feedback. Treat the supplied rollout as
+
+partial evidence, not as ground truth. INPUT One completed task-agent trajectory containing the user request, retrieved memories, assistant messages, tool calls, tool results, environment observations, and submitted answer. OBJECTIVE Transform the raw trajectory into a compact, faithful evidence packet that helps a later curator agent decide what is reusable. Do not evaluate memory policy or add facts that are absent from the trajectory. PRESERVE - the task goal, constraints, and response requirements; - retrieved memories and how the agent used or contradicted them; - the chronological strategy and decisive action-observation pairs; - successful and failed procedures, tool conventions, and environment structure discovered during execution; - the submitted answer, unresolved questions, and assumptions that remain unverified. OUTPUT Return exactly these tagged sections: <overview>task, constraints, and approach</overview> <history>chronological actions and observations</history> <work_done>completion state and submitted result</work_done> <technical_details>reusable findings, failures, and quirks</technical_details> <important_files>files or resources central to the task</important_files> <next_steps>unresolved work and unverified assumptions</next_steps> <checkpoint_title>a concise 2-6 word title</checkpoint_title> Be concise, but retain evidence that would be costly to rediscover. Refer to the task agent in the third person. 
+
+Per-instance user message. 
+
+Instance: {INSTANCE_ID} Preprocess the completed task-agent rollout below. <trajectory> {RAW_TRAJECTORY} </trajectory> 
+
+D.2 Trajectory-Only Curator Agent Prompt 
+
+GHCP + Mem uses the following compact prompt for the curator agent. Unlike the distiller, this post-task curator agent receives terminal feedback and memory CRUD tools. It may inspect the staged raw trace when the distilled trajectory omits a needed detail, but it has no live task-environment tools. 
+
+System message. 
+
+ROLE You are the post-task curator agent for a continual-learning run. Only you may mutate the persistent memory index. INPUTS 1. A distilled evidence packet for one completed task-agent rollout. 2. Terminal feedback for that rollout, when available. 3. Relevant existing memory records. 4. An optional staged raw trajectory for evidence lookup. GOAL Maintain a small set of reliable, transferable, and actionable memories that lets a future agent solve related tasks more accurately and with fewer environment calls. AVAILABLE TOOLS - memory_read, memory_create, memory_update, memory_delete; - sandbox readers for inspecting the staged raw trajectory. RECORD CONTRACT Every created record must contain: - category: pattern | rule | trap | schema | policy | interaction; - confidence: high | medium | low; - applies_to: a short retrieval scope; - lemma: one concise, actionable claim. PROCEDURE 1. PROPOSE atomic candidate memories from the evidence packet, feedback, raw trace as needed, and nearby existing records. 2. CHECK each candidate for evidential support, transfer value, scope, actionability, current validity, and redundancy. A successful task does not validate every intermediate assumption. 3. RECONCILE with existing memory: - Create a supported, nonredundant candidate. - Update or merge when evidence refines an existing record. - Narrow, correct, or delete a contradicted record. - Skip unsupported, trivial, or instance-specific content. 4. COMMIT the minimum CRUD operations needed to leave a coherent index. WRITING RULES - Store procedures, relations, conventions, and scoped warnings; never memorize the task answer, rubric wording, or incidental values. - Prefer positive rules that tell the next agent what to do. - Scope no claim more broadly than its evidence supports. - Prefer fewer, stronger records over many noisy ones. STOP When no further justified CRUD operation remains, stop using tools and briefly summarize what changed. 
+
+D.3 Environment-Probing Curator Agent Prompt 
+
+The environment-probing system message deliberately preserves the curator agent’s core prompt above. It is formed by inserting only two probe-specific blocks: 
+
+Pprobe = Pcurator + Aaccess + Averify .
+
+Reading the shared prompt for the curator agent with the two blue-highlighted blocks below inserted at the stated locations gives the complete compact probing prompt. No input, memory schema, CRUD policy, or stopping rule otherwise changes. 
+
+Highlighted addition 1: read-only tool access. 
+
+Insert under Available Tools. 
+
+ENVIRONMENT-PROBING ADDITION You also have read-only task-environment tools. These tools cannot mutate the environment, consume the task agent’s budget, or expose future tasks or labels. 
+
+Highlighted addition 2: verification nudge. 
+
+Insert between Check and Reconcile. 
+
+ENVIRONMENT-PROBING ADDITION Use the read-only environment tools to verify candidate and existing memories before Create or Update whenever correctness, scope, freshness, or actionability is uncertain. Probe counterexamples, untouched slices, stale mappings, required preconditions, and whether a shorter procedure yields the same evidence. Probe only to evaluate a candidate memory, not to solve a future task or explore without a hypothesis. Use probe evidence to strengthen or narrow a supported record and to update or delete a contradicted one. D.4 Shared Curator Agent User-Message Template 
+
+Both curation conditions receive the same dynamic evidence message. The raw trajectory pointer is omitted only when no staged trace is available. 
+
+<distilled_evidence> {DISTILLED_TRAJECTORY} </distilled_evidence> <terminal_feedback> {TERMINAL_FEEDBACK_OR_NONE} </terminal_feedback> <related_memory> {RELATED_MEMORY_ENTRIES_OR_NONE} </related_memory> <raw_trajectory path="{TRAJECTORY_JSON_PATH_OR_NONE}" /> Reconcile the memory index using the available tools. Stop when no further justified operation remains. 
+
+## E Memory Samples and Trajectory Side-by-Sides 
+
+This appendix first compares representative curator-agent memory records from the CLBench database-exploration runs. It then expands two matched cases, one from each benchmark, as trajectory side-by-sides. 
+
+E.1 CLBench Curator Memory Examples 
+
+Figure 3 shows examples from the CLBench database-exploration task runs and the kinds of memories generated by the curator agent. The left column samples trajectory-only curation; the right column samples the same memory schema when the curator agent can make targeted read-only environment probes. Record text is lightly shortened for layout, while table names, fields, relations, and values are preserved. 
+
+GHCP + Mem 
+
+Trajectory-only curator agent 
+
+[trap] Answer-Anchored Warning 
+
+applies_to: electronics average-listed-price questions 
+
+lemma: Do not answer with AVG(items_g2.prc_usd) 
+
+over non-null rows; that produces about 52.96, but the benchmark’s correct result is 96.23, so a different price field and/or row subset is required. 
+
+[schema] Broad Map, Missing Relation 
+
+applies_to: grouped product and review tables 
+
+lemma: Across the grouped product/review tables, g1 = office products, g2 = electronics, and g3 = musical instruments; this mapping applies to both items_g* and fdbk_g* .
+
+[rule] Stale Table Name 
+
+applies_to: musical-instrument brand questions 
+
+lemma: Use attrs_g3 (not items_g3 ); filter 
+
+attr_key=’Brand’ , ignore blank attr_val , and count distinct ref_id .
+
+After migration, attrs_g3 no longer exists. 
+
+GHCP + Mem (w/ Env Probing) 
+
+Environment-probing curator agent 
+
+[rule] Executable Join and Filter 
+
+applies_to: g2 top-level-category price shares 
+
+lemma: Join items_g2 to taxn_g2 on ref_id ; filter 
+
+cat_lvl=1 and the exact cat_nm ; keep 
+
+items_g2.prc>0 ; then compare against the filtered 
+
+AVG(prc) .
+
+[rule] Positive Relation and Grain 
+
+applies_to: grouped review-average questions 
+
+lemma: Use items_g* for product-side filters, join to 
+
+fdbk_g* on ref_id , and aggregate fdbk_g*.rtg rather than averaging item-side avg_rtg .
+
+[schema] Current Migrated Schema 
+
+applies_to: musical-instrument attributes and brands 
+
+lemma: Use product_attributes_g3 for musical attributes. For brand questions, filter attr_key=’Brand’ 
+
+with nonblank attr_val , group by attr_val , and count distinct ref_id .
+
+Figure 3: Representative CLBench memory records generated by the curator agent. Trajectory-only curation (left) can preserve a rejected answer, underspecify the positive operation, or retain a stale schema name. Environment probing (right) yields positive procedures with explicit joins, filters, aggregation grain, and current schema. The trajectory-only records are not uniformly wrong: they recover useful domain mappings and warnings. Their weakness is actionability. The first record says what failed but not what should replace it; the second orients the agent to the domain but does not identify the relation needed by the current question; and the third is a once-valid rule that survived schema drift. A later task agent therefore has to reconstruct the missing evidence. The probe-backed records instead verbalize observations that can be executed directly: which tables to use, how they join, which rows define the denominator, what aggregation grain is valid, and which schema name is current. In the three matched CLBench examples, GHCP + Mem used 4, 9, and 8 queries, whereas GHCP + Mem (w/ Env Probing) used 1, 2, and 1. The examples do not imply that every probed record is complete, but they show how read-only checks can convert a warning or tentative mapping into an environment-informed procedure before a future task retrieves it. The side-by-sides hold the task fixed across Base (GHCP (No Memory)), Mem (GHCP + Mem), and Probe (GHCP + Mem (w/ Env Probing)). The lanes show task-time behavior—memory retrieval, selected tool calls, the final answer, and grader evidence—not the earlier post-task sessions that produced the retrieved records. For both memory conditions in the reported runs, a non-writing distiller transformed prior completed trajectories into evidence packets, after which a separate curator agent used memory CRUD to reconcile candidate lemmas with the persistent index. Only Probe gave that curator agent the read-only benchmark tools and the highlighted verification instructions in Appendix D. During the displayed task, both memory conditions expose only memory_read , and all three responding agents retain the same environment-tool surface. The comparison therefore isolates the task-time effect of previously curated memory, including the additional environment evidence supplied by curator-side probes. Each case appears as sequential red (Base), gold (Mem), and blue (Probe) lanes. Agent calls and submitted answers are right-aligned; memory results, environment observations, call summaries, and grader evidence are left-aligned. Lane headers report task-agent response cost and input, output, and cached tokens; distiller and curator-agent usage are not included. These are selected-evidence traces rather than full transcripts. CLBench shows the first and final SQL queries; APEX shows the first two discovery calls and final computation call. Each displayed call gives its position in the recorded trace, and bucket cards account for every omitted call without printing its arguments or result. APEX positions count recorded top-level calls, while lane headers report total task-agent tool calls. Tagged observations are capped at 500 source characters and carry an original-length marker when truncated. Memory payloads, final answers, and grader evidence are reproduced from the recorded runs; internal model reasoning is omitted. 
+
+E.2 CLBench Database Exploration 
+
+The selected CLBench case captures both correctness and efficiency on a question about products that have reviews but no attributes row. The stateless agent adds an incorrect category condition and answers 188 after seven database queries. GHCP + Mem retrieves useful mappings and warnings but not the required positive join pattern; it explores for nine queries and answers 267. GHCP + Mem (w/ Env Probing) retrieves the curator agent’s live-validated ref_id relation and answers 267 in two queries. A wrong answer receives zero reward under Equation 3. 
+
+C2: Filling a Knowledge Blind Spot. Run 3; position #7 of 40; memory conditions retrieve records curated from prior completed tasks.                                        
+
+> QUESTION AND GROUND TRUTH Question
+> How many office products have at least one review in the database but are NOT represented in the attributes data at all?
+> Ground truth
+> Accepted answer: 267.
+> GHCP — NO MEMORY
+> config: GHCP (No Memory) status: failure |reward: 0.00 |queries: 7|8turns cost: $0.0684 |in: 63.1K |out: 1.5K |cached: 49.9K
+> MEMORY
+> memory retrieval
+> No memory is available to the stateless baseline.
+> SELECTED AGENT CALLS
+> agent · query · representative discovery
+> Recorded query 1of 7|0before |6after .tables
+
+env · observation · representative discovery 
+
+Query result (1/15 queries used, 14 remaining): attrs_g1 attrs_g3 fdbk_g1 fdbk_g2 fdbk_g3 fdbk_stats_g1 items_g1 items_g2 items_g3 sqlite_sequence taxn_g1 taxn_g2 
+
+agent · query · decisive computation 
+
+Recorded query 7 of 7 | 6 before | 0 after SELECT COUNT(*) AS cnt FROM items_g1 i WHERE i.main_cat=’Office Products’ AND EXISTS (SELECT 1 FROM fdbk_g1 f WHERE f.ref_id=i.ref_id) AND NOT EXISTS (SELECT 1 FROM attrs_g1 a WHERE a.ref_id=i.ref_id); 
+
+env · observation · decisive computation 
+
+Query result (7/15 queries used, 8 remaining): cnt ---188 
+
+OTHER RECORDED CALLS BY BUCKET 
+
+other recorded queries 
+
+Other recorded queries (not expanded): schema inspection x3; data exploration/validation x2. Accounting: 7 recorded; 2 shown; 5 not expanded. 
+
+FINAL ANSWER AND GRADING 
+
+submitted answer 
+
+188 
+
+grader evidence · FAIL 
+
+Question 1: INCORRECT. Your answer: 188 Correct answer: 267 Exploratory queries used: 7
+
+GHCP + Mem 
+
+config: GHCP + Mem status: success | reward: 0.40 | queries: 9 | 10 turns cost: $0.0983 | in: 94.7K | out: 2.7K | cached: 79.5K 
+
+MEMORY 
+
+agent · memory_read 
+
+{"query": "Question 7: determine count of office products with at least one review but no attributes representation; need identify relevant tables and likely join keys.", "k": 5}
+
+memory · complete logical payload 
+
+#1 [trap] applies_to: SQLite product-dataset benchmark questions about reviewers spanning 2+ top-level categories within office products lemma: Do not treat grouped datasets g1/g2/g3 as the requested ’top-level categories’; for office-products category-span questions, join office reviews (fdbk_g1) to office item/taxonomy data (e.g. items_g1/taxn_*) and count distinct top-level categories within the office domain. #2 [schema] applies_to: SQLite product-dataset benchmark with grouped items_g* and fdbk_g* tables lemma: Across the grouped product/review tables, g1 = office products, g2 = electronics, and g3 =musical instruments; this mapping applies to both items_g* and fdbk_g* tables. #3 [schema] applies_to: SQLite product-dataset benchmark questions over grouped feedback tables fdbk_g* that filter verified or non-empty review text lemma: In grouped feedback tables fdbk_g*, rtg is the review rating, body is the review text, vrf is the verification flag (e.g. filter verified with vrf = ’true’), and non-empty text should be filtered with body IS NOT NULL AND TRIM(body) <> ”. #4 [trap] applies_to: SQLite product-dataset benchmark questions asking for average review rating by an item attribute (for example, whether price is listed) lemma: Do not answer ’average review rating’ questions with AVG(items_*.avg_rtg); the benchmark expects averaging review rows from fdbk_*.rtg after joining to items_* only to classify products by the requested attribute. #5 [trap] applies_to: Questions about average listed price for electronics in the grouped SQLite product datasets lemma: Do not answer electronics ’average listed price’ with AVG(items_g2.prc_usd) over non-null rows; that produces about 52.96, but the benchmark’s correct result is 96.23, so a different price field and/ or row subset is required. 
+
+SELECTED AGENT CALLS 
+
+agent · query · representative discovery 
+
+Recorded query 1 of 9 | 0 before | 8 after .tables 
+
+env · observation · representative discovery 
+
+Query result (1/15 queries used, 14 remaining): attrs_g1 attrs_g3 fdbk_g1 fdbk_g2 fdbk_g3 fdbk_stats_g1 items_g1 items_g2 items_g3 sqlite_sequence taxn_g1 taxn_g2 
+
+agent · query · decisive computation 
+
+Recorded query 9 of 9 | 8 before | 0 after SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT ref_id FROM fdbk_g1 WHERE ref_id IS NOT NULL EXCEPT SELECT ref_id FROM items_g1)) AS review_refids_not_in_items, (SELECT COUNT(*) FROM (SELECT DISTINCT ref_id FROM items_g1 WHERE ref_id IN (SELECT ref_id FROM fdbk_g1 WHERE ref_id IS NOT NULL) EXCEPT SELECT DISTINCT ref_id FROM attrs_g1 WHERE ref_id IS NOT NULL)) AS item_refids_with_review_missing_attrs 
+
+env · observation · decisive computation 
+
+Query result (9/15 queries used, 6 remaining): review_refids_not_in_items | item_refids_with_review_missing_attrs ---------------------------+--------------------------------------0 | 267 
+
+OTHER RECORDED CALLS BY BUCKET other recorded queries 
+
+Other recorded queries (not expanded): schema inspection x4; data exploration/validation x3. Accounting: 9 recorded; 2 shown; 7 not expanded. 
+
+FINAL ANSWER AND GRADING 
+
+submitted answer 
+
+267 
+
+grader evidence · PASS 
+
+Question 7: CORRECT! Your answer: 267 Exploratory queries used: 9
+
+GHCP + Mem (w/ Env Probing) 
+
+config: GHCP + Mem (w/ Env Probing) status: success | reward: 0.87 | queries: 2 | 3 turns cost: $0.0214 | in: 25.0K | out: 568 | cached: 22.0K 
+
+MEMORY 
+
+agent · memory_read 
+
+{"query": "Question 7: count office products with at least one review but no attributes rows; need identify office tables and likely join key", "k": 5}
+
+memory · complete logical payload 
+
+#1 [rule] applies_to: g1 reviewer category-span queries lemma: For office-products reviewer span questions, join fdbk_g1 to taxn_g1 by ref_id, treat taxn_g1. cat_lvl=1 cat_nm as the top-level category, count reviewers with at least 2 distinct cat_nm, and divide by COUNT(DISTINCT uid) from fdbk_g1. #2 [rule] applies_to: g1/g3 brand product counts lemma: For office-products or musical-instruments brand questions, read brand from attrs_g1/attrs_g3 by filtering attr_key=’Brand’ and aggregate COUNT(DISTINCT ref_id) by attr_val. #3 [rule] applies_to: grouped average review rating queries lemma: For g1/g2/g3 questions comparing average review rating across product attributes, join fdbk_g* to items_g* on ref_id and average fdbk_g*.rtg within each attribute-defined group. #4 [rule] applies_to: g2 electronics review body-length queries lemma: For electronics review-text metrics, aggregate directly from fdbk_g2: use rtg for stars and body for text, filter verified reviews with vrf=’true’, exclude blank reviews with body IS NOT NULL AND TRIM(body)<>” and compute measures like AVG(LENGTH(body)) over the requested rating groups. #5 [schema] applies_to: grouped product domain mapping lemma: In the g1/g2/g3 product split, use g1 for office products, g2 for electronics, and g3 for musical instruments. 
+
+SELECTED AGENT CALLS 
+
+agent · query · representative discovery 
+
+Recorded query 1 of 2 | 0 before | 1 after SELECT name FROM sqlite_master WHERE type=’table’ ORDER BY name; env · observation · representative discovery                                         
+
+> Query result (1/15 queries used, 14 remaining): name ---------------attrs_g1 attrs_g3 fdbk_g1 fdbk_g2 fdbk_g3 fdbk_stats_g1 items_g1 items_g2 items_g3 sqlite_sequence taxn_g1 taxn_g2
+> agent · query · decisive computation
+> Recorded query 2of 2|1before |0after SELECT COUNT(DISTINCT f.ref_id) AS missing_attrs_products FROM fdbk_g1 fLEFT JOIN attrs_g1 aON f.ref_ id =a.ref_id WHERE a.ref_id IS NULL;
+> env · observation · decisive computation
+> Query result (2/15 queries used, 13 remaining): missing_attrs_products ----------------------267
+
+FINAL ANSWER AND GRADING        
+
+> submitted answer
+> 267
+> grader evidence · PASS
+> Question 7: CORRECT! Your answer: 267 Exploratory queries used: 2
+
+E.3 Adapted APEX Management Consulting 
+
+The selected APEX case asks which Impact site has the largest absolute z-score for 2024 average monthly US revenue per head. The stateless agent exhausts 96 calls and returns the incorrect answer Darcylis , z = 1 .29 , satisfying neither criterion. GHCP + Mem transfers the computation recipe and returns Lorexa , z = −1.60 , in 11 calls; GHCP + Mem (w/ Env Probing) returns the same correct answer in six calls using its validated workbook map. Consistent with Equation 3, the lane headers report the primary reward ri, fractional-criteria diagnostic rfrac  
+
+> i
+
+, and task-agent tool-call count qi.
+
+A3: Transferring a Computation Recipe. Run 4; position #11 of 15; memory conditions retrieve records curated from prior completed tasks. 
+
+QUESTION AND GROUND TRUTH Question 
+
+Can you please calculate the z score of US 2024 Average Monthly Revenue per Head, for all of Impact’s sites? Use a distribution of US 2024 Average Monthly Revenue per Head per site for all the sites in the attached file, which has the monthly US operational data for all of Impact’s and competitor’s sites. You can allocate the yearly revenue from the respective P&L equally across all the respective sites and months. Tell me here the z score of only the Impact site with the highest absolute z score, and the SiteID of this Impact site. Use the standard deviation formula for sample, not population. Round the final answer to two decimal places. Write back to me with what I’ve asked for. 
+
+Ground truth 
+
+Lorexa, z = -1.60. GHCP — NO MEMORY 
+
+config: GHCP (No Memory) status: failure | criteria: 0/2 | primary reward: 0.00 | fractional reward: 0.00 | tool calls: 96 cost: $4.1622 | in: 3.81M | out: 30.2K | cached: 3.46M 
+
+MEMORY 
+
+memory retrieval 
+
+No memory is available to the stateless baseline. 
+
+SELECTED AGENT CALLS 
+
+agent · archipelago-filesystem_server_list_files · representative discovery 
+
+Recorded top-level call 1 of 31 | 0 before | 30 after {"path": "/"} 
+
+env · observation · representative discovery 
+
+’4. Received From Client’ (folder) ’2. Analysis’ (folder) ’1. Presentations’ (folder) ’3. Research’ (folder) ’0. Admin’ (folder) 
+
+agent · archipelago-filesystem_server_get_directory_tree · representative discovery 
+
+Recorded top-level call 2 of 31 | 1 before | 29 after {"path": "/", "max_depth": 2, "include_files": true, "show_size": false} 
+
+env · observation · representative discovery 
+
+/+- 0. Admin/ | +- Meeting Notes/ +- 1. Presentations/ | +- Decks/ | +- Outline/ +- 2. Analysis/ | +- Archive/ | +- Site Ops/ | +- Supply Chain/ | +- Impact vs Comps High Level Metrics.xlsx | +- Impact_SG&A Competitor Analysis.xlsx | +- UPDATED_Analysis - Impact_US_MarketAccessAgency_Fees_2020_2024_REVISED.xlsx | +- UPDATED_Analysis - Sales_Force_Comp_2022_2024_CORRECTED.xlsx | +- UPDATED_Impact_Campaign_Analysis.xlsx | +- UPDATED_Impact_RealEstate_Analysi [Observation capped at 500 source characters; original length: 630 source characters.] 
+
+agent · archipelago-code_execution_server_code_exec · final computation attempt (incorrect) 
+
+Recorded top-level call 31 of 31 | 30 before | 0 after {"request": {"code": "python - <<’PY’\nimport pandas as pd\nfrom openpyxl import load_workbook\n# revenue\nrev = 8324082.0\n# headcount data\npath=’/filesystem/4. Received From Client/Impact Therapeutics/Talent_Comp_Turnover_AllSites (1).xlsx’\nwb=load_workbook(path, read_only=True, data_ only=True)\nrows=list(wb[’Overtime_and_Vacancy_Log’].values)\nwb.close()\ndf=pd.DataFrame(rows[1:], columns=rows[0])[[’month’,’site_id’,’headcount_actual’]].dropna()\nsite_count=df[’site_id’].nunique()\ nmonthly_revenue_per_site=rev/site_count/12\nsite_metrics=df.assign(monthly_rev_per_head=monthly_ revenue_per_ ...[truncated 414 chars] 
+
+env · observation · final computation attempt (incorrect) 
+
+{"success": true, "output": "site_count 5\nmonthly_revenue_per_site 138734.69999999998\n{’Darcylis’: 289.38303158338863, ’Lorexa’: 266.9690189637408, ’Noralix’: 177.86499999999998, ’Papinex-9’: 182.66596483349187, ’Strevalent-20’: 200.63943080874193}\nmean 223.50448923787266\nsd_sample 51.24135692058095\nz {’Darcylis’: 1.2856517919230985, ’Noralix’: -0.8906768278718573, ’Lorexa’: 0.8482314352688562, ’Papinex-9’: -0.7969836643412171, ’Strevalent-20’: -0.44622273497888265}\n" }
+
+failed-path note 
+
+No valid decisive cross-company computation emerged; the trajectory ended with the incorrect Darcylis, z=1.29 result. 
+
+OTHER RECORDED CALLS BY BUCKET 
+
+other recorded calls 
+
+Other recorded calls (not expanded): filesystem x11; spreadsheet x7; code execution x8; mail x2. Accounting: 31 recorded; 3 shown; 28 not expanded. 96 total tool calls. 
+
+FINAL ANSWER AND GRADING 
+
+submitted final answer 
+
+<TEXT_RESPONSE> Using the available site-level monthly US ops data in the workspace, the Impact site with the highest absolute z score is: **SiteID:** Darcylis **z score:** **1.29** I could not locate a combined cross-company site-level operational attachment, so this result is based on the accessible Impact site-level monthly headcount file and Impact’s 2024 US revenue, using **sample** standard deviation. Sources: [Impact vs Comps High Level Metrics.xlsx (‘Impact US‘)](/2. Analysis/Impact vs Comps High Level Metrics.xlsx), [Talent_Comp_Turnover_AllSites (1).xlsx (‘Overtime_ and_Vacancy_Log‘)](/4. Received From Client/Impact Therapeutics/Talent_Comp_Turnover_AllSites (1).xlsx) <DONE> </TEXT_RESPONSE> <FILE_CHANGES> <ARTIFACT id="1" type="sheet" change="deleted"> <path>Manufacturing_Site_Operations_2020_2024.xlsx</path> <title>Manufacturing_Site_Operations_2</title> <sub_index>1</sub_index> <deleted_content> RecordID,Company,SiteID,Year,Month,ProductType,BatchesProduced,BatchesPassed,EquipmentType, EquipmentUtilization,HeadcountFTE,CapexInvested,MaintenanceHours,EnergyConsumptionMWh,WasteKg 1,ImpactTherapeutics,Darcylis,2020,1,Gene Therapy,9,8,Fill-Finish,0.862,31.7,250625,56,421.5,800.7 2,ImpactTherapeutics,Darcylis,2020,2,Gene Therapy,10,8,Fermentation,0.938,39.5,145553,69.1,228.4,747.6 3,ImpactTherapeutics,Darcylis,2020,3,Biologic,8,6,Fermentation,0.76,25.2,71000,195.8,262.9,363.1 4,ImpactTherapeutics,Darcylis,2020,4,Gene Therapy,5,4,Quality Control,0.737,40.4,356138,112.1,109.3,1896 5,ImpactTherapeutics,Darcylis,2020,5,Small Molecule,4,3,Fermentation,0.642,20,357469,137.6,683.2,512.1 6,ImpactTherapeutics,Darcylis,2020,6,Gene Therapy,3,2,Quality Control,0.675,29.2,296020,69.6,778.7,1595. 27,ImpactTherapeutics,Darcylis,2020,7,Small Molecule,4,3,Purification,0.841,22.8,306700,123.3,772.8,1720. 28,ImpactTherapeutics,Darcylis,2020,8,Vaccine,4,3,Purification,0.936,32,174200,87.4,215.7,228.1 9,ImpactTherapeutics,Darcylis,2020,9,Gene Therapy,11,9,Quality Control,0.552,38.9,368086,156.6,639.9, 333.3 10,ImpactTherapeutics,Darcylis,2020,10,Small Molecule,9,6,Fill-Finish,0.89,26.8,92935,99.3,568.2,1398.7 11,ImpactTherapeutics,Darcylis,2020,11,Small Molecule,10,9,Fermentation,0.703,44.1,432011,155.5,265.2, 660.9 12,ImpactTherapeutics,Darcylis,2020,12,Vaccine,11,9,Purification,0.726,18.7,453094,116.1,494.3,1451.9 13,ImpactTherapeutics,Darcylis,2021,1,Vaccine,7,6,Fill-Finish,0.852,19.6,84641,86.4,212.9,1873.5 14,ImpactTherapeutics,Darcylis,2021,2,Biologic,11,10,Quality Control,0.637,25.7,447476,91.9,185.5,841.3 15,ImpactTherapeutics,Darcylis,2021,3,Biologic,3,2,Purification,0.55,23.6,187152,66.3,473.9,1072.7 16,ImpactTherapeutics,Darcylis,2021,4,Vaccine,3,2,Quality Control,0.927,22.7,283456,152.5,354.5,1949.2 17,ImpactTherapeutics,Darcylis,2021,5,Gene Therapy,6,4,Purification,0.835,16.9,498983,82.7,783.6,939.9 18,ImpactTherapeutics,Darcylis,2021,6,Biologic,9,7,Fermentation,0.646,16.8,270254,197.7,269.4,1409.8 19,ImpactTherapeutics,Darcylis,2021,7,V ...[truncated 160239 chars] grader criteria 
+
+0 of 2 passed 
+
+grader criterion · FAIL 
+
+Name: States the Impact site with the highest absolute z score is Lorexa Evidence: In the agent’s ‘TEXT_RESPONSE‘, it states: "**SiteID:** Darcylis" and "**z score:** **1.29**". The only file artifact provided, ARTIFACT 1, is a deleted sheet containing ImpactTherapeutics data for sites such as Darcylis, Lorexa, Strevalent, and Noralix, but no artifact states that Lorexa is the highest-absolute-z-score Impact site. Assessment: The criterion specifically asks to "States the Impact site with the highest absolute z score is Lorexa." This is not met because the agent explicitly named Darcylis instead of Lorexa in its response. Therefore, the criterion fails. 
+
+grader criterion · FAIL 
+
+Name: States that the z score of Lorexa is -1.60 Evidence: In the agent’s final text response, it states: "**SiteID:** Darcylis" and "**z score:** **1. 29**," which does not mention Lorexa or -1.60. The only artifact provided, ‘Manufacturing_Site_ Operations_2020_2024.xlsx‘ (ARTIFACT 1), contains raw site rows including ‘ImpactTherapeutics,Lorexa‘ in the deleted content, but no z-score calculation or statement for Lorexa. Assessment: The criterion specifically asks to "state that the z score of Lorexa is -1.60." This was not met: the response gives a different site (Darcylis) and a different z score (1.29), and the artifact does not provide a Lorexa z score of -1.60. Therefore, the criterion is false. 
+
+GHCP + Mem 
+
+config: GHCP + Mem status: success | criteria: 2/2 | primary reward: 0.89 | fractional reward: 0.89 | tool calls: 11 cost: $0.3756 | in: 294.3K | out: 4.9K | cached: 267.9K 
+
+MEMORY 
+
+agent · memory_read 
+
+{"query": "Calculate z score of US 2024 Average Monthly Revenue per Head for Impact sites from attached operational data file, using yearly revenue allocated equally across sites and months; need highest absolute z-score Impact site and SiteID.", "k": 10} 
+
+memory · complete logical payload 
+
+memory_read: showing 11/21 matched entries (query asked for top-25; index holds 21 total). #1 [schema] applies_to: benchmark spreadsheet tasks combining Manufacturing_Site_Operations_2020_2024.xlsx with company PnL US sheets for 2024 site revenue-per-head comparisons lemma: When a prompt allocates yearly US revenue equally across 2024 sites and months, compute company monthly site revenue as annual US Total Revenue ÷ 2024 site count ÷ 12, divide each site-month by HeadcountFTE to get revenue per head, then average those monthly ratios by site before comparing sites. #2 [rule] applies_to: Manufacturing_Site_Operations_2020_2024.xlsx + PnL what-if analyses that ask Impact’s lowest-revenue-per-head site to use the highest-revenue site’s utilization across Impact and six peers lemma: Treat the benchmark as the highest-revenue-per-head site across Impact plus all six peers (not Impact-only), use that site’s average 2024 EquipmentUtilization rounded to two decimals, set each target month’s utilization to max(current, benchmark), and scale revenue by new_utilization ÷ current_ utilization. #3 [rule] applies_to: Rebasing 2024 Impact cost-sa ...[truncated 3800 chars] 
+
+SELECTED AGENT CALLS 
+
+agent · archipelago-filesystem_server_list_files · representative discovery 
+
+Recorded top-level call 1 of 11 | 0 before | 10 after {"path": "/"} env · observation · representative discovery 
+
+’4. Received From Client’ (folder) ’2. Analysis’ (folder) ’Manufacturing_Site_Operations_2020_2024.xlsx’ (application/vnd.openxmlformats-officedocument. spreadsheetml.sheet file) 156159 bytes ’1. Presentations’ (folder) ’3. Research’ (folder) ’0. Admin’ (folder) 
+
+agent · archipelago-sheets_server_sheets · representative discovery 
+
+Recorded top-level call 2 of 11 | 1 before | 9 after {"request": {"action": "list_tabs", "file_path": "/Manufacturing_Site_Operations_2020_2024.xlsx"}} 
+
+env · observation · representative discovery 
+
+{"action": "list_tabs", "error": null, "help": null, "read_tab": null, "read_csv": null, "create": null, "delete": null, "list_tabs": {"raw_output": "{’worksheets’: [{’name’: ’Manufacturing_Site_Operations_2’, ’index’: 0, ’row_count’: 1681, ’column_count’: 15}]}" }, "add_tab": null, "delete_tab": null, "edit": null, "add_content": null, "delete_content": null, "create_chart": null, "filter_tab": null }
+
+agent · archipelago-code_execution_server_code_exec · decisive computation 
+
+Recorded top-level call 11 of 11 | 10 before | 0 after {"request": {"code": "python - <<’PY’\nimport pandas as pd\nimport openpyxl as ox\nops = pd.read_ excel(’/filesystem/Manufacturing_Site_Operations_2020_2024.xlsx’)\nops = ops[ops.Year==2024].copy()\nrev = {\n’ImpactTherapeutics’:8324082.0,’BayGenea’:27654678.0,’Fyrix’:32490052.0,’HelioZenon’:26234208.0, ’Abvuera’:30440958.0,’Meridon’:31740145.0,’Renueva’:7584932.0}\nsite_counts = ops.groupby(’Company’) [’SiteID’].nunique().to_dict()\nops[’annual_site_rev’] = ops[’Company’].map({k:v/site_counts[k] for k,v in rev.items()})\n# Method A average monthly ratio\nops[’m_site_rev’] = ops[’annual_site_rev’ ...[truncated 989 chars] 
+
+env · observation · decisive computation 
+
+{"success":true,"output":"\n A\n Company SiteID metricA z abs\nImpactTherapeutics Lorexa 5000.669739 -1. 598424 1.598424\nImpactTherapeutics Noralix 5475.895103 -1.544280 1.544280\nImpactTherapeutics Papinex 5823.362205 -1.504692 1.504692\nImpactTherapeutics Strevalent 5954.572667 -1.489743 1.489743\ nImpactTherapeutics Darcylis 6198.583404 -1.461942 1.461942\n\n B\n Company SiteID avg_h annual_site_rev metricB z abs\nI [Observation capped at 500 source characters; original length: 1167 source characters.] 
+
+OTHER RECORDED CALLS BY BUCKET 
+
+other recorded calls 
+
+Other recorded calls (not expanded): filesystem x1; spreadsheet x3; code execution x4. Accounting: 11 recorded; 3 shown; 8 not expanded. 
+
+FINAL ANSWER AND GRADING submitted final answer 
+
+<TEXT_RESPONSE> SiteID: **Lorexa** z-score: **-1.60** Calculated using ‘/Manufacturing_Site_Operations_2020_2024.xlsx‘ and the 2024 US ‘Total Revenue‘ from the following P&L workbooks: [‘/4. Received From Client/Impact Therapeutics/ImpactTherapeutics_PnL_ Vertical_2020_2024.xlsx‘](#), [‘/4. Received From Client/Competition/Abvuera_PnL_Vertical_2020_2024_ Formatted.xlsx‘](#), [‘/4. Received From Client/Competition/BayGenea_PnL_Vertical_2020_2024.xlsx‘](#), [‘/4. Received From Client/Competition/Fyrix_PnL_Vertical_2020_2024_Formatted.xlsx‘](#), [‘/4. Received From Client/Competition/HelioZenon_PnL_Vertical_2020_2024.xlsx‘](#), [‘/4. Received From Client/ Competition/Meridon_PnL_Vertical_2020_2024.xlsx‘](#), [‘/4. Received From Client/Competition/Renueva_ PnL_Vertical_2020_2024_Formatted.xlsx‘](#). <DONE> </TEXT_RESPONSE> 
+
+grader criteria 
+
+2 of 2 passed 
+
+grader criterion · PASS 
+
+Name: States the Impact site with the highest absolute z score is Lorexa Evidence: In the agent’s TEXT_RESPONSE, it says: "SiteID: **Lorexa**" and gives the corresponding z-score as "**-1.60**". Assessment: The criterion asks whether the response states that the Impact site with the highest absolute z score is Lorexa. The response identifies the SiteID as Lorexa, so this criterion is met. 
+
+grader criterion · PASS 
+
+Name: States that the z score of Lorexa is -1.60 Evidence: The agent’s final text response states: ‘SiteID: **Lorexa**‘ and ‘z-score: **-1.60**‘. Assessment: The criterion asks to state that the z score of Lorexa is -1.60. The response explicitly gives Lorexa with a z-score of -1.60, so the criterion is met. 
+
+GHCP + Mem (w/ Env Probing) 
+
+config: GHCP + Mem (w/ Env Probing) status: success | criteria: 2/2 | primary reward: 0.94 | fractional reward: 0.94 | tool calls: 6cost: $0.1688 | in: 145.6K | out: 6.5K | cached: 130.0K 
+
+MEMORY 
+
+agent · memory_read 
+
+{"query": "Find attached file with monthly US operational data for Impact and competitor sites, compute 2024 average monthly revenue per head by site, then z score for Impact sites using sample standard deviation across all sites.", "k": 10} 
+
+memory · complete logical payload 
+
+memory_read: showing 8/15 matched entries (query asked for top-25; index holds 15 total). #1 [schema] applies_to: Impact peer revenue-per-batch benchmarking lemma: For Impact-vs-peer site revenue-per-batch benchmarks, combine 2024 site-month rows from Manufacturing_Site_Operations_2020_2024.xlsx with each company’s annual US ’Total Revenue’ from the ’US’ tab of its *_PnL_Vertical workbook, allocate annual revenue evenly across that company’s sites and 12 months, compute monthly revenue/BatchesPassed for each site-month, then average by site before taking min/max. #2 [rule] applies_to: Impact peer revenue-per-head utilization what-ifs lemma: For Impact site revenue-per-head utilization scenarios, use 2024 ‘Manufacturing_Site_Operations_ 2020_2024.xlsx‘ rows plus each company PnL ‘US‘ → ‘Total Revenue‘; allocate annual US revenue evenly across that company’s sites and 12 months, compute monthly revenue/‘HeadcountFTE‘, average by site to identify the min/max sites across the pooled Impact+six-peer set unless the prompt narrows scope, then apply the benchmark site’s average ‘EquipmentUtilization‘ (rounded only to the requested precision) by ...[truncated 3800 chars] 
+
+SELECTED AGENT CALLS agent · archipelago-filesystem_server_search_files · representative discovery 
+
+Recorded top-level call 1 of 6 | 0 before | 5 after {"pattern": "*_PnL_Vertical_2020_2024*.xlsx", "path": "/", "recursive": true, "max_results": 50} 
+
+env · observation · representative discovery 
+
+Found 7 file(s) matching ’*_PnL_Vertical_2020_2024*.xlsx’: /4. Received From Client/Competition/BayGenea_PnL_Vertical_2020_2024.xlsx /4. Received From Client/Competition/Fyrix_PnL_Vertical_2020_2024_Formatted.xlsx /4. Received From Client/Competition/HelioZenon_PnL_Vertical_2020_2024.xlsx /4. Received From Client/Competition/Abvuera_PnL_Vertical_2020_2024_Formatted.xlsx /4. Received From Client/Competition/Meridon_PnL_Vertical_2020_2024.xlsx /4. Received From Client/Competition/Renueva_PnL_Verti [Observation capped at 500 source characters; original length: 620 source characters.] 
+
+agent · archipelago-filesystem_server_search_files · representative discovery 
+
+Recorded top-level call 2 of 6 | 1 before | 4 after {"pattern": "Manufacturing_Site_Operations_2020_2024.xlsx", "path": "/", "recursive": true, "max_ results": 20} 
+
+env · observation · representative discovery 
+
+Found 1 file(s) matching ’Manufacturing_Site_Operations_2020_2024.xlsx’: /Manufacturing_Site_Operations_2020_2024.xlsx 
+
+agent · archipelago-code_execution_server_code_exec · decisive computation 
+
+Recorded top-level call 6 of 6 | 5 before | 0 after {"request": {"code": "python - <<’PY’\nimport pandas as pd, statistics\nfrom pathlib import Path\nops = pd.read_excel(’/filesystem/Manufacturing_Site_Operations_2020_2024.xlsx’)\nops = ops[ops.Year==2024]. copy()\ncompanies = ops.Company.unique()\nrevs={}\nfor company in companies:\n p = list(Path(’/ filesystem’).rglob(f’{company}*_PnL_Vertical_2020_2024*.xlsx’))[0]\n us = pd.read_excel(p, sheet_ name=’US’)\n revs[company] = float(us.loc[us[’Line Item’].eq(’Total Revenue’), 2024].iloc[0])\nsite_ counts = ops.groupby(’Company’)[’SiteID’].nunique().to_dict()\nops[’allocated’] = ops.Company. ...[truncated 851 chars] 
+
+env · observation · decisive computation 
+
+{"success": true, "output": "m1 SiteID metric1 z abs_z\n Lorexa 5000.669739 -1.598424 1.598424\n Noralix 5475.895103 -1. 544280 1.544280\n Papinex 5823.362205 -1.504692 1.504692\nStrevalent 5954.572667 -1.489743 1.489743\n Darcylis 6198.583404 -1.461942 1.461942\nm2 SiteID metric2 z abs_z\n Lorexa 4489.796117 -1.613574 1. 613574\n Darcylis 5017.529837 -1.545447 1.545447\n Noralix 5130.404931 -1.530876 1.530876\n Papinex 5196.056180 -1.5224 [Observation capped at 500 source characters; original length: 559 source characters.] 
+
+OTHER RECORDED CALLS BY BUCKET 
+
+other recorded calls 
+
+Other recorded calls (not expanded): code execution x3. Accounting: 6 recorded; 3 shown; 3 not expanded. 
+
+FINAL ANSWER AND GRADING 
+
+submitted final answer 
+
+<TEXT_RESPONSE> - SiteID: ‘Lorexa‘ - z score: ‘-1.60‘ [^1][^2] [^1]: ‘/Manufacturing_Site_Operations_2020_2024.xlsx‘ [^2]: ‘US‘ tabs in ‘/4. Received From Client/Impact Therapeutics/ImpactTherapeutics_PnL_Vertical_2020_ 2024.xlsx‘, ‘/4. Received From Client/Competition/Abvuera_PnL_Vertical_2020_2024_Formatted.xlsx‘, ‘/4. Received From Client/Competition/BayGenea_PnL_Vertical_2020_2024.xlsx‘, ‘/4. Received From Client/ Competition/Fyrix_PnL_Vertical_2020_2024_Formatted.xlsx‘, ‘/4. Received From Client/Competition/ HelioZenon_PnL_Vertical_2020_2024.xlsx‘, ‘/4. Received From Client/Competition/Meridon_PnL_Vertical_ 2020_2024.xlsx‘, ‘/4. Received From Client/Competition/Renueva_PnL_Vertical_2020_2024_Formatted.xlsx‘ <DONE> </TEXT_RESPONSE> 
+
+grader criteria 
+
+2 of 2 passed 
+
+grader criterion · PASS 
+
+Name: States the Impact site with the highest absolute z score is Lorexa Evidence: In the agent’s final text response, it states: "SiteID: ‘Lorexa‘" followed by "z score: ‘-1. 60‘". This directly names Lorexa as the site being reported. Assessment: The criterion requires that the response states the Impact site with the highest absolute zscore is Lorexa. The agent’s response identifies Lorexa as the SiteID in its answer, which satisfies that requirement. Therefore, the criterion is met. 
+
+grader criterion · PASS 
+
+Name: States that the z score of Lorexa is -1.60 Evidence: In the agent’s final text response, it states: "- SiteID: ‘Lorexa‘" and "- z score: ‘-1.60‘". These are the exact site name and value referenced by the criterion. Assessment: The criterion asks to "State that the z score of Lorexa is -1.60." The agent explicitly states both the site "Lorexa" and the z score "-1.60," so the criterion is met.

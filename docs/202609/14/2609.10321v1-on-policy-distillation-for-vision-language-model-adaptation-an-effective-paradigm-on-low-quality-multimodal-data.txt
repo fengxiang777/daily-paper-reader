@@ -1,0 +1,728 @@
+Title: On-Policy Distillation for Vision-Language Model Adaptation, an Effective Paradigm on Low-Quality Multimodal Data
+
+URL Source: https://arxiv.org/pdf/2609.10321v1
+
+Published Time: Thu, 10 Sep 2026 01:17:44 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# On-Policy Distillation for Vision-Language Model Adaptation, an Effective Paradigm on Low-Quality Multimodal Data 
+
+## Hongyuan Zhang a,b ,†, Xianda Guo c,†,‡, Yanlun Peng b,†, Qianlong Yang b,d , Yubin Guo e, Pinhan Fu b,c ,Mulin Chen f, Xiaozhen Qiao g,∗ and Ping Luo a,∗
+
+> a
+
+The University of Hong Kong, Hong Kong SAR, China 
+
+> b
+
+Great Wall Motor, China 
+
+> c
+
+School of Computer Science, Wuhan University, China 
+
+> d
+
+School of Science, China University of Petroleum (East China), China 
+
+> e
+
+School of Computer Science and Technology, University of Science and Technology of China, China 
+
+> f
+
+School of Artificial Intelligence, Optics and Electronics (iOPEN), Northwestern Polytechnical University, China 
+
+> g
+
+School of Information Science and Technology, University of Science and Technology of China, China 
+
+A R T I C L E I N F O 
+
+Keywords :Vision-language models Knowledge distillation On-policy distillation 
+
+A B S T R A C T 
+
+Knowledge distillation offers an efficient route to transfer a task-adapted vision-language teacher to a compact student. The training target in current vision-language distillation methods is typically constructed from the teacher prediction and applied uniformly to all training samples, making it unreliable under class and domain shifts. In this paper, we argue that distillation target construction should be treated as a dynamic training decision rather than a fixed recipe. To this end, we propose ONPOKD, an on-policy distillation framework for vision-language model adaptation. To the best of our knowledge, O NPOKD is the first framework that applies on-policy distillation to vision-language model adaptation by learning target construction as a policy decision. O NPOKD learns a lightweight controller that constructs sample-wise adaptive targets using reliability and disagreement cues from the teacher model, student model, and zero-shot prior. Instead of relying on a fixed teacher prediction, the controller dynamically balances teacher supervision, zero-shot prior guidance, and hard-label anchoring through bounded policy actions, allowing the distillation target to adapt to varying sample reliability and training stages. The policy controller is updated with validation feedback, encouraging target construction to optimize transferability rather than merely fitting the training distribution. Since the controller is only used during training, O NPOKD can be seamlessly integrated into existing vision-language distillation pipelines while preserving the original inference architecture and test-time cost. Extensive experiments on Base-to-novel generalization and Cross-dataset transfer benchmarks show that O NPOKD consistently improves over strong vision-language distillation baselines. 
+
+## 1. Introduction 
+
+Large-scale vision-language models have become a strong foundation for open-vocabulary visual recognition. By align-ing images with natural-language supervision, models such as CLIP can recognize categories from textual descriptions and transfer to new recognition tasks without training a task-specific classifier (Radford et al., 2021; Jia et al., 2021; Zhai et al., 2022). This property is especially valuable when labeled data are limited or when test classes and domains differ from the original training distribution. In practice, however, downstream applications (Qiao et al., 2026b; Zhu et al., 2025; Wang et al., 2026; Xu et al., 2026; Zhou et al., 2026) still require adaptation, since target datasets often contain fine-grained categories, domain-specific visual statistics, or label spaces that are not well covered by web-scale pre-training data (Recht et al., 2019; Hendrycks et al., 
+
+† These authors contributed equally to this work. 
+
+‡ Project lead. 
+
+> ∗
+
+Corresponding author.  
+
+> hyzhang98@gmail.com
+
+(H. Zhang); xianda_guo@163.com (X. Guo);  
+
+> allenpeng0209@gmail.com
+
+(Y. Peng); xiaozhennnqiao@mail.ustc.edu.cn (X. Qiao) 
+
+2021). The central challenge is therefore to improve target-task discrimination while preserving the transferable zero-shot prior that supports novel-class and shifted-domain recognition. (a) Base-to-Novel Generalization (b) Cross-Dataset Transfer 
+
+Figure 1: Comparison of OnPoKD with existing VLM adapta-tion methods. (a) Base-to-novel generalization harmonic mean (HM). (b) Cross-dataset transfer accuracy. 
+
+Parameter-efficient adaptation has become a common way to specialize vision-language models while keeping most of the pretrained backbone unchanged. Prompt-based methods replace hand-crafted text templates with learnable contexts (Zhou et al., 2022b; Zhang et al., 2025, 2026; Huang 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 1 of 13 arXiv:2609.10321v1 [cs.CL] 9 Sep 2026 On-Policy Distillation for Vision-Language Model Adaptation Img Encoder Text Encoder 
+
+⊗
+
+> Img Encoder Text Encoder
+
+⊗
+
+> Teacher Logits Student Logits Distill
+> Image Text (“a photo of {class} ”)Img Encoder Text Encoder
+
+⊗
+
+> Img Encoder
+
+⊗ 
+
+> Teacher Logits Student Logits Distill
+> Prompt
+> Pre-stored Text Feature Save
+> Text Image (a) Classic KD (b) Prompt KD Img Encoder Text Encoder
+
+⊗
+
+> Img Encoder
+
+⊗
+
+> Teacher Logits Student Logits
+> Pre-stored Text Feature Save
+> Text Image (c) OnPoKD
+> Online Policy Controller Adaptive Logits Distill
+> Feedback Mix Targets
+
+Figure 2: Comparison of different distillation paradigms for vision-language adaptation. (a) Vanilla VLM distillation matches the student to a fixed teacher target. (b) PromptKD distills from a stronger adapted teacher. (c) OnPoKD uses an on-policy controller to build a sample-wise adaptive target. 
+
+et al., 2025; Qiao et al., 2026c), and later extend them with instance-conditioned or multi-modal prompt learning (Zhou et al., 2022a; Khattak et al., 2023a,b; Zhu et al., 2026). Other methods introduce lightweight adapters or cache-based modules on top of frozen vision-language repre-sentations (Yu et al., 2023; Lee et al., 2023; Qiao et al., 2026a, 2025). These approaches improve discrimination on adapted base classes, but they also reveal a trade-off in vision-language adaptation. The signals that sharpen source-class decisions do not always preserve the open-vocabulary knowledge needed for novel classes or shifted domains. As adaptation becomes stronger, the model may rely heavily on source-specific visual and semantic patterns, whereas the frozen zero-shot prior can remain a more reliable guide when the test distribution moves away from the adapted training split. Knowledge distillation offers a natural way to transfer adapted recognition ability into a compact student (Hinton et al., 2015). A strong adapted teacher encodes task-specific improvements, and the student inherits them while keeping a simple inference path. Existing vision-language distillation methods build the training target directly from the teacher prediction and optimize the student to match that soft distri-bution (Wu et al., 2023; Li et al., 2024; Yang et al., 2024). This design is sound only when the teacher is reliable for every sample, an assumption that rarely holds in vision-language adaptation. The adapted teacher may be accurate on base classes yet unreliable for novel classes, shifted domains, or ambiguous samples, whereas the frozen zero-shot prior, though weaker on the source split, often preserves open-vocabulary information that should not be overwritten. The student itself also changes during optimization, so the target that is best early in training may no longer be best once the student stabilizes. A fixed teacher-centered target cannot express any of these sample-wise and stage-wise differences. These observations suggest that distillation target con-struction should be adaptive rather than fixed. The teacher, zero-shot prior, and hard label provide complementary su-pervision for different training conditions. The teacher trans-fers task-adapted knowledge, the zero-shot prior preserves the generalization ability of the foundation model, and the hard label anchors learning when soft predictions are un-certain or conflicting. Their relative importance should de-pend on sample reliability, model disagreement, and training progress. For example, teacher-dominant supervision can be useful at the beginning of optimization, whereas stronger prior or label intervention may become beneficial when the teacher is uncertain, conflicts with the prior, or the student has become more stable. These factors motivate an online mechanism that observes the current training state and constructs a sample-wise distillation target. We instantiate this mechanism as O NPOKD, an on-policy distillation framework for vision-language model adaptation (Figure 2). Rather than fixing the mixture between teacher, prior, and label supervision by hand, ONPOKD learns a lightweight policy controller during training. The controller summarizes reliability and dis-agreement cues from the adapted teacher, the student, and the frozen zero-shot prior, and emits bounded actions for target mixing, sample weighting, and temperature adjust-ment. Crucially, the policy controller is updated from val-idation feedback , which steers target construction toward improving transfer behavior instead of merely reducing the current training loss. Because the controller and prior branch are discarded after distillation, the student keeps the same inference architecture and test-time cost as the underlying vision-language adaptation pipeline. Experiments confirm that adaptive target construction improves vision-language distillation under both class shift and dataset shift. Across eleven Base-to-novel generalization benchmarks, O NPOKD raises the average harmonic mean over PromptKD from 83.73 to 84.62, with a larger gain on novel classes than on base classes. In Cross-dataset transfer from ImageNet to ten target datasets, it reaches the best average accuracy of 72.66, improving PromptKD by 1.33%. Ablation studies further show that a fixed teacher-prior-label mixture is not sufficient, and that reliability cues, validation feedback, and bounded policy actions are all needed for stable target construction. We summarize our contributions below. • We are the first to formulate target construction for vision-language distillation as an on-policy decision, enabling sample-wise and stage-wise adaptive super-vision. • A lightweight policy controller balances task-adapted teacher, zero-shot prior, and hard-label supervision. This provides more reliable sample-wise targets under class and domain shifts. 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 2 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+• We introduce a validation-guided policy update that learns target-construction behavior from reliability feedback, without modifying the teacher, student, or inference architecture. • We demonstrate on Base-to-novel generalization and Cross-dataset transfer benchmarks that O NPOKD im-proves both robustness and transferability. 
+
+## 2. Related Work 
+
+2.1. Vision-Language Models 
+
+Vision-language models learn transferable visual rep-resentations by aligning images with natural-language de-scriptions (Radford et al., 2021; Jia et al., 2021; Yao et al., 2021; Yuan et al., 2021). They recognize unseen categories through text prompts and provide a strong starting point for downstream recognition with limited labels, but their performance hinges on prompt design and degrades under downstream distribution shift, which makes efficient adap-tation important for practical deployment. Prompt learn-ing addresses this issue by replacing hand-crafted prompts with learnable context vectors. CoOp optimizes continuous prompts for downstream classes, while CoCoOp conditions prompts on image features to improve novel-class gener-alization (Zhou et al., 2022b,a). MaPLe extends prompt learning to both the visual and textual branches, and Prompt-SRC regularizes prompts to preserve the frozen foundation-model representation (Khattak et al., 2023a,b). A comple-mentary line adds lightweight feature adapters or cache mechanisms on top of frozen vision-language representa-tions (Yu et al., 2023; Lee et al., 2023). These studies estab-lish that parameter-efficient adaptation works well for recog-nition, yet they focus on how to adapt the representation or classifier and leave open how the distillation target should change during student training. O NPOKD is orthogonal in this respect. Given an adapted teacher and a student, it improves the training target itself. 
+
+2.2. Knowledge Distillation 
+
+Knowledge distillation transfers information from astronger teacher to a smaller or more deployable student, usually by matching softened predictive distributions, and has been widely applied to classification, detection, and model compression (Hinton et al., 2015; Zhao et al., 2022). It is especially attractive in vision-language adaptation, where a strong adapted teacher may be costly to deploy but a distilled student can retain a compact inference path. Promp-tKD applies distillation to prompt-based vision-language models and shows that a teacher can improve student prompt adaptation (Li et al., 2024), while recent CLIP distillation studies stress the need to preserve cross-modal transfer during compression or adaptation (Wu et al., 2023; Yang et al., 2024). Standard distillation, however, assumes the teacher distribution is the right target for every sample. That assumption breaks down when the teacher is unreliable across class splits or domains, and when the frozen zero-shot prior still holds useful information that the adapted teacher has weakened. A single teacher-centered target can neither express these reliability changes nor decide when hard labels should override uncertain soft targets. O NPOKD instead treats the target itself as adaptive, keeping teacher-dominant supervision when the teacher is reliable and borrowing the frozen zero-shot prior or hard-label guidance when soft targets are not. 
+
+2.3. Adaptive Policy Learning for Distillation 
+
+Several learning paradigms adjust supervision during training, including sample weighting, curriculum learning, confidence filtering, and teacher-student agreement (Li et al., 2023; Yang et al., 2021; Zhao et al., 2022). Related ideas appear in large language models. RLHF updates a language-model policy from human preference feedback (Ouyang et al., 2022), DPO turns preference optimization into a direct classification-style objective (Rafailov et al., 2023), and language-model distillation shows that teacher outputs, rationales, or on-policy trajectories can guide smaller or weaker models (Hsieh et al., 2023; Zhao et al., 2026). Collectively, these works suggest that supervision can be policy-dependent and that feedback can decide which signals should guide learning. O NPOKD adopts this high-level view but targets a different problem. Instead of optimizing a gen-erative language policy, it learns a training-time policy for vision-language distillation target construction that decides which source should dominate, how strongly each sample should be weighted, and how soft the target should be. The controller turns reliability cues from the teacher, student, and prior into bounded actions for target mixing, sample weighting, and temperature adjustment, and is updated by a supervised action-matching step from held-out validation reliability rather than by reinforcement learning or a meta-gradient through the student optimizer. O NPOKD is there-fore a training-time target-construction mechanism, not a test-time ensemble or an architecture modification. 
+
+## 3. Method 
+
+3.1. Problem Formulation 
+
+Knowledge distillation adapts a compact vision-language model from a stronger teacher, but conventional distillation applies the same teacher-centered target to every training image. This static rule is restrictive in vision-language adaptation, where an adapted teacher may be reliable on base categories yet less stable under class shift, a frozen zero-shot model may preserve useful open-vocabulary priors, and the student may need different supervision as optimization progresses. Together these observations motivate a training mechanism that chooses the supervision source for each sample and training stage. Let 𝑥 𝑖 be an input image and 𝑦 𝑖 be its class label. We consider a teacher-student adaptation setting. It contains an adapted teacher 𝑇 , a student 𝑆 , and a frozen zero-shot vision-language prior 𝑃 . For sample 𝑥 𝑖 , the three models produce logits 𝑧 𝑇 𝑖 , 𝑧 𝑆 𝑖 , and 𝑧 𝑃 𝑖 . Standard logit distillation   
+
+> H. Zhang et al.: Preprint submitted to Elsevier Page 3 of 13
+
+On-Policy Distillation for Vision-Language Model Adaptation Unlabeled domain Image 
+
+> Image Encoder Text Encoder
+
+⊗ 
+
+> Image Encoder
+
+⊗      
+
+> Teacher Logits 𝑧 !
+> Student Logits 𝑧 "
+> Project Layer
+> Text (“a photo of {class} ”)
+> Reference Prior Logits 𝑧 #
+> One-hot GT Target 𝑞 $
+> One-hot encoding Ground-truth label
+> Image Encoder
+> Project Layer
+> Image Feature
+
+⊗
+
+⊗ Multiplication        
+
+> Trainable Param
+> Frozen Param Forward Teacher model Student model Distillation
+> Text Encoder
+> Text Feature Text (“a photo of {class} ”)
+> (a) OnPoKD Training (b) OnPoKD Inference
+> Online Policy Controller
+> Online Policy Network MLP
+> Relability & Disagreement Cues confidence
+> 𝐾𝐿(𝑡 ∥ 𝑝, 𝑝 ∥ 𝑠)
+> conflit entropy
+> alignment Training Progress Training sample Teacher target 𝑞 !"
+> ⋯
+> Prior target 𝑞 !#
+> ⋯
+> Hard target 𝑞 !$
+> ⋯𝜆 %
+> 𝜔 %
+> 𝜏 %
+> ⊕
+> Adaptative target builder
+> 𝜆 !"𝑞 !"
+> 𝜆 !#𝑞 !#
+> 𝜆 !$𝑞 !$
+> Adaptative Logits 𝑞 %
+> Distillation Validation feedback; ℒ&'(%)*
+> Student Logits
+> Prediction
+> 2𝑦 = 𝑎𝑟𝑔𝑚𝑎𝑥 +2𝑞 +"
+
+Figure 3: Pipeline of OnPoKD for on-policy distillation in vision-language adaptation. During training, a lightweight controller uses reliability cues from the adapted teacher, the student, and the frozen zero-shot prior, together with training progress, to construct adaptive distillation targets. At inference time, the controller and prior branch are removed, leaving the same student architecture and test-time cost. 
+
+minimizes 
+
+KD (𝑖 ) = 𝜏 2KL (sof tmax( 𝑧 𝑇 𝑖 ∕𝜏 ) ‖‖‖ sof tmax( 𝑧 𝑆 𝑖 ∕𝜏 )) , (1) where 𝜏 is the distillation temperature and the teacher dis-tribution is the only soft target. This is a forward KL with the teacher as the reference distribution, which is mass-covering, or mean-seeking. It drives the student to place probability mass on every class the teacher deems plausible, including classes where the adapted teacher is wrong under class or domain shift. Because a teacher-centered target has no mechanism to discount these errors, the student imitates the teacher even when the teacher conflicts with the zero-shot prior, and even when stronger label guidance would be more useful. This limitation motivates mixing the teacher prediction with the zero-shot prior and the hard label, two sources that can recover probability mass from teacher-erroneous classes. ONPOKD addresses this limitation by learning sample-wise target construction within an on-policy distillation framework. As shown in Figure 3, the on-policy controller summarizes reliability and disagreement cues from the adapted teacher, the student, and the frozen zero-shot prior, and predicts bounded actions for target mixing, sample weighting, and temperature adjustment (Section 3.2). These actions define a policy-guided distillation objective that balances teacher supervision, zero-shot prior guidance, and hard-label anchoring (Section 3.3). The controller is updated with held-out validation feedback to favor transfer-oriented target construction over short-term training-loss reduction (Section 3.4). After training, the controller and prior branch are discarded, leaving the student with unchanged inference architecture and test-time cost (Section 3.5). 
+
+3.2. On-Policy Controller 
+
+The controller captures reliability and conflict among the three supervision sources without adding any extra model evaluations. It first builds a state vector 𝑠 𝑖 from statistics already available in the forward pass. 
+
+𝑠 𝑖 = [ 𝑐 𝑇 , 𝑚 𝑇 , ℎ 𝑇 , 𝑐 𝑆 , 𝑚 𝑆 , ℎ 𝑆 ,𝑑 KL 
+
+𝑇 𝑆 , 𝑑 argmax 
+
+𝑇 𝑆 , 𝑎 𝑇 𝑆 , 𝑑 argmax 
+
+𝑇 𝑃 , 𝑑 KL 
+
+𝑇 𝑃 ]. (2) Here 𝑐 , 𝑚 , and ℎ denote confidence, top-two margin, and normalized entropy. For a distribution 𝑝 𝑀 𝑖 = sof tmax( 𝑧 𝑀 𝑖 )
+
+from model 𝑀 , we compute 
+
+𝑐 𝑀 = max 
+
+𝑦 𝑝 𝑀 𝑖 (𝑦 ),𝑚 𝑀 = 𝑝 𝑀 𝑖 (𝑦 1) − 𝑝 𝑀 𝑖 (𝑦 2),ℎ𝑀 = − 1log 𝐶 
+
+𝐶 ∑
+
+𝑦 =1 
+
+𝑝 𝑀 𝑖 (𝑦 ) log 𝑝 𝑀 𝑖 (𝑦 ),
+
+(3) where 𝑦 1 and 𝑦 2 are the top two predicted classes and 𝐶 is the number of classes. The superscripts KL and argmax denote KL divergence and top-label disagreement, respectively, so 𝑑 KL 
+
+𝑇 𝑆 and 𝑑 argmax 
+
+𝑇 𝑆 measure teacher-student disagreement while 𝑑 argmax 
+
+𝑇 𝑃 and 𝑑 KL 
+
+𝑇 𝑃 measure teacher-prior conflict. 
+
+𝑑 KL 
+
+𝐴𝐵 = KL( 𝑝 𝐴 𝑖 ‖𝑝 𝐵 𝑖 ),𝑑 argmax 
+
+𝐴𝐵 = 𝕀 [argmax 𝑦 𝑝 𝐴 𝑖 (𝑦 ) ≠ argmax 𝑦 𝑝 𝐵 𝑖 (𝑦 )] . (4) The alignment term 𝑎 𝑇 𝑆 is the normalized similarity be-tween teacher and student image features. Together these quantities form the controller state, summarizing teacher reliability, student uncertainty, feature transfer quality, and conflict between adapted and zero-shot knowledge. 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 4 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+Training progress acts as an additional policy condition. Rather than concatenating it to the state vector, we use the normalized progress 𝑝 ∈ [0 , 1] to modulate the action logits, which keeps the policy conservative at the start of training and gradually admits stronger prior or hard-label intervention as the student stabilizes. Given 𝑠 𝑖 and the normalized training progress 𝑝 𝑖 , the controller first predicts raw action scores 
+
+(𝑟 𝜆 𝑖 , 𝑟 𝑤 𝑖 , 𝑟 𝜏 𝑖 ) = 𝑓 𝜃 (𝑠 𝑖 ), (5) where 𝑟 𝜆 𝑖 ∈ ℝ3 controls target mixing. The scalars 𝑟 𝑤 𝑖 , 𝑟 𝜏 𝑖 ∈
+
+ℝ control sample reweighting and temperature. These raw scores are then converted into a policy action 
+
+𝑎 𝑖 = 𝜋 𝜃 (𝑠 𝑖 , 𝑝 𝑖 ) = (𝜆 𝑖 , 𝑤 𝑖 , 𝜏 𝑖 
+
+) . (6) Here 𝜆 𝑖 is a three-way mixture over the supervision sources, 
+
+𝑤 𝑖 is a sample weight, and 𝜏 𝑖 is a distillation temperature. We implement 𝑓 𝜃 as a two-layer multilayer perceptron with layer normalization whose final layer is initialized to zero, so the initial behavior follows a conservative teacher-dominant prior action rather than random policy outputs. 
+
+3.3. Policy Guided Distillation Objective 
+
+The controller maps each sample to three-way mixture weights, which we combine with a conservative teacher-dominant base action and with progress-aware adjustment terms. These adjustment terms estimate, from teacher uncer-tainty, teacher-prior conflict, student uncertainty, and train-ing progress, whether the zero-shot prior or the hard-label target should receive more mass. The resulting mixture action satisfies 
+
+𝜂 𝑃 𝑖 = 𝜙 𝑃 (ℎ𝑇 , 𝑑 argmax  
+
+> 𝑇 𝑃
+
+, 𝑑 KL  
+
+> 𝑇 𝑃
+
+),𝜂 𝐻 𝑖 = 𝜙 𝐻 (ℎ𝑇 , 𝑑 argmax  
+
+> 𝑇 𝑆
+
+, ℎ 𝑆 ), (7) where 𝜂 𝑃 𝑖 and 𝜂 𝐻 𝑖 are normalized need scores for the zero-shot prior and hard-label supervision, and 𝜙 𝑃 , 𝜙 𝐻 are mono-tone summaries of the reliability cues. Prior intervention thus grows when the teacher is uncertain or conflicts with the zero-shot prior, while hard-label intervention grows when the teacher-student decision gap or the student uncertainty is large. Let 𝑏 denote a teacher-dominant base mixture and let 
+
+𝛽 𝑃 , 𝛽 𝐻 be nonnegative scaling coefficients. The policy mix-ture is computed as ̃𝜆 𝑖 = sof tmax (log 𝑏 + 𝑟 𝜆 𝑖 + [0 , 𝛽 𝑃 𝑝 𝑖 𝜂 𝑃 𝑖 , 𝛽 𝐻 𝑝 𝑖 𝜂 𝐻 𝑖 ]) ,𝜆 𝑖 = Π  (̃ 𝜆 𝑖 ), 𝜆 𝑖 = ( 𝜆 𝑇 𝑖 , 𝜆 𝑃 𝑖 , 𝜆 𝐻 𝑖 ), (8) where 𝜆 𝑖 contains the teacher, prior, and hard-label mixture weights. The feasible set 
+
+ = { 𝜆 ∈ ℝ3+ ∣𝜆 𝑇 + 𝜆 𝑃 + 𝜆 𝐻 = 1 ,𝜆 𝑃 ≤ 𝜆 𝑃 
+
+> max
+
+, 𝜆 𝐻 ≤ 𝜆 𝐻 
+
+> max
+
+,𝜆 𝑃 + 𝜆 𝐻 ≤ 𝜆 𝐴  
+
+> max
+
+}
+
+(9) keeps the prior and hard-label components as auxiliary su-pervision sources, and Π denotes the corresponding cap-and-renormalize projection. The scalar action components are also bounded. 
+
+𝑤 𝑖 = clip [𝑤 min ,𝑤 max ]
+
+(1 + 𝛾 𝑤 (𝜎 (𝑟 𝑤 𝑖 ) − 1∕2) ) ,𝜏 𝑖 = clip [𝜏 min ,𝜏 max ]
+
+(𝜏 0(1 + 𝛾 𝜏 (𝜎 (𝑟 𝜏 𝑖 ) − 1∕2)) + 𝛿 𝜏 (ℎ𝑇 )) .
+
+(10) Here 𝜎 (⋅) is the sigmoid function, 𝜏 0 is the base distillation temperature, and 𝛿 𝜏 is an uncertainty-dependent residual. This parameterization lets the controller adapt sample im-portance and target softness, while the bounds prevent un-stable target construction. The adaptive target is 
+
+𝑞 𝑖 = 𝜆 𝑇 𝑖 sof tmax( 𝑧 𝑇 𝑖 ∕𝜏 𝑖 ) + 𝜆 𝑃 𝑖 𝑞 𝑃 𝑖 + 𝜆 𝐻 𝑖 𝑞 𝐻 𝑖 , (11) where 𝑞 𝑃 𝑖 is the prior component and 𝑞 𝐻 𝑖 is the one-hot label distribution, optionally with label smoothing. When all classes are adapted jointly, 𝑞 𝑃 𝑖 = sof tmax( 𝑧 𝑃 𝑖 ∕𝜏 𝑖 ). For Base-to-novel generalization, we instead apply the prior component only to the novel-class slice so that the teacher’s probability mass on base classes is preserved. Writing 𝑏 
+
+and 𝑛 for the base and novel classes, we define 
+
+𝑞 𝑃 𝑖 (𝑦 ) = 
+
+⎧⎪⎨⎪⎩
+
+𝑞 𝑇 𝑖 (𝑦 ), 𝑦 ∈ 𝑏 ,
+
+∑
+
+> 𝑦 ′∈𝑛
+
+𝑞 𝑇 𝑖 (𝑦 ′) 𝑝 𝑃 𝑖 (𝑦 )
+
+∑𝑦 ′∈𝑛 𝑝 𝑃 𝑖 (𝑦 ′) , 𝑦 ∈ 𝑛 . (12) where 𝑞 𝑇 𝑖 = sof tmax( 𝑧 𝑇 𝑖 ∕𝜏 𝑖 ) and 𝑝 𝑃 𝑖 = sof tmax( 𝑧 𝑃 𝑖 ∕𝜏 𝑖 ).This keeps the adapted teacher in control of base knowledge while drawing on the zero-shot prior where open-vocabulary information is most useful. The novel-class slice relies only on class names through the frozen zero-shot classifier. No novel-class training images or target-domain test samples are ever used to update the student or the policy. The student is trained by 
+
+ONPOKD = 1
+
+𝐵 
+
+> 𝐵
+
+∑
+
+> 𝑖 =1
+
+𝑤 𝑖 𝜏 2 
+
+> 𝑖
+
+KL (𝑞 𝑖 
+
+‖‖‖ sof tmax( 𝑧 𝑆 𝑖 ∕𝜏 𝑖 )) , (13) where 𝐵 is the minibatch size, 𝑤 𝑖 is a normalized sam-ple weight constrained to a bounded interval, and 𝜏 𝑖 is a bounded sample-wise temperature. To isolate the effect of online target selection, the main configuration can fix 𝑤 𝑖 
+
+and 𝜏 𝑖 . An optional feature-level distillation term between teacher and student image features can also be retained. It is orthogonal to the policy and is not part of the target-selection mechanism. 
+
+3.4. Validation Feedback Policy Optimization 
+
+The policy is learned online from a held-out validation stream drawn from the same adaptation source as the student training data. In Base-to-novel generalization this stream contains only base-class examples from the adaptation split,   
+
+> H. Zhang et al.: Preprint submitted to Elsevier Page 5 of 13 On-Policy Distillation for Vision-Language Model Adaptation
+
+Algorithm 1 ONPOKD Training Procedure 
+
+Require: Teacher 𝑇 , student 𝑆 𝜓 , zero-shot prior 𝑃 , policy 
+
+𝑓 𝜃 
+
+Require: Training stream tr , validation stream val 
+
+Require: Base mixture 𝑏 , feasible set , feedback interval 
+
+𝐾 
+
+Ensure: Distilled student 𝑆 𝜓  
+
+> 1:
+
+Initialize 𝑓 𝜃 with a teacher-dominant base action  
+
+> 2:
+
+for training step 𝑡 = 1 , 2, … do  
+
+> 3:
+
+Draw a training minibatch 𝑡 = {( 𝑥 𝑖 , 𝑦 𝑖 )} 𝐵 𝑖 =1  
+
+> 4:
+
+Compute logits and image features from 𝑇 , 𝑆 𝜓 , and 
+
+𝑃  
+
+> 5:
+
+Build state 𝑠 𝑖 from reliability and disagreement cues  
+
+> 6:
+
+Obtain raw policy scores (𝑟 𝜆 𝑖 , 𝑟 𝑤 𝑖 , 𝑟 𝜏 𝑖 ) = 𝑓 𝜃 (𝑠 𝑖 ) 
+
+> 7:
+
+Estimate need scores (𝜂 𝑃 𝑖 , 𝜂 𝐻 𝑖 ) by Eq. (7)  
+
+> 8:
+
+Compute 𝜆 𝑖 , 𝑤 𝑖 , and 𝜏 𝑖 by Eqs. (8)–(10)  
+
+> 9:
+
+Construct adaptive target 𝑞 𝑖 by Eq. (11)  
+
+> 10:
+
+Update 𝜓 with ∇𝜓 ONPOKD  
+
+> 11:
+
+if 𝑡 mod 𝐾 = 0 then  
+
+> 12:
+
+Draw a validation minibatch 𝑡 ⊂ val  
+
+> 13:
+
+Evaluate 𝑇 , 𝑆 𝜓 , and 𝑃 without updating 𝜓  
+
+> 14:
+
+Build 𝑔 𝑖 and target action 𝑎 ⋆𝑖 = 𝐹 val (𝑔 𝑖 ) 
+
+> 15:
+
+Update 𝜃 with ∇𝜃 policy  
+
+> 16:
+
+end if  
+
+> 17:
+
+end for 
+
+and novel-class test images are never used for policy learn-ing. In Cross-dataset transfer both student training and policy feedback come from the ImageNet source split, with the target datasets reserved for final evaluation. This protocol matters, because the policy should improve transfer behavior without receiving target-domain supervision or optimizing directly on the reported test sets. At each feedback step, we evaluate the teacher, student, and zero-shot prior on validation samples. We then construct a target action from their correctness and confidence. Let 
+
+𝑔 𝑖 = [𝑒 𝑇 , 𝑒 𝑆 , 𝑒 𝑃 , 𝑐 𝑇 , 𝑐 𝑆 , 𝑐 𝑃 , 𝑚 𝑇 
+
+] , 𝑒 𝑀 = 𝕀 [̂𝑦 𝑀 = 𝑦 𝑖 ], (14) collect validation feedback signals, where 𝑒 𝑀 is the correct-ness of model 𝑀 ∈ { 𝑇 , 𝑆, 𝑃 }. The target action is generated by a deterministic feedback map 
+
+𝑎 ⋆𝑖 = (𝜆 ⋆𝑖 , 𝑤 ⋆𝑖 , 𝜏 ⋆𝑖 
+
+) = 𝐹 val (𝑔 𝑖 ). (15) The feedback map raises the prior coefficient when the prior succeeds and the teacher is unreliable, and raises the hard-label coefficient when both soft sources are unreliable or the student remains uncertain. The sample-weight target is reduced for high-risk samples, and the temperature target stays close to the base distillation temperature unless tem-perature learning is enabled. The constants in 𝐹 val are hy-perparameters selected on source validation data. The con-troller is therefore best understood as a validation-supervised action predictor rather than an unconstrained reinforcement-learning agent. 
+
+𝜙 𝑃 , 𝜙 𝐻 , and 𝐹 val are all deterministic, non-trainable maps. 𝜙 𝑃 takes the teacher’s normalized entropy ℎ𝑇 , the teacher-prior top-label agreement indicator 𝑑 argmax  
+
+> 𝑇 𝑃
+
+, and a clipped teacher-prior KL term 𝑑 KL  
+
+> 𝑇 𝑃
+
+, and returns a clipped monotone mixture over them. 𝜙 𝐻 takes the teacher’s nor-malized entropy ℎ𝑇 , the teacher-student top-label agreement indicator 𝑑 argmax  
+
+> 𝑇 𝑆
+
+, and the student’s normalized entropy ℎ𝑆 ,and returns the same kind of clipped monotone mixture. 𝐹 val 
+
+is a deterministic map from per-sample validation signals 
+
+𝑔 𝑖 to a target action (𝜆 ⋆𝑖 , 𝑤 ⋆𝑖 , 𝜏 ⋆𝑖 ), computed as four clipped monotone sub-targets. (i) A teacher-misuse risk score from the teacher’s correctness and margin, (ii) a sample-weight target from validation correctness, (iii) a prior-coefficient target from the teacher’s gap relative to the prior, and (iv) a hard-label coefficient target from the joint unreliability of the teacher and prior. The mixing weights in 𝜙 𝑃 and 𝜙 𝐻 
+
+are positive hyperparameters that sum to one. The auxiliary caps, action bounds, and the rescaling rule for 𝐹 val are listed in the released configuration. The policy loss matches the predicted action to this feedback target. 
+
+policy = 𝛼 𝜆 ‖𝜆 𝑖 − 𝜆 ⋆𝑖 ‖22 + 𝛼 𝑤 ‖𝑤 𝑖 − 𝑤 ⋆𝑖 ‖22
+
++ 𝛼 𝜏 ‖𝜏 𝑖 − 𝜏 ⋆𝑖 ‖22 + 𝛼 𝑟 (𝜋 𝜃 ), (16) where (𝜋 𝜃 ) regularizes the action toward the conservative base behavior. This validation-feedback objective is decou-pled from the training KD loss. It does not back-propagate through that loss or through the student optimizer. The teacher-dominant initialization is a safety condition for early training. With the final controller layer initialized to zero, the controller’s raw contribution is initially neutral and the base simplex action stays teacher-dominant, while the prior and hard-label caps prevent an untrained controller from replacing a useful teacher target with a random auxil-iary target. Validation feedback follows a periodic schedule rather than running at every step. At each feedback step the teacher, student, and frozen prior are evaluated on a held-out source-validation minibatch in evaluation mode, and only the controller is updated by the action-matching loss. The schedule reduces minibatch noise and amortizes the cost of the extra evaluation while still allowing the policy to track the changing student later in training. The default procedure thus separates policy learning from student-gradient updates. On ordinary training batches the controller selects targets for student optimization, whereas on feedback steps validation signals update the controller. This separation prevents the policy from exploiting short-term training-loss reductions and keeps the learned action aligned with validation reliability. 
+
+3.5. Training and Inference 
+
+As a training-time target-construction mechanism, O N-POKD imposes no specific teacher or student architecture. The teacher can be any adapted vision-language model that exposes class logits and image features, and the prior is obtained from the frozen zero-shot vision-language model using class-name prompts. During training, the policy con-troller reads reliability and disagreement cues from the   
+
+> H. Zhang et al.: Preprint submitted to Elsevier Page 6 of 13
+
+On-Policy Distillation for Vision-Language Model Adaptation 
+
+Table 1 
+
+Base-to-novel generalization on the standard eleven-dataset CLIP benchmark. Each block reports Base, Novel, and HM accuracy, and Δ shows the gain over PromptKD. 
+
+(a) Average over 11 datasets ViT-B/16 Base Novel HM CLIP 69.34 74.22 71.70 CoOp 82.69 63.22 71.66 CoCoOp 80.47 72.30 76.17 MaPLe 82.28 75.14 78.55 PromptSRC 84.26 76.10 79.97 PromptKD 86.96 80.73 83.73 
+
+OnPoKD 87.26 82.13 84.62 
+
+Δ +0.30 +1.40 +0.89 
+
+(b) ImageNet ViT-B/16 Base Novel HM CLIP 72.43 68.14 70.22 CoOp 76.47 67.88 71.92 CoCoOp 75.98 70.43 73.10 MaPLe 76.66 70.54 73.47 PromptSRC 77.60 70.73 74.01 PromptKD 80.83 74.66 77.62 
+
+OnPoKD 80.90 75.20 77.95 
+
+Δ +0.07 +0.54 +0.33 
+
+(c) Caltech101 ViT-B/16 Base Novel HM CLIP 96.84 94.00 95.40 CoOp 98.00 89.81 93.73 CoCoOp 97.96 93.81 95.84 MaPLe 97.74 94.36 96.02 PromptSRC 98.10 94.03 96.02 PromptKD 98.91 96.65 97.77 
+
+OnPoKD 99.12 97.13 98.11 
+
+Δ +0.21 +0.48 +0.34 
+
+(d) OxfordPets ViT-B/16 Base Novel HM CLIP 91.17 97.26 94.12 CoOp 93.67 95.29 94.47 CoCoOp 95.20 97.69 96.43 MaPLe 95.43 97.76 96.58 PromptSRC 95.33 97.30 96.30 PromptKD 96.30 98.01 97.15 
+
+OnPoKD 96.34 98.31 97.32 
+
+Δ +0.04 +0.30 +0.17 
+
+(e) StanfordCars ViT-B/16 Base Novel HM CLIP 63.37 74.89 68.65 CoOp 78.12 60.40 68.13 CoCoOp 70.49 73.59 72.01 MaPLe 72.94 74.00 73.47 PromptSRC 78.27 74.97 76.58 PromptKD 82.80 83.37 83.08 
+
+OnPoKD 83.19 84.64 83.91 
+
+Δ +0.39 +1.27 +0.83 
+
+(f) Flowers102 ViT-B/16 Base Novel HM CLIP 72.08 77.80 74.83 CoOp 97.60 59.67 74.06 CoCoOp 94.87 71.75 81.71 MaPLe 95.92 72.46 82.56 PromptSRC 98.07 76.50 85.95 PromptKD 99.42 82.62 90.24 
+
+OnPoKD 99.33 83.28 90.60 
+
+Δ -0.09 +0.66 +0.36 
+
+(g) Food101 ViT-B/16 Base Novel HM CLIP 90.10 91.22 90.66 CoOp 88.33 82.26 85.19 CoCoOp 90.70 91.29 90.99 MaPLe 90.71 92.05 91.38 PromptSRC 90.67 91.53 91.10 PromptKD 92.43 93.68 93.05 
+
+OnPoKD 92.62 93.94 93.28 
+
+Δ +0.19 +0.26 +0.23 
+
+(h) FGVCAircraft ViT-B/16 Base Novel HM CLIP 27.19 36.29 31.09 CoOp 40.44 22.30 28.75 CoCoOp 33.41 23.71 27.74 MaPLe 37.44 35.61 36.50 PromptSRC 42.73 37.87 40.15 PromptKD 49.12 41.81 45.17 
+
+OnPoKD 50.43 45.17 47.66 
+
+Δ +1.31 +3.36 +2.49 
+
+(i) SUN397 ViT-B/16 Base Novel HM CLIP 69.36 75.35 72.23 CoOp 80.60 65.89 72.51 CoCoOp 79.74 76.86 78.27 MaPLe 80.82 78.70 79.75 PromptSRC 82.67 78.47 80.52 PromptKD 83.69 81.54 82.60 
+
+OnPoKD 83.92 82.33 83.12 
+
+Δ +0.23 +0.79 +0.52 
+
+(j) DTD ViT-B/16 Base Novel HM CLIP 53.24 59.90 56.37 CoOp 79.44 41.18 54.24 CoCoOp 77.01 56.00 64.85 MaPLe 80.36 59.18 68.16 PromptSRC 83.37 62.97 71.75 PromptKD 85.84 71.37 77.94 
+
+OnPoKD 86.64 73.59 79.58 
+
+Δ +0.80 +2.22 +1.64 
+
+(k) EuroSAT ViT-B/16 Base Novel HM CLIP 56.48 64.05 60.03 CoOp 92.19 54.74 68.69 CoCoOp 87.49 60.04 71.21 MaPLe 94.07 73.23 82.35 PromptSRC 92.90 73.90 82.32 PromptKD 97.54 82.08 89.14 
+
+OnPoKD 97.64 87.01 92.02 
+
+Δ +0.10 +4.93 +2.88 
+
+(l) UCF101 ViT-B/16 Base Novel HM CLIP 70.53 77.50 73.85 CoOp 84.69 56.05 67.46 CoCoOp 82.33 73.45 77.64 MaPLe 83.00 78.66 80.77 PromptSRC 87.10 78.80 82.74 PromptKD 89.71 82.27 85.83 
+
+OnPoKD 89.78 82.84 86.17 
+
+Δ +0.07 +0.57 +0.34 
+
+teacher, student, and prior and uses them to construct the adaptive target in Eq. (11). At inference, the controller and the zero-shot prior branch are removed, and the distilled stu-dent produces the final prediction with the same adapted text classifier as the underlying teacher-student VLM adaptation pipeline. In this way, O NPOKD improves the supervision signal during distillation while adding no policy evaluation, prior fusion, or extra model capacity at test time. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Base-to-Novel Generalization. The Base-to-novel gen-eralization setting tests whether adaptation preserves open-vocabulary generalization (Zhou et al., 2022b,a; Khattak et al., 2023a). Each dataset is split into base and novel classes. The model is adapted only with base-class training data and then evaluated on both base and novel test classes. This setting is well aligned with our goal, as it directly exposes the trade-off between teacher-driven adaptation and preservation of the original zero-shot prior. Following com-mon practice, we report base accuracy, novel accuracy, and their harmonic mean (HM), which summarizes the balance between adapted-class discrimination and novel-class trans-fer. 
+
+Cross-Dataset Evaluation. The Cross-dataset evaluation setting tests robustness under dataset shift (Recht et al., 2019; Hendrycks et al., 2021). The model is adapted on ImageNet and then transferred to other recognition datasets without using their training images, which probes whether the distilled student learns a transferable decision rule or instead overfits to ImageNet classes and visual statistics. We report top-1 accuracy on each target dataset and the average accuracy across all target datasets. 
+
+Datasets. For Base-to-novel generalization, we follow the standard eleven-dataset benchmark used in vision-language 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 7 of 13 On-Policy Distillation for Vision-Language Model Adaptation            
+
+> Table 2
+> Training time and memory overhead of OnPoKD relative to PromptKD on the two representative datasets used throughout the ablation studies.
+> Dataset HM gain Training time Memory
+> FGVCAircraft +2 .49 +25% +51%
+> EuroSAT +2 .88 +19% +51%
+
+prompt learning. The benchmark includes ImageNet (Deng et al., 2009), Caltech101 (Fei-Fei et al., 2004), Oxford-Pets (Parkhi et al., 2012), StanfordCars (Krause et al., 2013), Flowers102 (Nilsback and Zisserman, 2008), Food101 (Bossard et al., 2014), FGVCAircraft (Maji et al., 2013), SUN397 (Xiao et al., 2010), DTD (Cimpoi et al., 2014), EuroSAT (Helber et al., 2019), and UCF101 (Soomro et al., 2012). These datasets span objects, fine-grained categories, textures, scenes, actions, and remote-sensing images. For Cross-dataset eval-uation, ImageNet serves as the source dataset and the adapted model is evaluated on the other ten. This diversity lets us assess both class-shift and domain-shift transfer. 
+
+Implementation Details. All comparisons use the ViT-B/16 CLIP backbone (Radford et al., 2021). We compare ONPOKD against zero-shot CLIP, the prompt-learning methods CoOp, CoCoOp, MaPLe, and PromptSRC (Zhou et al., 2022b,a; Khattak et al., 2023a,b), and the distillation baseline PromptKD (Li et al., 2024). For a controlled com-parison, O NPOKD leaves the teacher, the student, and the test-time inference architecture unchanged. The controller is a two-layer multilayer perceptron with layer normaliza-tion whose final layer is initialized to zero, so its initial behavior is the conservative teacher-dominant action in Algorithm 1. Hyperparameters are selected with source or base validation feedback and then kept fixed for all reported evaluations. Because the only difference from the underlying distillation pipeline is the on-policy for target construction, the improvements in the following tables reflect adaptive target construction rather than extra model capacity, target-domain tuning, or additional inference-time modules. The controller architecture and base action are shared across the two evaluation settings, while the policy hyperparameters take two pre-specified configurations that are fixed before any target-dataset evaluation. The two settings differ because the Base-to-novel and Cross-dataset tasks expose different shifts, not because the controller is tuned to individual target datasets. The training time and memory overhead on the two representative datasets used in the ablation study are reported in Table 2. 
+
+4.2. Base-to-Novel Generalization 
+
+Table 1 reports Base-to-novel generalization results across eleven datasets. On average, O NPOKD improves the HM over PromptKD from 83.73 to 84.62, with a larger gain on novel classes (+1.40) than on base classes (+0.30). This pattern matches the motivation of O NPOKD. The policy keeps teacher-centered supervision for reliable base-class knowledge while injecting zero-shot prior and hard-label guidance when the adapted teacher is less reliable for transfer. The gains are broadly distributed rather than concentrated on one dataset. O NPOKD improves HM on all eleven benchmarks, and the improvement is especially clear on FGVCAircraft (+2.49 HM), DTD (+1.64 HM), EuroSAT (+2.88 HM), and StanfordCars (+0.83 HM), while even ImageNet rises by +0.33 HM. The strongest gains appear precisely on datasets where the Base-to-novel generalization gap is hardest to close, which suggests that sample-wise policy control better balances adapted teacher knowledge against zero-shot prior knowledge. 
+
+4.3. Cross-Dataset Transfer 
+
+Table 3 evaluates Cross-dataset transfer from ImageNet to ten target datasets. This benchmark is stricter than Base-to-novel generalization, since the target datasets are never seen during adaptation. O NPOKD reaches the best average accuracy of 72.66, improving PromptKD by 1.33%. The policy therefore does not merely overfit the source-domain adaptation objective. It strengthens the distilled student’s ability to transfer across datasets. O NPOKD obtains the strongest accuracy on seven of the ten target datasets, with the largest gains on EuroSAT (+5.69), DTD (+3.11), Cars (+2.11), Aircraft (+1.79), and Flowers102 (+1.54), all of which differ from ImageNet in visual domain or fine-grained label semantics, where a fixed source-trained teacher sig-nal is brittle. The small decreases on Caltech101 (-0.57), Food101 (-0.32), and UCF101 (-1.07) occur on datasets where PromptKD is already strong, a trade-off suggesting that future policy variants may need more conservative intervention when the teacher and prior are both confident. 
+
+4.4. Ablation Study 
+
+We conduct ablations from three complementary per-spectives (the supervision components, the policy action space, and the controller state cues) using representative datasets from both evaluation settings. For Base-to-novel generalization we use FGVCAircraft and EuroSAT, which emphasize fine-grained class transfer and domain-shifted recognition. For Cross-dataset transfer we use DTD and EuroSAT, whose target domains differ substantially from the ImageNet source. This design tests whether the policy-controlled target is useful under both class shift and dataset shift. 
+
+4.4.1. Contribution of Supervision Sources 
+
+We first examine whether the gain comes from the ex-tra supervision sources or from the on-policy that con-trols them. This is an important distinction, since simply adding the zero-shot prior or hard labels could improve robustness even without sample-wise adaptation. Under the same teacher-student setup, Table 4 compares four groups (teacher-only distillation, a fixed teacher-prior-label mixture, source-removal variants, and policy-learning variants). T-KD reduces O NPOKD to ordinary teacher-only distillation, using the adapted teacher as the only soft target. Fixed   
+
+> H. Zhang et al.: Preprint submitted to Elsevier Page 8 of 13
+
+On-Policy Distillation for Vision-Language Model Adaptation 
+
+Table 3 
+
+Cross-dataset accuracy (%) on ten target datasets. PromptKD and OnPoKD distill ImageNet-adapted teachers using unlabeled target-domain training images, while other methods transfer directly from ImageNet. Avg. denotes the mean target accuracy.                                                                                         
+
+> Method Avg. Caltech101 OxfordPets Cars Flowers102 Food101 Aircraft SUN397 DTD EuroSAT UCF101
+> CoOp 63.88 93.70 89.14 64.51 68.71 85.30 18.47 64.15 41.92 46.39 66.55 CoCoOp 65.84 94.43 90.14 65.32 71.88 86.06 22.94 67.36 45.73 46.37 68.21 MaPLe 66.30 93.53 90.49 65.57 72.23 86.20 24.74 67.01 46.49 48.06 68.69 PromptSRC 65.81 93.60 90.25 65.70 70.25 86.15 23.90 67.10 46.87 45.50 68.75 PromptKD 71.33 93.61 91.59 73.93 75.33 88.84 26.24 68.57 55.08 63.74 76.39
+> OnPoKD 72.66 93.04 92.21 76.04 76.87 88.52 28.03 68.92 58.19 69.43 75.32
+> Δ+1.33 -0.57 +0.62 +2.11 +1.54 -0.32 +1.79 +0.35 +3.11 +5.69 -1.07
+
+Table 4 
+
+Controlled removal study for the target-construction policy. T-KD uses only the adapted teacher, Fixed Mix removes sample-wise decisions, and the remaining variants disable one policy source or update signal.                                                                    
+
+> Variant Base-to-Novel Cross-Dataset FGVCAircraft EuroSAT DTD EuroSAT Base Novel HM Base Novel HM Acc. Acc.
+> T-KD 47.71 40.84 44.01 97.13 85.24 90.80 53.19 62.55 Fixed Mix 48.12 40.47 43.96 96.46 84.25 89.94 53.00 64.12 w/o Prior 48.90 43.71 46.16 96.98 81.80 88.75 57.32 69.97 w/o Label 47.45 41.03 44.01 96.58 80.36 87.73 53.12 66.96 w/o Val. 18.81 28.73 22.74 96.51 84.78 90.27 53.29 65.35 w/o Prog. 48.90 43.90 46.27 97.52 85.64 91.19 57.11 70.45
+> Full 50.43 45.17 47.66 97.64 87.01 92.02 58.19 69.43
+
+Mix keeps the same three supervision sources as O NPOKD but combines them with a fixed teacher-prior-label mixture, thereby removing sample-wise policy adaptation. The w/o Prior and w/o Label variants drop the zero-shot prior and hard-label components to test whether the gains come from open-vocabulary prior knowledge or from explicit label an-choring. Finally, the w/o Val. and w/o Prog. variants retain the target sources but remove validation-feedback updates or progress-aware modulation, testing whether online learning is needed for reliable target construction. Table 4 shows that the full design gives the best overall balance. Relative to T-KD, O NPOKD improves FGVCAircraft HM by 3.65%, EuroSAT HM by 1.22%, DTD accuracy by 5.00%, and Eu-roSAT Cross-dataset accuracy by 6.88%, gains that cannot be attributed to teacher imitation alone. Fixed Mix remains consistently weaker than the adaptive variants, which con-firms that the supervision sources alone are not enough. The policy must decide when to trust each one. The source-removal variants reveal distinct roles for the prior and the label. Removing labels causes the largest drop on Cross-dataset transfer, especially on DTD and EuroSAT, indi-cating that hard labels anchor the controller when teacher and prior disagree. Removing the prior instead hurts FGV-CAircraft and EuroSAT Base-to-novel generalization more clearly, indicating that the zero-shot prior mainly protects open-vocabulary transfer. The w/o Val. variant collapses FGVCAircraft HM, confirming that validation feedback is needed to avoid unstable decisions on fine-grained classes. Specifically, removing validation feedback reduces FGV-CAircraft HM from 47.66 to 22.74 (a reduction of 24.92%) and EuroSAT HM from 92.02 to 90.27 (a reduction of 1.75%). The gap reflects the dataset-dependent role of held-out feedback. On fine-grained classes with narrow inter-class margins and sample-specific teacher mistakes, confidence-based reliability cues alone become insufficient, so direct correctness signals from a held-out source-validation stream are necessary for the controller to suppress an unsafe inter-vention. On EuroSAT, by contrast, state-based uncertainty and disagreement signals remain informative because the class cues are stronger and more coherent, so the marginal value of validation feedback is smaller but still positive. Removing progress-aware modulation has a milder effect: it slightly helps EuroSAT Cross-dataset accuracy yet still lowers FGVCAircraft HM and DTD accuracy. Overall, each source plays a distinct part. The teacher supports task adap-tation, the prior supports robustness, the label anchors learn-ing, and feedback keeps the mixture reliable. 
+
+4.4.2. Contribution of Each Policy Action 
+
+We next study which actions the controller needs for effective target construction. The full policy controls three quantities (the mixture over teacher, prior, and label targets, the sample weight, and the distillation temperature). Start-ing from a fixed KD target, Table 5 enables these action dimensions one at a time. The “Adaptive mix only” vari-ant lets the controller select the teacher-prior-label mixture while fixing the sample weight and temperature. The next two variants add either sample weighting or temperature adaptation. Table 5 shows that these action dimensions are neither interchangeable nor uniformly useful across tasks. On EuroSAT, whose class-level visual cues are relatively coherent, adaptive mixing already improves HM from 90.30 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 9 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+Table 5 
+
+Effect of enabling policy actions one at a time. The comparison isolates target mixing, sample weighting, and temperature control on FGVCAircraft and EuroSAT.                                      
+
+> Variant FGVCAircraft EuroSAT Base Novel HM Base Novel HM
+> Fixed KD target 49.28 44.27 46.64 97.24 84.28 90.30 Adaptive mix only 23.59 28.43 25.78 97.52 86.69 91.79 Adaptive mix + weight 48.14 40.43 43.95 96.40 84.21 89.89 Adaptive mix + temp. 43.64 40.13 41.81 97.02 83.23 89.60 Full action 50.43 45.17 47.66 97.64 87.01 92.02
+
+Table 6 
+
+Reliability cues used by the policy controller. Each row removes one cue group while keeping the full action space fixed.                                      
+
+> Variant FGVCAircraft EuroSAT Base Novel HM Base Novel HM
+> w/o uncertainty cues 36.73 39.29 37.97 97.26 81.56 88.72 w/o T-S disagreement 47.12 43.79 45.39 97.55 84.64 90.64 w/o T-P conflict 48.44 44.57 46.42 96.50 86.23 91.08 w/o feature alignment 47.78 44.33 45.99 97.12 85.05 90.69 Full state 50.43 45.17 47.66 97.64 87.01 92.02
+
+to 91.79, whereas adding sample weighting or temperature adaptation on top of the mixture yields HMs of 89.89 and 89.60, respectively, suggesting that extra per-sample correc-tions can disturb an already adequate mixture. FGVCAir-craft is more fine-grained with narrower inter-class margins, so adaptive mixing alone drops HM from 46.64 to 25.78. Sample weighting and temperature adaptation recover HM to 43.95 and 41.81 by down-weighting unreliable examples and adjusting the softness of the distillation signal, respec-tively. The full action space performs best precisely because the three actions play complementary roles. Mixture decides what to trust, weighting decides how much to trust a sample, and temperature decides how sharply to match the target, a coupling that a fixed KD target cannot express. 
+
+4.4.3. Importance of Reliability Cues 
+
+Finally, we analyze which reliability cues the controller needs. O NPOKD builds its policy state from four cue groups (uncertainty statistics, teacher-student disagreement, teacher-prior conflict, and feature alignment). Table 6 re-moves each group in turn while keeping the action space fixed. Each ablation isolates one role. Removing uncertainty cues tests whether confidence, margin, and entropy are needed to identify unreliable predictions, removing teacher-student disagreement tests whether the policy must know when the student is misaligned with the adapted teacher, re-moving teacher-prior conflict tests the role of disagreement between adapted and zero-shot knowledge, and removing feature alignment tests whether representation-level transfer quality adds complementary information. Table 6 shows that uncertainty cues are the most important state signal. Removing them drops FGVCAircraft HM by 9.69% and EuroSAT HM by 3.30%, far more than any single relational-cue ablation. The controller must first know whether a sample is unreliable, and the remaining cue groups then explain why. Teacher-student disagreement shows whether the student has caught up with the teacher, teacher-prior 0.10 0.20 0.30 0.40 0.50 
+
+> A
+> max
+> 65 75 85 95
+> Accuracy (%)
+> 97.6 87.0 92.0 69.4
+
+(a) Auxiliary target cap     
+
+> 0.00 0.01 0.05 0.10 0.20
+> r
+> 97.6 87.0 92.0 69.4
+
+(b) Policy regularization     
+
+> 0.25 0.50 1.00 1.50 2.00
+
+s in ( P, H) = ( s, s)
+
+> 97.8 87.0 92.0 69.4
+
+(c) Action strength    
+
+> Cross-Dataset Acc. Base Novel HM
+
+Figure 4: EuroSAT sensitivity sweeps for the main policy controls. Bars show Base-to-novel generalization metrics, and the line shows Cross-dataset accuracy. H. Zhang et al.: Preprint submitted to Elsevier Page 10 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+Figure 5: Learned state-to-action mapping on FGVC-Aircraft (weak teacher) and EuroSAT (strong teacher). The policy increases prior mass with uncertainty on EuroSAT but keeps the prior dormant on FGVC-Aircraft, with all cues producing the expected action directions. 0.0 0.5 1.0                                                    
+
+> Teacher entropy HT
+> 0.00 0.05 0.10
+> λprior
+> (a)
+> FGVC ( ρ=+0.24) EuroSAT ( ρ=+0.78) 0.0 0.7
+> HT
+> 0.0 0.5 1.0
+> λ
+> (b) FGVC
+> 0.0 0.9
+> HT
+> EuroSAT
+> λTλPλH
+> T-conf
+> T-marg
+> T-entr
+> S-conf
+> S-marg
+> S-entr KL TS
+> dis TS
+> ali TS
+> dis TZ
+> KL TZ
+> 0.80 -0.42 -0.81 0.71 -0.56 -0.67 -0.73 0.24 0.78 0.64 -0.10 -0.74 0.54 -0.26 -0.58 -0.58 0.01 0.69 -0.37 0.08 0.40 -0.78 0.60 0.74 0.14 -0.01 -0.16 -0.15 0.16 0.11 0.04 -0.02 -0.06
+> (c) FGVC
+> λTλPλH
+> 0.83 -0.85 -0.77 0.83 -0.86 -0.75 -0.79 0.78 0.76 0.74 -0.58 -0.88 0.74 -0.57 -0.87 -0.70 0.54 0.84 -0.50 0.27 0.65 -0.61 0.45 0.64 0.08 -0.07 -0.10 -0.12 0.05 0.29 -0.10 -0.00 0.24
+> EuroSAT
+> −0.8 −0.6 −0.4 −0.2 0.0 0.2 0.4 0.6 0.8
+> Spearman  ρ
+
+conflict reveals when adapted and zero-shot knowledge disagree, and feature alignment provides a representation-level check on transfer quality. Their individual drops are smaller but consistent across both datasets, indicating that the best policy state combines confidence with relational cues. A single confidence score is not enough. Figure 5 visualizes the learned state-to-action mapping on the two representative ablation datasets, complementing the row-removal ablations above with a continuous view of how the controller actually responds to its inputs. On EuroSAT, every cue moves its expected action direction. Teacher entropy and teacher-prior disagreement couple most strongly with the prior coefficient, while teacher-student disagreement and student entropy drive the hard-label coefficient. On FGVCAircraft the same cues are largely inert. The prior channel stays nearly dormant across the cue range, and only teacher entropy shows a weak positive slope on the prior coefficient. This pattern matches the row-removal result. Uncertainty cues carry most of the signal on EuroSAT, while on FGVCAircraft the cues themselves are less informative so the controller has less to work with. The figure therefore confirms that the learned policy is dataset-aware rather than a fixed rule, which is consistent with the dataset-dependent gains in Table 6. 
+
+4.5. Hyperparameter Analysis 
+
+We further analyze the sensitivity of O NPOKD to key hyperparameters. Because the controller is designed to make bounded interventions during training, the method should not rely on a narrow hyperparameter setting. Figure 4 summarizes sweeps on EuroSAT, a representative domain-shifted benchmark, reporting both Base-to-novel general-ization metrics and Cross-dataset transfer accuracy. Two patterns emerge. The auxiliary cap and policy regularization most clearly affect the Base-to-novel generalization trade-off, whereas Cross-dataset transfer is less monotonic and stays sensitive to the exact intervention scale. The auxiliary target cap 𝜆 𝐴  
+
+> max
+
+mainly controls the Base-to-novel generalization balance. As Figure 4(a) shows, rais-ing the cap from 0.10 to 0.40 improves EuroSAT HM from 90.32 to 92.02, driven by a novel-class gain from 84.03 to 87.01 while base accuracy stays high between 97.12 and 97.64. Raising the cap further to 0.50 reduces HM to 90.95 and novel accuracy to 85.31, so auxiliary intervention is helpful only while it remains bounded. Cross-dataset transfer accuracy is comparatively flat, ranging from 69.02 at 0.10 to a peak of 69.43 at 𝜆 𝐴  
+
+> max
+
+= 0 .30 . This sweep supports the bounded-intervention design. The policy needs enough capacity to correct the teacher, but excessive auxiliary mass weakens the Base-to-novel generalization balance. Policy regularization prevents unstable target construc-tion, but its best strength is intermediate. As Figure 4(b) shows, removing regularization ( 𝛼 𝑟 = 0 ) lowers EuroSAT HM to 87.71 and novel-class accuracy to 80.21, the signature of an unconstrained policy making overly aggressive target updates. A small regularizer, 𝛼 𝑟 = 0.01 , restores HM to 90.72, and 𝛼 𝑟 = 0 .05 gives the best Base-to-novel general-ization result (97.64 Base, 87.01 Novel, 92.02 HM). Cross-dataset transfer accuracy peaks at 𝛼 𝑟 = 0.10 with 69.43 and stays close at 𝛼 𝑟 = 0 .05 with 69.31, while raising the regularizer to 0.20 lowers both HM and transfer accuracy. The sweep thus confirms the role of 𝛼 𝑟 as a stabilizer that should curb erratic actions without suppressing useful adaptation. The action-strength sweep shows that stronger inter-vention is not always better. Figure 4(c) reports the best EuroSAT Base-to-novel generalization HM at 𝑠 = 0.50 ,where Novel reaches 87.01 and HM reaches 92.02. A smaller scale, 𝑠 = 0 .25 , gives the highest Base accuracy of 97.76 but lowers Novel to 82.23 and HM to 89.33. Cross-dataset transfer accuracy aligns less with HM. It falls to 65.25 at 𝑠 =1.00 and recovers to 69.43 at 𝑠 = 1 .50 , a setting whose HM is only 89.63. Action strength therefore controls how sharply the controller translates reliability cues into target changes, and the best setting for Cross-dataset transfer can differ from the best setting for Base-to-novel generalization bal-ance. This reinforces why O NPOKD uses bounded actions and separate controls for mixture, weight, and temperature. Taken together, the sweeps show that O NPOKD is governed by two forms of control. The auxiliary cap determines how much non-teacher supervision is available (the best Base-to-novel generalization balance appears at 𝜆 𝐴  
+
+> max
+
+= 0 .40 and the best Cross-dataset transfer accuracy at 0.30), while policy regularization and action scale determine how safely that su-pervision is used, with 𝛼 𝑟 = 0 .05 and 𝑠 = 0 .50 best for Base-to-novel generalization. Cross-dataset transfer accuracy is less monotonic, suggesting that transfer robustness depends 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 11 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+on both the amount of intervention and the way the controller applies it. These results support the central design choice of ONPOKD. Target construction should be adaptive enough to correct unreliable teacher targets, yet each intervention should remain bounded and feedback-stabilized. 
+
+## 5. Conclusion 
+
+This paper presented O NPOKD, an on-policy distilla-tion framework for vision-language model adaptation. In-stead of imposing a fixed teacher-centered target on every training sample, O NPOKD treats target construction as a policy decision that adaptively mixes the adapted teacher, the frozen zero-shot prior, and hard-label supervision ac-cording to reliability cues and validation feedback. Because the policy only shapes the training objective, the distilled student keeps the same inference architecture and adds no test-time computation. Experiments on Base-to-novel gener-alization and Cross-dataset transfer show that adaptive target construction improves the robustness and transferability of vision-language distillation, with clear gains on challenging datasets such as FGVCAircraft, DTD, and EuroSAT. Ab-lation studies further confirm that the gains do not simply come from adding more supervision sources. The zero-shot prior, hard-label anchoring, validation feedback, and reliability-aware policy cues each contribute to stable target construction. These results suggest that effective vision-language distillation requires not only multiple sources of supervision, but also a mechanism that decides when and how each source should influence student learning. Future work can explore more expressive policy-learning objec-tives, stronger validation-feedback signals, and applications beyond classification. 
+
+## References 
+
+Bossard, L., Guillaumin, M., Van Gool, L., 2014. Food-101–mining discriminative components with random forests, in: Computer vision– ECCV 2014: 13th European conference, zurich, Switzerland, September 6-12, 2014, proceedings, part VI 13, Springer. pp. 446–461. Cimpoi, M., Maji, S., Kokkinos, I., Mohamed, S., Vedaldi, A., 2014. Describing textures in the wild, in: Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 3606–3613. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L., 2009. Imagenet: A large-scale hierarchical image database, in: 2009 IEEE conference on computer vision and pattern recognition, Ieee. pp. 248–255. Fei-Fei, L., Fergus, R., Perona, P., 2004. Learning generative visual models from few training examples: An incremental bayesian approach tested on 101 object categories, in: 2004 conference on computer vision and pattern recognition workshop, IEEE. pp. 178–178. Helber, P., Bischke, B., Dengel, A., Borth, D., 2019. Eurosat: A novel dataset and deep learning benchmark for land use and land cover classi-fication. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing 12, 2217–2226. Hendrycks, D., Basart, S., Mu, N., Kadavath, S., Wang, F., Dorundo, E., Desai, R., Zhu, T., Parajuli, S., Guo, M., et al., 2021. The many faces of robustness: A critical analysis of out-of-distribution generalization, in: Proceedings of the IEEE/CVF international conference on computer vision, pp. 8340–8349. Hinton, G., Vinyals, O., Dean, J., 2015. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531 . Hsieh, C.Y., Li, C.L., Yeh, C.K., Nakhost, H., Fujii, Y., Ratner, A., Krishna, R., Lee, C.Y., Pfister, T., 2023. Distilling step-by-step! outperforming larger language models with less training data and smaller model sizes. arXiv preprint arXiv:2305.02301 . Huang, S., Zhang, H., Li, X., 2025. Enhance vision-language alignment with noise, in: Proceedings of the AAAI Conference on Artificial Intel-ligence, pp. 17449–17457. Jia, C., Yang, Y., Xia, Y., Chen, Y.T., Parekh, Z., Pham, H., Le, Q., Sung, Y.H., Li, Z., Duerig, T., 2021. Scaling up visual and vision-language representation learning with noisy text supervision, in: International conference on machine learning, PMLR. pp. 4904–4916. Khattak, M.U., Rasheed, H., Maaz, M., Khan, S., Khan, F.S., 2023a. Maple: Multi-modal prompt learning, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 19113– 19122. Khattak, M.U., Wasim, S.T., Naseer, M., Khan, S., Yang, M.H., Khan, F.S., 2023b. Self-regulating prompts: Foundational model adaptation without forgetting, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 15190–15200. Krause, J., Stark, M., Deng, J., Fei-Fei, L., 2013. 3d object representations for fine-grained categorization, in: Proceedings of the IEEE international conference on computer vision workshops, pp. 554–561. Lee, D., Song, S., Suh, J., Choi, J., Lee, S., Kim, H.J., 2023. Read-only prompt optimization for vision-language few-shot learning, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 1401–1411. Li, Z., Li, X., Fu, X., Zhang, X., Wang, W., Chen, S., Yang, J., 2024. Promptkd: Unsupervised prompt distillation for vision-language models, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 26617–26626. Li, Z., Li, X., Yang, L., Zhao, B., Song, R., Luo, L., Li, J., Yang, J., 2023. Curriculum temperature for knowledge distillation, in: Proceedings of the AAAI Conference on Artificial Intelligence, pp. 1504–1512. Maji, S., Rahtu, E., Kannala, J., Blaschko, M., Vedaldi, A., 2013. Fine-grained visual classification of aircraft. arXiv preprint arXiv:1306.5151 .Nilsback, M.E., Zisserman, A., 2008. Automated flower classification over a large number of classes, in: 2008 Sixth Indian conference on computer vision, graphics & image processing, IEEE. pp. 722–729. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., Schulman, J., Hilton, J., Kelton, F., Miller, L., Simens, M., Askell, A., Welinder, P., Christiano, P., Leike, J., Lowe, R., 2022. Training language models to follow instructions with human feedback, in: Advances in Neural Information Processing Systems, pp. 27730–27744. Parkhi, O.M., Vedaldi, A., Zisserman, A., Jawahar, C., 2012. Cats and dogs, in: 2012 IEEE conference on computer vision and pattern recognition, IEEE. pp. 3498–3505. Qiao, X., Huang, P., Yuan, J., Guo, X., Ye, B., Xue, C., Zheng, Y., Sun, Z., Li, X., 2026a. Bidirectional prototype-reward co-evolution for test-time adaptation of vision-language models. IEEE Transactions on Multimedia . Qiao, X., Wang, W., Zhao, Z., Sun, J., Luo, P., Zhang, H., Li, X., 2026b. Ahap: Reconstructing arbitrary humans from arbitrary perspectives with geometric priors. arXiv preprint arXiv:2602.23951 . Qiao, X., Zhang, D., Guo, Y., Gao, J., Zhao, Z., Li, X., 2026c. Semantic-aware temporal adaptation for uav anti-uav tracking. arXiv preprint arXiv:2607.26511 . Qiao, X., Zhao, J., Jiang, Y., Guo, X., Sun, Z., Zhang, H., Li, X., 2025. Class-aware prototype learning with negative contrast for test-time adap-tation of vision-language models. arXiv preprint arXiv:2510.19802 . Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al., 2021. Learning transferable visual models from natural language supervision, in: Inter-national conference on machine learning, PMLR. pp. 8748–8763. Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C.D., Finn, C., 2023. Direct preference optimization: Your language model is secretly a reward model. arXiv preprint arXiv:2305.18290 . 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 12 of 13 On-Policy Distillation for Vision-Language Model Adaptation 
+
+Recht, B., Roelofs, R., Schmidt, L., Shankar, V., 2019. Do imagenet clas-sifiers generalize to imagenet?, in: International conference on machine learning, PMLR. pp. 5389–5400. Soomro, K., Zamir, A.R., Shah, M., 2012. Ucf101: A dataset of 101 human actions classes from videos in the wild. arXiv preprint arXiv:1212.0402 .Wang, Z., Yan, Z., Yang, M.H., Pan, J., Gao, G., Tai, Y., Yang, J., 2026. Scene prior filtering for depth super-resolution: Zhengxue wang et al. International Journal of Computer Vision 134, 251. Wu, K., Peng, H., Zhou, Z., Xiao, B., Liu, M., Yuan, L., Xuan, H., Valen-zuela, M., Chen, X.S., Wang, X., et al., 2023. Tinyclip: Clip distillation via affinity mimicking and weight inheritance, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 21970– 21980. Xiao, J., Hays, J., Ehinger, K.A., Oliva, A., Torralba, A., 2010. Sun database: Large-scale scene recognition from abbey to zoo, in: 2010 IEEE computer society conference on computer vision and pattern recognition, IEEE. pp. 3485–3492. Xu, G., Chen, J., Huang, W., Jia, W., Gao, G., Qi, G.J., 2026. Scaseg: Strip cross-attention for efficient semantic segmentation. IEEE Transactions on Image Processing . Yang, C., An, Z., Huang, L., Bi, J., Yu, X., Yang, H., Diao, B., Xu, Y., 2024. Clip-kd: An empirical study of clip model distillation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 15952–15962. Yang, J., Martinez, B., Bulat, A., Tzimiropoulos, G., 2021. Knowledge dis-tillation via softmax regression representation learning, in: International conference on learning representations. Yao, L., Huang, R., Hou, L., Lu, G., Niu, M., Xu, H., Liang, X., Li, Z., Jiang, X., Xu, C., 2021. Filip: Fine-grained interactive language-image pre-training. arXiv preprint arXiv:2111.07783 . Yu, T., Lu, Z., Jin, X., Chen, Z., Wang, X., 2023. Task residual for tuning vision-language models, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 10899–10909. Yuan, L., Chen, D., Chen, Y.L., Codella, N., Dai, X., Gao, J., Hu, H., Huang, X., Li, B., Li, C., et al., 2021. Florence: A new foundation model for computer vision. arXiv preprint arXiv:2111.11432 . Zhai, X., Wang, X., Mustafa, B., Steiner, A., Keysers, D., Kolesnikov, A., Beyer, L., 2022. Lit: Zero-shot transfer with locked-image text tuning, in: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp. 18123–18133. Zhang, H., Huang, S., Guo, Y., Li, X., 2025. Variational positive-incentive noise: How noise benefits models. IEEE Transactions on Pattern Analysis and Machine Intelligence . Zhang, H., Xu, Y., Huang, S., Li, X., 2026. Data augmentation of contrastive learning is estimating positive-incentive noise, in: Proceedings of the 43rd International Conference on Machine Learning (ICML). Zhao, B., Cui, Q., Song, R., Qiu, Y., Liang, J., 2022. Decoupled knowledge distillation, in: Proceedings of the IEEE/CVF Conference on computer vision and pattern recognition, pp. 11953–11962. Zhao, S., Xie, Z., Liu, M., Jing, H., Pang, G., Chen, F., Grover, A., 2026. Self-distilled reasoner: On-policy self-distillation for large language models. arXiv preprint arXiv:2601.18734 . Zhou, K., Yang, J., Loy, C.C., Liu, Z., 2022a. Conditional prompt learning for vision-language models, in: Proceedings of the IEEE/CVF confer-ence on computer vision and pattern recognition, pp. 16816–16825. Zhou, K., Yang, J., Loy, C.C., Liu, Z., 2022b. Learning to prompt for vision-language models. International Journal of Computer Vision 130, 2337– 2348. Zhou, L., Li, W., Li, J., Gao, G., Lin, C.W., 2026. Diffusion-based laplacian frequency-aware network for low-light image enhancement. Pattern Recognition , 113060. Zhu, R., Huang, S., Jiao, Z., Zhang, H., 2026. Explore how to inject beneficial noise in mllms, in: Proceedings of the AAAI Conference on Artificial Intelligence, pp. 29150–29158. Zhu, R., Huang, Z., Sun, J., Luo, P., Zhang, H., Li, X., 2025. Viewmask-1-to-3: Multi-view consistent image generation via multimodal discrete diffusion models. arXiv preprint arXiv:2512.14099 . 
+
+H. Zhang et al.: Preprint submitted to Elsevier Page 13 of 13
